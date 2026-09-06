@@ -258,7 +258,7 @@
 
     function Icon({ name, className = "w-4 h-4" }) {
       const icons = {
-        film: <path d="M2 6.5A2.5 2.5 0 0 1 4.5 4h15A2.5 2.5 0 0 1 22 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-15A2.5 2.5 0 0 1 2 17.5v-11zM7 4v16M17 4v16M2 12h20M2 8h5M17 8h5M2 16h5M17 16h5" />,
+        film: <path d="M2 6.5A2.5 2.5 0 0 1 4.5 4h15A2.5 2.5 0 0 1 22 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-15A2.5 2.5 0 0 1 2 17.5v-11zM7 4v16M17 4v16M2 12h20M2 8h5M17 8h5M2 16h5" />,
         tv: <><rect x="2" y="7" width="20" height="15" rx="2" ry="2"/><polyline points="17 2 12 7 7 2"/></>,
         sparkles: <path d="m12 3-1.9 5.8a2 2 0 0 1-1.287 1.288L3 12l5.8 1.9a2 2 0 0 1 1.288 1.287L12 21l1.9-5.8a2 2 0 0 1 1.287-1.288L21 12l-5.8-1.9a2 2 0 0 1-1.288-1.287Z" />,
         search: <path d="m21 21-4.3-4.3M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z" />,
@@ -857,12 +857,10 @@
       );
     }
 
-    // مشغّل الفيديو: يدعم نطاق تشغيل مخصص (قص زمني) وطريقة عرض/تركيز مرئي مختلفة للجوال والحاسوب
-    function VideoPlayer({ src, onError, trimStart, trimEnd, fitMobile, fitDesktop, crop }) {
+    // مشغّل الفيديو: يدعم نطاق تشغيل مخصص (قص زمني) وقص/تكبير/دوران موحّد للفيديو عبر كل الأجهزة
+    function VideoPlayer({ src, onError, trimStart, trimEnd, crop }) {
       const videoRef = useRef(null);
       const [loading, setLoading] = useState(true);
-      const isMobile = useIsMobile();
-      const fit = (isMobile ? fitMobile : fitDesktop) || 'contain';
       const c = crop || {};
 
       useEffect(() => {
@@ -893,16 +891,20 @@
         return () => { videoEl.removeEventListener('loadedmetadata', onLoaded); videoEl.removeEventListener('timeupdate', onTime); };
       }, [src, trimStart, trimEnd]);
 
-      // حساب ستايل العرض: تركيز على جهة محددة (شبكة 3x3) + نسبة تكبير بسيطة بدل ٤ خانات قص معقدة
-      let videoStyle = { objectFit: fit === 'crop' ? 'cover' : fit };
-      if (fit === 'crop') {
+      // حساب ستايل العرض: إن لم يُفعّل القص، اعرض الفيديو كاملًا بلا أي قص (احتواء كامل)
+      let videoStyle = { objectFit: 'contain' };
+      if (c.active) {
         const zoom = 1 + ((c.zoom || 0) / 100);
         const posX = c.posX != null ? c.posX : 50;
         const posY = c.posY != null ? c.posY : 50;
+        const rotation = c.rotation || 0;
+        const rad = Math.abs(rotation) * Math.PI / 180;
+        const overscale = Math.cos(rad) + Math.sin(rad); // تكبير إضافي بسيط لتفادي ظهور حواف فارغة عند الدوران
+        const finalScale = zoom * overscale;
         videoStyle = {
           objectFit: 'cover',
           objectPosition: `${posX}% ${posY}%`,
-          transform: zoom !== 1 ? `scale(${zoom})` : undefined,
+          transform: `scale(${finalScale})${rotation ? ` rotate(${rotation}deg)` : ''}`,
           transformOrigin: `${posX}% ${posY}%`,
         };
       }
