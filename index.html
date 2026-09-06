@@ -89,8 +89,13 @@
     }
 
     /* ===== إصلاحات عامة لمنع أي تداخل أو تمرير أفقي ===== */
-    html, body { overflow-x: hidden; width: 100%; }
-    #root { overflow-x: hidden; }
+    /* ملاحظة مهمة: وضع overflow-x:hidden على html و body معًا كان يخلق طبقتي تمرير
+       متداخلتين (لأن overflow-y يتحول تلقائيًا لـ auto على العنصرين)، فتصير النتيجة
+       أن سحب شريط التمرير الظاهر يعمل، لكن عجلة الماوس تتوقف عند العنصر الداخلي ولا
+       تُحرّك الصفحة. الحل: نطبّق overflow-x:hidden على body فقط ونترك html طبيعيًا. */
+    html { width: 100%; height: 100%; }
+    body { overflow-x: hidden; width: 100%; overscroll-behavior-y: none; }
+    #root { overflow-x: hidden; min-height: 100%; }
 
     /* ===== نجوم التقييم ===== */
     .star-btn { transition: transform 0.15s ease, color 0.15s ease; }
@@ -113,6 +118,7 @@
   <style>
     @keyframes bootSpin { to { transform: rotate(360deg); } }
     #bootLoader { position: fixed; inset: 0; z-index: 9999; background: #07090E; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; transition: opacity 0.35s ease; }
+    #bootLoader.fading { opacity: 0; pointer-events: none; }
     #bootLoader .boot-logo { width: 72px; height: 72px; animation: bootPulse 1.6s ease-in-out infinite; }
     @keyframes bootPulse { 0%,100% { opacity: 0.75; transform: scale(0.97); } 50% { opacity: 1; transform: scale(1.03); } }
     #bootLoader .spin { width: 30px; height: 30px; border-radius: 9999px; border: 3px solid rgba(255,255,255,0.1); border-top-color: #00F0FF; animation: bootSpin 0.8s linear infinite; }
@@ -264,6 +270,12 @@
         pencil: <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />,
         star: <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />,
         eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></>,
+        maximize: <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />,
+        minimize: <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3m6 0v-3a2 2 0 0 1 2-2h3" />,
+        barChart: <path d="M12 20V10M18 20V4M6 20v-4" />,
+        trendingUp: <><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></>,
+        filter: <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />,
+        reply: <path d="M9 17 4 12l5-5M4 12h11a4 4 0 0 1 4 4v1" />,
       };
       return (
         <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -454,13 +466,44 @@
       );
     }
 
+    const SORT_OPTIONS = [
+      ['newest', 'الأحدث إضافةً'],
+      ['imdb', 'الأعلى تقييم IMDb'],
+      ['year', 'سنة الإصدار'],
+      ['name', 'الاسم (أ-ي)'],
+      ['popular', 'الأكثر مشاهدة'],
+    ];
+
+    function sortTitles(items, sortKey) {
+      const arr = [...items];
+      if (sortKey === 'imdb') arr.sort((a, b) => (parseFloat(b.imdbRating) || 0) - (parseFloat(a.imdbRating) || 0));
+      else if (sortKey === 'year') arr.sort((a, b) => (b.year || 0) - (a.year || 0));
+      else if (sortKey === 'name') arr.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
+      else if (sortKey === 'popular') arr.sort((a, b) => (b.views || 0) - (a.views || 0));
+      else arr.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      return arr;
+    }
+
     function TypeGrid({ title, items, onOpen, showGenreFilter, emptyText }) {
       const [genre, setGenre] = useState('');
+      const [sortKey, setSortKey] = useState('newest');
       const genres = showGenreFilter ? Array.from(new Set(items.flatMap(t => t.genres || []))) : [];
-      const filtered = genre ? items.filter(t => (t.genres || []).includes(genre)) : items;
+      const filteredByGenre = genre ? items.filter(t => (t.genres || []).includes(genre)) : items;
+      const filtered = sortTitles(filteredByGenre, sortKey);
       return (
         <div>
-          <h1 className="text-2xl md:text-3xl font-black mb-6 text-slate-100">{title}</h1>
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-6">
+            <h1 className="text-2xl md:text-3xl font-black text-slate-100">{title}</h1>
+            {items.length > 0 && (
+              <div className="relative shrink-0">
+                <select value={sortKey} onChange={e => setSortKey(e.target.value)}
+                  className="appearance-none bg-glass-900 border border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-xs font-bold text-slate-200 outline-none focus:border-accent-cyan transition cursor-pointer">
+                  {SORT_OPTIONS.map(([k, l]) => <option key={k} value={k} className="bg-glass-950">{l}</option>)}
+                </select>
+                <Icon name="filter" className="w-3.5 h-3.5 text-accent-cyan absolute top-1/2 -translate-y-1/2 left-3 pointer-events-none" />
+              </div>
+            )}
+          </div>
           {showGenreFilter && genres.length > 0 && (
             <div className="flex gap-2 flex-wrap mb-6">
               <button onClick={() => setGenre('')} className={`text-xs px-4 py-2 rounded-xl transition font-bold border ${!genre ? 'bg-accent-cyan text-glass-950 border-accent-cyan shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 hover:border-white/20'}`}>الكل</button>
@@ -661,28 +704,13 @@
       const [avatar, setAvatar] = useState('');
       const [error, setError] = useState('');
       const [loading, setLoading] = useState(false);
-      const [avatarUploading, setAvatarUploading] = useState(false);
-      const [avatarError, setAvatarError] = useState('');
-      const avatarInputRef = useRef(null);
-
-      const handleAvatarFile = (e) => {
-        const file = e.target.files && e.target.files[0];
-        e.target.value = '';
-        if (!file) return;
-        setAvatarError('');
-        setAvatarUploading(true);
-        compressImageToDataUrl(file)
-          .then(dataUrl => setAvatar(dataUrl))
-          .catch(err => setAvatarError(err && err.message ? err.message : 'تعذر حفظ الصورة، حاول مجددًا.'))
-          .finally(() => setAvatarUploading(false));
-      };
 
       const submit = async () => {
         setError('');
         const cleanUser = username.trim().toLowerCase();
         const cleanPass = password.trim();
         const cleanName = name.trim();
-        const cleanAvatar = avatar;
+        const cleanAvatar = avatar.trim();
         if (!cleanUser || !cleanPass || (tab === 'register' && !cleanName)) { setError('الرجاء ملء جميع الحقول الأساسية.'); return; }
         if (cleanUser.length < 3) { setError('اسم المستخدم قصير جدًا (٣ أحرف على الأقل).'); return; }
         setLoading(true);
@@ -715,20 +743,7 @@
               {tab === 'register' && (
                 <>
                   <input value={name} onChange={e => setName(e.target.value)} placeholder="الاسم الكامل" className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition" />
-                  <div>
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-2xl bg-glass-900 border border-white/10 flex items-center justify-center overflow-hidden shrink-0">
-                        {avatar ? <img src={avatar} alt="" className="w-full h-full object-cover" /> : <Icon name="user" className="w-5 h-5 text-slate-400" />}
-                      </div>
-                      <button type="button" onClick={() => avatarInputRef.current && avatarInputRef.current.click()} disabled={avatarUploading}
-                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-2xl glass-card border border-white/10 hover:border-accent-cyan text-sm font-bold text-slate-200 transition disabled:opacity-50">
-                        <Icon name="download" className="w-4 h-4 text-accent-cyan rotate-180" />
-                        {avatarUploading ? 'جارٍ الرفع...' : (avatar ? 'تغيير الصورة' : 'رفع صورة الملف الشخصي (اختياري)')}
-                      </button>
-                      <input ref={avatarInputRef} type="file" accept="image/*" onChange={handleAvatarFile} className="hidden" />
-                    </div>
-                    {avatarError && <p className="text-rose-400 text-[11px] font-bold mt-1.5">{avatarError}</p>}
-                  </div>
+                  <input value={avatar} onChange={e => setAvatar(e.target.value)} placeholder="رابط صورة الملف الشخصي (اختياري)" className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition" />
                 </>
               )}
               <input value={username} onChange={e => setUsername(e.target.value)} placeholder="اسم المستخدم" className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition" />
@@ -855,7 +870,6 @@
       const [myReview, setMyReview] = useState('');
       const [savingRating, setSavingRating] = useState(false);
       const [ratingMsg, setRatingMsg] = useState('');
-      const [deleteRatingTarget, setDeleteRatingTarget] = useState(null);
 
       useEffect(() => {
         setPlayingUrl(null); setActiveSeason(0); setCommentText(''); setReplyingTo(null); setVideoError(false);
@@ -909,13 +923,6 @@
       };
       const canModerate = currentUser && roleRank(currentUser.username) > 0;
 
-      const deleteRating = async (uid) => {
-        await db.ref(`ratings/${title.id}/${uid}`).remove();
-        await db.ref(`userRatings/${uid}/${title.id}`).remove();
-        if (currentUser && uid === currentUser.id) { setMyStars(0); setMyReview(''); }
-        setDeleteRatingTarget(null);
-      };
-
       const seasons = (title.seasons || [])
         .map(s => ({ ...s, episodes: (s.episodes || []).slice().sort((a, b) => (a.number || 0) - (b.number || 0)) }))
         .sort((a, b) => (a.number || 0) - (b.number || 0));
@@ -958,9 +965,8 @@
         db.ref(`comments/${title.id}/${commentId}/likes`).transaction(v => Math.max(0, (v || 0) + (isLiked ? -1 : 1)));
       };
 
-      const canDeleteComment = (item) => currentUser && (canModerate || item.username === currentUser.username);
-      const deleteComment = (commentId) => { db.ref(`comments/${title.id}/${commentId}`).remove(); };
-      const deleteReply = (commentId, replyId) => { db.ref(`comments/${title.id}/${commentId}/replies/${replyId}`).remove(); };
+      const deleteComment = (commentId) => { if (canModerate) db.ref(`comments/${title.id}/${commentId}`).remove(); };
+      const deleteReply = (commentId, replyId) => { if (canModerate) db.ref(`comments/${title.id}/${commentId}/replies/${replyId}`).remove(); };
 
       return (
         <div className="modal-backdrop fixed inset-0 z-50 bg-black/90 backdrop-blur-lg md:p-6 md:flex md:items-center md:justify-center overflow-y-auto" onClick={onClose}>
@@ -1083,11 +1089,8 @@
                     <StarRatingInput value={myStars} onChange={setMyStars} />
                     <textarea value={myReview} onChange={e => setMyReview(e.target.value)} placeholder="اكتب مراجعتك الشخصية (اختياري)..." rows={3}
                       className="w-full mt-3 bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition shadow-inner"></textarea>
-                    <div className="flex items-center gap-3 mt-3 flex-wrap">
+                    <div className="flex items-center gap-3 mt-3">
                       <button onClick={submitRating} disabled={savingRating} className="px-5 py-2.5 rounded-xl bg-accent-cyan hover:brightness-110 text-xs font-bold text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)] transition disabled:opacity-50">{savingRating ? 'جارٍ الحفظ...' : 'حفظ التقييم والمراجعة'}</button>
-                      {ratings[currentUser.id] && (
-                        <button onClick={() => setDeleteRatingTarget(currentUser.id)} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 text-xs font-bold transition"><Icon name="trash-2" className="w-3.5 h-3.5" />حذف تقييمي</button>
-                      )}
                       {ratingMsg && <span className="text-xs font-bold text-emerald-400">{ratingMsg}</span>}
                     </div>
                   </div>
@@ -1104,22 +1107,13 @@
                         <div className="flex-1 glass-card p-4 rounded-2xl border border-white/5">
                           <div className="flex items-center justify-between mb-1.5">
                             <button onClick={() => onOpenProfile && onOpenProfile(r.username)} className="text-xs font-bold text-accent-cyan hover:underline">{r.author}</button>
-                            <div className="flex items-center gap-3">
-                              <StarRatingDisplay value={r.stars} />
-                              {currentUser && (canModerate || r.uid === currentUser.id) && (
-                                <button onClick={() => setDeleteRatingTarget(r.uid)} title="حذف المراجعة" className="text-rose-400/80 hover:text-rose-400 transition"><Icon name="trash-2" className="w-3.5 h-3.5" /></button>
-                              )}
-                            </div>
+                            <StarRatingDisplay value={r.stars} />
                           </div>
                           <p className="text-sm text-slate-200 leading-relaxed">{r.review}</p>
                         </div>
                       </div>
                     ))}
                   </div>
-                )}
-                {deleteRatingTarget && (
-                  <ConfirmDialog title="حذف هذا التقييم؟" body="سيتم حذف التقييم والمراجعة نهائيًا ولا يمكن التراجع عن هذا الإجراء."
-                    confirmLabel="نعم، احذف" cancelLabel="إلغاء" onCancel={() => setDeleteRatingTarget(null)} onConfirm={() => deleteRating(deleteRatingTarget)} />
                 )}
               </div>
 
@@ -1163,7 +1157,7 @@
                             <div className="flex items-center gap-5 mt-3">
                               <button onClick={() => toggleCommentLike(c.id, c)} className={`flex items-center gap-1.5 text-xs font-bold transition ${isCommentLiked ? 'text-rose-400' : 'text-slate-400 hover:text-slate-200'}`}><Icon name="heart" className="w-3.5 h-3.5" />{c.likes || 0}</button>
                               <button onClick={() => setReplyingTo(replyingTo && replyingTo.commentId === c.id && !replyingTo.mentionName ? null : { commentId: c.id, mentionName: null })} className="text-xs font-bold text-slate-400 hover:text-slate-200 transition">رد</button>
-                              {canDeleteComment(c) && <button onClick={() => deleteComment(c.id)} className="text-xs font-bold text-rose-400/80 hover:text-rose-400 transition mr-auto">حذف</button>}
+                              {canModerate && <button onClick={() => deleteComment(c.id)} className="text-xs font-bold text-rose-400/80 hover:text-rose-400 transition mr-auto">حذف</button>}
                             </div>
                             {repliesList.length > 0 && (
                               <div className="mt-3 space-y-2 border-r-2 border-accent-cyan/30 pr-3 mr-1">
@@ -1186,7 +1180,7 @@
                                       <p className="text-slate-300">{r.mentionName && <span className="text-accent-cyan font-bold">@{r.mentionName}</span>} {r.text}</p>
                                       <div className="flex items-center gap-4 mt-1.5">
                                         <button onClick={() => setReplyingTo({ commentId: c.id, mentionName: r.author })} className="text-[11px] font-bold text-slate-500 hover:text-slate-300 transition">رد</button>
-                                        {canDeleteComment(r) && <button onClick={() => deleteReply(c.id, r.id)} className="text-[11px] font-bold text-rose-400/80 hover:text-rose-400 transition">حذف</button>}
+                                        {canModerate && <button onClick={() => deleteReply(c.id, r.id)} className="text-[11px] font-bold text-rose-400/80 hover:text-rose-400 transition">حذف</button>}
                                       </div>
                                     </div>
                                   </div>
@@ -2015,7 +2009,7 @@
         if (!booted) return;
         const loader = document.getElementById('bootLoader');
         if (loader) {
-          loader.style.opacity = '0';
+          loader.classList.add('fading');
           setTimeout(() => loader.remove(), 350);
         }
       }, [booted]);
