@@ -1,0 +1,1639 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>CineVerse - أفلام ومسلسلات وأنمي</title>
+  <meta name="description" content="CineVerse - شاهد أحدث الأفلام والمسلسلات والأنمي، وقيّم وراجع وشارك ملفك الشخصي." />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            glass: {
+              950: '#07090E',
+              900: '#0E131F',
+              800: '#161E2E',
+              700: '#222D44',
+              600: '#33415C',
+            },
+            accent: {
+              red: '#FF334B',
+              redHover: '#FF1F38',
+              cyan: '#00F0FF',
+              purple: '#A855F7',
+              gold: '#F59E0B'
+            }
+          },
+          fontFamily: { cairo: ['Cairo','sans-serif'] }
+        }
+      }
+    }
+  </script>
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap');
+    html { scroll-behavior: smooth; }
+    body { font-family: 'Cairo', sans-serif; background-color: #07090E; color: #F8FAFC; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
+    * { -webkit-tap-highlight-color: transparent; }
+    .scrollbar-hide::-webkit-scrollbar { display: none; }
+    .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+    .line-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+    .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+    @keyframes fadeInBackdrop { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes scaleInPanel { from { opacity: 0; transform: scale(0.94) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+    @keyframes slideUpSheet { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fadeInContent { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    .modal-backdrop { animation: fadeInBackdrop 0.18s ease-out; }
+    .modal-panel { animation: scaleInPanel 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
+    .sheet-panel { animation: slideUpSheet 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
+    .page-fade-in { animation: fadeInContent 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+    img { transition: opacity 0.35s ease; }
+    button, a { -webkit-tap-highlight-color: transparent; }
+    button:active { transform: scale(0.97); }
+    /* يمنع تكبير آيفون التلقائي للصفحة عند فتح لوحة المفاتيح (المتصفح يكبّر إذا كان حجم الخط أقل من 16px) */
+    input, textarea, select { font-size: 16px !important; }
+    @media (min-width: 768px) { input, textarea, select { font-size: 14px !important; } }
+
+    .glass-panel {
+      background: rgba(14, 19, 31, 0.75);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    }
+    
+    .glass-card {
+      background: rgba(22, 30, 46, 0.6);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .glass-card:hover {
+      border-color: rgba(0, 240, 255, 0.4);
+      box-shadow: 0 10px 30px -10px rgba(0, 240, 255, 0.2);
+    }
+  </style>
+</head>
+<body class="bg-glass-950 text-slate-100 min-h-screen selection:bg-accent-red selection:text-white">
+  <style>
+    @keyframes bootSpin { to { transform: rotate(360deg); } }
+    #bootLoader { position: fixed; inset: 0; z-index: 9999; background: #07090E; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; transition: opacity 0.35s ease; }
+    #bootLoader .spin { width: 46px; height: 46px; border-radius: 9999px; border: 3px solid rgba(255,255,255,0.1); border-top-color: #00F0FF; animation: bootSpin 0.8s linear infinite; }
+    #bootLoader p { color: #94a3b8; font-family: 'Cairo', sans-serif; font-size: 13px; font-weight: 700; }
+    #bootLoader b { color: #00F0FF; }
+  </style>
+  <div id="bootLoader">
+    <div class="spin"></div>
+    <p>جاري تحميل <b>CineVerse</b>...</p>
+  </div>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const firebaseConfig = {
+      databaseURL: "https://mnste-6bc7b-default-rtdb.firebaseio.com",
+      storageBucket: "mnste-6bc7b.firebasestorage.app"
+    };
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const storage = firebase.storage();
+
+    // رفع أي ملف (صورة/فيديو) مباشرة من الجهاز إلى Firebase Storage، مع تتبع نسبة التقدم
+    function uploadFile(file, folder, onProgress) {
+      return new Promise((resolve, reject) => {
+        const safeName = (file.name || `upload_${Date.now()}.jpg`).replace(/[^a-zA-Z0-9.\-_]/g, '_');
+        const path = `${folder}/${Date.now()}_${safeName}`;
+        const ref = storage.ref().child(path);
+        const task = ref.put(file);
+        task.on('state_changed',
+          snap => onProgress && onProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
+          err => reject(err),
+          () => ref.getDownloadURL().then(resolve).catch(reject)
+        );
+      });
+    }
+
+    // بعض روابط المشاركة (كوقل درايف مثلاً) هي صفحة عرض وليست رابط فيديو مباشر
+    // نحوّلها تلقائيًا لصيغة قابلة للتضمين تعمل بشكل صحيح على كل الأجهزة
+    const isIOS = /iP(hone|od|ad)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const sanitizeKey = (s) => (s || '').replace(/[.#$\/\[\]]/g, '_');
+
+    function normalizeVideoUrl(url) {
+      if (!url) return url;
+      const clean = url.trim();
+      const drive = clean.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+      if (drive) return `https://drive.google.com/file/d/${drive[1]}/preview`;
+      const driveOpen = clean.match(/drive\.google\.com\/open\?id=([^&]+)/);
+      if (driveOpen) return `https://drive.google.com/file/d/${driveOpen[1]}/preview`;
+      const dropbox = clean.match(/^https?:\/\/(www\.)?dropbox\.com\/(.+)$/);
+      if (dropbox && !clean.includes('raw=1')) return clean.replace('dropbox.com', 'dl.dropboxusercontent.com').split('?')[0];
+      return clean;
+    }
+
+    const TYPE_LABELS = { movie: 'فيلم', series: 'مسلسل', anime: 'أنمي' };
+    const TYPE_PLURAL = { movie: 'الأفلام', series: 'المسلسلات', anime: 'الأنميات' };
+    const COMPLAINT_TYPES = { add: 'طلب إضافة عمل', problem: 'مشكلة في التشغيل أو التحميل', suggestion: 'اقتراح عام' };
+
+    // رمز الحماية الخاص بلوحة المطورين (يمكنك تغييره هنا)
+    const DEV_SECRET_PIN = "MAVI7734"; 
+
+    function fmtDateTime(ts) {
+      if (!ts) return '';
+      const d = new Date(ts);
+      return d.toLocaleDateString('ar-EG', { day: 'numeric', month: 'short', year: 'numeric' }) + ' · ' +
+             d.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function isDirectVideo(url) {
+      return /\.(mp4|webm|ogg|mov|m3u8)(\?.*)?$/i.test(url || '');
+    }
+
+    function Icon({ name, className = "w-4 h-4" }) {
+      const icons = {
+        film: <path d="M2 6.5A2.5 2.5 0 0 1 4.5 4h15A2.5 2.5 0 0 1 22 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-15A2.5 2.5 0 0 1 2 17.5v-11zM7 4v16M17 4v16M2 12h20M2 8h5M17 8h5M2 16h5M17 16h5" />,
+        tv: <><rect x="2" y="7" width="20" height="15" rx="2" ry="2"/><polyline points="17 2 12 7 7 2"/></>,
+        sparkles: <path d="m12 3-1.9 5.8a2 2 0 0 1-1.287 1.288L3 12l5.8 1.9a2 2 0 0 1 1.288 1.287L12 21l1.9-5.8a2 2 0 0 1 1.287-1.288L21 12l-5.8-1.9a2 2 0 0 1-1.288-1.287Z" />,
+        search: <path d="m21 21-4.3-4.3M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z" />,
+        home: <><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><polyline points="9 22 9 12 15 12 15 22"/></>,
+        menu: <path d="M4 12h16M4 6h16M4 18h16" />,
+        clock: <path d="M12 6v6l4 2M22 12A10 10 0 1 1 12 2a10 10 0 0 1 10 10z" />,
+        shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />,
+        play: <polygon points="5 3 19 12 5 21 5 3" />,
+        'trash-2': <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6" />,
+        check: <polyline points="20 6 9 17 4 12" />,
+        x: <path d="M18 6 6 18M6 6l12 12" />,
+        heart: <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />,
+        bookmark: <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />,
+        messageCircle: <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />,
+        download: <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />,
+        user: <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" />,
+        logOut: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />,
+        flag: <><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></>,
+        plus: <path d="M5 12h14M12 5v14" />,
+        pencil: <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />,
+        star: <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />,
+        eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></>,
+      };
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          {icons[name] || null}
+        </svg>
+      );
+    }
+
+    function RatingBadges({ imdb, rt, size }) {
+      const hasImdb = imdb !== undefined && imdb !== null && imdb !== '';
+      const hasRt = rt !== undefined && rt !== null && rt !== '';
+      if (!hasImdb && !hasRt) return null;
+      const small = size === 'xs';
+      const rtNum = hasRt ? parseInt(String(rt).replace('%', '')) : null;
+      const rtGood = rtNum !== null && !isNaN(rtNum) && rtNum >= 60;
+      return (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {hasImdb && (
+            <span className={`inline-flex items-center gap-1 ${small ? 'text-[10px] px-2 py-0.5' : 'text-xs px-2.5 py-1'} rounded-md bg-black/60 backdrop-blur-md text-amber-400 font-bold border border-amber-400/20 shadow-sm`}>
+              <Icon name="star" className={small ? 'w-2.5 h-2.5' : 'w-3 h-3'} />IMDb {imdb}
+            </span>
+          )}
+          {hasRt && (
+            <span className={`inline-flex items-center gap-1 ${small ? 'text-[10px] px-2 py-0.5' : 'text-xs px-2.5 py-1'} rounded-md bg-black/60 backdrop-blur-md font-bold border border-white/10 ${rtGood ? 'text-emerald-400' : 'text-rose-400'}`}>
+              RT {String(rt).includes('%') ? rt : rt + '%'}
+            </span>
+          )}
+        </div>
+      );
+    }
+
+    function EmptyState({ text }) {
+      return (
+        <div className="py-20 text-center text-slate-400">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-glass-800 flex items-center justify-center border border-white/5 text-slate-500 shadow-inner">
+            <Icon name="film" className="w-8 h-8 opacity-60" />
+          </div>
+          <p className="text-base font-medium">{text}</p>
+        </div>
+      );
+    }
+
+    function PosterCard({ title, onOpen, compact }) {
+      return (
+        <button onClick={() => onOpen(title)} className={`group text-right ${compact ? 'shrink-0 w-32 sm:w-38 md:w-44 snap-start' : 'w-full'}`}>
+          <div className="relative aspect-[2/3] rounded-xl overflow-hidden glass-card shadow-lg group-hover:scale-[1.02] transition duration-300">
+            {title.poster ? (
+              <img src={title.poster} alt={title.name} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-slate-600"><Icon name="film" className="w-8 h-8" /></div>
+            )}
+            <div className="absolute inset-x-0 bottom-0 p-2 pt-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent">
+              <RatingBadges imdb={title.imdbRating} rt={title.rtRating} size="xs" />
+            </div>
+            <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-accent-cyan font-bold border border-accent-cyan/20">{TYPE_LABELS[title.type]}</span>
+          </div>
+          <p className="mt-2 text-sm font-bold text-slate-100 line-clamp-1 group-hover:text-accent-cyan transition">{title.name}</p>
+          <p className="text-xs text-slate-400 font-medium">{title.year || ''}</p>
+        </button>
+      );
+    }
+
+    function Row({ label, items, onOpen }) {
+      if (!items.length) return null;
+      return (
+        <section className="mb-10">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg md:text-xl font-black text-slate-100 flex items-center gap-2.5">
+              <span className="w-1.5 h-5 bg-accent-red rounded-full shadow-[0_0_12px_rgba(255,51,75,0.6)]"></span>{label}
+            </h2>
+          </div>
+          <div className="flex gap-4 overflow-x-auto pb-3 pt-1 snap-x scrollbar-hide">
+            {items.map(it => <PosterCard key={it.id} title={it} onOpen={onOpen} compact />)}
+          </div>
+        </section>
+      );
+    }
+
+    function Hero({ items, onOpen }) {
+      const [idx, setIdx] = useState(0);
+      useEffect(() => {
+        if (items.length < 2) return;
+        const t = setInterval(() => setIdx(i => (i + 1) % items.length), 6000);
+        return () => clearInterval(t);
+      }, [items.length]);
+      if (!items.length) return null;
+      const item = items[idx % items.length];
+      return (
+        <section className="relative h-[54vh] md:h-[72vh] -mx-4 md:mx-0 mb-10 md:rounded-3xl overflow-hidden glass-panel border border-white/10 shadow-2xl">
+          {item.backdrop && <img src={item.backdrop} alt="" className="absolute inset-0 w-full h-full object-cover opacity-60 scale-105 transition duration-1000" />}
+          <div className="absolute inset-0 bg-gradient-to-t from-glass-950 via-glass-950/60 to-transparent" />
+          <div className="absolute inset-x-0 bottom-0 p-5 md:p-12 max-w-2xl">
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
+              <span className="text-xs px-3 py-1 rounded-full bg-accent-red text-white font-bold shadow-[0_0_15px_rgba(255,51,75,0.4)]">{TYPE_LABELS[item.type]}</span>
+              <RatingBadges imdb={item.imdbRating} rt={item.rtRating} />
+            </div>
+            <h1 className="text-3xl md:text-5xl font-black text-white leading-tight mb-3 drop-shadow-md">{item.name}</h1>
+            {item.description && <p className="text-slate-300 text-sm md:text-base line-clamp-2 md:line-clamp-3 mb-5 leading-relaxed font-medium">{item.description}</p>}
+            <button onClick={() => onOpen(item)} className="flex items-center gap-2 px-6 py-3 rounded-xl bg-accent-red hover:bg-accent-redHover font-bold text-white shadow-[0_0_20px_rgba(255,51,75,0.5)] transition transform hover:scale-105 active:scale-95">
+              <Icon name="play" className="w-5 h-5 fill-current" />مشاهدة الآن
+            </button>
+          </div>
+          {items.length > 1 && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 p-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/5">
+              {items.map((_, i) => <span key={i} className={`w-2 h-2 rounded-full transition-all duration-300 ${i === idx ? 'bg-accent-cyan w-6 shadow-[0_0_8px_rgba(0,240,255,0.8)]' : 'bg-white/30'}`}></span>)}
+            </div>
+          )}
+        </section>
+      );
+    }
+
+    function HomeView({ items, onOpen }) {
+      if (!items.length) return <EmptyState text="لا توجد أعمال منشورة بعد. تابعنا قريبًا!" />;
+      const featured = items.filter(t => t.featured).length ? items.filter(t => t.featured) : items.slice(0, 5);
+      const latest = [...items].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 12);
+      const genreCounts = {};
+      items.forEach(t => (t.genres || []).forEach(g => genreCounts[g] = (genreCounts[g] || 0) + 1));
+      const topGenres = Object.keys(genreCounts).sort((a, b) => genreCounts[b] - genreCounts[a]).slice(0, 6);
+      return (
+        <div>
+          <Hero items={featured} onOpen={onOpen} />
+          <Row label="أُضيف حديثًا" items={latest} onOpen={onOpen} />
+          <Row label="أفلام" items={items.filter(t => t.type === 'movie').slice(0, 12)} onOpen={onOpen} />
+          <Row label="مسلسلات" items={items.filter(t => t.type === 'series').slice(0, 12)} onOpen={onOpen} />
+          <Row label="أنمي" items={items.filter(t => t.type === 'anime').slice(0, 12)} onOpen={onOpen} />
+          {topGenres.map(g => (
+            <Row key={g} label={`تصنيف: ${g}`} items={items.filter(t => (t.genres || []).includes(g)).slice(0, 12)} onOpen={onOpen} />
+          ))}
+        </div>
+      );
+    }
+
+    function TypeGrid({ title, items, onOpen, showGenreFilter, emptyText }) {
+      const [genre, setGenre] = useState('');
+      const genres = showGenreFilter ? Array.from(new Set(items.flatMap(t => t.genres || []))) : [];
+      const filtered = genre ? items.filter(t => (t.genres || []).includes(genre)) : items;
+      return (
+        <div>
+          <h1 className="text-2xl md:text-3xl font-black mb-6 text-slate-100">{title}</h1>
+          {showGenreFilter && genres.length > 0 && (
+            <div className="flex gap-2 flex-wrap mb-6">
+              <button onClick={() => setGenre('')} className={`text-xs px-4 py-2 rounded-xl transition font-bold border ${!genre ? 'bg-accent-cyan text-glass-950 border-accent-cyan shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 hover:border-white/20'}`}>الكل</button>
+              {genres.map(g => (
+                <button key={g} onClick={() => setGenre(g)} className={`text-xs px-4 py-2 rounded-xl transition font-bold border ${genre === g ? 'bg-accent-cyan text-glass-950 border-accent-cyan shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 hover:border-white/20'}`}>{g}</button>
+              ))}
+            </div>
+          )}
+          {filtered.length === 0 ? (
+            <EmptyState text={emptyText || 'لا توجد نتائج.'} />
+          ) : (
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-4 md:gap-5">
+              {filtered.map(t => <PosterCard key={t.id} title={t} onOpen={onOpen} />)}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function Header({ currentUser, view, setView, search, setSearch, onOpenAccount }) {
+      return (
+        <header className="sticky top-0 z-40 glass-panel border-b border-white/10 shadow-lg">
+          <div className="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-6">
+              <button onClick={() => setView('home')} className="flex items-center gap-2.5 font-black text-xl text-white group">
+                <span className="w-9 h-9 rounded-xl bg-gradient-to-tr from-accent-red to-pink-600 flex items-center justify-center shadow-[0_0_15px_rgba(255,51,75,0.5)] group-hover:scale-105 transition"><Icon name="film" className="w-5 h-5 text-white" /></span>
+                <span className="tracking-wide">ستريم <span className="text-accent-cyan">هب</span></span>
+              </button>
+
+              <nav className="hidden md:flex items-center gap-1.5 bg-glass-900/80 p-1 rounded-2xl border border-white/5">
+                {[['home', 'الرئيسية'], ['movie', 'أفلام'], ['series', 'مسلسلات'], ['anime', 'أنمي'], ['watchlist', 'قائمتي']].map(([k, l]) => (
+                  <button key={k} onClick={() => setView(k)} className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${view === k ? 'bg-accent-red text-white shadow-[0_0_15px_rgba(255,51,75,0.4)]' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}>{l}</button>
+                ))}
+              </nav>
+            </div>
+
+            <div className="flex items-center gap-3 flex-1 md:flex-initial justify-end">
+              <div className="relative w-full md:w-72">
+                <Icon name="search" className="w-4 h-4 absolute top-1/2 -translate-y-1/2 right-3.5 text-slate-400" />
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ابحث عن فيلم، مسلسل أو أنمي..."
+                  className="w-full bg-glass-900 border border-white/10 rounded-2xl py-2.5 pr-10 pl-4 text-sm text-slate-100 outline-none focus:border-accent-cyan focus:ring-1 focus:ring-accent-cyan transition shadow-inner" />
+              </div>
+
+              <button onClick={onOpenAccount} className="w-10 h-10 rounded-2xl glass-card flex items-center justify-center hover:border-accent-cyan transition shrink-0 overflow-hidden">
+                {currentUser && currentUser.avatar ? (
+                  <img src={currentUser.avatar} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <Icon name="user" className={`w-5 h-5 ${currentUser ? 'text-accent-cyan' : 'text-slate-300'}`} />
+                )}
+              </button>
+            </div>
+          </div>
+        </header>
+      );
+    }
+
+    function MobileBottomNav({ view, setView }) {
+      const items = [['home', 'الرئيسية', 'home'], ['movie', 'أفلام', 'film'], ['series', 'مسلسلات', 'tv'], ['anime', 'أنمي', 'sparkles'], ['watchlist', 'قائمتي', 'bookmark']];
+      return (
+        <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 glass-panel border-t border-white/10 flex px-2 py-1 shadow-2xl" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 4px)' }}>
+          {items.map(([k, l, icon]) => (
+            <button key={k} onClick={() => setView(k)} className={`flex-1 flex flex-col items-center gap-1 py-2 text-[11px] font-bold transition rounded-xl ${view === k ? 'text-accent-cyan bg-white/5 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}>
+              <Icon name={icon} className="w-5 h-5" />{l}
+            </button>
+          ))}
+        </nav>
+      );
+    }
+
+    function AccountSheet({ currentUser, onClose, onLogin, onRegister, onLogout, onNavigate, onUpdateAvatar, onUpdateName }) {
+      const [uploading, setUploading] = useState(false);
+      const [avatarError, setAvatarError] = useState('');
+      const fileInputRef = useRef(null);
+      const [editingName, setEditingName] = useState(false);
+      const [nameInput, setNameInput] = useState(currentUser ? currentUser.name : '');
+      const [savingName, setSavingName] = useState(false);
+      const [nameError, setNameError] = useState('');
+
+      const startEditName = () => { setNameInput(currentUser.name); setNameError(''); setEditingName(true); };
+      const saveName = async () => {
+        const trimmed = nameInput.trim();
+        if (!trimmed) { setNameError('الرجاء إدخال اسم صالح.'); return; }
+        setSavingName(true);
+        try { await onUpdateName(trimmed); setEditingName(false); }
+        catch (e) { setNameError('تعذر حفظ الاسم، حاول مجددًا.'); }
+        setSavingName(false);
+      };
+
+      const handleAvatarFile = (e) => {
+        const file = e.target.files && e.target.files[0];
+        e.target.value = '';
+        if (!file) return;
+        if (!file.type.startsWith('image/')) { setAvatarError('الرجاء اختيار ملف صورة صالح.'); return; }
+        setAvatarError('');
+        setUploading(true);
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const img = new Image();
+          img.onload = () => {
+            const maxSize = 320;
+            let { width, height } = img;
+            if (width > height) { if (width > maxSize) { height = Math.round(height * (maxSize / width)); width = maxSize; } }
+            else { if (height > maxSize) { width = Math.round(width * (maxSize / height)); height = maxSize; } }
+            const canvas = document.createElement('canvas');
+            canvas.width = width; canvas.height = height;
+            canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+            canvas.toBlob(blob => {
+              if (!blob) { setAvatarError('تعذّرت معالجة هذه الصورة.'); setUploading(false); return; }
+              uploadFile(blob, 'avatars', () => {})
+                .then(url => onUpdateAvatar(url))
+                .catch(err => setAvatarError(`تعذر حفظ الصورة: ${(err && (err.code || err.message)) || 'خطأ غير معروف'}`))
+                .finally(() => setUploading(false));
+            }, 'image/jpeg', 0.85);
+          };
+          img.onerror = () => { setAvatarError('تعذّرت معالجة هذه الصورة.'); setUploading(false); };
+          img.src = ev.target.result;
+        };
+        reader.onerror = () => { setAvatarError('تعذّرت قراءة الملف.'); setUploading(false); };
+        reader.readAsDataURL(file);
+      };
+
+      return (
+        <div className="modal-backdrop fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end md:items-center justify-center p-0 md:p-4" onClick={onClose}>
+          <div onClick={e => e.stopPropagation()} className="sheet-panel glass-panel border border-white/10 rounded-t-3xl md:rounded-3xl w-full md:max-w-sm p-6 shadow-2xl">
+            {currentUser ? (
+              <div>
+                <div className="flex items-center gap-3 mb-4 pb-4 border-b border-white/10">
+                  <div className="relative shrink-0">
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-accent-cyan to-blue-600 flex items-center justify-center font-black text-lg text-glass-950 shadow-md overflow-hidden">
+                      {currentUser.avatar ? (
+                        <img src={currentUser.avatar} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        currentUser.name ? currentUser.name.charAt(0) : 'U'
+                      )}
+                    </div>
+                    <button onClick={() => fileInputRef.current && fileInputRef.current.click()} disabled={uploading} title="تغيير صورة الحساب"
+                      className="absolute -bottom-1.5 -left-1.5 w-6 h-6 rounded-full bg-accent-cyan text-glass-950 flex items-center justify-center border-2 border-glass-900 shadow-md disabled:opacity-60">
+                      <Icon name="pencil" className="w-3 h-3" />
+                    </button>
+                    <input ref={fileInputRef} type="file" accept="image/*" onChange={handleAvatarFile} className="hidden" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    {editingName ? (
+                      <div className="flex items-center gap-1.5">
+                        <input value={nameInput} onChange={e => setNameInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && saveName()} autoFocus
+                          className="flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white outline-none focus:border-accent-cyan" />
+                        <button onClick={saveName} disabled={savingName} title="حفظ" className="shrink-0 text-emerald-400 hover:text-emerald-300 transition"><Icon name="check" className="w-4 h-4" /></button>
+                        <button onClick={() => setEditingName(false)} title="إلغاء" className="shrink-0 text-slate-400 hover:text-slate-200 transition"><Icon name="x" className="w-4 h-4" /></button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-bold text-lg text-white truncate">{currentUser.name}</p>
+                        <button onClick={startEditName} title="تعديل الاسم" className="shrink-0 text-slate-500 hover:text-accent-cyan transition"><Icon name="pencil" className="w-3.5 h-3.5" /></button>
+                      </div>
+                    )}
+                    <p className="text-slate-400 text-xs truncate">
+                      @{currentUser.username}
+                      {currentUser.username === 'mavilovelife' ? (
+                        <span className="text-amber-400 mr-1 font-semibold">· مدير النظام</span>
+                      ) : currentUser.isModerator ? (
+                        <span className="text-accent-cyan mr-1 font-semibold">· مشرف النظام</span>
+                      ) : null}
+                    </p>
+                    {nameError && <p className="text-rose-400 text-[11px] font-bold mt-1">{nameError}</p>}
+                  </div>
+                </div>
+                {uploading && <p className="text-xs text-accent-cyan font-bold mb-3">جارٍ حفظ الصورة...</p>}
+                {avatarError && <p className="text-rose-400 text-xs font-bold mb-3 bg-rose-500/10 p-2.5 rounded-xl border border-rose-500/20">{avatarError}</p>}
+                <div className="space-y-2.5">
+                  <button onClick={() => onNavigate('requests')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold"><Icon name="flag" className="w-4 h-4 text-accent-cyan" />طلباتي وشكاواي</button>
+
+                  {(currentUser.username === 'mavilovelife' || currentUser.isModerator) && (
+                    <button onClick={() => onNavigate('admin')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold">
+                      <Icon name="shield" className="w-4 h-4 text-amber-400" />لوحة التحكم ورفع الأفلام
+                    </button>
+                  )}
+
+                  <button onClick={onLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 text-sm font-semibold transition"><Icon name="logOut" className="w-4 h-4" />تسجيل الخروج</button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="text-center mb-5">
+                  <h3 className="font-black text-xl text-white mb-1">مرحباً بك في ستريم هب</h3>
+                  <p className="text-slate-400 text-xs">سجّل دخولك لمتابعة أعمالك المفضلة والتفاعل</p>
+                </div>
+                <button onClick={onLogin} className="w-full py-3.5 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition">تسجيل الدخول</button>
+                <button onClick={onRegister} className="w-full py-3.5 rounded-2xl glass-card hover:bg-white/5 border border-white/10 text-sm font-bold transition">إنشاء حساب جديد</button>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    function AuthModal({ tab: initialTab, onClose, onSuccess }) {
+      const [tab, setTab] = useState(initialTab);
+      const [name, setName] = useState('');
+      const [username, setUsername] = useState('');
+      const [password, setPassword] = useState('');
+      const [avatar, setAvatar] = useState('');
+      const [error, setError] = useState('');
+      const [loading, setLoading] = useState(false);
+
+      const submit = async () => {
+        setError('');
+        const cleanUser = username.trim().toLowerCase();
+        const cleanPass = password.trim();
+        const cleanName = name.trim();
+        const cleanAvatar = avatar.trim();
+        if (!cleanUser || !cleanPass || (tab === 'register' && !cleanName)) { setError('الرجاء ملء جميع الحقول الأساسية.'); return; }
+        if (cleanUser.length < 3) { setError('اسم المستخدم قصير جدًا (٣ أحرف على الأقل).'); return; }
+        setLoading(true);
+        try {
+          const snap = await db.ref('users').orderByChild('username').equalTo(cleanUser).once('value');
+          const users = snap.val() || {};
+          if (tab === 'register') {
+            if (Object.keys(users).length > 0) { setError('اسم المستخدم مستخدم مسبقًا، اختر اسمًا آخر.'); setLoading(false); return; }
+            const newUser = { name: cleanName, username: cleanUser, password: cleanPass, avatar: cleanAvatar, isModerator: false, banned: false, createdAt: Date.now() };
+            const ref = await db.ref('users').push(newUser);
+            onSuccess({ ...newUser, id: ref.key });
+          } else {
+            const matchedKey = Object.keys(users).find(k => users[k].password === cleanPass);
+            if (!matchedKey) { setError('اسم المستخدم أو كلمة المرور غير صحيحة.'); setLoading(false); return; }
+            if (users[matchedKey].banned) { setError('هذا الحساب محظور من قِبل الإدارة.'); setLoading(false); return; }
+            onSuccess({ ...users[matchedKey], id: matchedKey });
+          }
+        } catch (e) { setError('حدث خطأ في الاتصال بالخادم.'); }
+        setLoading(false);
+      };
+
+      return (
+        <div className="modal-backdrop fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={onClose}>
+          <div onClick={e => e.stopPropagation()} className="modal-panel glass-panel border border-white/10 rounded-3xl max-w-sm w-full p-6 shadow-2xl">
+            <div className="flex gap-4 border-b border-white/10 pb-3 mb-5">
+              <button onClick={() => setTab('login')} className={`font-bold text-sm pb-2 -mb-3 transition ${tab === 'login' ? 'text-accent-cyan border-b-2 border-accent-cyan' : 'text-slate-400'}`}>تسجيل الدخول</button>
+              <button onClick={() => setTab('register')} className={`font-bold text-sm pb-2 -mb-3 transition ${tab === 'register' ? 'text-accent-cyan border-b-2 border-accent-cyan' : 'text-slate-400'}`}>إنشاء حساب</button>
+            </div>
+            <div className="space-y-3.5">
+              {tab === 'register' && (
+                <>
+                  <input value={name} onChange={e => setName(e.target.value)} placeholder="الاسم الكامل" className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition" />
+                  <input value={avatar} onChange={e => setAvatar(e.target.value)} placeholder="رابط صورة الملف الشخصي (اختياري)" className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition" />
+                </>
+              )}
+              <input value={username} onChange={e => setUsername(e.target.value)} placeholder="اسم المستخدم" className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition" />
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && submit()} placeholder="كلمة المرور" className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition" />
+              {error && <p className="text-rose-400 text-xs font-medium bg-rose-500/10 p-2.5 rounded-xl border border-rose-500/20">{error}</p>}
+              <button onClick={submit} disabled={loading} className="w-full py-3.5 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition disabled:opacity-50">
+                {loading ? 'جارٍ التحقق...' : (tab === 'login' ? 'دخول' : 'إنشاء الحساب')}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // نافذة التحقق من رمز المطورين واسم المستخدم للمطور
+    function DevPinModal({ currentUser, onClose, onSuccess, onOpenAuth }) {
+      const [pin, setPin] = useState('');
+      const [error, setError] = useState('');
+
+      if (!currentUser) {
+        return (
+          <div className="modal-backdrop fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={onClose}>
+            <div onClick={e => e.stopPropagation()} className="modal-panel glass-panel border border-white/10 rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
+                <Icon name="shield" className="w-8 h-8" />
+              </div>
+              <p className="text-slate-200 font-bold mb-4">عذراً هذا القسم للمطورين فقط. يرجى تسجيل الدخول بحساب المطور أولاً.</p>
+              <button onClick={() => { onClose(); onOpenAuth('login'); }} className="w-full py-3 rounded-2xl bg-accent-red font-bold text-sm text-white">تسجيل الدخول</button>
+            </div>
+          </div>
+        );
+      }
+
+      const verify = () => {
+        setError('');
+        // شرط أساسي: يوزر حسابة mavilovelife حصراً + الرمز السري الصحيح
+        if (currentUser.username !== 'mavilovelife' || pin.trim() !== DEV_SECRET_PIN) {
+          setError('عذراً هذا القسم للمطورين فقط.');
+          return;
+        }
+        onSuccess();
+      };
+
+      return (
+        <div className="modal-backdrop fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={onClose}>
+          <div onClick={e => e.stopPropagation()} className="modal-panel glass-panel border border-white/10 rounded-3xl max-w-sm w-full p-6 shadow-2xl">
+            <div className="text-center mb-5">
+              <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+                <Icon name="shield" className="w-7 h-7" />
+              </div>
+              <h3 className="font-black text-lg text-white">حماية لوحة التحكم ورفع الأفلام</h3>
+              <p className="text-slate-400 text-xs mt-1">أدخل رمز الحماية السري للمتابعة</p>
+            </div>
+            <input type="password" value={pin} onChange={e => setPin(e.target.value)} onKeyDown={e => e.key === 'Enter' && verify()} placeholder="رمز الحماية السري" className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan text-center tracking-widest mb-3 shadow-inner" />
+            {error && <p className="text-rose-400 text-xs font-bold text-center mb-3 bg-rose-500/10 p-3 rounded-xl border border-rose-500/20">{error}</p>}
+            <button onClick={verify} className="w-full py-3.5 rounded-2xl bg-accent-cyan hover:brightness-110 font-bold text-sm text-glass-950 shadow-[0_0_20px_rgba(0,240,255,0.4)] transition">تحقق ودخول</button>
+          </div>
+        </div>
+      );
+    }
+
+    function ConfirmDialog({ title, body, confirmLabel, cancelLabel, onCancel, onConfirm }) {
+      return (
+        <div className="modal-backdrop fixed inset-0 z-[60] bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={onCancel}>
+          <div onClick={e => e.stopPropagation()} className="modal-panel glass-panel border border-white/10 rounded-3xl max-w-sm w-full p-6 shadow-2xl">
+            <h3 className="font-black text-lg text-white">{title}</h3>
+            <p className="text-sm text-slate-300 mt-2 leading-relaxed">{body}</p>
+            <div className="flex gap-3 mt-6">
+              <button onClick={onCancel} className="flex-1 py-2.5 rounded-xl glass-card border border-white/10 text-sm font-bold text-slate-300 hover:bg-white/5 transition">{cancelLabel}</button>
+              <button onClick={onConfirm} className="flex-1 py-2.5 rounded-xl bg-accent-red hover:bg-accent-redHover text-sm font-bold text-white shadow-[0_0_15px_rgba(255,51,75,0.4)] transition">{confirmLabel}</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function VideoPlayer({ src, onError }) {
+      const videoRef = useRef(null);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        const videoEl = videoRef.current;
+        if (!videoEl || !src) return;
+        setLoading(true);
+        let hls;
+        const isM3u8 = /\.m3u8(\?.*)?$/i.test(src);
+        if (isM3u8 && window.Hls && window.Hls.isSupported()) {
+          hls = new window.Hls();
+          hls.loadSource(src);
+          hls.attachMedia(videoEl);
+          hls.on(window.Hls.Events.ERROR, (_e, data) => { if (data && data.fatal) onError && onError(); });
+        } else {
+          videoEl.src = src;
+        }
+        return () => { if (hls) hls.destroy(); };
+      }, [src]);
+
+      return (
+        <div className="relative w-full aspect-video bg-black">
+          {loading && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan animate-spin"></div>
+            </div>
+          )}
+          <video ref={videoRef} controls autoPlay muted playsInline webkit-playsinline="true"
+            onCanPlay={() => setLoading(false)} onPlaying={() => setLoading(false)}
+            onError={() => { setLoading(false); onError && onError(); }}
+            className="w-full h-full" />
+        </div>
+      );
+    }
+
+    function TitleModal({ title, currentUser, liked, inWatchlist, onLike, onToggleWatchlist, onClose, onOpenAuth, getRole }) {
+      const [playingUrl, setPlayingUrl] = useState(null);
+      const [activeSeason, setActiveSeason] = useState(0);
+      const [commentText, setCommentText] = useState('');
+      const [comments, setComments] = useState([]);
+      const [replyingTo, setReplyingTo] = useState(null);
+      const [replyText, setReplyText] = useState('');
+      const [videoError, setVideoError] = useState(false);
+
+      useEffect(() => {
+        setPlayingUrl(null); setActiveSeason(0); setCommentText(''); setReplyingTo(null); setVideoError(false);
+        const ref = db.ref(`comments/${title.id}`);
+        const cb = snap => {
+          const data = snap.val();
+          const list = data ? Object.keys(data).map(k => ({ id: k, ...data[k] })) : [];
+          list.sort((a, b) => (a.date || 0) - (b.date || 0));
+          setComments(list);
+        };
+        ref.on('value', cb);
+        return () => ref.off('value', cb);
+      }, [title.id]);
+
+      const roleRank = (username) => {
+        const role = getRole ? getRole(username) : null;
+        return role === 'admin' ? 2 : role === 'moderator' ? 1 : 0;
+      };
+      const canModerate = currentUser && roleRank(currentUser.username) > 0;
+
+      const seasons = (title.seasons || [])
+        .map(s => ({ ...s, episodes: (s.episodes || []).slice().sort((a, b) => (a.number || 0) - (b.number || 0)) }))
+        .sort((a, b) => (a.number || 0) - (b.number || 0));
+      const isSeries = title.type !== 'movie';
+
+      const firstEpisodeUrl = () => {
+        for (const s of seasons) { if (s.episodes && s.episodes.length) return s.episodes[0].videoUrl; }
+        return null;
+      };
+
+      const handlePlay = () => {
+        setVideoError(false);
+        if (title.type === 'movie') setPlayingUrl(title.videoUrl || null);
+        else setPlayingUrl(firstEpisodeUrl());
+      };
+
+      const playEpisode = (url) => { setVideoError(false); setPlayingUrl(url); };
+
+      const submitComment = async () => {
+        if (!currentUser) { onOpenAuth('login'); return; }
+        if (!commentText.trim()) return;
+        await db.ref(`comments/${title.id}`).push({ author: currentUser.name, username: currentUser.username, avatar: currentUser.avatar || '', text: commentText.trim(), date: Date.now(), likes: 0 });
+        setCommentText('');
+      };
+
+      const submitReply = async (commentId) => {
+        if (!currentUser) { onOpenAuth('login'); return; }
+        if (!replyText.trim()) return;
+        const mentionName = (replyingTo && replyingTo.mentionName) ? replyingTo.mentionName : null;
+        await db.ref(`comments/${title.id}/${commentId}/replies`).push({ author: currentUser.name, username: currentUser.username, avatar: currentUser.avatar || '', mentionName, text: replyText.trim(), date: Date.now() });
+        setReplyText(''); setReplyingTo(null);
+      };
+
+      const toggleCommentLike = (commentId, comment) => {
+        if (!currentUser) { onOpenAuth('login'); return; }
+        const userKey = sanitizeKey(currentUser.username);
+        const likedBy = comment.likedBy || {};
+        const isLiked = !!likedBy[userKey];
+        db.ref(`comments/${title.id}/${commentId}/likedBy/${userKey}`).set(isLiked ? null : true);
+        db.ref(`comments/${title.id}/${commentId}/likes`).transaction(v => Math.max(0, (v || 0) + (isLiked ? -1 : 1)));
+      };
+
+      const deleteComment = (commentId) => { if (canModerate) db.ref(`comments/${title.id}/${commentId}`).remove(); };
+      const deleteReply = (commentId, replyId) => { if (canModerate) db.ref(`comments/${title.id}/${commentId}/replies/${replyId}`).remove(); };
+
+      return (
+        <div className="modal-backdrop fixed inset-0 z-50 bg-black/90 backdrop-blur-lg md:p-6 md:flex md:items-center md:justify-center overflow-y-auto" onClick={onClose}>
+          <div onClick={e => e.stopPropagation()} className="sheet-panel glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl">
+            <div className="relative">
+              {playingUrl ? (
+                <div className="relative">
+                  {isDirectVideo(playingUrl) ? (
+                    <VideoPlayer key={playingUrl} src={normalizeVideoUrl(playingUrl)} onError={() => setVideoError(true)} />
+                  ) : (
+                    <iframe key={playingUrl} src={normalizeVideoUrl(playingUrl)} allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen
+                      referrerPolicy="no-referrer-when-downgrade" className="w-full aspect-video bg-black" />
+                  )}
+                  {videoError && (
+                    <div className="absolute inset-0 bg-black/90 flex flex-col items-center justify-center gap-3 p-6 text-center">
+                      <p className="text-sm text-slate-200 font-bold">تعذّر تشغيل الفيديو على هذا الجهاز.</p>
+                      {isIOS && (
+                        <p className="text-xs text-slate-400 max-w-xs leading-relaxed">غالبًا السبب أن ملف الفيديو غير مرفوع بصيغة يدعمها الآيفون مباشرة. الأعمال التي تُرفع من لوحة التحكم عبر زر "رفع من الجهاز" تعمل بشكل صحيح على كل الأجهزة.</p>
+                      )}
+                      <button onClick={() => window.open(normalizeVideoUrl(playingUrl), '_blank', 'noopener,noreferrer')} className="px-5 py-2.5 rounded-xl bg-accent-red hover:bg-accent-redHover text-xs font-bold text-white transition">محاولة فتح الرابط مباشرة</button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="relative w-full aspect-video bg-glass-900">
+                  {title.backdrop && <img src={title.backdrop} alt="" className="w-full h-full object-cover" />}
+                  <div className="absolute inset-0 bg-gradient-to-t from-glass-950 via-black/40 to-transparent flex items-center justify-center">
+                    <button onClick={handlePlay} className="w-18 h-18 rounded-3xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shadow-[0_0_30px_rgba(255,51,75,0.6)] transform hover:scale-110 transition">
+                      <Icon name="play" className="w-8 h-8 text-white fill-current translate-x-0.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+              <button onClick={onClose} className="absolute top-4 left-4 w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black transition">
+                <Icon name="x" className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 md:p-8">
+              <div className="flex items-center gap-2.5 flex-wrap mb-3">
+                <span className="text-xs px-3 py-1 rounded-full bg-accent-red text-white font-bold shadow-[0_0_12px_rgba(255,51,75,0.4)]">{TYPE_LABELS[title.type]}</span>
+                <span className="text-xs text-slate-300 font-semibold">{title.year}</span>
+                <RatingBadges imdb={title.imdbRating} rt={title.rtRating} />
+              </div>
+              <h2 className="text-2xl md:text-3xl font-black mb-3 text-white">{title.name}</h2>
+              {title.genres && title.genres.length > 0 && (
+                <div className="flex gap-2 flex-wrap mb-4">
+                  {title.genres.map(g => <span key={g} className="text-xs px-3 py-1 rounded-xl glass-card text-slate-300 border border-white/5 font-semibold">{g}</span>)}
+                </div>
+              )}
+              {title.description && <p className="text-sm md:text-base text-slate-300 leading-relaxed mb-6 font-medium">{title.description}</p>}
+              {(title.director || title.writer) && (
+                <div className="flex items-center gap-4 flex-wrap mb-6 -mt-3 text-xs text-slate-400 font-semibold">
+                  {title.director && <span>الإخراج: <span className="text-slate-200">{title.director}</span></span>}
+                  {title.writer && <span>الكتابة: <span className="text-slate-200">{title.writer}</span></span>}
+                </div>
+              )}
+
+              <div className="flex items-center gap-3 flex-wrap mb-6">
+                <button onClick={handlePlay} className="flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover text-sm font-bold text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition">
+                  <Icon name="play" className="w-4 h-4 fill-current" />تشغيل
+                </button>
+                {title.type === 'movie' && title.downloadUrl && (
+                  <a href={title.downloadUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 px-6 py-3 rounded-2xl glass-card border border-white/10 hover:border-accent-cyan text-sm font-bold text-slate-200 transition">
+                    <Icon name="download" className="w-4 h-4 text-accent-cyan" />تحميل
+                  </a>
+                )}
+                <button onClick={onToggleWatchlist} className={`flex items-center gap-2.5 px-6 py-3 rounded-2xl text-sm font-bold border transition ${inWatchlist ? 'bg-accent-cyan text-glass-950 border-accent-cyan shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card border-white/10 text-slate-200 hover:border-white/20'}`}>
+                  <Icon name="bookmark" className="w-4 h-4" />{inWatchlist ? 'في قائمتي' : 'أضف لقائمتي'}
+                </button>
+                <button onClick={onLike} className={`flex items-center gap-2.5 px-5 py-3 rounded-2xl text-sm font-bold border transition ${liked ? 'bg-rose-500 text-white border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.4)]' : 'glass-card border-white/10 text-slate-200 hover:border-white/20'}`}>
+                  <Icon name="heart" className="w-4 h-4" />{title.likes || 0}
+                </button>
+              </div>
+
+              {isSeries && seasons.length > 0 && (
+                <div className="mt-8 border-t border-white/10 pt-6">
+                  <div className="flex items-center gap-2.5 mb-4">
+                    <Icon name="tv" className="w-5 h-5 text-accent-cyan" />
+                    <h3 className="font-black text-lg text-white">الحلقات</h3>
+                  </div>
+                  {seasons.length > 1 && (
+                    <div className="flex gap-2 flex-wrap mb-4">
+                      {seasons.map((s, i) => (
+                        <button key={i} onClick={() => setActiveSeason(i)} className={`text-xs px-4 py-2 rounded-xl font-bold transition ${activeSeason === i ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>الموسم {s.number || i + 1}</button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="space-y-2.5">
+                    {(seasons[activeSeason] && seasons[activeSeason].episodes || []).map((ep, ei) => (
+                      <div key={ei} className="flex items-center gap-3 glass-card rounded-2xl p-3.5 border border-white/5 hover:border-white/10 transition">
+                        <span className="w-8 h-8 shrink-0 rounded-xl bg-glass-700 flex items-center justify-center text-xs font-black text-accent-cyan">{ep.number != null ? ep.number : ei + 1}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-slate-100 truncate mb-1">{ep.title || `الحلقة ${ep.number != null ? ep.number : ei + 1}`}</p>
+                          <RatingBadges imdb={ep.imdb} rt={ep.rt} size="xs" />
+                        </div>
+                        <button onClick={() => playEpisode(ep.videoUrl)} className="w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition"><Icon name="play" className="w-4 h-4 text-white fill-current translate-x-0.5" /></button>
+                        {ep.downloadUrl && (
+                          <a href={ep.downloadUrl} target="_blank" rel="noopener noreferrer" className="w-9 h-9 rounded-xl glass-card hover:bg-white/10 border border-white/10 flex items-center justify-center shrink-0 transition"><Icon name="download" className="w-4 h-4 text-accent-cyan" /></a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-8 border-t border-white/10 pt-6">
+                <h3 className="font-black text-lg text-white flex items-center gap-2 mb-4"><Icon name="messageCircle" className="w-5 h-5 text-accent-cyan" />التعليقات ({comments.length})</h3>
+                {currentUser ? (
+                  <div className="flex gap-2.5 mb-6">
+                    <input value={commentText} onChange={e => setCommentText(e.target.value)} onKeyDown={e => e.key === 'Enter' && submitComment()} placeholder="أضف تعليقًا..." className="flex-1 bg-glass-900 border border-white/10 rounded-2xl px-5 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition shadow-inner" />
+                    <button onClick={submitComment} className="px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover text-sm font-bold text-white shadow-[0_0_15px_rgba(255,51,75,0.4)] transition">نشر</button>
+                  </div>
+                ) : (
+                  <button onClick={() => onOpenAuth('login')} className="w-full text-xs font-bold text-slate-300 mb-6 glass-card p-4 rounded-2xl text-center border border-white/10 hover:border-accent-cyan transition">سجّل الدخول لإضافة تعليق أو إعجاب</button>
+                )}
+                {comments.length === 0 ? (
+                  <p className="text-sm text-slate-500 font-medium">لا توجد تعليقات بعد.</p>
+                ) : (
+                  <div className="space-y-4">
+                    {[...comments].sort((a, b) => {
+                      const diff = roleRank(b.username) - roleRank(a.username);
+                      return diff !== 0 ? diff : (b.date || 0) - (a.date || 0);
+                    }).map(c => {
+                      const repliesList = c.replies ? Object.keys(c.replies).map(rk => ({ id: rk, ...c.replies[rk] })) : [];
+                      const userKey = currentUser ? sanitizeKey(currentUser.username) : '';
+                      const isCommentLiked = currentUser && c.likedBy && c.likedBy[userKey];
+                      const cRole = roleRank(c.username);
+                      return (
+                        <div key={c.id} className="flex gap-3 items-start">
+                          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-accent-red to-purple-600 flex items-center justify-center text-xs font-black text-white shrink-0 shadow-md overflow-hidden">
+                            {c.avatar ? <img src={c.avatar} alt="" className="w-full h-full object-cover" /> : (c.author || '?').charAt(0)}
+                          </div>
+                          <div className="flex-1 glass-card p-4 rounded-2xl border border-white/5">
+                            <div className="flex items-center justify-between mb-1">
+                              <p className="text-xs font-bold text-accent-cyan flex items-center gap-1.5">
+                                {c.author}
+                                {cRole === 2 && <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold">مدير النظام</span>}
+                                {cRole === 1 && <span className="text-[9px] px-2 py-0.5 rounded-full bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/30 font-bold">مشرف النظام</span>}
+                              </p>
+                              <span className="text-slate-500 text-[10px] font-mono">{fmtDateTime(c.date)}</span>
+                            </div>
+                            <p className="text-sm text-slate-200 leading-relaxed">{c.text}</p>
+                            <div className="flex items-center gap-5 mt-3">
+                              <button onClick={() => toggleCommentLike(c.id, c)} className={`flex items-center gap-1.5 text-xs font-bold transition ${isCommentLiked ? 'text-rose-400' : 'text-slate-400 hover:text-slate-200'}`}><Icon name="heart" className="w-3.5 h-3.5" />{c.likes || 0}</button>
+                              <button onClick={() => setReplyingTo(replyingTo && replyingTo.commentId === c.id && !replyingTo.mentionName ? null : { commentId: c.id, mentionName: null })} className="text-xs font-bold text-slate-400 hover:text-slate-200 transition">رد</button>
+                              {canModerate && <button onClick={() => deleteComment(c.id)} className="text-xs font-bold text-rose-400/80 hover:text-rose-400 transition mr-auto">حذف</button>}
+                            </div>
+                            {repliesList.length > 0 && (
+                              <div className="mt-3 space-y-2 border-r-2 border-accent-cyan/30 pr-3 mr-1">
+                                {repliesList.map(r => {
+                                  const rRole = roleRank(r.username);
+                                  return (
+                                  <div key={r.id} className="flex gap-2 items-start">
+                                    <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-accent-cyan to-blue-600 flex items-center justify-center text-[10px] font-black text-glass-950 shrink-0 overflow-hidden">
+                                      {r.avatar ? <img src={r.avatar} alt="" className="w-full h-full object-cover" /> : (r.author || '?').charAt(0)}
+                                    </div>
+                                    <div className="flex-1 text-xs glass-panel p-3 rounded-xl border border-white/5">
+                                      <div className="flex justify-between mb-1">
+                                        <span className="font-bold text-accent-cyan flex items-center gap-1.5">
+                                          {r.author}
+                                          {rRole === 2 && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold">مدير النظام</span>}
+                                          {rRole === 1 && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/30 font-bold">مشرف النظام</span>}
+                                        </span>
+                                        <span className="text-[10px] text-slate-500 font-mono">{fmtDateTime(r.date)}</span>
+                                      </div>
+                                      <p className="text-slate-300">{r.mentionName && <span className="text-accent-cyan font-bold">@{r.mentionName}</span>} {r.text}</p>
+                                      <div className="flex items-center gap-4 mt-1.5">
+                                        <button onClick={() => setReplyingTo({ commentId: c.id, mentionName: r.author })} className="text-[11px] font-bold text-slate-500 hover:text-slate-300 transition">رد</button>
+                                        {canModerate && <button onClick={() => deleteReply(c.id, r.id)} className="text-[11px] font-bold text-rose-400/80 hover:text-rose-400 transition">حذف</button>}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            {replyingTo && replyingTo.commentId === c.id && (
+                              <div className="mt-3">
+                                {replyingTo.mentionName && (
+                                  <div className="flex items-center gap-1.5 mb-1.5 text-[11px] text-slate-400 font-semibold">
+                                    <span>الرد على <span className="text-accent-cyan">@{replyingTo.mentionName}</span></span>
+                                    <button onClick={() => setReplyingTo({ commentId: c.id, mentionName: null })} className="text-slate-500 hover:text-rose-400 transition"><Icon name="x" className="w-3 h-3" /></button>
+                                  </div>
+                                )}
+                                <div className="flex gap-2">
+                                  <input value={replyText} onChange={e => setReplyText(e.target.value)} onKeyDown={e => e.key === 'Enter' && submitReply(c.id)} placeholder="اكتب ردك..." autoFocus className="flex-1 bg-glass-950 border border-white/10 rounded-xl px-4 py-2 text-xs text-slate-100 outline-none focus:border-accent-cyan" />
+                                  <button onClick={() => submitReply(c.id)} className="px-4 py-2 rounded-xl bg-accent-red text-xs font-bold text-white">نشر</button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function RequestsView({ currentUser, onOpenAuth }) {
+      const [type, setType] = useState('add');
+      const [titleName, setTitleName] = useState('');
+      const [message, setMessage] = useState('');
+      const [sent, setSent] = useState(false);
+      const [mine, setMine] = useState([]);
+
+      useEffect(() => {
+        if (!currentUser) return;
+        const ref = db.ref('complaints');
+        const cb = snap => {
+          const data = snap.val();
+          const list = data ? Object.keys(data).map(k => ({ id: k, ...data[k] })) : [];
+          setMine(list.filter(c => c.username === currentUser.username).sort((a, b) => b.date - a.date));
+        };
+        ref.on('value', cb);
+        return () => ref.off('value', cb);
+      }, [currentUser && currentUser.username]);
+
+      if (!currentUser) {
+        return (
+          <div className="py-20 text-center">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl glass-card flex items-center justify-center border border-white/5 text-slate-400">
+              <Icon name="flag" className="w-8 h-8" />
+            </div>
+            <p className="text-slate-300 font-medium mb-4">سجّل الدخول لإرسال طلب أو شكوى ومتابعتها.</p>
+            <button onClick={() => onOpenAuth('login')} className="px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition">تسجيل الدخول</button>
+          </div>
+        );
+      }
+
+      const submit = async () => {
+        if (!message.trim()) return;
+        await db.ref('complaints').push({ username: currentUser.username, name: currentUser.name, type, titleName: titleName.trim(), message: message.trim(), status: 'open', date: Date.now() });
+        setMessage(''); setTitleName(''); setSent(true);
+        setTimeout(() => setSent(false), 4000);
+      };
+
+      return (
+        <div>
+          <h1 className="text-2xl md:text-3xl font-black mb-6 text-slate-100">طلباتي وشكاواي</h1>
+          <div className="glass-panel rounded-3xl p-5 md:p-7 mb-8 border border-white/10 shadow-xl">
+            <div className="flex gap-2.5 flex-wrap mb-4">
+              {Object.entries(COMPLAINT_TYPES).map(([k, l]) => (
+                <button key={k} onClick={() => setType(k)} className={`text-xs px-4 py-2 rounded-xl font-bold transition ${type === k ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>{l}</button>
+              ))}
+            </div>
+            <input value={titleName} onChange={e => setTitleName(e.target.value)} placeholder="اسم العمل (اختياري)" className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan mb-3 transition shadow-inner" />
+            <textarea value={message} onChange={e => setMessage(e.target.value)} placeholder="اكتب تفاصيل طلبك أو مشكلتك..." rows={4} className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan mb-4 transition shadow-inner"></textarea>
+            <button onClick={submit} className="px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition">إرسال الطلب</button>
+            {sent && <p className="text-emerald-400 text-xs font-bold mt-3 bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20">تم إرسال طلبك بنجاح، سيتم مراجعته من الإدارة قريبًا.</p>}
+          </div>
+
+          <h2 className="font-black text-lg text-white mb-4">طلباتك السابقة</h2>
+          {mine.length === 0 ? <p className="text-sm text-slate-500 font-medium">لا توجد طلبات سابقة.</p> : (
+            <div className="space-y-3">
+              {mine.map(c => (
+                <div key={c.id} className="glass-card rounded-2xl p-4 border border-white/10 flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs text-accent-cyan font-bold mb-1.5">{COMPLAINT_TYPES[c.type] || c.type}{c.titleName ? ` · ${c.titleName}` : ''}</p>
+                    <p className="text-sm text-slate-200 leading-relaxed">{c.message}</p>
+                    <p className="text-[10px] text-slate-500 font-mono mt-2">{fmtDateTime(c.date)}</p>
+                  </div>
+                  <span className={`text-[11px] px-3 py-1 rounded-full font-bold shrink-0 ${c.status === 'resolved' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>{c.status === 'resolved' ? 'تم الحل' : 'قيد المراجعة'}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function FileUploadField({ label, value, onChange, folder, accept, compact }) {
+      const inputRef = useRef(null);
+      const [progress, setProgress] = useState(null);
+      const [error, setError] = useState('');
+
+      const handleFile = (e) => {
+        const file = e.target.files && e.target.files[0];
+        e.target.value = '';
+        if (!file) return;
+        setError('');
+        setProgress(0);
+        uploadFile(file, folder, setProgress)
+          .then(url => { onChange(url); setProgress(null); })
+          .catch(err => { setError(`فشل الرفع: ${(err && (err.code || err.message)) || 'خطأ غير معروف'}`); setProgress(null); });
+      };
+
+      return (
+        <div>
+          {label && <label className="text-xs font-bold text-slate-300 mb-1.5 block">{label}</label>}
+          <div className="flex items-center gap-2">
+            <input value={value} onChange={e => onChange(e.target.value)} placeholder={compact ? 'رابط أو ارفع...' : 'رابط مباشر، أو اضغط لرفع من جهازك'}
+              className={compact ? "flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" : "flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition shadow-inner"} />
+            <button type="button" onClick={() => inputRef.current && inputRef.current.click()} title="رفع من الجهاز"
+              className={compact ? "shrink-0 w-8 h-8 rounded-xl glass-card border border-white/10 hover:border-accent-cyan text-accent-cyan flex items-center justify-center transition" : "shrink-0 px-4 py-3 rounded-2xl glass-card border border-white/10 hover:border-accent-cyan text-xs font-bold text-slate-200 transition flex items-center gap-1.5"}>
+              <Icon name="download" className={compact ? "w-3.5 h-3.5 rotate-180" : "w-3.5 h-3.5 text-accent-cyan rotate-180"} />{!compact && 'رفع من الجهاز'}
+            </button>
+            <input ref={inputRef} type="file" accept={accept} onChange={handleFile} className="hidden" />
+          </div>
+          {progress !== null && (
+            <div className="mt-1.5 h-1.5 bg-glass-900 rounded-full overflow-hidden">
+              <div className="h-full bg-accent-cyan transition-all duration-200" style={{ width: `${progress}%` }}></div>
+            </div>
+          )}
+          {error && <p className="text-rose-400 text-[11px] font-bold mt-1.5">{error}</p>}
+        </div>
+      );
+    }
+
+    function emptyForm() {
+      return { name: '', type: 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', rtRating: '', featured: false, status: 'draft', videoUrl: '', downloadUrl: '', seasons: [] };
+    }
+
+    function AdminContentForm({ initial, onDone }) {
+      const [form, setForm] = useState(() => {
+        if (!initial) return emptyForm();
+        return { ...emptyForm(), ...initial, genresText: (initial.genres || []).join(', '), seasons: initial.seasons ? JSON.parse(JSON.stringify(initial.seasons)) : [] };
+      });
+      const [saving, setSaving] = useState(false);
+      const [error, setError] = useState('');
+
+      const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
+      const addSeason = () => setForm(prev => ({ ...prev, seasons: [...prev.seasons, { number: prev.seasons.length + 1, episodes: [] }] }));
+      const removeSeason = (si) => setForm(prev => ({ ...prev, seasons: prev.seasons.filter((_, i) => i !== si) }));
+      const updateSeasonNumber = (si, val) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, number: val }) }));
+      const addEpisode = (si) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: [...s.episodes, { number: s.episodes.length + 1, title: '', videoUrl: '', downloadUrl: '', imdb: '', rt: '' }] }) }));
+      const removeEpisode = (si, ei) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: s.episodes.filter((_, j) => j !== ei) }) }));
+      const updateEpisode = (si, ei, key, val) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: s.episodes.map((e, j) => j !== ei ? e : { ...e, [key]: val }) }) }));
+
+      const save = async () => {
+        setError('');
+        if (!form.name.trim()) { setError('الرجاء إدخال اسم العمل.'); return; }
+        setSaving(true);
+        const payload = {
+          name: form.name.trim(),
+          type: form.type,
+          year: Number(form.year) || null,
+          genres: form.genresText.split(',').map(s => s.trim()).filter(Boolean),
+          poster: form.poster.trim(),
+          backdrop: form.backdrop.trim(),
+          description: form.description.trim(),
+          director: form.director.trim(),
+          writer: form.writer.trim(),
+          imdbRating: form.imdbRating.trim(),
+          rtRating: form.rtRating.trim(),
+          featured: !!form.featured,
+          status: form.status,
+          createdAt: initial ? (initial.createdAt || Date.now()) : Date.now(),
+          likes: initial ? (initial.likes || 0) : 0,
+          views: initial ? (initial.views || 0) : 0,
+        };
+        if (form.type === 'movie') {
+          payload.videoUrl = form.videoUrl.trim();
+          payload.downloadUrl = form.downloadUrl.trim();
+          payload.seasons = [];
+        } else {
+          payload.seasons = form.seasons.map(s => ({
+            number: Number(s.number) || 1,
+            episodes: (s.episodes || []).map(e => ({ number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: (e.videoUrl || '').trim(), downloadUrl: (e.downloadUrl || '').trim(), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim() }))
+          }));
+          payload.videoUrl = ''; payload.downloadUrl = '';
+        }
+        try {
+          if (initial && initial.id) await db.ref(`titles/${initial.id}`).set(payload);
+          else await db.ref('titles').push(payload);
+          onDone();
+        } catch (e) { setError('حدث خطأ أثناء الحفظ.'); }
+        setSaving(false);
+      };
+
+      const inputCls = "w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition shadow-inner";
+      const labelCls = "text-xs font-bold text-slate-300 mb-1.5 block";
+
+      return (
+        <div className="glass-panel rounded-3xl p-5 md:p-7 border border-white/10 shadow-2xl">
+          <div className="grid md:grid-cols-2 gap-5">
+            <div>
+              <label className={labelCls}>اسم العمل *</label>
+              <input value={form.name} onChange={e => set('name', e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>النوع</label>
+              <select value={form.type} onChange={e => set('type', e.target.value)} className={inputCls}>
+                <option value="movie" className="bg-glass-950">فيلم</option>
+                <option value="series" className="bg-glass-950">مسلسل</option>
+                <option value="anime" className="bg-glass-950">أنمي</option>
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>سنة الإصدار</label>
+              <input type="number" value={form.year} onChange={e => set('year', e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>التصنيفات (مفصولة بفاصلة)</label>
+              <input value={form.genresText} onChange={e => set('genresText', e.target.value)} placeholder="أكشن, دراما, غموض" className={inputCls} />
+            </div>
+            <div>
+              <FileUploadField label="صورة البوستر" value={form.poster} onChange={v => set('poster', v)} folder="posters" accept="image/*" />
+            </div>
+            <div>
+              <FileUploadField label="صورة الخلفية" value={form.backdrop} onChange={v => set('backdrop', v)} folder="backdrops" accept="image/*" />
+            </div>
+            <div>
+              <label className={labelCls}>اسم المخرج</label>
+              <input value={form.director} onChange={e => set('director', e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>اسم الكاتب</label>
+              <input value={form.writer} onChange={e => set('writer', e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>تقييم IMDb</label>
+              <input value={form.imdbRating} onChange={e => set('imdbRating', e.target.value)} placeholder="8.4" className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>تقييم Rotten Tomatoes</label>
+              <input value={form.rtRating} onChange={e => set('rtRating', e.target.value)} placeholder="92" className={inputCls} />
+            </div>
+          </div>
+
+          <div className="mt-5">
+            <label className={labelCls}>الوصف</label>
+            <textarea value={form.description} onChange={e => set('description', e.target.value)} rows={3} className={inputCls}></textarea>
+          </div>
+
+          {form.type === 'movie' ? (
+            <div className="grid md:grid-cols-2 gap-5 mt-5">
+              <FileUploadField label="ملف الفيلم (فيديو مباشر أو رابط/iframe)" value={form.videoUrl} onChange={v => set('videoUrl', v)} folder="videos" accept="video/*" />
+              <FileUploadField label="ملف التحميل" value={form.downloadUrl} onChange={v => set('downloadUrl', v)} folder="downloads" accept="video/*" />
+            </div>
+          ) : (
+            <div className="mt-6 border-t border-white/10 pt-5">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="font-black text-white text-base">المواسم والحلقات</h4>
+                <button onClick={addSeason} className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 font-bold hover:brightness-110 transition shadow-sm"><Icon name="plus" className="w-4 h-4" />إضافة موسم</button>
+              </div>
+              <div className="space-y-4">
+                {form.seasons.map((s, si) => (
+                  <div key={si} className="glass-card rounded-2xl p-4 border border-white/10">
+                    <div className="flex items-center gap-3 mb-4">
+                      <span className="text-xs font-bold text-slate-300">رقم الموسم</span>
+                      <input type="number" value={s.number} onChange={e => updateSeasonNumber(si, e.target.value)} className="w-20 bg-glass-950 border border-white/10 rounded-xl px-3 py-1.5 text-xs font-bold text-white text-center" />
+                      <button onClick={() => removeSeason(si)} className="mr-auto text-rose-400 text-xs font-bold flex items-center gap-1 hover:text-rose-300 transition"><Icon name="trash-2" className="w-4 h-4" />حذف الموسم</button>
+                    </div>
+                    <div className="space-y-2.5">
+                      {s.episodes.map((e, ei) => (
+                        <div key={ei} className="glass-panel rounded-xl p-3 grid md:grid-cols-6 gap-2.5 items-center border border-white/5">
+                          <input type="number" value={e.number} onChange={ev => updateEpisode(si, ei, 'number', ev.target.value)} placeholder="#" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white text-center md:col-span-1" />
+                          <input value={e.title} onChange={ev => updateEpisode(si, ei, 'title', ev.target.value)} placeholder="عنوان الحلقة" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white md:col-span-2" />
+                          <div className="md:col-span-2"><FileUploadField compact value={e.videoUrl} onChange={v => updateEpisode(si, ei, 'videoUrl', v)} folder="episodes" accept="video/*" /></div>
+                          <div className="md:col-span-2"><FileUploadField compact value={e.downloadUrl} onChange={v => updateEpisode(si, ei, 'downloadUrl', v)} folder="episodes" accept="video/*" /></div>
+                          <input value={e.imdb} onChange={ev => updateEpisode(si, ei, 'imdb', ev.target.value)} placeholder="IMDb" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white md:col-span-1" />
+                          <input value={e.rt} onChange={ev => updateEpisode(si, ei, 'rt', ev.target.value)} placeholder="RT %" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white md:col-span-1" />
+                          <button onClick={() => removeEpisode(si, ei)} className="text-rose-400 flex items-center justify-center md:col-span-1 hover:text-rose-300 transition"><Icon name="trash-2" className="w-4 h-4" /></button>
+                        </div>
+                      ))}
+                    </div>
+                    <button onClick={() => addEpisode(si)} className="mt-3 flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl glass-card border border-white/10 hover:border-accent-cyan text-slate-200 font-bold transition"><Icon name="plus" className="w-3.5 h-3.5 text-accent-cyan" />إضافة حلقة</button>
+                  </div>
+                ))}
+                {form.seasons.length === 0 && <p className="text-xs text-slate-500 font-medium">لا توجد مواسم بعد. اضغط "إضافة موسم" للبدء.</p>}
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center gap-6 mt-6 flex-wrap">
+            <label className="flex items-center gap-2.5 text-sm font-bold text-slate-200 cursor-pointer"><input type="checkbox" checked={form.featured} onChange={e => set('featured', e.target.checked)} className="w-4 h-4 rounded accent-accent-cyan" />إظهار في العرض الرئيسي (Hero)</label>
+            <label className="flex items-center gap-2.5 text-sm font-bold text-slate-200 cursor-pointer"><input type="checkbox" checked={form.status === 'published'} onChange={e => set('status', e.target.checked ? 'published' : 'draft')} className="w-4 h-4 rounded accent-accent-cyan" />نشر العمل للزوار مباشرة</label>
+          </div>
+
+          {error && <p className="text-rose-400 text-xs font-bold mt-4 bg-rose-500/10 p-3 rounded-xl border border-rose-500/20">{error}</p>}
+
+          <div className="flex gap-3 mt-6">
+            <button onClick={save} disabled={saving} className="px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition disabled:opacity-50">{saving ? 'جارٍ الحفظ...' : 'حفظ العمل'}</button>
+            <button onClick={onDone} className="px-6 py-3 rounded-2xl glass-card border border-white/10 text-sm font-bold text-slate-300 hover:bg-white/5 transition">إلغاء</button>
+          </div>
+        </div>
+      );
+    }
+
+    function AdminComplaints() {
+      const [list, setList] = useState([]);
+      const [deleteTarget, setDeleteTarget] = useState(null);
+      useEffect(() => {
+        const ref = db.ref('complaints');
+        const cb = snap => {
+          const data = snap.val();
+          const arr = data ? Object.keys(data).map(k => ({ id: k, ...data[k] })) : [];
+          arr.sort((a, b) => b.date - a.date);
+          setList(arr);
+        };
+        ref.on('value', cb);
+        return () => ref.off('value', cb);
+      }, []);
+
+      const toggleStatus = (c) => db.ref(`complaints/${c.id}/status`).set(c.status === 'resolved' ? 'open' : 'resolved');
+      const remove = async (id) => { await db.ref(`complaints/${id}`).remove(); setDeleteTarget(null); };
+
+      if (!list.length) return <p className="text-sm text-slate-500 font-medium">لا توجد شكاوى أو طلبات حاليًا.</p>;
+
+      return (
+        <div className="space-y-3">
+          {list.map(c => (
+            <div key={c.id} className="glass-card rounded-2xl p-4 border border-white/10">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-xs text-accent-cyan font-bold mb-1.5">{COMPLAINT_TYPES[c.type] || c.type}{c.titleName ? ` · ${c.titleName}` : ''}</p>
+                  <p className="text-sm text-slate-200 leading-relaxed">{c.message}</p>
+                  <p className="text-[10px] text-slate-500 font-mono mt-2">من {c.name} (@{c.username}) · {fmtDateTime(c.date)}</p>
+                </div>
+                <span className={`text-[11px] px-3 py-1 rounded-full font-bold shrink-0 ${c.status === 'resolved' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>{c.status === 'resolved' ? 'تم الحل' : 'قيد المراجعة'}</span>
+              </div>
+              <div className="flex gap-2.5 mt-4">
+                <button onClick={() => toggleStatus(c)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl glass-card border border-white/10 hover:border-accent-cyan text-xs font-bold text-slate-200 transition"><Icon name="check" className="w-3.5 h-3.5 text-emerald-400" />{c.status === 'resolved' ? 'إعادة فتح' : 'تحديد كمحلول'}</button>
+                <button onClick={() => setDeleteTarget(c.id)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 text-xs font-bold transition"><Icon name="trash-2" className="w-3.5 h-3.5" />حذف</button>
+              </div>
+            </div>
+          ))}
+          {deleteTarget && (
+            <ConfirmDialog title="حذف هذا الطلب؟" body="لا يمكن التراجع عن هذا الإجراء." confirmLabel="نعم، احذف" cancelLabel="إلغاء" onCancel={() => setDeleteTarget(null)} onConfirm={() => remove(deleteTarget)} />
+          )}
+        </div>
+      );
+    }
+
+    function AdminUsers() {
+      const [list, setList] = useState([]);
+      const [query, setQuery] = useState('');
+      const [deleteTarget, setDeleteTarget] = useState(null);
+      const [busyId, setBusyId] = useState(null);
+
+      useEffect(() => {
+        const ref = db.ref('users');
+        const cb = snap => {
+          const data = snap.val();
+          const arr = data ? Object.keys(data).map(k => ({ id: k, ...data[k] })) : [];
+          arr.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          setList(arr);
+        };
+        ref.on('value', cb);
+        return () => ref.off('value', cb);
+      }, []);
+
+      const toggleModerator = async (u) => {
+        setBusyId(u.id);
+        const next = !u.isModerator;
+        try {
+          await db.ref(`users/${u.id}/isModerator`).set(next);
+          await db.ref(`moderators/${sanitizeKey(u.username)}`).set(next ? true : null);
+        } finally { setBusyId(null); }
+      };
+
+      const toggleBan = async (u) => {
+        setBusyId(u.id);
+        try { await db.ref(`users/${u.id}/banned`).set(!u.banned); } finally { setBusyId(null); }
+      };
+
+      const removeUser = async (u) => {
+        await db.ref(`users/${u.id}`).remove();
+        if (u.isModerator) await db.ref(`moderators/${sanitizeKey(u.username)}`).remove();
+        setDeleteTarget(null);
+      };
+
+      const filtered = query.trim()
+        ? list.filter(u => (u.username || '').toLowerCase().includes(query.trim().toLowerCase()) || (u.name || '').toLowerCase().includes(query.trim().toLowerCase()))
+        : list;
+
+      return (
+        <div>
+          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="بحث بالاسم أو اسم المستخدم..."
+            className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition shadow-inner mb-5" />
+
+          {filtered.length === 0 ? (
+            <p className="text-sm text-slate-500 font-medium">لا يوجد مستخدمون مطابقون.</p>
+          ) : (
+            <div className="space-y-3">
+              {filtered.map(u => (
+                <div key={u.id} className="glass-card rounded-2xl p-4 border border-white/10 flex items-center gap-3.5 flex-wrap">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-accent-cyan to-blue-600 flex items-center justify-center font-black text-glass-950 shrink-0 overflow-hidden">
+                    {u.avatar ? <img src={u.avatar} alt="" className="w-full h-full object-cover" /> : (u.name || '?').charAt(0)}
+                  </div>
+                  <div className="min-w-[140px] flex-1">
+                    <p className="font-bold text-white text-sm truncate flex items-center gap-1.5">
+                      {u.name}
+                      {u.username === 'mavilovelife' && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold">مدير النظام</span>}
+                      {u.isModerator && <span className="text-[10px] px-2 py-0.5 rounded-full bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/30 font-bold">مشرف النظام</span>}
+                      {u.banned && <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 font-bold">محظور</span>}
+                    </p>
+                    <p className="text-xs text-slate-400">@{u.username}</p>
+                  </div>
+                  {u.username !== 'mavilovelife' && (
+                    <>
+                      <button onClick={() => toggleModerator(u)} disabled={busyId === u.id}
+                        className={`text-xs px-4 py-2 rounded-xl font-bold transition disabled:opacity-50 ${u.isModerator ? 'bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/30' : 'glass-card border border-white/10 hover:border-accent-cyan text-slate-200'}`}>
+                        {u.isModerator ? 'إزالة شارة الإشراف' : 'منح شارة مشرف النظام'}
+                      </button>
+                      <button onClick={() => toggleBan(u)} disabled={busyId === u.id}
+                        className={`text-xs px-4 py-2 rounded-xl font-bold transition disabled:opacity-50 ${u.banned ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20'}`}>
+                        {u.banned ? 'إلغاء الحظر' : 'حظر الحساب'}
+                      </button>
+                      <button onClick={() => setDeleteTarget(u)} title="حذف الحساب"
+                        className="w-9 h-9 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 flex items-center justify-center text-rose-400 transition shrink-0"><Icon name="trash-2" className="w-4 h-4" /></button>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {deleteTarget && (
+            <ConfirmDialog title="حذف هذا الحساب؟" body={`سيتم حذف حساب @${deleteTarget.username} نهائيًا ولا يمكن التراجع عن هذا الإجراء.`}
+              confirmLabel="نعم، احذف" cancelLabel="إلغاء" onCancel={() => setDeleteTarget(null)} onConfirm={() => removeUser(deleteTarget)} />
+          )}
+        </div>
+      );
+    }
+
+    function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
+      const [tab, setTab] = useState('content');
+      const [editing, setEditing] = useState(null);
+      const [deleteTarget, setDeleteTarget] = useState(null);
+      const isFullAdmin = currentUser && currentUser.username === 'mavilovelife';
+
+      const handleDelete = async (id) => { await db.ref(`titles/${id}`).remove(); await db.ref(`comments/${id}`).remove(); setDeleteTarget(null); };
+      const togglePublish = (t) => db.ref(`titles/${t.id}/status`).set(t.status === 'published' ? 'draft' : 'published');
+
+      return (
+        <div>
+          <h1 className="text-2xl md:text-3xl font-black mb-6 text-slate-100">لوحة تحكم ورفع الأفلام</h1>
+          <div className="flex gap-3 mb-6 border-b border-white/10 pb-3 flex-wrap">
+            <button onClick={() => { setTab('content'); setEditing(null); }} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'content' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>المحتوى (رفع الأفلام)</button>
+            <button onClick={() => setTab('complaints')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'complaints' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>الشكاوى والطلبات</button>
+            {isFullAdmin && (
+              <button onClick={() => setTab('users')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'users' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>المستخدمون</button>
+            )}
+          </div>
+
+          {tab === 'content' && (
+            editing ? (
+              <AdminContentForm initial={editing === 'new' ? null : editing} onDone={() => setEditing(null)} />
+            ) : (
+              <div>
+                <button onClick={() => setEditing('new')} className="mb-6 flex items-center gap-2 px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition"><Icon name="plus" className="w-4 h-4" />رفع عمل جديد (فيلم / مسلسل / أنمي)</button>
+                <div className="space-y-3">
+                  {titles.length === 0 && <p className="text-sm text-slate-500 font-medium">لا توجد أعمال بعد.</p>}
+                  {titles.map(t => (
+                    <div key={t.id} className="glass-card rounded-2xl p-4 border border-white/10 flex items-center gap-4 flex-wrap">
+                      <div className="w-12 h-16 rounded-xl bg-glass-900 overflow-hidden shrink-0 border border-white/5 shadow-md">
+                        {t.poster && <img src={t.poster} className="w-full h-full object-cover" />}
+                      </div>
+                      <div className="flex-1 min-w-[140px]">
+                        <p className="font-bold text-white text-base truncate mb-1">{t.name}</p>
+                        <p className="text-xs text-slate-400 font-medium">{TYPE_LABELS[t.type]} · {t.year || ''}</p>
+                      </div>
+                      <span className={`text-[11px] px-3 py-1 rounded-full font-bold shrink-0 ${t.status === 'published' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-glass-800 text-slate-400 border border-white/5'}`}>{t.status === 'published' ? 'منشور' : 'مسودة'}</span>
+                      <button onClick={() => togglePublish(t)} title="تبديل حالة النشر" className="w-9 h-9 rounded-xl glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-200 transition shrink-0"><Icon name="eye" className="w-4 h-4" /></button>
+                      <button onClick={() => setEditing(t)} title="تعديل" className="w-9 h-9 rounded-xl glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-200 transition shrink-0"><Icon name="pencil" className="w-4 h-4" /></button>
+                      <button onClick={() => setDeleteTarget(t.id)} title="حذف" className="w-9 h-9 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 flex items-center justify-center text-rose-400 transition shrink-0"><Icon name="trash-2" className="w-4 h-4" /></button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          )}
+
+          {tab === 'complaints' && <AdminComplaints />}
+          {tab === 'users' && isFullAdmin && <AdminUsers />}
+
+          {deleteTarget && (
+            <ConfirmDialog title="حذف هذا العمل؟" body="سيتم حذف العمل وجميع تعليقاته نهائيًا ولا يمكن استرجاعه." confirmLabel="نعم، احذف" cancelLabel="إلغاء" onCancel={() => setDeleteTarget(null)} onConfirm={() => handleDelete(deleteTarget)} />
+          )}
+        </div>
+      );
+    }
+
+    function App() {
+      const [titles, setTitles] = useState([]);
+      const [currentUser, setCurrentUser] = useState(() => JSON.parse(localStorage.getItem('sh_user') || 'null'));
+      const [view, setViewRaw] = useState('home');
+      const [search, setSearch] = useState('');
+      const [activeTitle, setActiveTitle] = useState(null);
+      const [authModal, setAuthModal] = useState(null);
+      const [accountSheet, setAccountSheet] = useState(false);
+      const [devPinModal, setDevPinModal] = useState(false);
+      const [watchlist, setWatchlist] = useState(() => JSON.parse(localStorage.getItem('sh_watchlist') || '[]'));
+      const [likedIds, setLikedIds] = useState(() => JSON.parse(localStorage.getItem('sh_likes') || '[]'));
+      const [moderators, setModerators] = useState({});
+
+      useEffect(() => {
+        const ref = db.ref('moderators');
+        const cb = snap => setModerators(snap.val() || {});
+        ref.on('value', cb);
+        return () => ref.off('value', cb);
+      }, []);
+
+      const getRole = (username) => {
+        if (!username) return null;
+        if (username === 'mavilovelife') return 'admin';
+        return moderators[sanitizeKey(username)] ? 'moderator' : null;
+      };
+
+      // مزامنة فورية لحالة المستخدم الحالي (شارة الإشراف / الحظر) دون الحاجة لتسجيل خروج ودخول
+      useEffect(() => {
+        if (!currentUser) return;
+        const ref = db.ref(`users/${currentUser.id}`);
+        const cb = snap => {
+          const u = snap.val();
+          if (!u) return;
+          if (u.banned) { setCurrentUser(null); localStorage.removeItem('sh_user'); return; }
+          if (u.isModerator !== currentUser.isModerator) {
+            const updated = { ...currentUser, isModerator: u.isModerator };
+            setCurrentUser(updated);
+            localStorage.setItem('sh_user', JSON.stringify(updated));
+          }
+        };
+        ref.on('value', cb);
+        return () => ref.off('value', cb);
+      }, [currentUser && currentUser.id]);
+
+      const setView = (v) => {
+        if (v === 'admin') {
+          if (currentUser && (currentUser.username === 'mavilovelife' || currentUser.isModerator)) {
+            // المشرفون المعيّنون من قبل الإدارة يدخلون مباشرة دون الحاجة للرمز السري
+            if (currentUser.isModerator && currentUser.username !== 'mavilovelife') {
+              setViewRaw('admin'); setSearch(''); window.scrollTo({ top: 0, behavior: 'smooth' });
+              return;
+            }
+          }
+          // فتح نافذة إدخال رمز الحماية للمطور
+          setDevPinModal(true);
+          return;
+        }
+        setViewRaw(v); setSearch(''); window.scrollTo({ top: 0, behavior: 'smooth' });
+      };
+
+      const [booted, setBooted] = useState(false);
+
+      useEffect(() => {
+        const ref = db.ref('titles');
+        const cb = snap => {
+          const data = snap.val();
+          const list = data ? Object.keys(data).map(k => ({ id: k, ...data[k] })) : [];
+          list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          setTitles(list);
+          setActiveTitle(prev => {
+            if (!prev) return prev;
+            const updated = list.find(x => x.id === prev.id);
+            return updated || prev;
+          });
+          setBooted(true);
+        };
+        ref.on('value', cb);
+        // شبكة بطيئة أو مشكلة اتصال مؤقتة: لا تترك المستخدم ينتظر إلى الأبد أمام شاشة التحميل
+        const safety = setTimeout(() => setBooted(true), 4000);
+        return () => { ref.off('value', cb); clearTimeout(safety); };
+      }, []);
+
+      useEffect(() => {
+        if (!booted) return;
+        const loader = document.getElementById('bootLoader');
+        if (loader) {
+          loader.style.opacity = '0';
+          setTimeout(() => loader.remove(), 350);
+        }
+      }, [booted]);
+
+      const published = titles.filter(t => t.status === 'published');
+
+      const toggleWatchlist = (id) => {
+        setWatchlist(prev => {
+          const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+          localStorage.setItem('sh_watchlist', JSON.stringify(next));
+          return next;
+        });
+      };
+
+      const toggleLike = (title) => {
+        const isLiked = likedIds.includes(title.id);
+        const next = isLiked ? likedIds.filter(x => x !== title.id) : [...likedIds, title.id];
+        setLikedIds(next);
+        localStorage.setItem('sh_likes', JSON.stringify(next));
+        db.ref(`titles/${title.id}/likes`).transaction(v => Math.max(0, (v || 0) + (isLiked ? -1 : 1)));
+      };
+
+      const handleLogout = () => { setCurrentUser(null); localStorage.removeItem('sh_user'); setAccountSheet(false); setView('home'); };
+
+      const handleUpdateAvatar = async (dataUrl) => {
+        if (!currentUser) return;
+        await db.ref(`users/${currentUser.id}/avatar`).set(dataUrl);
+        const updated = { ...currentUser, avatar: dataUrl };
+        setCurrentUser(updated);
+        localStorage.setItem('sh_user', JSON.stringify(updated));
+      };
+
+      const handleUpdateName = async (newName) => {
+        if (!currentUser) return;
+        await db.ref(`users/${currentUser.id}/name`).set(newName);
+        const updated = { ...currentUser, name: newName };
+        setCurrentUser(updated);
+        localStorage.setItem('sh_user', JSON.stringify(updated));
+      };
+
+      const handleAuthSuccess = (user) => {
+        const u = { id: user.id, name: user.name, username: user.username, avatar: user.avatar || '' };
+        setCurrentUser(u);
+        localStorage.setItem('sh_user', JSON.stringify(u));
+        setAuthModal(null);
+      };
+
+      const searching = search.trim().length > 0;
+      let mainList = published;
+      if (searching) {
+        const q = search.trim().toLowerCase();
+        mainList = published.filter(t => t.name && t.name.toLowerCase().includes(q));
+      }
+
+      return (
+        <div className="min-h-screen flex flex-col pb-24 md:pb-0">
+          <Header currentUser={currentUser} view={view} setView={setView} search={search} setSearch={setSearch} onOpenAccount={() => setAccountSheet(true)} />
+
+          <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 md:py-8">
+            <div key={searching ? 'search' : view} className="page-fade-in">
+              {searching ? (
+                <TypeGrid title={`نتائج البحث عن "${search}"`} items={mainList} onOpen={setActiveTitle} emptyText="لا توجد نتائج مطابقة." />
+              ) : view === 'home' ? (
+                <HomeView items={published} onOpen={setActiveTitle} />
+              ) : (view === 'movie' || view === 'series' || view === 'anime') ? (
+                <TypeGrid title={TYPE_PLURAL[view]} items={published.filter(t => t.type === view)} onOpen={setActiveTitle} showGenreFilter emptyText="لا توجد أعمال في هذا القسم بعد." />
+              ) : view === 'watchlist' ? (
+                <TypeGrid title="قائمتي المفضلة" items={published.filter(t => watchlist.includes(t.id))} onOpen={setActiveTitle} emptyText="لم تُضف أي عمل إلى قائمتك بعد." />
+              ) : view === 'requests' ? (
+                <RequestsView currentUser={currentUser} onOpenAuth={setAuthModal} />
+              ) : view === 'admin' ? (
+                <AdminPanel currentUser={currentUser} titles={titles} onOpenAuth={setAuthModal} moderators={moderators} />
+              ) : null}
+            </div>
+          </main>
+
+          <footer className="border-t border-white/10 py-6 text-center text-xs text-slate-500 glass-panel mb-20 md:mb-0">
+            <p>تصميم وبرمجة: <span className="text-slate-300 font-bold">محمود احمد</span> &nbsp;|&nbsp; للتواصل: <a href="tel:07734894407" className="font-mono text-accent-cyan font-bold hover:underline">07734894407</a></p>
+          </footer>
+
+          <MobileBottomNav view={view} setView={setView} />
+
+          {activeTitle && (
+            <TitleModal title={activeTitle} currentUser={currentUser} liked={likedIds.includes(activeTitle.id)}
+              inWatchlist={watchlist.includes(activeTitle.id)} getRole={getRole}
+              onLike={() => toggleLike(activeTitle)} onToggleWatchlist={() => toggleWatchlist(activeTitle.id)}
+              onClose={() => setActiveTitle(null)} onOpenAuth={setAuthModal} />
+          )}
+
+          {authModal && <AuthModal tab={authModal} onClose={() => setAuthModal(null)} onSuccess={handleAuthSuccess} />}
+
+          {devPinModal && (
+            <DevPinModal currentUser={currentUser} onClose={() => setDevPinModal(false)}
+              onSuccess={() => { setDevPinModal(false); setViewRaw('admin'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+              onOpenAuth={setAuthModal} />
+          )}
+
+          {accountSheet && (
+            <AccountSheet currentUser={currentUser} onClose={() => setAccountSheet(false)}
+              onLogin={() => { setAccountSheet(false); setAuthModal('login'); }}
+              onRegister={() => { setAccountSheet(false); setAuthModal('register'); }}
+              onLogout={handleLogout}
+              onNavigate={(v) => { setView(v); setAccountSheet(false); }}
+              onUpdateAvatar={handleUpdateAvatar}
+              onUpdateName={handleUpdateName} />
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
