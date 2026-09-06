@@ -89,10 +89,6 @@
     }
 
     /* ===== إصلاحات عامة لمنع أي تداخل أو تمرير أفقي ===== */
-    /* ملاحظة مهمة: وضع overflow-x:hidden على html و body معًا كان يخلق طبقتي تمرير
-       متداخلتين (لأن overflow-y يتحول تلقائيًا لـ auto على العنصرين)، فتصير النتيجة
-       أن سحب شريط التمرير الظاهر يعمل، لكن عجلة الماوس تتوقف عند العنصر الداخلي ولا
-       تُحرّك الصفحة. الحل: نطبّق overflow-x:hidden على body فقط ونترك html طبيعيًا. */
     html { width: 100%; height: 100%; }
     body { overflow-x: hidden; width: 100%; overscroll-behavior-y: none; }
     #root { overflow-x: hidden; min-height: 100%; }
@@ -112,6 +108,10 @@
       h1 { font-size: 1.4rem !important; }
       .glass-panel, .glass-card { border-radius: 18px; }
     }
+
+    /* ===== حاوية الفيديو مع دعم القص المخصص ===== */
+    .video-crop-wrap { position: relative; width: 100%; overflow: hidden; background: #000; }
+    .video-crop-wrap video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
   </style>
 </head>
 <body class="bg-glass-950 text-slate-100 min-h-screen selection:bg-accent-red selection:text-white">
@@ -245,6 +245,17 @@
       return /\.(mp4|webm|ogg|mov|m3u8)(\?.*)?$/i.test(url || '');
     }
 
+    // هل الجهاز الحالي بحجم جوال (أقل من md=768px)؟
+    function useIsMobile() {
+      const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+      useEffect(() => {
+        const onResize = () => setIsMobile(window.innerWidth < 768);
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+      }, []);
+      return isMobile;
+    }
+
     function Icon({ name, className = "w-4 h-4" }) {
       const icons = {
         film: <path d="M2 6.5A2.5 2.5 0 0 1 4.5 4h15A2.5 2.5 0 0 1 22 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-15A2.5 2.5 0 0 1 2 17.5v-11zM7 4v16M17 4v16M2 12h20M2 8h5M17 8h5M2 16h5M17 16h5" />,
@@ -276,6 +287,12 @@
         trendingUp: <><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></>,
         filter: <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />,
         reply: <path d="M9 17 4 12l5-5M4 12h11a4 4 0 0 1 4 4v1" />,
+        link: <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />,
+        crop: <path d="M6 2v14a2 2 0 0 0 2 2h14M18 22V8a2 2 0 0 0-2-2H2" />,
+        settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>,
+        chevronDown: <path d="m6 9 6 6 6-6" />,
+        smartphone: <><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></>,
+        monitor: <><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></>,
       };
       return (
         <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -445,7 +462,24 @@
       );
     }
 
-    function HomeView({ items, onOpen }) {
+    // شريط "أكمل المشاهدة" (يعتمد على آخر الأعمال المفتوحة، محفوظة محليًا بجهاز الزائر)
+    function ContinueWatchingRow({ items, onOpen }) {
+      if (!items.length) return null;
+      return (
+        <section className="mb-10">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg md:text-xl font-black text-slate-100 flex items-center gap-2.5">
+              <span className="w-1.5 h-5 bg-accent-cyan rounded-full shadow-[0_0_12px_rgba(0,240,255,0.6)]"></span>أكمل المشاهدة
+            </h2>
+          </div>
+          <div className="flex gap-4 overflow-x-auto pb-3 pt-1 snap-x scrollbar-hide">
+            {items.map(it => <PosterCard key={it.id} title={it} onOpen={onOpen} compact />)}
+          </div>
+        </section>
+      );
+    }
+
+    function HomeView({ items, onOpen, continueItems }) {
       if (!items.length) return <EmptyState text="لا توجد أعمال منشورة بعد. تابعنا قريبًا!" />;
       const featured = items.filter(t => t.featured).length ? items.filter(t => t.featured) : items.slice(0, 5);
       const latest = [...items].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 12);
@@ -455,6 +489,7 @@
       return (
         <div>
           <Hero items={featured} onOpen={onOpen} />
+          <ContinueWatchingRow items={continueItems} onOpen={onOpen} />
           <Row label="أُضيف حديثًا" items={latest} onOpen={onOpen} />
           <Row label="أفلام" items={items.filter(t => t.type === 'movie').slice(0, 12)} onOpen={onOpen} />
           <Row label="مسلسلات" items={items.filter(t => t.type === 'series').slice(0, 12)} onOpen={onOpen} />
@@ -486,21 +521,36 @@
 
     function TypeGrid({ title, items, onOpen, showGenreFilter, emptyText }) {
       const [genre, setGenre] = useState('');
+      const [year, setYear] = useState('');
       const [sortKey, setSortKey] = useState('newest');
       const genres = showGenreFilter ? Array.from(new Set(items.flatMap(t => t.genres || []))) : [];
-      const filteredByGenre = genre ? items.filter(t => (t.genres || []).includes(genre)) : items;
+      const years = Array.from(new Set(items.map(t => t.year).filter(Boolean))).sort((a, b) => b - a);
+      let filteredByGenre = genre ? items.filter(t => (t.genres || []).includes(genre)) : items;
+      if (year) filteredByGenre = filteredByGenre.filter(t => String(t.year) === String(year));
       const filtered = sortTitles(filteredByGenre, sortKey);
       return (
         <div>
           <div className="flex items-center justify-between gap-3 flex-wrap mb-6">
             <h1 className="text-2xl md:text-3xl font-black text-slate-100">{title}</h1>
             {items.length > 0 && (
-              <div className="relative shrink-0">
-                <select value={sortKey} onChange={e => setSortKey(e.target.value)}
-                  className="appearance-none bg-glass-900 border border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-xs font-bold text-slate-200 outline-none focus:border-accent-cyan transition cursor-pointer">
-                  {SORT_OPTIONS.map(([k, l]) => <option key={k} value={k} className="bg-glass-950">{l}</option>)}
-                </select>
-                <Icon name="filter" className="w-3.5 h-3.5 text-accent-cyan absolute top-1/2 -translate-y-1/2 left-3 pointer-events-none" />
+              <div className="flex items-center gap-2.5 flex-wrap">
+                {years.length > 1 && (
+                  <div className="relative shrink-0">
+                    <select value={year} onChange={e => setYear(e.target.value)}
+                      className="appearance-none bg-glass-900 border border-white/10 rounded-xl pl-8 pr-3 py-2.5 text-xs font-bold text-slate-200 outline-none focus:border-accent-cyan transition cursor-pointer">
+                      <option value="">كل السنوات</option>
+                      {years.map(y => <option key={y} value={y} className="bg-glass-950">{y}</option>)}
+                    </select>
+                    <Icon name="chevronDown" className="w-3 h-3 text-accent-cyan absolute top-1/2 -translate-y-1/2 left-2.5 pointer-events-none" />
+                  </div>
+                )}
+                <div className="relative shrink-0">
+                  <select value={sortKey} onChange={e => setSortKey(e.target.value)}
+                    className="appearance-none bg-glass-900 border border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-xs font-bold text-slate-200 outline-none focus:border-accent-cyan transition cursor-pointer">
+                    {SORT_OPTIONS.map(([k, l]) => <option key={k} value={k} className="bg-glass-950">{l}</option>)}
+                  </select>
+                  <Icon name="filter" className="w-3.5 h-3.5 text-accent-cyan absolute top-1/2 -translate-y-1/2 left-3 pointer-events-none" />
+                </div>
               </div>
             )}
           </div>
@@ -587,73 +637,22 @@
       );
     }
 
-    function AccountSheet({ currentUser, onClose, onLogin, onRegister, onLogout, onNavigate, onUpdateAvatar, onUpdateName }) {
-      const [uploading, setUploading] = useState(false);
-      const [avatarError, setAvatarError] = useState('');
-      const fileInputRef = useRef(null);
-      const [editingName, setEditingName] = useState(false);
-      const [nameInput, setNameInput] = useState(currentUser ? currentUser.name : '');
-      const [savingName, setSavingName] = useState(false);
-      const [nameError, setNameError] = useState('');
-
-      const startEditName = () => { setNameInput(currentUser.name); setNameError(''); setEditingName(true); };
-      const saveName = async () => {
-        const trimmed = nameInput.trim();
-        if (!trimmed) { setNameError('الرجاء إدخال اسم صالح.'); return; }
-        setSavingName(true);
-        try { await onUpdateName(trimmed); setEditingName(false); }
-        catch (e) { setNameError('تعذر حفظ الاسم، حاول مجددًا.'); }
-        setSavingName(false);
-      };
-
-      // ملاحظة: تم استبدال الرفع عبر Firebase Storage (المقيّد) بحفظ الصورة كـ base64
-      // مباشرة داخل Realtime Database، فتعمل فورًا وبدون أي خادم خارجي أو تكلفة إضافية
-      const handleAvatarFile = (e) => {
-        const file = e.target.files && e.target.files[0];
-        e.target.value = '';
-        if (!file) return;
-        setAvatarError('');
-        setUploading(true);
-        compressImageToDataUrl(file)
-          .then(dataUrl => onUpdateAvatar(dataUrl))
-          .catch(err => setAvatarError(err && err.message ? err.message : 'تعذر حفظ الصورة، حاول مجددًا.'))
-          .finally(() => setUploading(false));
-      };
-
+    function AccountSheet({ currentUser, onClose, onLogin, onRegister, onLogout, onNavigate }) {
       return (
         <div className="modal-backdrop fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end md:items-center justify-center p-0 md:p-4" onClick={onClose}>
           <div onClick={e => e.stopPropagation()} className="sheet-panel glass-panel border border-white/10 rounded-t-3xl md:rounded-3xl w-full md:max-w-sm p-6 shadow-2xl">
             {currentUser ? (
               <div>
                 <div className="flex items-center gap-3 mb-4 pb-4 border-b border-white/10">
-                  <div className="relative shrink-0">
-                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-accent-cyan to-blue-600 flex items-center justify-center font-black text-lg text-glass-950 shadow-md overflow-hidden">
-                      {currentUser.avatar ? (
-                        <img src={currentUser.avatar} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        currentUser.name ? currentUser.name.charAt(0) : 'U'
-                      )}
-                    </div>
-                    <button onClick={() => fileInputRef.current && fileInputRef.current.click()} disabled={uploading} title="تغيير صورة الحساب"
-                      className="absolute -bottom-1.5 -left-1.5 w-6 h-6 rounded-full bg-accent-cyan text-glass-950 flex items-center justify-center border-2 border-glass-900 shadow-md disabled:opacity-60">
-                      <Icon name="pencil" className="w-3 h-3" />
-                    </button>
-                    <input ref={fileInputRef} type="file" accept="image/*" onChange={handleAvatarFile} className="hidden" />
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-accent-cyan to-blue-600 flex items-center justify-center font-black text-lg text-glass-950 shadow-md overflow-hidden shrink-0">
+                    {currentUser.avatar ? (
+                      <img src={currentUser.avatar} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      currentUser.name ? currentUser.name.charAt(0) : 'U'
+                    )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    {editingName ? (
-                      <div className="flex items-center gap-1.5">
-                        <input value={nameInput} onChange={e => setNameInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && saveName()} autoFocus
-                          className="flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-white outline-none focus:border-accent-cyan" />
-                        <button onClick={saveName} disabled={savingName} title="حفظ" className="shrink-0 text-emerald-400 hover:text-emerald-300 transition"><Icon name="check" className="w-4 h-4" /></button>
-                        <button onClick={() => setEditingName(false)} title="إلغاء" className="shrink-0 text-slate-400 hover:text-slate-200 transition"><Icon name="x" className="w-4 h-4" /></button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1.5">
-                        <p className="font-bold text-lg text-white truncate">{currentUser.name}</p>
-                        <button onClick={startEditName} title="تعديل الاسم" className="shrink-0 text-slate-500 hover:text-accent-cyan transition"><Icon name="pencil" className="w-3.5 h-3.5" /></button>
-                      </div>
-                    )}
+                    <p className="font-bold text-lg text-white truncate">{currentUser.name}</p>
                     <p className="text-slate-400 text-xs truncate">
                       @{currentUser.username}
                       {currentUser.username === 'mavilovelife' ? (
@@ -662,14 +661,11 @@
                         <span className="text-accent-cyan mr-1 font-semibold">· مشرف النظام</span>
                       ) : null}
                     </p>
-                    {nameError && <p className="text-rose-400 text-[11px] font-bold mt-1">{nameError}</p>}
                   </div>
                 </div>
-                {uploading && <p className="text-xs text-accent-cyan font-bold mb-3">جارٍ حفظ الصورة...</p>}
-                {avatarError && <p className="text-rose-400 text-xs font-bold mb-3 bg-rose-500/10 p-2.5 rounded-xl border border-rose-500/20">{avatarError}</p>}
                 <div className="space-y-2.5">
                   <button onClick={() => onNavigate('profile')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold"><Icon name="user" className="w-4 h-4 text-accent-cyan" />ملفي الشخصي</button>
-                  <button onClick={() => onNavigate('settings')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold"><Icon name="pencil" className="w-4 h-4 text-accent-cyan" />الإعدادات</button>
+                  <button onClick={() => onNavigate('settings')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold"><Icon name="settings" className="w-4 h-4 text-accent-cyan" />الإعدادات</button>
                   <button onClick={() => onNavigate('requests')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold"><Icon name="flag" className="w-4 h-4 text-accent-cyan" />طلباتي وشكاواي</button>
 
                   {(currentUser.username === 'mavilovelife' || currentUser.isModerator) && (
@@ -820,9 +816,15 @@
       );
     }
 
-    function VideoPlayer({ src, onError }) {
+    // مشغّل الفيديو: يدعم نطاق تشغيل مخصص (قص زمني) وطريقة عرض/قص مرئي مختلفة للجوال والحاسوب
+    function VideoPlayer({ src, onError, trimStart, trimEnd, fitMobile, fitDesktop, crop }) {
       const videoRef = useRef(null);
       const [loading, setLoading] = useState(true);
+      const isMobile = useIsMobile();
+      const fit = (isMobile ? fitMobile : fitDesktop) || 'contain';
+      const c = crop || {};
+      const top = c.top || 0, bottom = c.bottom || 0, left = c.left || 0, right = c.right || 0;
+      const hasCrop = fit === 'crop' && (top || bottom || left || right);
 
       useEffect(() => {
         const videoEl = videoRef.current;
@@ -841,35 +843,61 @@
         return () => { if (hls) hls.destroy(); };
       }, [src]);
 
+      // إنفاذ نطاق التشغيل المخصص (قص من البداية/النهاية) لو محدد من لوحة التحكم
+      useEffect(() => {
+        const videoEl = videoRef.current;
+        if (!videoEl) return;
+        const onLoaded = () => { if (trimStart) { try { videoEl.currentTime = trimStart; } catch (e) {} } };
+        const onTime = () => { if (trimEnd && videoEl.currentTime >= trimEnd) videoEl.pause(); };
+        videoEl.addEventListener('loadedmetadata', onLoaded);
+        videoEl.addEventListener('timeupdate', onTime);
+        return () => { videoEl.removeEventListener('loadedmetadata', onLoaded); videoEl.removeEventListener('timeupdate', onTime); };
+      }, [src, trimStart, trimEnd]);
+
+      // حساب تحويل CSS لتطبيق القص المرئي (يكبّر الفيديو ويزيحه لإخفاء الحواف المطلوب قصّها)
+      let videoStyle = { objectFit: fit === 'crop' ? 'cover' : fit };
+      if (hasCrop) {
+        const scaleX = 100 / Math.max(1, 100 - left - right);
+        const scaleY = 100 / Math.max(1, 100 - top - bottom);
+        const scale = Math.max(scaleX, scaleY);
+        const shiftX = ((left - right) / 2) * scale;
+        const shiftY = ((top - bottom) / 2) * scale;
+        videoStyle = { objectFit: 'cover', transform: `scale(${scale}) translate(${-shiftX}%, ${-shiftY}%)` };
+      }
+
       return (
-        <div className="relative w-full aspect-video bg-black">
+        <div className="video-crop-wrap aspect-video">
           {loading && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
               <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan animate-spin"></div>
             </div>
           )}
           <video ref={videoRef} controls autoPlay muted playsInline webkit-playsinline="true"
             onCanPlay={() => setLoading(false)} onPlaying={() => setLoading(false)}
             onError={() => { setLoading(false); onError && onError(); }}
-            className="w-full h-full" />
+            style={videoStyle} />
         </div>
       );
     }
 
-    function TitleModal({ title, currentUser, liked, inWatchlist, onLike, onToggleWatchlist, onClose, onOpenAuth, getRole, onOpenProfile }) {
+    function TitleModal({ title, allTitles, currentUser, liked, inWatchlist, onLike, onToggleWatchlist, onClose, onOpenAuth, getRole, onOpenProfile, onOpen }) {
       const [playingUrl, setPlayingUrl] = useState(null);
+      const [playingMeta, setPlayingMeta] = useState({});
       const [activeSeason, setActiveSeason] = useState(0);
       const [commentText, setCommentText] = useState('');
       const [comments, setComments] = useState([]);
       const [replyingTo, setReplyingTo] = useState(null);
       const [replyText, setReplyText] = useState('');
       const [videoError, setVideoError] = useState(false);
+      const [copied, setCopied] = useState(false);
 
       const [ratings, setRatings] = useState({});
       const [myStars, setMyStars] = useState(0);
       const [myReview, setMyReview] = useState('');
       const [savingRating, setSavingRating] = useState(false);
       const [ratingMsg, setRatingMsg] = useState('');
+      const [deleteCommentTarget, setDeleteCommentTarget] = useState(null);
+      const [deleteMyRating, setDeleteMyRating] = useState(false);
 
       useEffect(() => {
         setPlayingUrl(null); setActiveSeason(0); setCommentText(''); setReplyingTo(null); setVideoError(false);
@@ -900,8 +928,18 @@
         return () => ref.off('value', cb);
       }, [title.id, currentUser && currentUser.id]);
 
+      // تسجيل هذا العمل في "أكمل المشاهدة" (محليًا بجهاز الزائر)
+      useEffect(() => {
+        try {
+          const raw = JSON.parse(localStorage.getItem('cv_continue') || '[]');
+          const next = [title.id, ...raw.filter(id => id !== title.id)].slice(0, 12);
+          localStorage.setItem('cv_continue', JSON.stringify(next));
+        } catch (e) {}
+      }, [title.id]);
+
       const ratingList = Object.keys(ratings).map(uid => ({ uid, ...ratings[uid] })).sort((a, b) => (b.date || 0) - (a.date || 0));
       const avgRating = ratingList.length ? ratingList.reduce((s, r) => s + (r.stars || 0), 0) / ratingList.length : 0;
+      const canModerate = currentUser && (() => { const role = getRole ? getRole(currentUser.username) : null; return role === 'admin' || role === 'moderator'; })();
 
       const submitRating = async () => {
         if (!currentUser) { onOpenAuth('login'); return; }
@@ -917,29 +955,41 @@
         setTimeout(() => setRatingMsg(''), 3000);
       };
 
+      const removeMyRating = async () => {
+        if (!currentUser) return;
+        await db.ref(`ratings/${title.id}/${currentUser.id}`).remove();
+        await db.ref(`userRatings/${currentUser.id}/${title.id}`).remove();
+        setMyStars(0); setMyReview(''); setDeleteMyRating(false);
+      };
+
       const roleRank = (username) => {
         const role = getRole ? getRole(username) : null;
         return role === 'admin' ? 2 : role === 'moderator' ? 1 : 0;
       };
-      const canModerate = currentUser && roleRank(currentUser.username) > 0;
 
       const seasons = (title.seasons || [])
         .map(s => ({ ...s, episodes: (s.episodes || []).slice().sort((a, b) => (a.number || 0) - (b.number || 0)) }))
         .sort((a, b) => (a.number || 0) - (b.number || 0));
       const isSeries = title.type !== 'movie';
 
-      const firstEpisodeUrl = () => {
-        for (const s of seasons) { if (s.episodes && s.episodes.length) return s.episodes[0].videoUrl; }
+      const firstEpisode = () => {
+        for (const s of seasons) { if (s.episodes && s.episodes.length) return s.episodes[0]; }
         return null;
       };
 
       const handlePlay = () => {
         setVideoError(false);
-        if (title.type === 'movie') setPlayingUrl(title.videoUrl || null);
-        else setPlayingUrl(firstEpisodeUrl());
+        if (title.type === 'movie') { setPlayingUrl(title.videoUrl || null); setPlayingMeta(title); }
+        else { const ep = firstEpisode(); setPlayingUrl(ep ? ep.videoUrl : null); setPlayingMeta(ep || {}); }
       };
 
-      const playEpisode = (url) => { setVideoError(false); setPlayingUrl(url); };
+      const playEpisode = (ep) => { setVideoError(false); setPlayingUrl(ep.videoUrl); setPlayingMeta(ep); };
+
+      const shareLink = () => {
+        const url = `${location.origin}${location.pathname}?t=${title.id}`;
+        if (navigator.clipboard) navigator.clipboard.writeText(url).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2200); });
+        history.replaceState(null, '', `?t=${title.id}`);
+      };
 
       const submitComment = async () => {
         if (!currentUser) { onOpenAuth('login'); return; }
@@ -965,8 +1015,12 @@
         db.ref(`comments/${title.id}/${commentId}/likes`).transaction(v => Math.max(0, (v || 0) + (isLiked ? -1 : 1)));
       };
 
-      const deleteComment = (commentId) => { if (canModerate) db.ref(`comments/${title.id}/${commentId}`).remove(); };
-      const deleteReply = (commentId, replyId) => { if (canModerate) db.ref(`comments/${title.id}/${commentId}/replies/${replyId}`).remove(); };
+      // حذف تعليق: صاحب التعليق نفسه أو المشرف/المدير
+      const canDeleteComment = (c) => canModerate || (currentUser && currentUser.username === c.username);
+      const deleteComment = (commentId) => db.ref(`comments/${title.id}/${commentId}`).remove();
+      const deleteReply = (commentId, replyId) => db.ref(`comments/${title.id}/${commentId}/replies/${replyId}`).remove();
+
+      const similarTitles = (allTitles || []).filter(t => t.id !== title.id && t.status === 'published' && (t.genres || []).some(g => (title.genres || []).includes(g))).slice(0, 8);
 
       return (
         <div className="modal-backdrop fixed inset-0 z-50 bg-black/90 backdrop-blur-lg md:p-6 md:flex md:items-center md:justify-center overflow-y-auto" onClick={onClose}>
@@ -975,7 +1029,9 @@
               {playingUrl ? (
                 <div className="relative">
                   {isDirectVideo(playingUrl) ? (
-                    <VideoPlayer key={playingUrl} src={normalizeVideoUrl(playingUrl)} onError={() => setVideoError(true)} />
+                    <VideoPlayer key={playingUrl} src={normalizeVideoUrl(playingUrl)} onError={() => setVideoError(true)}
+                      trimStart={playingMeta.trimStart} trimEnd={playingMeta.trimEnd}
+                      fitMobile={playingMeta.fitMobile} fitDesktop={playingMeta.fitDesktop} crop={playingMeta.crop} />
                   ) : (
                     <iframe key={playingUrl} src={normalizeVideoUrl(playingUrl)} allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen
                       referrerPolicy="no-referrer-when-downgrade" className="w-full aspect-video bg-black" />
@@ -1002,6 +1058,9 @@
               )}
               <button onClick={onClose} className="absolute top-4 left-4 w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black transition">
                 <Icon name="x" className="w-5 h-5" />
+              </button>
+              <button onClick={shareLink} title="نسخ رابط المشاركة" className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black transition">
+                <Icon name={copied ? 'check' : 'link'} className={`w-4 h-4 ${copied ? 'text-emerald-400' : ''}`} />
               </button>
             </div>
 
@@ -1068,7 +1127,7 @@
                           <p className="text-sm font-bold text-slate-100 truncate mb-1">{ep.title || `الحلقة ${ep.number != null ? ep.number : ei + 1}`}</p>
                           <RatingBadges imdb={ep.imdb} rt={ep.rt} size="xs" />
                         </div>
-                        <button onClick={() => playEpisode(ep.videoUrl)} className="w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition"><Icon name="play" className="w-4 h-4 text-white fill-current translate-x-0.5" /></button>
+                        <button onClick={() => playEpisode(ep)} className="w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition"><Icon name="play" className="w-4 h-4 text-white fill-current translate-x-0.5" /></button>
                         {ep.downloadUrl && (
                           <a href={ep.downloadUrl} target="_blank" rel="noopener noreferrer" className="w-9 h-9 rounded-xl glass-card hover:bg-white/10 border border-white/10 flex items-center justify-center shrink-0 transition"><Icon name="download" className="w-4 h-4 text-accent-cyan" /></a>
                         )}
@@ -1089,8 +1148,9 @@
                     <StarRatingInput value={myStars} onChange={setMyStars} />
                     <textarea value={myReview} onChange={e => setMyReview(e.target.value)} placeholder="اكتب مراجعتك الشخصية (اختياري)..." rows={3}
                       className="w-full mt-3 bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition shadow-inner"></textarea>
-                    <div className="flex items-center gap-3 mt-3">
+                    <div className="flex items-center gap-3 mt-3 flex-wrap">
                       <button onClick={submitRating} disabled={savingRating} className="px-5 py-2.5 rounded-xl bg-accent-cyan hover:brightness-110 text-xs font-bold text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)] transition disabled:opacity-50">{savingRating ? 'جارٍ الحفظ...' : 'حفظ التقييم والمراجعة'}</button>
+                      {myStars > 0 && <button onClick={() => setDeleteMyRating(true)} className="px-4 py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 text-xs font-bold transition">حذف تقييمي</button>}
                       {ratingMsg && <span className="text-xs font-bold text-emerald-400">{ratingMsg}</span>}
                     </div>
                   </div>
@@ -1107,7 +1167,12 @@
                         <div className="flex-1 glass-card p-4 rounded-2xl border border-white/5">
                           <div className="flex items-center justify-between mb-1.5">
                             <button onClick={() => onOpenProfile && onOpenProfile(r.username)} className="text-xs font-bold text-accent-cyan hover:underline">{r.author}</button>
-                            <StarRatingDisplay value={r.stars} />
+                            <div className="flex items-center gap-2">
+                              <StarRatingDisplay value={r.stars} />
+                              {(canModerate || (currentUser && currentUser.username === r.username)) && (
+                                <button onClick={() => db.ref(`ratings/${title.id}/${r.uid}`).remove()} title="حذف" className="text-slate-500 hover:text-rose-400 transition"><Icon name="trash-2" className="w-3.5 h-3.5" /></button>
+                              )}
+                            </div>
                           </div>
                           <p className="text-sm text-slate-200 leading-relaxed">{r.review}</p>
                         </div>
@@ -1141,9 +1206,9 @@
                       const cRole = roleRank(c.username);
                       return (
                         <div key={c.id} className="flex gap-3 items-start">
-                          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-accent-red to-purple-600 flex items-center justify-center text-xs font-black text-white shrink-0 shadow-md overflow-hidden">
+                          <button onClick={() => onOpenProfile && onOpenProfile(c.username)} className="w-8 h-8 rounded-xl bg-gradient-to-tr from-accent-red to-purple-600 flex items-center justify-center text-xs font-black text-white shrink-0 shadow-md overflow-hidden">
                             {c.avatar ? <img src={c.avatar} alt="" className="w-full h-full object-cover" /> : (c.author || '?').charAt(0)}
-                          </div>
+                          </button>
                           <div className="flex-1 glass-card p-4 rounded-2xl border border-white/5">
                             <div className="flex items-center justify-between mb-1">
                               <p className="text-xs font-bold text-accent-cyan flex items-center gap-1.5">
@@ -1157,17 +1222,18 @@
                             <div className="flex items-center gap-5 mt-3">
                               <button onClick={() => toggleCommentLike(c.id, c)} className={`flex items-center gap-1.5 text-xs font-bold transition ${isCommentLiked ? 'text-rose-400' : 'text-slate-400 hover:text-slate-200'}`}><Icon name="heart" className="w-3.5 h-3.5" />{c.likes || 0}</button>
                               <button onClick={() => setReplyingTo(replyingTo && replyingTo.commentId === c.id && !replyingTo.mentionName ? null : { commentId: c.id, mentionName: null })} className="text-xs font-bold text-slate-400 hover:text-slate-200 transition">رد</button>
-                              {canModerate && <button onClick={() => deleteComment(c.id)} className="text-xs font-bold text-rose-400/80 hover:text-rose-400 transition mr-auto">حذف</button>}
+                              {canDeleteComment(c) && <button onClick={() => setDeleteCommentTarget({ id: c.id })} className="text-xs font-bold text-rose-400/80 hover:text-rose-400 transition mr-auto">حذف</button>}
                             </div>
                             {repliesList.length > 0 && (
                               <div className="mt-3 space-y-2 border-r-2 border-accent-cyan/30 pr-3 mr-1">
                                 {repliesList.map(r => {
                                   const rRole = roleRank(r.username);
+                                  const canDelReply = canModerate || (currentUser && currentUser.username === r.username);
                                   return (
                                   <div key={r.id} className="flex gap-2 items-start">
-                                    <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-accent-cyan to-blue-600 flex items-center justify-center text-[10px] font-black text-glass-950 shrink-0 overflow-hidden">
+                                    <button onClick={() => onOpenProfile && onOpenProfile(r.username)} className="w-6 h-6 rounded-lg bg-gradient-to-tr from-accent-cyan to-blue-600 flex items-center justify-center text-[10px] font-black text-glass-950 shrink-0 overflow-hidden">
                                       {r.avatar ? <img src={r.avatar} alt="" className="w-full h-full object-cover" /> : (r.author || '?').charAt(0)}
-                                    </div>
+                                    </button>
                                     <div className="flex-1 text-xs glass-panel p-3 rounded-xl border border-white/5">
                                       <div className="flex justify-between mb-1">
                                         <span className="font-bold text-accent-cyan flex items-center gap-1.5">
@@ -1180,7 +1246,7 @@
                                       <p className="text-slate-300">{r.mentionName && <span className="text-accent-cyan font-bold">@{r.mentionName}</span>} {r.text}</p>
                                       <div className="flex items-center gap-4 mt-1.5">
                                         <button onClick={() => setReplyingTo({ commentId: c.id, mentionName: r.author })} className="text-[11px] font-bold text-slate-500 hover:text-slate-300 transition">رد</button>
-                                        {canModerate && <button onClick={() => deleteReply(c.id, r.id)} className="text-[11px] font-bold text-rose-400/80 hover:text-rose-400 transition">حذف</button>}
+                                        {canDelReply && <button onClick={() => setDeleteCommentTarget({ id: c.id, replyId: r.id })} className="text-[11px] font-bold text-rose-400/80 hover:text-rose-400 transition">حذف</button>}
                                       </div>
                                     </div>
                                   </div>
@@ -1209,8 +1275,31 @@
                   </div>
                 )}
               </div>
+
+              {similarTitles.length > 0 && onOpen && (
+                <div className="mt-8 border-t border-white/10 pt-6">
+                  <h3 className="font-black text-lg text-white flex items-center gap-2 mb-4"><Icon name="sparkles" className="w-5 h-5 text-accent-cyan" />أعمال مشابهة قد تعجبك</h3>
+                  <div className="flex gap-4 overflow-x-auto pb-1 snap-x scrollbar-hide">
+                    {similarTitles.map(t => <PosterCard key={t.id} title={t} onOpen={onOpen} compact />)}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
+
+          {deleteCommentTarget && (
+            <ConfirmDialog title="حذف هذا العنصر؟" body="لا يمكن التراجع عن هذا الإجراء." confirmLabel="نعم، احذف" cancelLabel="إلغاء"
+              onCancel={() => setDeleteCommentTarget(null)}
+              onConfirm={() => {
+                if (deleteCommentTarget.replyId) deleteReply(deleteCommentTarget.id, deleteCommentTarget.replyId);
+                else deleteComment(deleteCommentTarget.id);
+                setDeleteCommentTarget(null);
+              }} />
+          )}
+          {deleteMyRating && (
+            <ConfirmDialog title="حذف تقييمك؟" body="سيتم حذف نجومك ومراجعتك لهذا العمل نهائيًا." confirmLabel="نعم، احذف" cancelLabel="إلغاء"
+              onCancel={() => setDeleteMyRating(false)} onConfirm={removeMyRating} />
+          )}
         </div>
       );
     }
@@ -1272,13 +1361,25 @@
           {mine.length === 0 ? <p className="text-sm text-slate-500 font-medium">لا توجد طلبات سابقة.</p> : (
             <div className="space-y-3">
               {mine.map(c => (
-                <div key={c.id} className="glass-card rounded-2xl p-4 border border-white/10 flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs text-accent-cyan font-bold mb-1.5">{COMPLAINT_TYPES[c.type] || c.type}{c.titleName ? ` · ${c.titleName}` : ''}</p>
-                    <p className="text-sm text-slate-200 leading-relaxed">{c.message}</p>
-                    <p className="text-[10px] text-slate-500 font-mono mt-2">{fmtDateTime(c.date)}</p>
+                <div key={c.id} className="glass-card rounded-2xl p-4 border border-white/10">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="text-xs text-accent-cyan font-bold mb-1.5">{COMPLAINT_TYPES[c.type] || c.type}{c.titleName ? ` · ${c.titleName}` : ''}</p>
+                      <p className="text-sm text-slate-200 leading-relaxed">{c.message}</p>
+                      <p className="text-[10px] text-slate-500 font-mono mt-2">{fmtDateTime(c.date)}</p>
+                    </div>
+                    <span className={`text-[11px] px-3 py-1 rounded-full font-bold shrink-0 ${c.status === 'resolved' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>{c.status === 'resolved' ? 'تم الحل' : 'قيد المراجعة'}</span>
                   </div>
-                  <span className={`text-[11px] px-3 py-1 rounded-full font-bold shrink-0 ${c.status === 'resolved' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>{c.status === 'resolved' ? 'تم الحل' : 'قيد المراجعة'}</span>
+                  {c.reply && (
+                    <div className="mt-3 pt-3 border-t border-white/10 flex gap-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-accent-cyan to-blue-600 flex items-center justify-center shrink-0"><Icon name="shield" className="w-3.5 h-3.5 text-glass-950" /></div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] font-bold text-accent-cyan mb-1">رد الإدارة{c.replyBy ? ` · ${c.replyBy}` : ''}</p>
+                        <p className="text-sm text-slate-200 leading-relaxed">{c.reply}</p>
+                        <p className="text-[10px] text-slate-500 font-mono mt-1">{fmtDateTime(c.replyDate)}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1287,7 +1388,7 @@
       );
     }
 
-    // صفحة الإعدادات: تغيير الاسم، الصورة، وكلمة المرور
+    // صفحة الإعدادات: تغيير الاسم، الصورة، وكلمة المرور (المكان الوحيد لتعديل الملف الشخصي)
     function SettingsView({ currentUser, onUpdateName, onUpdateAvatar, onOpenAuth }) {
       const [name, setName] = useState(currentUser ? currentUser.name : '');
       const [nameMsg, setNameMsg] = useState({ text: '', ok: false });
@@ -1358,7 +1459,7 @@
 
           <div className="glass-panel rounded-3xl p-5 md:p-7 mb-6 border border-white/10 shadow-xl">
             <h2 className="font-black text-lg text-white mb-4">صورة الحساب</h2>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
               <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-accent-cyan to-blue-600 flex items-center justify-center font-black text-lg text-glass-950 overflow-hidden shrink-0">
                 {currentUser.avatar ? <img src={currentUser.avatar} alt="" className="w-full h-full object-cover" /> : currentUser.name.charAt(0)}
               </div>
@@ -1547,8 +1648,64 @@
       );
     }
 
+    const FIT_OPTIONS = [['contain', 'احتواء كامل (بدون قص)'], ['cover', 'ملء الشاشة (تمدد)'], ['crop', 'قص مخصص للحواف']];
+
+    // ضبط متقدم لعرض الفيديو: نطاق تشغيل (قص زمني)، وطريقة عرض/قص للحواف تختلف بين الجوال والحاسوب
+    function VideoDisplaySettings({ value, onChange }) {
+      const [open, setOpen] = useState(false);
+      const v = value || {};
+      const set = (k, val) => onChange({ ...v, [k]: val });
+      const setCrop = (k, val) => onChange({ ...v, crop: { ...(v.crop || {}), [k]: Number(val) } });
+      const crop = v.crop || {};
+
+      return (
+        <div className="glass-card rounded-2xl border border-white/10 mt-3">
+          <button type="button" onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3 text-xs font-bold text-slate-200">
+            <span className="flex items-center gap-2"><Icon name="crop" className="w-3.5 h-3.5 text-accent-cyan" />إعدادات العرض المتقدمة (قص وأبعاد)</span>
+            <Icon name="chevronDown" className={`w-3.5 h-3.5 transition ${open ? 'rotate-180' : ''}`} />
+          </button>
+          {open && (
+            <div className="px-4 pb-4 space-y-4 border-t border-white/10 pt-4">
+              <div>
+                <p className="text-[11px] font-bold text-slate-400 mb-2">نطاق التشغيل (بالثواني) — يقص بداية أو نهاية الفيديو دون إعادة رفعه</p>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <input type="number" min="0" value={v.trimStart || ''} onChange={e => set('trimStart', Number(e.target.value) || 0)} placeholder="بداية القص (مثال: 5)" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" />
+                  <input type="number" min="0" value={v.trimEnd || ''} onChange={e => set('trimEnd', Number(e.target.value) || 0)} placeholder="نهاية القص (اختياري)" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-[11px] font-bold text-slate-400 mb-1.5 flex items-center gap-1"><Icon name="smartphone" className="w-3 h-3" />العرض على الجوال</p>
+                  <select value={v.fitMobile || 'contain'} onChange={e => set('fitMobile', e.target.value)} className="w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan">
+                    {FIT_OPTIONS.map(([k, l]) => <option key={k} value={k} className="bg-glass-950">{l}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold text-slate-400 mb-1.5 flex items-center gap-1"><Icon name="monitor" className="w-3 h-3" />العرض على الحاسوب</p>
+                  <select value={v.fitDesktop || 'contain'} onChange={e => set('fitDesktop', e.target.value)} className="w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan">
+                    {FIT_OPTIONS.map(([k, l]) => <option key={k} value={k} className="bg-glass-950">{l}</option>)}
+                  </select>
+                </div>
+              </div>
+              {(v.fitMobile === 'crop' || v.fitDesktop === 'crop') && (
+                <div>
+                  <p className="text-[11px] font-bold text-slate-400 mb-2">نسبة القص من كل جهة (%) — لإخفاء شعار أو حافة غير مرغوبة</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    <div><label className="text-[10px] text-slate-500 block mb-1">أعلى</label><input type="number" min="0" max="40" value={crop.top || 0} onChange={e => setCrop('top', e.target.value)} className="w-full bg-glass-900 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white text-center" /></div>
+                    <div><label className="text-[10px] text-slate-500 block mb-1">أسفل</label><input type="number" min="0" max="40" value={crop.bottom || 0} onChange={e => setCrop('bottom', e.target.value)} className="w-full bg-glass-900 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white text-center" /></div>
+                    <div><label className="text-[10px] text-slate-500 block mb-1">يمين</label><input type="number" min="0" max="40" value={crop.right || 0} onChange={e => setCrop('right', e.target.value)} className="w-full bg-glass-900 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white text-center" /></div>
+                    <div><label className="text-[10px] text-slate-500 block mb-1">يسار</label><input type="number" min="0" max="40" value={crop.left || 0} onChange={e => setCrop('left', e.target.value)} className="w-full bg-glass-900 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white text-center" /></div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
     function emptyForm(type) {
-      return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', rtRating: '', featured: false, status: 'draft', videoUrl: '', downloadUrl: '', seasons: [] };
+      return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', rtRating: '', featured: false, status: 'draft', videoUrl: '', downloadUrl: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
     }
 
     function AdminContentForm({ initial, defaultType, onDone }) {
@@ -1563,7 +1720,7 @@
       const addSeason = () => setForm(prev => ({ ...prev, seasons: [...prev.seasons, { number: prev.seasons.length + 1, episodes: [] }] }));
       const removeSeason = (si) => setForm(prev => ({ ...prev, seasons: prev.seasons.filter((_, i) => i !== si) }));
       const updateSeasonNumber = (si, val) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, number: val }) }));
-      const addEpisode = (si) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: [...s.episodes, { number: s.episodes.length + 1, title: '', videoUrl: '', downloadUrl: '', imdb: '', rt: '' }] }) }));
+      const addEpisode = (si) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: [...s.episodes, { number: s.episodes.length + 1, title: '', videoUrl: '', downloadUrl: '', imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {} }] }) }));
       const removeEpisode = (si, ei) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: s.episodes.filter((_, j) => j !== ei) }) }));
       const updateEpisode = (si, ei, key, val) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: s.episodes.map((e, j) => j !== ei ? e : { ...e, [key]: val }) }) }));
 
@@ -1592,11 +1749,19 @@
         if (form.type === 'movie') {
           payload.videoUrl = form.videoUrl.trim();
           payload.downloadUrl = form.downloadUrl.trim();
+          payload.trimStart = Number(form.trimStart) || 0;
+          payload.trimEnd = Number(form.trimEnd) || 0;
+          payload.fitMobile = form.fitMobile || 'contain';
+          payload.fitDesktop = form.fitDesktop || 'contain';
+          payload.crop = form.crop || {};
           payload.seasons = [];
         } else {
           payload.seasons = form.seasons.map(s => ({
             number: Number(s.number) || 1,
-            episodes: (s.episodes || []).map(e => ({ number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: (e.videoUrl || '').trim(), downloadUrl: (e.downloadUrl || '').trim(), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim() }))
+            episodes: (s.episodes || []).map(e => ({
+              number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: (e.videoUrl || '').trim(), downloadUrl: (e.downloadUrl || '').trim(), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
+              trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}
+            }))
           }));
           payload.videoUrl = ''; payload.downloadUrl = '';
         }
@@ -1664,9 +1829,12 @@
           </div>
 
           {form.type === 'movie' ? (
-            <div className="grid md:grid-cols-2 gap-5 mt-5">
-              <FileUploadField label="ملف الفيلم (فيديو مباشر أو رابط/iframe)" value={form.videoUrl} onChange={v => set('videoUrl', v)} folder="videos" accept="video/*" />
-              <FileUploadField label="ملف التحميل" value={form.downloadUrl} onChange={v => set('downloadUrl', v)} folder="downloads" accept="video/*" />
+            <div>
+              <div className="grid md:grid-cols-2 gap-5 mt-5">
+                <FileUploadField label="ملف الفيلم (فيديو مباشر أو رابط/iframe)" value={form.videoUrl} onChange={v => set('videoUrl', v)} folder="videos" accept="video/*" />
+                <FileUploadField label="ملف التحميل" value={form.downloadUrl} onChange={v => set('downloadUrl', v)} folder="downloads" accept="video/*" />
+              </div>
+              <VideoDisplaySettings value={form} onChange={patch => setForm(prev => ({ ...prev, ...patch }))} />
             </div>
           ) : (
             <div className="mt-6 border-t border-white/10 pt-5">
@@ -1682,16 +1850,19 @@
                       <input type="number" value={s.number} onChange={e => updateSeasonNumber(si, e.target.value)} className="w-20 bg-glass-950 border border-white/10 rounded-xl px-3 py-1.5 text-xs font-bold text-white text-center" />
                       <button onClick={() => removeSeason(si)} className="mr-auto text-rose-400 text-xs font-bold flex items-center gap-1 hover:text-rose-300 transition"><Icon name="trash-2" className="w-4 h-4" />حذف الموسم</button>
                     </div>
-                    <div className="space-y-2.5">
+                    <div className="space-y-3">
                       {s.episodes.map((e, ei) => (
-                        <div key={ei} className="glass-panel rounded-xl p-3 grid md:grid-cols-6 gap-2.5 items-center border border-white/5">
-                          <input type="number" value={e.number} onChange={ev => updateEpisode(si, ei, 'number', ev.target.value)} placeholder="#" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white text-center md:col-span-1" />
-                          <input value={e.title} onChange={ev => updateEpisode(si, ei, 'title', ev.target.value)} placeholder="عنوان الحلقة" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white md:col-span-2" />
-                          <div className="md:col-span-2"><FileUploadField compact value={e.videoUrl} onChange={v => updateEpisode(si, ei, 'videoUrl', v)} folder="episodes" accept="video/*" /></div>
-                          <div className="md:col-span-2"><FileUploadField compact value={e.downloadUrl} onChange={v => updateEpisode(si, ei, 'downloadUrl', v)} folder="episodes" accept="video/*" /></div>
-                          <input value={e.imdb} onChange={ev => updateEpisode(si, ei, 'imdb', ev.target.value)} placeholder="IMDb" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white md:col-span-1" />
-                          <input value={e.rt} onChange={ev => updateEpisode(si, ei, 'rt', ev.target.value)} placeholder="RT %" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white md:col-span-1" />
-                          <button onClick={() => removeEpisode(si, ei)} className="text-rose-400 flex items-center justify-center md:col-span-1 hover:text-rose-300 transition"><Icon name="trash-2" className="w-4 h-4" /></button>
+                        <div key={ei} className="glass-panel rounded-xl p-3 border border-white/5">
+                          <div className="grid md:grid-cols-6 gap-2.5 items-center">
+                            <input type="number" value={e.number} onChange={ev => updateEpisode(si, ei, 'number', ev.target.value)} placeholder="#" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white text-center md:col-span-1" />
+                            <input value={e.title} onChange={ev => updateEpisode(si, ei, 'title', ev.target.value)} placeholder="عنوان الحلقة" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white md:col-span-2" />
+                            <div className="md:col-span-2"><FileUploadField compact value={e.videoUrl} onChange={v => updateEpisode(si, ei, 'videoUrl', v)} folder="episodes" accept="video/*" /></div>
+                            <div className="md:col-span-2"><FileUploadField compact value={e.downloadUrl} onChange={v => updateEpisode(si, ei, 'downloadUrl', v)} folder="episodes" accept="video/*" /></div>
+                            <input value={e.imdb} onChange={ev => updateEpisode(si, ei, 'imdb', ev.target.value)} placeholder="IMDb" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white md:col-span-1" />
+                            <input value={e.rt} onChange={ev => updateEpisode(si, ei, 'rt', ev.target.value)} placeholder="RT %" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white md:col-span-1" />
+                            <button onClick={() => removeEpisode(si, ei)} className="text-rose-400 flex items-center justify-center md:col-span-1 hover:text-rose-300 transition"><Icon name="trash-2" className="w-4 h-4" /></button>
+                          </div>
+                          <VideoDisplaySettings value={e} onChange={patch => { Object.keys(patch).forEach(k => updateEpisode(si, ei, k, patch[k])); }} />
                         </div>
                       ))}
                     </div>
@@ -1718,9 +1889,12 @@
       );
     }
 
-    function AdminComplaints() {
+    function AdminComplaints({ currentUser }) {
       const [list, setList] = useState([]);
       const [deleteTarget, setDeleteTarget] = useState(null);
+      const [replyDrafts, setReplyDrafts] = useState({});
+      const [savingReplyId, setSavingReplyId] = useState(null);
+
       useEffect(() => {
         const ref = db.ref('complaints');
         const cb = snap => {
@@ -1736,6 +1910,16 @@
       const toggleStatus = (c) => db.ref(`complaints/${c.id}/status`).set(c.status === 'resolved' ? 'open' : 'resolved');
       const remove = async (id) => { await db.ref(`complaints/${id}`).remove(); setDeleteTarget(null); };
 
+      const sendReply = async (c) => {
+        const text = (replyDrafts[c.id] || '').trim();
+        if (!text) return;
+        setSavingReplyId(c.id);
+        try {
+          await db.ref(`complaints/${c.id}`).update({ reply: text, replyDate: Date.now(), replyBy: (currentUser && currentUser.name) || 'الإدارة', status: 'resolved' });
+          setReplyDrafts(prev => ({ ...prev, [c.id]: '' }));
+        } finally { setSavingReplyId(null); }
+      };
+
       if (!list.length) return <p className="text-sm text-slate-500 font-medium">لا توجد شكاوى أو طلبات حاليًا.</p>;
 
       return (
@@ -1750,7 +1934,22 @@
                 </div>
                 <span className={`text-[11px] px-3 py-1 rounded-full font-bold shrink-0 ${c.status === 'resolved' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>{c.status === 'resolved' ? 'تم الحل' : 'قيد المراجعة'}</span>
               </div>
-              <div className="flex gap-2.5 mt-4">
+
+              {c.reply && (
+                <div className="mt-3 pt-3 border-t border-white/10">
+                  <p className="text-[11px] font-bold text-emerald-400 mb-1">ردك السابق:</p>
+                  <p className="text-sm text-slate-300">{c.reply}</p>
+                </div>
+              )}
+
+              <div className="flex gap-2 mt-3">
+                <input value={replyDrafts[c.id] || ''} onChange={e => setReplyDrafts(prev => ({ ...prev, [c.id]: e.target.value }))}
+                  placeholder={c.reply ? 'تعديل الرد...' : 'اكتب ردًا يظهر للمستخدم...'}
+                  className="flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" />
+                <button onClick={() => sendReply(c)} disabled={savingReplyId === c.id} className="shrink-0 px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 text-xs font-bold hover:brightness-110 transition disabled:opacity-50">{savingReplyId === c.id ? '...' : 'إرسال الرد'}</button>
+              </div>
+
+              <div className="flex gap-2.5 mt-3">
                 <button onClick={() => toggleStatus(c)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl glass-card border border-white/10 hover:border-accent-cyan text-xs font-bold text-slate-200 transition"><Icon name="check" className="w-3.5 h-3.5 text-emerald-400" />{c.status === 'resolved' ? 'إعادة فتح' : 'تحديد كمحلول'}</button>
                 <button onClick={() => setDeleteTarget(c.id)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 text-xs font-bold transition"><Icon name="trash-2" className="w-3.5 h-3.5" />حذف</button>
               </div>
@@ -1910,7 +2109,7 @@
             )
           )}
 
-          {tab === 'complaints' && <AdminComplaints />}
+          {tab === 'complaints' && <AdminComplaints currentUser={currentUser} />}
           {tab === 'users' && isFullAdmin && <AdminUsers />}
 
           {deleteTarget && (
@@ -1922,15 +2121,15 @@
 
     function App() {
       const [titles, setTitles] = useState([]);
-      const [currentUser, setCurrentUser] = useState(() => JSON.parse(localStorage.getItem('sh_user') || 'null'));
+      const [currentUser, setCurrentUser] = useState(() => JSON.parse(localStorage.getItem('cv_user') || 'null'));
       const [view, setViewRaw] = useState('home');
       const [search, setSearch] = useState('');
       const [activeTitle, setActiveTitle] = useState(null);
       const [authModal, setAuthModal] = useState(null);
       const [accountSheet, setAccountSheet] = useState(false);
       const [devPinModal, setDevPinModal] = useState(false);
-      const [watchlist, setWatchlist] = useState(() => JSON.parse(localStorage.getItem('sh_watchlist') || '[]'));
-      const [likedIds, setLikedIds] = useState(() => JSON.parse(localStorage.getItem('sh_likes') || '[]'));
+      const [watchlist, setWatchlist] = useState(() => JSON.parse(localStorage.getItem('cv_watchlist') || '[]'));
+      const [likedIds, setLikedIds] = useState(() => JSON.parse(localStorage.getItem('cv_likes') || '[]'));
       const [moderators, setModerators] = useState({});
       const [profileTarget, setProfileTarget] = useState(null);
 
@@ -1956,11 +2155,11 @@
         const cb = snap => {
           const u = snap.val();
           if (!u) return;
-          if (u.banned) { setCurrentUser(null); localStorage.removeItem('sh_user'); return; }
+          if (u.banned) { setCurrentUser(null); localStorage.removeItem('cv_user'); return; }
           if (u.isModerator !== currentUser.isModerator) {
             const updated = { ...currentUser, isModerator: u.isModerator };
             setCurrentUser(updated);
-            localStorage.setItem('sh_user', JSON.stringify(updated));
+            localStorage.setItem('cv_user', JSON.stringify(updated));
           }
         };
         ref.on('value', cb);
@@ -2014,12 +2213,24 @@
         }
       }, [booted]);
 
+      // فتح عمل تلقائيًا لو الرابط يحتوي على معرّف مشاركة (?t=ID)
+      useEffect(() => {
+        if (!booted || !titles.length) return;
+        const t = new URLSearchParams(location.search).get('t');
+        if (t) { const found = titles.find(x => x.id === t); if (found) setActiveTitle(found); }
+      }, [booted, titles]);
+
       const published = titles.filter(t => t.status === 'published');
+
+      const continueWatchingIds = React.useMemo(() => {
+        try { return JSON.parse(localStorage.getItem('cv_continue') || '[]'); } catch (e) { return []; }
+      }, [titles, activeTitle]);
+      const continueItems = continueWatchingIds.map(id => published.find(t => t.id === id)).filter(Boolean).slice(0, 10);
 
       const toggleWatchlist = (id) => {
         setWatchlist(prev => {
           const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
-          localStorage.setItem('sh_watchlist', JSON.stringify(next));
+          localStorage.setItem('cv_watchlist', JSON.stringify(next));
           return next;
         });
       };
@@ -2028,18 +2239,18 @@
         const isLiked = likedIds.includes(title.id);
         const next = isLiked ? likedIds.filter(x => x !== title.id) : [...likedIds, title.id];
         setLikedIds(next);
-        localStorage.setItem('sh_likes', JSON.stringify(next));
+        localStorage.setItem('cv_likes', JSON.stringify(next));
         db.ref(`titles/${title.id}/likes`).transaction(v => Math.max(0, (v || 0) + (isLiked ? -1 : 1)));
       };
 
-      const handleLogout = () => { setCurrentUser(null); localStorage.removeItem('sh_user'); setAccountSheet(false); setView('home'); };
+      const handleLogout = () => { setCurrentUser(null); localStorage.removeItem('cv_user'); setAccountSheet(false); setView('home'); };
 
       const handleUpdateAvatar = async (dataUrl) => {
         if (!currentUser) return;
         await db.ref(`users/${currentUser.id}/avatar`).set(dataUrl);
         const updated = { ...currentUser, avatar: dataUrl };
         setCurrentUser(updated);
-        localStorage.setItem('sh_user', JSON.stringify(updated));
+        localStorage.setItem('cv_user', JSON.stringify(updated));
       };
 
       const handleUpdateName = async (newName) => {
@@ -2047,13 +2258,13 @@
         await db.ref(`users/${currentUser.id}/name`).set(newName);
         const updated = { ...currentUser, name: newName };
         setCurrentUser(updated);
-        localStorage.setItem('sh_user', JSON.stringify(updated));
+        localStorage.setItem('cv_user', JSON.stringify(updated));
       };
 
       const handleAuthSuccess = (user) => {
         const u = { id: user.id, name: user.name, username: user.username, avatar: user.avatar || '' };
         setCurrentUser(u);
-        localStorage.setItem('sh_user', JSON.stringify(u));
+        localStorage.setItem('cv_user', JSON.stringify(u));
         setAuthModal(null);
       };
 
@@ -2065,7 +2276,7 @@
       }
 
       return (
-        <div className="min-h-screen flex flex-col pb-24 md:pb-0">
+        <div className="min-h-screen flex flex-col mobile-safe-bottom md:pb-0">
           <Header currentUser={currentUser} view={view} setView={setView} search={search} setSearch={setSearch} onOpenAccount={() => setAccountSheet(true)} />
 
           <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 md:py-8">
@@ -2073,7 +2284,7 @@
               {searching ? (
                 <TypeGrid title={`نتائج البحث عن "${search}"`} items={mainList} onOpen={setActiveTitle} emptyText="لا توجد نتائج مطابقة." />
               ) : view === 'home' ? (
-                <HomeView items={published} onOpen={setActiveTitle} />
+                <HomeView items={published} onOpen={setActiveTitle} continueItems={continueItems} />
               ) : (view === 'movie' || view === 'series' || view === 'anime') ? (
                 <TypeGrid title={TYPE_PLURAL[view]} items={published.filter(t => t.type === view)} onOpen={setActiveTitle} showGenreFilter emptyText="لا توجد أعمال في هذا القسم بعد." />
               ) : view === 'watchlist' ? (
@@ -2097,10 +2308,11 @@
           <MobileBottomNav view={view} setView={setView} />
 
           {activeTitle && (
-            <TitleModal title={activeTitle} currentUser={currentUser} liked={likedIds.includes(activeTitle.id)}
+            <TitleModal title={activeTitle} allTitles={published} currentUser={currentUser} liked={likedIds.includes(activeTitle.id)}
               inWatchlist={watchlist.includes(activeTitle.id)} getRole={getRole}
               onLike={() => toggleLike(activeTitle)} onToggleWatchlist={() => toggleWatchlist(activeTitle.id)}
-              onClose={() => setActiveTitle(null)} onOpenAuth={setAuthModal} onOpenProfile={openProfile} />
+              onClose={() => { setActiveTitle(null); if (new URLSearchParams(location.search).get('t')) history.replaceState(null, '', location.pathname); }}
+              onOpenAuth={setAuthModal} onOpenProfile={openProfile} onOpen={setActiveTitle} />
           )}
 
           {authModal && <AuthModal tab={authModal} onClose={() => setAuthModal(null)} onSuccess={handleAuthSuccess} />}
@@ -2116,9 +2328,7 @@
               onLogin={() => { setAccountSheet(false); setAuthModal('login'); }}
               onRegister={() => { setAccountSheet(false); setAuthModal('register'); }}
               onLogout={handleLogout}
-              onNavigate={(v) => { if (v === 'profile') setProfileTarget(null); setView(v); setAccountSheet(false); }}
-              onUpdateAvatar={handleUpdateAvatar}
-              onUpdateName={handleUpdateName} />
+              onNavigate={(v) => { if (v === 'profile') setProfileTarget(null); setView(v); setAccountSheet(false); }} />
           )}
         </div>
       );
