@@ -429,18 +429,56 @@
       );
     }
 
+    // البنر الرئيسي (Hero): قابل للسحب بالفأرة أو الإصبع، والنقاط تنقل مباشرة لأي بنر
     function Hero({ items, onOpen }) {
       const [idx, setIdx] = useState(0);
+      const dragState = useRef({ startX: 0, dragging: false });
+      const [dragOffset, setDragOffset] = useState(0);
+      const [isDragging, setIsDragging] = useState(false);
+
       useEffect(() => {
-        if (items.length < 2) return;
+        if (items.length < 2 || isDragging) return;
         const t = setInterval(() => setIdx(i => (i + 1) % items.length), 6000);
         return () => clearInterval(t);
-      }, [items.length]);
+      }, [items.length, isDragging]);
+
       if (!items.length) return null;
+
+      const go = (i) => setIdx(((i % items.length) + items.length) % items.length);
+      const getX = (e) => (e.touches ? e.touches[0].clientX : e.clientX);
+
+      const onDragStart = (e) => {
+        if (items.length < 2) return;
+        dragState.current = { startX: getX(e), dragging: true };
+        setIsDragging(true);
+      };
+      const onDragMove = (e) => {
+        if (!dragState.current.dragging) return;
+        setDragOffset(getX(e) - dragState.current.startX);
+      };
+      const endDrag = () => {
+        if (!dragState.current.dragging) return;
+        const threshold = 60;
+        if (dragOffset > threshold) go(idx - 1);
+        else if (dragOffset < -threshold) go(idx + 1);
+        dragState.current.dragging = false;
+        setDragOffset(0);
+        setIsDragging(false);
+      };
+
       const item = items[idx % items.length];
       return (
-        <section className="relative h-[42vh] min-h-[300px] md:h-[72vh] -mx-4 md:mx-0 mb-8 md:mb-10 md:rounded-3xl overflow-hidden glass-panel border border-white/10 shadow-2xl">
-          {item.backdrop && <img src={item.backdrop} alt="" className="absolute inset-0 w-full h-full object-cover opacity-60 scale-105 transition duration-1000" />}
+        <section
+          className="relative h-[42vh] min-h-[300px] md:h-[72vh] -mx-4 md:mx-0 mb-8 md:mb-10 md:rounded-3xl overflow-hidden glass-panel border border-white/10 shadow-2xl select-none cursor-grab active:cursor-grabbing"
+          style={{ touchAction: 'pan-y' }}
+          onMouseDown={onDragStart} onMouseMove={onDragMove} onMouseUp={endDrag} onMouseLeave={endDrag}
+          onTouchStart={onDragStart} onTouchMove={onDragMove} onTouchEnd={endDrag}
+        >
+          {item.backdrop && (
+            <img src={item.backdrop} alt="" draggable="false"
+              className="absolute inset-0 w-full h-full object-cover opacity-60"
+              style={{ transform: `translateX(${dragOffset * 0.3}px) scale(1.05)`, transition: isDragging ? 'none' : 'transform 0.4s ease' }} />
+          )}
           <div className="absolute inset-0 bg-gradient-to-t from-glass-950 via-glass-950/60 to-transparent" />
           <div className="absolute inset-x-0 bottom-0 p-5 md:p-12 max-w-2xl">
             <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -454,8 +492,11 @@
             </button>
           </div>
           {items.length > 1 && (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 p-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/5">
-              {items.map((_, i) => <span key={i} className={`w-2 h-2 rounded-full transition-all duration-300 ${i === idx ? 'bg-accent-cyan w-6 shadow-[0_0_8px_rgba(0,240,255,0.8)]' : 'bg-white/30'}`}></span>)}
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 p-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/5 z-10">
+              {items.map((_, i) => (
+                <button key={i} onClick={(e) => { e.stopPropagation(); go(i); }}
+                  className={`h-2 rounded-full transition-all duration-300 ${i === idx ? 'bg-accent-cyan w-6 shadow-[0_0_8px_rgba(0,240,255,0.8)]' : 'bg-white/30 w-2 hover:bg-white/50'}`}></button>
+              ))}
             </div>
           )}
         </section>
@@ -816,15 +857,13 @@
       );
     }
 
-    // مشغّل الفيديو: يدعم نطاق تشغيل مخصص (قص زمني) وطريقة عرض/قص مرئي مختلفة للجوال والحاسوب
+    // مشغّل الفيديو: يدعم نطاق تشغيل مخصص (قص زمني) وطريقة عرض/تركيز مرئي مختلفة للجوال والحاسوب
     function VideoPlayer({ src, onError, trimStart, trimEnd, fitMobile, fitDesktop, crop }) {
       const videoRef = useRef(null);
       const [loading, setLoading] = useState(true);
       const isMobile = useIsMobile();
       const fit = (isMobile ? fitMobile : fitDesktop) || 'contain';
       const c = crop || {};
-      const top = c.top || 0, bottom = c.bottom || 0, left = c.left || 0, right = c.right || 0;
-      const hasCrop = fit === 'crop' && (top || bottom || left || right);
 
       useEffect(() => {
         const videoEl = videoRef.current;
@@ -854,15 +893,18 @@
         return () => { videoEl.removeEventListener('loadedmetadata', onLoaded); videoEl.removeEventListener('timeupdate', onTime); };
       }, [src, trimStart, trimEnd]);
 
-      // حساب تحويل CSS لتطبيق القص المرئي (يكبّر الفيديو ويزيحه لإخفاء الحواف المطلوب قصّها)
+      // حساب ستايل العرض: تركيز على جهة محددة (شبكة 3x3) + نسبة تكبير بسيطة بدل ٤ خانات قص معقدة
       let videoStyle = { objectFit: fit === 'crop' ? 'cover' : fit };
-      if (hasCrop) {
-        const scaleX = 100 / Math.max(1, 100 - left - right);
-        const scaleY = 100 / Math.max(1, 100 - top - bottom);
-        const scale = Math.max(scaleX, scaleY);
-        const shiftX = ((left - right) / 2) * scale;
-        const shiftY = ((top - bottom) / 2) * scale;
-        videoStyle = { objectFit: 'cover', transform: `scale(${scale}) translate(${-shiftX}%, ${-shiftY}%)` };
+      if (fit === 'crop') {
+        const zoom = 1 + ((c.zoom || 0) / 100);
+        const posX = c.posX != null ? c.posX : 50;
+        const posY = c.posY != null ? c.posY : 50;
+        videoStyle = {
+          objectFit: 'cover',
+          objectPosition: `${posX}% ${posY}%`,
+          transform: zoom !== 1 ? `scale(${zoom})` : undefined,
+          transformOrigin: `${posX}% ${posY}%`,
+        };
       }
 
       return (
@@ -1650,51 +1692,61 @@
 
     const FIT_OPTIONS = [['contain', 'احتواء كامل (بدون قص)'], ['cover', 'ملء الشاشة (تمدد)'], ['crop', 'قص مخصص للحواف']];
 
-    // ضبط متقدم لعرض الفيديو: نطاق تشغيل (قص زمني)، وطريقة عرض/قص للحواف تختلف بين الجوال والحاسوب
+    // ضبط عرض الفيديو: نطاق تشغيل (قص زمني)، وطريقة عرض تختلف بين الجوال والحاسوب، مع تحكم بسيط بالتركيز والتكبير بدل ٤ خانات قص معقدة
     function VideoDisplaySettings({ value, onChange }) {
       const [open, setOpen] = useState(false);
       const v = value || {};
       const set = (k, val) => onChange({ ...v, [k]: val });
-      const setCrop = (k, val) => onChange({ ...v, crop: { ...(v.crop || {}), [k]: Number(val) } });
-      const crop = v.crop || {};
+      const crop = v.crop || { zoom: 0, posX: 50, posY: 50 };
+      const setCrop = (patch) => onChange({ ...v, crop: { ...crop, ...patch } });
+      const showCropTools = v.fitMobile === 'crop' || v.fitDesktop === 'crop';
+
+      const positions = [[0,0],[50,0],[100,0],[0,50],[50,50],[100,50],[0,100],[50,100],[100,100]];
 
       return (
         <div className="glass-card rounded-2xl border border-white/10 mt-3">
           <button type="button" onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3 text-xs font-bold text-slate-200">
-            <span className="flex items-center gap-2"><Icon name="crop" className="w-3.5 h-3.5 text-accent-cyan" />إعدادات العرض المتقدمة (قص وأبعاد)</span>
+            <span className="flex items-center gap-2"><Icon name="crop" className="w-3.5 h-3.5 text-accent-cyan" />إعدادات العرض (اختياري)</span>
             <Icon name="chevronDown" className={`w-3.5 h-3.5 transition ${open ? 'rotate-180' : ''}`} />
           </button>
           {open && (
             <div className="px-4 pb-4 space-y-4 border-t border-white/10 pt-4">
               <div>
-                <p className="text-[11px] font-bold text-slate-400 mb-2">نطاق التشغيل (بالثواني) — يقص بداية أو نهاية الفيديو دون إعادة رفعه</p>
+                <p className="text-[11px] font-bold text-slate-400 mb-2">قص من بداية أو نهاية الفيديو (بالثواني) — اختياري</p>
                 <div className="grid grid-cols-2 gap-2.5">
-                  <input type="number" min="0" value={v.trimStart || ''} onChange={e => set('trimStart', Number(e.target.value) || 0)} placeholder="بداية القص (مثال: 5)" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" />
-                  <input type="number" min="0" value={v.trimEnd || ''} onChange={e => set('trimEnd', Number(e.target.value) || 0)} placeholder="نهاية القص (اختياري)" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" />
+                  <input type="number" min="0" value={v.trimStart || ''} onChange={e => set('trimStart', Number(e.target.value) || 0)} placeholder="ثانية البداية" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" />
+                  <input type="number" min="0" value={v.trimEnd || ''} onChange={e => set('trimEnd', Number(e.target.value) || 0)} placeholder="ثانية النهاية" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" />
                 </div>
               </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <p className="text-[11px] font-bold text-slate-400 mb-1.5 flex items-center gap-1"><Icon name="smartphone" className="w-3 h-3" />العرض على الجوال</p>
+                  <p className="text-[11px] font-bold text-slate-400 mb-1.5 flex items-center gap-1"><Icon name="smartphone" className="w-3 h-3" />طريقة العرض بالجوال</p>
                   <select value={v.fitMobile || 'contain'} onChange={e => set('fitMobile', e.target.value)} className="w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan">
                     {FIT_OPTIONS.map(([k, l]) => <option key={k} value={k} className="bg-glass-950">{l}</option>)}
                   </select>
                 </div>
                 <div>
-                  <p className="text-[11px] font-bold text-slate-400 mb-1.5 flex items-center gap-1"><Icon name="monitor" className="w-3 h-3" />العرض على الحاسوب</p>
+                  <p className="text-[11px] font-bold text-slate-400 mb-1.5 flex items-center gap-1"><Icon name="monitor" className="w-3 h-3" />طريقة العرض بالحاسوب</p>
                   <select value={v.fitDesktop || 'contain'} onChange={e => set('fitDesktop', e.target.value)} className="w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan">
                     {FIT_OPTIONS.map(([k, l]) => <option key={k} value={k} className="bg-glass-950">{l}</option>)}
                   </select>
                 </div>
               </div>
-              {(v.fitMobile === 'crop' || v.fitDesktop === 'crop') && (
+
+              {showCropTools && (
                 <div>
-                  <p className="text-[11px] font-bold text-slate-400 mb-2">نسبة القص من كل جهة (%) — لإخفاء شعار أو حافة غير مرغوبة</p>
-                  <div className="grid grid-cols-4 gap-2">
-                    <div><label className="text-[10px] text-slate-500 block mb-1">أعلى</label><input type="number" min="0" max="40" value={crop.top || 0} onChange={e => setCrop('top', e.target.value)} className="w-full bg-glass-900 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white text-center" /></div>
-                    <div><label className="text-[10px] text-slate-500 block mb-1">أسفل</label><input type="number" min="0" max="40" value={crop.bottom || 0} onChange={e => setCrop('bottom', e.target.value)} className="w-full bg-glass-900 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white text-center" /></div>
-                    <div><label className="text-[10px] text-slate-500 block mb-1">يمين</label><input type="number" min="0" max="40" value={crop.right || 0} onChange={e => setCrop('right', e.target.value)} className="w-full bg-glass-900 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white text-center" /></div>
-                    <div><label className="text-[10px] text-slate-500 block mb-1">يسار</label><input type="number" min="0" max="40" value={crop.left || 0} onChange={e => setCrop('left', e.target.value)} className="w-full bg-glass-900 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white text-center" /></div>
+                  <p className="text-[11px] font-bold text-slate-400 mb-2.5">اختر الجهة اللي تريد إظهارها (وسط الشاشة = بدون قص)</p>
+                  <div className="grid grid-cols-3 gap-1.5 w-28 mx-auto mb-3">
+                    {positions.map(([px, py]) => (
+                      <button key={`${px}-${py}`} type="button" onClick={() => setCrop({ posX: px, posY: py })}
+                        className={`aspect-square rounded-lg border transition ${crop.posX === px && crop.posY === py ? 'bg-accent-cyan border-accent-cyan shadow-[0_0_10px_rgba(0,240,255,0.5)]' : 'bg-glass-900 border-white/10 hover:border-white/30'}`}></button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[11px] font-bold text-slate-400 shrink-0">تكبير</span>
+                    <input type="range" min="0" max="100" value={crop.zoom || 0} onChange={e => setCrop({ zoom: Number(e.target.value) })} className="w-full accent-accent-cyan" />
+                    <span className="text-[11px] font-mono text-slate-300 w-10 text-left">{crop.zoom || 0}%</span>
                   </div>
                 </div>
               )}
