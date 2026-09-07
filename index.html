@@ -162,7 +162,7 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    grep -n "const { useState, useEffect, useRef }"
+    const { useState, useEffect, useRef } = React;
 
     const firebaseConfig = {
       databaseURL: "https://mnste-6bc7b-default-rtdb.firebaseio.com",
@@ -2116,6 +2116,14 @@
                   </select>
                 </div>
               </div>
+
+              {(v.fitMobile || 'contain') !== (v.fitDesktop || 'contain') && (
+                <div className="flex items-center justify-between gap-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2.5">
+                  <p className="text-[11px] font-bold text-amber-400 leading-relaxed">تنبيه: الجوال والحاسوب مضبوطين على طريقتين مختلفتين — هذا مقصود إذا تريده هيك، لكن إذا تريد نفس الإعداد بكل الأجهزة اضغط الزر.</p>
+                  <button type="button" onClick={() => { set('fitMobile', v.fitDesktop || 'contain'); }}
+                    className="shrink-0 px-3 py-2 rounded-lg bg-amber-500 text-glass-950 text-[11px] font-black hover:brightness-110 transition">طبّق إعداد الحاسوب على الجوال</button>
+                </div>
+              )}
 
               {showCropTools && (
                 <div>
