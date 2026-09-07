@@ -993,7 +993,7 @@
         }
       };
 
-      // دعم أسهم لوحة المفاتيح للتقديم/التأخير 5 ثواني بالحاسوب (يتجاهل الكتابة داخل الحقول)
+      // دعم أسهم لوحة المفاتيح للتقديم/التأخير 5 ثواني، ومفتاح المسافة أو Enter لإيقاف/تشغيل الفيديو (يتجاهل الكتابة داخل الحقول)
       useEffect(() => {
         const onKeyDown = (e) => {
           const active = document.activeElement;
@@ -1001,6 +1001,8 @@
           if (tag === 'INPUT' || tag === 'TEXTAREA' || (active && active.isContentEditable)) return;
           if (e.key === 'ArrowRight') { e.preventDefault(); skip(5); }
           else if (e.key === 'ArrowLeft') { e.preventDefault(); skip(-5); }
+          else if (e.key === ' ' || e.code === 'Space' || e.key === 'Spacebar') { e.preventDefault(); togglePlay(); }
+          else if (e.key === 'Enter') { e.preventDefault(); togglePlay(); }
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
