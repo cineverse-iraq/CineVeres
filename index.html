@@ -267,6 +267,7 @@
         clock: <path d="M12 6v6l4 2M22 12A10 10 0 1 1 12 2a10 10 0 0 1 10 10z" />,
         shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />,
         play: <polygon points="5 3 19 12 5 21 5 3" />,
+        pause: <><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></>,
         'trash-2': <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6" />,
         check: <polyline points="20 6 9 17 4 12" />,
         x: <path d="M18 6 6 18M6 6l12 12" />,
@@ -857,11 +858,19 @@
       );
     }
 
-    // مشغّل الفيديو: يدعم نطاق تشغيل مخصص (قص زمني) وقص/تكبير/دوران موحّد للفيديو عبر كل الأجهزة
-    function VideoPlayer({ src, onError, trimStart, trimEnd, crop }) {
+    // مشغّل الفيديو: يدعم نطاق تشغيل مخصص (قص زمني)، وطريقة عرض مستقلة للجوال والحاسوب،
+    // وقص/تكبير/دوران احترافي دقيق مبني على القياس الفعلي لأبعاد الفيديو الطبيعية وحجم إطار العرض،
+    // بحيث تُطبَّق منطقة القص المختارة في لوحة التحكم بدقة أثناء المشاهدة الفعلية (وليست للمنظر فقط)
+    function VideoPlayer({ src, onError, trimStart, trimEnd, fitMobile, fitDesktop, crop }) {
       const videoRef = useRef(null);
+      const wrapRef = useRef(null);
       const [loading, setLoading] = useState(true);
+      const [natural, setNatural] = useState({ w: 0, h: 0 });
+      const [stage, setStage] = useState({ w: 0, h: 0 });
+      const isMobile = useIsMobile();
       const c = crop || {};
+      const fit = (isMobile ? fitMobile : fitDesktop) || 'contain';
+      const cropReady = fit === 'crop' && c.active && c.width > 0 && c.height > 0 && stage.w > 0 && stage.h > 0 && natural.w > 0 && natural.h > 0;
 
       useEffect(() => {
         const videoEl = videoRef.current;
@@ -880,37 +889,62 @@
         return () => { if (hls) hls.destroy(); };
       }, [src]);
 
-      // إنفاذ نطاق التشغيل المخصص (قص من البداية/النهاية) لو محدد من لوحة التحكم
+      // إنفاذ نطاق التشغيل المخصص (قص من البداية/النهاية)، وقراءة أبعاد الفيديو الطبيعية الحقيقية
       useEffect(() => {
         const videoEl = videoRef.current;
         if (!videoEl) return;
-        const onLoaded = () => { if (trimStart) { try { videoEl.currentTime = trimStart; } catch (e) {} } };
+        const onLoaded = () => {
+          if (trimStart) { try { videoEl.currentTime = trimStart; } catch (e) {} }
+          setNatural({ w: videoEl.videoWidth || 0, h: videoEl.videoHeight || 0 });
+        };
         const onTime = () => { if (trimEnd && videoEl.currentTime >= trimEnd) videoEl.pause(); };
         videoEl.addEventListener('loadedmetadata', onLoaded);
         videoEl.addEventListener('timeupdate', onTime);
         return () => { videoEl.removeEventListener('loadedmetadata', onLoaded); videoEl.removeEventListener('timeupdate', onTime); };
       }, [src, trimStart, trimEnd]);
 
-      // حساب ستايل العرض: إن لم يُفعّل القص، اعرض الفيديو كاملًا بلا أي قص (احتواء كامل)
+      // قياس حجم إطار العرض فعليًا (يتغيّر مع الشاشة/الاتجاه) لحساب القص بدقة بكسل بكسل
+      useEffect(() => {
+        const el = wrapRef.current;
+        if (!el || typeof ResizeObserver === 'undefined') return;
+        const ro = new ResizeObserver(entries => {
+          const cr = entries[0].contentRect;
+          setStage({ w: cr.width, h: cr.height });
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
+      }, []);
+
+      // حساب ستايل العرض بدقة: قص احترافي (منطقة x/y/width/height% من الفيديو الطبيعي + دوران)، أو ملء الشاشة، أو احتواء كامل
       let videoStyle = { objectFit: 'contain' };
-      if (c.active) {
-        const zoom = 1 + ((c.zoom || 0) / 100);
-        const posX = c.posX != null ? c.posX : 50;
-        const posY = c.posY != null ? c.posY : 50;
+      if (cropReady) {
         const rotation = c.rotation || 0;
         const rad = Math.abs(rotation) * Math.PI / 180;
-        const overscale = Math.cos(rad) + Math.sin(rad); // تكبير إضافي بسيط لتفادي ظهور حواف فارغة عند الدوران
-        const finalScale = zoom * overscale;
+        const overscale = Math.cos(rad) + Math.sin(rad); // تكبير إضافي لتفادي ظهور حواف فارغة عند الدوران
+        const boxWpx = (c.width / 100) * natural.w;
+        const boxHpx = (c.height / 100) * natural.h;
+        const baseScale = Math.max(stage.w / boxWpx, stage.h / boxHpx);
+        const scale = baseScale * overscale;
+        const renderedW = natural.w * scale;
+        const renderedH = natural.h * scale;
+        const centerXpx = (((c.x || 0) + c.width / 2) / 100) * natural.w * scale;
+        const centerYpx = (((c.y || 0) + c.height / 2) / 100) * natural.h * scale;
+        const tx = stage.w / 2 - centerXpx;
+        const ty = stage.h / 2 - centerYpx;
         videoStyle = {
-          objectFit: 'cover',
-          objectPosition: `${posX}% ${posY}%`,
-          transform: `scale(${finalScale})${rotation ? ` rotate(${rotation}deg)` : ''}`,
-          transformOrigin: `${posX}% ${posY}%`,
+          position: 'absolute', top: 0, left: 0,
+          width: `${renderedW}px`, height: `${renderedH}px`,
+          maxWidth: 'none', maxHeight: 'none',
+          transformOrigin: `${(c.x || 0) + c.width / 2}% ${(c.y || 0) + c.height / 2}%`,
+          transform: `translate(${tx}px, ${ty}px) rotate(${rotation}deg)`,
+          objectFit: 'fill',
         };
+      } else if (fit === 'cover') {
+        videoStyle = { objectFit: 'cover' };
       }
 
       return (
-        <div className="video-crop-wrap aspect-video">
+        <div ref={wrapRef} className="video-crop-wrap aspect-video">
           {loading && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
               <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan animate-spin"></div>
@@ -1692,18 +1726,253 @@
       );
     }
 
-    const FIT_OPTIONS = [['contain', 'احتواء كامل (بدون قص)'], ['cover', 'ملء الشاشة (تمدد)'], ['crop', 'قص مخصص للحواف']];
+    const FIT_OPTIONS = [['contain', 'احتواء كامل (بدون قص)'], ['cover', 'ملء الشاشة (تمدد)'], ['crop', 'قص احترافي مخصص']];
+    const CROP_ASPECTS = [['free', 'حر'], ['16:9', '16:9'], ['9:16', '9:16'], ['1:1', '1:1'], ['4:3', '4:3'], ['3:4', '3:4']];
 
-    // ضبط عرض الفيديو: نطاق تشغيل (قص زمني)، وطريقة عرض تختلف بين الجوال والحاسوب، مع تحكم بسيط بالتركيز والتكبير بدل ٤ خانات قص معقدة
+    function parseAspectRatio(key) {
+      if (!key || key === 'free') return null;
+      const parts = key.split(':').map(Number);
+      return parts[0] / parts[1];
+    }
+
+    function formatClock(sec) {
+      sec = Math.max(0, sec || 0);
+      const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = Math.floor(sec % 60);
+      const p = n => String(n).padStart(2, '0');
+      return h > 0 ? `${p(h)}:${p(m)}:${p(s)}` : `${p(m)}:${p(s)}`;
+    }
+
+    // خوارزمية تغيير حجم صندوق القص عبر المقابض الثمانية (سحب حر لكل حافة/زاوية)، مع دعم قفل نسبة العرض للارتفاع
+    function resizeCropBox(handle, start, dxPct, dyPct, ratioLock) {
+      const MIN = 5;
+      let { x, y, w, h } = start;
+      const anchorRight = x + w, anchorBottom = y + h;
+      const anchorCenterX = x + w / 2, anchorCenterY = y + h / 2;
+      let nx = x, ny = y, nw = w, nh = h;
+
+      if (handle.includes('e')) nw = w + dxPct;
+      if (handle.includes('w')) { nw = w - dxPct; nx = x + dxPct; }
+      if (handle.includes('s')) nh = h + dyPct;
+      if (handle.includes('n')) { nh = h - dyPct; ny = y + dyPct; }
+
+      nw = Math.max(MIN, nw);
+      nh = Math.max(MIN, nh);
+
+      if (ratioLock) {
+        const isEdgeH = handle === 'e' || handle === 'w';
+        const isEdgeV = handle === 'n' || handle === 's';
+        const driveW = isEdgeH ? true : isEdgeV ? false : Math.abs(dxPct) >= Math.abs(dyPct);
+        if (driveW) nh = Math.max(MIN, nw / ratioLock); else nw = Math.max(MIN, nh * ratioLock);
+
+        if (handle === 'e') { ny = anchorCenterY - nh / 2; }
+        else if (handle === 'w') { nx = anchorRight - nw; ny = anchorCenterY - nh / 2; }
+        else if (handle === 'n') { nx = anchorCenterX - nw / 2; ny = anchorBottom - nh; }
+        else if (handle === 's') { nx = anchorCenterX - nw / 2; }
+        else if (handle === 'ne') { ny = anchorBottom - nh; }
+        else if (handle === 'sw') { nx = anchorRight - nw; }
+        else if (handle === 'nw') { nx = anchorRight - nw; ny = anchorBottom - nh; }
+        // se: تبقى x وy كما هي (زاوية الإرساء)
+      }
+
+      nx = Math.max(0, Math.min(nx, 100 - nw));
+      ny = Math.max(0, Math.min(ny, 100 - nh));
+      nw = Math.min(nw, 100 - nx);
+      nh = Math.min(nh, 100 - ny);
+      return { x: nx, y: ny, w: nw, h: nh };
+    }
+
+    // أداة قص احترافية فعلية للفيديو: سحب مقابض حقيقية، قفل نسب عرض/ارتفاع قياسية، دوران دقيق، وخط زمني لمعاينة أي لحظة قبل التأكيد
+    function CropStudioModal({ videoUrl, initial, onCancel, onSave }) {
+      const videoRef = useRef(null);
+      const stageRef = useRef(null);
+      const dragRef = useRef(null);
+      const [natural, setNatural] = useState({ w: 0, h: 0 });
+      const [stageSize, setStageSize] = useState({ w: 0, h: 0 });
+      const [boxPct, setBoxPct] = useState(() => ({
+        x: initial && initial.x != null ? initial.x : 0,
+        y: initial && initial.y != null ? initial.y : 0,
+        w: initial && initial.width ? initial.width : 100,
+        h: initial && initial.height ? initial.height : 100,
+      }));
+      const [rotation, setRotation] = useState(initial && initial.rotation ? initial.rotation : 0);
+      const [aspect, setAspect] = useState('free');
+      const [duration, setDuration] = useState(0);
+      const [currentTime, setCurrentTime] = useState(0);
+      const [playing, setPlaying] = useState(false);
+      const [ready, setReady] = useState(false);
+
+      useEffect(() => {
+        const el = stageRef.current;
+        if (!el || typeof ResizeObserver === 'undefined') return;
+        const ro = new ResizeObserver(entries => {
+          const cr = entries[0].contentRect;
+          setStageSize({ w: cr.width, h: cr.height });
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
+      }, []);
+
+      useEffect(() => {
+        const v = videoRef.current;
+        if (!v) return;
+        const onLoaded = () => { setNatural({ w: v.videoWidth || 0, h: v.videoHeight || 0 }); setDuration(v.duration || 0); setReady(true); };
+        const onTime = () => setCurrentTime(v.currentTime || 0);
+        const onPlay = () => setPlaying(true);
+        const onPause = () => setPlaying(false);
+        v.addEventListener('loadedmetadata', onLoaded);
+        v.addEventListener('timeupdate', onTime);
+        v.addEventListener('play', onPlay);
+        v.addEventListener('pause', onPause);
+        return () => {
+          v.removeEventListener('loadedmetadata', onLoaded); v.removeEventListener('timeupdate', onTime);
+          v.removeEventListener('play', onPlay); v.removeEventListener('pause', onPause);
+        };
+      }, [videoUrl]);
+
+      // مستطيل عرض الفيديو الفعلي داخل المسرح (الفيديو معروض بوضع "احتواء كامل" فقد تظهر أشرطة سوداء أعلى/أسفل أو يمين/يسار)
+      const renderedRect = React.useMemo(() => {
+        if (!natural.w || !natural.h || !stageSize.w || !stageSize.h) return { left: 0, top: 0, width: stageSize.w || 0, height: stageSize.h || 0 };
+        const stageAspect = stageSize.w / stageSize.h, vidAspect = natural.w / natural.h;
+        let w, h;
+        if (vidAspect > stageAspect) { w = stageSize.w; h = w / vidAspect; } else { h = stageSize.h; w = h * vidAspect; }
+        return { left: (stageSize.w - w) / 2, top: (stageSize.h - h) / 2, width: w, height: h };
+      }, [natural, stageSize]);
+
+      // قفل نسبة العرض للارتفاع محسوبًا كنسبة "٪عرض إلى ٪ارتفاع" (وليس بكسل حقيقي) لأن أبعاد الفيديو الطبيعية ليست بالضرورة مربعة
+      const ratioLock = React.useMemo(() => {
+        const ar = parseAspectRatio(aspect);
+        if (!ar || !natural.w || !natural.h) return null;
+        return ar * (natural.h / natural.w);
+      }, [aspect, natural]);
+
+      useEffect(() => {
+        if (!ratioLock) return;
+        setBoxPct(prev => {
+          const cx = prev.x + prev.w / 2, cy = prev.y + prev.h / 2;
+          let w = prev.w, h = w / ratioLock;
+          if (h > 100) { h = 100; w = h * ratioLock; }
+          if (w > 100) { w = 100; h = w / ratioLock; }
+          let x = Math.max(0, Math.min(cx - w / 2, 100 - w));
+          let y = Math.max(0, Math.min(cy - h / 2, 100 - h));
+          return { x, y, w, h };
+        });
+        // eslint-disable-next-line
+      }, [ratioLock]);
+
+      const beginDrag = (e, mode) => {
+        e.preventDefault(); e.stopPropagation();
+        dragRef.current = { mode, startX: e.clientX, startY: e.clientY, startBox: { ...boxPct } };
+        try { e.target.setPointerCapture(e.pointerId); } catch (err) {}
+      };
+      const onDragMove = (e) => {
+        const drag = dragRef.current;
+        if (!drag || !renderedRect.width || !renderedRect.height) return;
+        const dxPct = (e.clientX - drag.startX) / renderedRect.width * 100;
+        const dyPct = (e.clientY - drag.startY) / renderedRect.height * 100;
+        if (drag.mode === 'move') {
+          const nx = Math.max(0, Math.min(drag.startBox.x + dxPct, 100 - drag.startBox.w));
+          const ny = Math.max(0, Math.min(drag.startBox.y + dyPct, 100 - drag.startBox.h));
+          setBoxPct({ ...drag.startBox, x: nx, y: ny });
+        } else {
+          setBoxPct(resizeCropBox(drag.mode, drag.startBox, dxPct, dyPct, ratioLock));
+        }
+      };
+      const endDrag = () => { dragRef.current = null; };
+
+      const resetAll = () => { setBoxPct({ x: 0, y: 0, w: 100, h: 100 }); setRotation(0); setAspect('free'); };
+      const togglePlay = () => { const v = videoRef.current; if (!v) return; if (v.paused) v.play(); else v.pause(); };
+      const seek = (val) => { const v = videoRef.current; if (!v) return; v.currentTime = val; setCurrentTime(val); };
+      const confirm = () => onSave({ active: true, x: boxPct.x, y: boxPct.y, width: boxPct.w, height: boxPct.h, rotation });
+
+      const corners = [['nw', '0%', '0%', 'nwse-resize'], ['ne', '100%', '0%', 'nesw-resize'], ['sw', '0%', '100%', 'nesw-resize'], ['se', '100%', '100%', 'nwse-resize']];
+      const edges = [['n', '50%', '0%', 'ns-resize', 'w-9 h-2.5 rounded-full'], ['s', '50%', '100%', 'ns-resize', 'w-9 h-2.5 rounded-full'], ['w', '0%', '50%', 'ew-resize', 'w-2.5 h-9 rounded-full'], ['e', '100%', '50%', 'ew-resize', 'w-2.5 h-9 rounded-full']];
+
+      return (
+        <div className="modal-backdrop fixed inset-0 z-[80] bg-black flex flex-col" onClick={e => e.stopPropagation()} style={{ touchAction: 'none' }}>
+          <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">
+            <span className="flex items-center gap-2 font-black text-white text-sm"><Icon name="crop" className="w-4 h-4 text-accent-cyan" />قص الفيديو الاحترافي</span>
+            <button type="button" onClick={onCancel} className="w-9 h-9 rounded-xl glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-300 hover:text-white transition"><Icon name="x" className="w-4 h-4" /></button>
+          </div>
+
+          <div ref={stageRef} className="relative flex-1 min-h-0 bg-black overflow-hidden select-none" style={{ touchAction: 'none' }}>
+            {!ready && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan animate-spin"></div>
+              </div>
+            )}
+            <video ref={videoRef} src={videoUrl} muted playsInline webkit-playsinline="true" preload="metadata"
+              className="absolute inset-0 w-full h-full pointer-events-none" style={{ objectFit: 'contain' }} />
+            {ready && renderedRect.width > 0 && (
+              <div className="absolute" style={{ left: renderedRect.left, top: renderedRect.top, width: renderedRect.width, height: renderedRect.height, overflow: 'hidden' }}>
+                <div
+                  onPointerDown={e => beginDrag(e, 'move')} onPointerMove={onDragMove} onPointerUp={endDrag}
+                  className="absolute cursor-move border-2 border-white"
+                  style={{ left: `${boxPct.x}%`, top: `${boxPct.y}%`, width: `${boxPct.w}%`, height: `${boxPct.h}%`, boxShadow: '0 0 0 2000px rgba(0,0,0,0.65)' }}>
+                  <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 border-t border-dashed border-white/50 pointer-events-none"></div>
+                  <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 border-r border-dashed border-white/50 pointer-events-none"></div>
+                  {corners.map(([id, left, top, cursor]) => (
+                    <div key={id} onPointerDown={e => beginDrag(e, id)} onPointerMove={onDragMove} onPointerUp={endDrag}
+                      className="absolute w-4 h-4 bg-white rounded-md border border-glass-950 shadow-md -translate-x-1/2 -translate-y-1/2"
+                      style={{ left, top, cursor }}></div>
+                  ))}
+                  {edges.map(([id, left, top, cursor, sizeCls]) => (
+                    <div key={id} onPointerDown={e => beginDrag(e, id)} onPointerMove={onDragMove} onPointerUp={endDrag}
+                      className={`absolute bg-white border border-glass-950 shadow-md -translate-x-1/2 -translate-y-1/2 ${sizeCls}`}
+                      style={{ left, top, cursor }}></div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="px-4 py-3 border-t border-white/10 shrink-0 space-y-3">
+            <div className="flex items-center gap-3">
+              <button type="button" onClick={togglePlay} className="w-8 h-8 rounded-lg glass-card border border-white/10 flex items-center justify-center text-accent-cyan shrink-0">
+                <Icon name={playing ? 'pause' : 'play'} className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-xs font-mono text-accent-cyan shrink-0">{formatClock(currentTime)}</span>
+              <input type="range" min="0" max={duration || 0} step="0.05" value={currentTime}
+                onChange={e => seek(Number(e.target.value))} className="w-full accent-accent-cyan" />
+              <span className="text-xs font-mono text-slate-400 shrink-0">{formatClock(duration)}</span>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-3 items-center">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold text-slate-400 shrink-0 w-12">الدوران</span>
+                <input type="range" min="-45" max="45" step="1" value={rotation} onChange={e => setRotation(Number(e.target.value))} className="w-full accent-accent-cyan" />
+                <div className="flex items-center gap-1 shrink-0">
+                  <input type="number" min="-45" max="45" value={rotation}
+                    onChange={e => setRotation(Math.max(-45, Math.min(45, Number(e.target.value) || 0)))}
+                    className="w-14 bg-glass-900 border border-white/10 rounded-lg px-2 py-1 text-xs text-white text-center" />
+                  <span className="text-[11px] text-slate-400">°</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 sm:justify-end">
+                <span className="text-[11px] font-bold text-slate-400 shrink-0">نسبة القص</span>
+                <select value={aspect} onChange={e => setAspect(e.target.value)} className="bg-glass-900 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-accent-cyan">
+                  {CROP_ASPECTS.map(([k, l]) => <option key={k} value={k} className="bg-glass-950">{l}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <button type="button" onClick={resetAll} className="flex-1 py-2.5 rounded-xl glass-card border border-white/10 text-xs font-bold text-slate-300 hover:bg-white/5 transition">إعادة ضبط</button>
+              <button type="button" onClick={confirm} disabled={!ready} className="flex-1 py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-xs font-black hover:brightness-110 shadow-[0_0_15px_rgba(0,240,255,0.4)] transition disabled:opacity-50">تأكيد القص</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ضبط عرض الفيديو: نطاق تشغيل (قص زمني)، طريقة عرض مستقلة بين الجوال والحاسوب، وأداة قص احترافية فعلية (سحب مقابض حقيقي، دوران، نسب قياسية) بدل الإعدادات الشكلية السابقة
     function VideoDisplaySettings({ value, onChange }) {
       const [open, setOpen] = useState(false);
+      const [showCropStudio, setShowCropStudio] = useState(false);
       const v = value || {};
       const set = (k, val) => onChange({ ...v, [k]: val });
-      const crop = v.crop || { zoom: 0, posX: 50, posY: 50 };
-      const setCrop = (patch) => onChange({ ...v, crop: { ...crop, ...patch } });
+      const crop = v.crop || {};
       const showCropTools = v.fitMobile === 'crop' || v.fitDesktop === 'crop';
-
-      const positions = [[0,0],[50,0],[100,0],[0,50],[50,50],[100,50],[0,100],[50,100],[100,100]];
+      const canCrop = v.videoUrl && isDirectVideo(v.videoUrl);
 
       return (
         <div className="glass-card rounded-2xl border border-white/10 mt-3">
@@ -1738,21 +2007,34 @@
 
               {showCropTools && (
                 <div>
-                  <p className="text-[11px] font-bold text-slate-400 mb-2.5">اختر الجهة اللي تريد إظهارها (وسط الشاشة = بدون قص)</p>
-                  <div className="grid grid-cols-3 gap-1.5 w-28 mx-auto mb-3">
-                    {positions.map(([px, py]) => (
-                      <button key={`${px}-${py}`} type="button" onClick={() => setCrop({ posX: px, posY: py })}
-                        className={`aspect-square rounded-lg border transition ${crop.posX === px && crop.posY === py ? 'bg-accent-cyan border-accent-cyan shadow-[0_0_10px_rgba(0,240,255,0.5)]' : 'bg-glass-900 border-white/10 hover:border-white/30'}`}></button>
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-[11px] font-bold text-slate-400 shrink-0">تكبير</span>
-                    <input type="range" min="0" max="100" value={crop.zoom || 0} onChange={e => setCrop({ zoom: Number(e.target.value) })} className="w-full accent-accent-cyan" />
-                    <span className="text-[11px] font-mono text-slate-300 w-10 text-left">{crop.zoom || 0}%</span>
-                  </div>
+                  {canCrop ? (
+                    <div className="flex items-center gap-2.5">
+                      <button type="button" onClick={() => setShowCropStudio(true)}
+                        className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-xs font-black hover:brightness-110 shadow-[0_0_15px_rgba(0,240,255,0.4)] transition">
+                        <Icon name="crop" className="w-4 h-4" />{crop.active ? 'تعديل القص' : 'فتح أداة القص الاحترافية'}
+                      </button>
+                      {crop.active && (
+                        <button type="button" onClick={() => set('crop', {})} title="إزالة القص"
+                          className="shrink-0 w-10 h-10 rounded-xl glass-card border border-white/10 hover:border-rose-400 text-rose-400 flex items-center justify-center transition">
+                          <Icon name="x" className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] font-bold text-amber-400">
+                      {v.videoUrl ? 'أداة القص تعمل فقط مع ملفات فيديو مباشرة (mp4, webm...) وليست روابط تضمين/iframe' : 'ارفع ملف الفيديو أولًا لتفعيل أداة القص'}
+                    </p>
+                  )}
+                  {crop.active && <p className="text-[11px] text-slate-400 mt-2">تم ضبط القص بنجاح ✅ — دوران {crop.rotation || 0}°</p>}
                 </div>
               )}
             </div>
+          )}
+
+          {showCropStudio && (
+            <CropStudioModal videoUrl={normalizeVideoUrl(v.videoUrl)} initial={crop}
+              onCancel={() => setShowCropStudio(false)}
+              onSave={(newCrop) => { set('crop', newCrop); setShowCropStudio(false); }} />
           )}
         </div>
       );
