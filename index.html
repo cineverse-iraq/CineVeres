@@ -118,6 +118,17 @@
     .video-crop-wrap:-webkit-full-screen { width: 100vw !important; height: 100vh !important; aspect-ratio: auto !important; }
     .video-crop-wrap:-moz-full-screen { width: 100vw !important; height: 100vh !important; aspect-ratio: auto !important; }
     .video-crop-wrap:-ms-fullscreen { width: 100vw !important; height: 100vh !important; aspect-ratio: auto !important; }
+    /* ===== وضع ملء الشاشة البديل (Pseudo Fullscreen) للأجهزة اللي ما تدعم ملء شاشة عنصر عادي (آيفون سفاري)
+       يبقي الفيديو داخل صفحتنا (وليس بمشغل النظام الأصلي) حتى يبقى القص المخصص شغّالًا 100% ===== */
+    .pseudo-fullscreen {
+      position: fixed !important;
+      inset: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      z-index: 9999 !important;
+      aspect-ratio: auto !important;
+      background: #000;
+    }
   </style>
 </head>
 <body class="bg-glass-950 text-slate-100 min-h-screen selection:bg-accent-red selection:text-white">
@@ -955,9 +966,13 @@
         v.currentTime = Math.min(Math.max(0, v.currentTime + delta), dur);
       };
 
-      // ملء الشاشة الفعلي: يجرّب كل بادئات المتصفحات (كروم/فايرفوكس/سفاري/إيدج)، وإن لم يدعم
-      // المتصفح تكبير عنصر عادي (حالة آيفون سفاري) يرجع لتكبير الفيديو نفسه عبر واجهة آيفون الأصلية
+      // ملء الشاشة: يجرّب أولاً ملء شاشة حاوية القص نفسها (كل بادئات المتصفحات)، وإن فشل ذلك أو لم تكن الحاوية
+      // مدعومة (حالة آيفون سفاري) نلجأ لوضع "ملء شاشة بديل" بواسطة CSS بدل مشغل آيفون الأصلي — وذلك فقط إذا
+      // كان هناك قص فعّال (cropReady)، لأن مشغل آيفون الأصلي (webkitEnterFullscreen) يعرض الفيديو خارج صفحتنا
+      // بالكامل ولا يطبّق أي تعديل CSS/transform، فيتجاوز القص المخصص كليًا. إن لم يكن هناك قص فعلي، لا داعي
+      // للوضع البديل ونستخدم مشغل آيفون الأصلي كما هو (تجربة أفضل: أزرار نظام أصلية، قفل الاتجاه...).
       const [isFs, setIsFs] = useState(false);
+      const [pseudoFs, setPseudoFs] = useState(false);
       useEffect(() => {
         const onFsChange = () => {
           const fsEl = document.fullscreenElement || document.webkitFullscreenElement || document.webkitCurrentFullScreenElement || document.mozFullScreenElement || document.msFullscreenElement;
@@ -974,21 +989,42 @@
           document.removeEventListener('MSFullscreenChange', onFsChange);
         };
       }, []);
+      // تنظيف: إن أُزيل المشغل من الشجرة وهو بوضع ملء الشاشة البديل، نعيد تمرير الصفحة كما كان
+      useEffect(() => () => { if (pseudoFs) document.body.style.overflow = ''; }, [pseudoFs]);
       const toggleFullscreen = () => {
         const el = wrapRef.current;
         const v = videoRef.current;
+
+        // إذا كنا بالفعل بوضع ملء الشاشة البديل، الخروج منه فقط
+        if (pseudoFs) {
+          setPseudoFs(false);
+          document.body.style.overflow = '';
+          return;
+        }
+
         const fsEl = document.fullscreenElement || document.webkitFullscreenElement || document.webkitCurrentFullScreenElement || document.mozFullScreenElement || document.msFullscreenElement;
         if (fsEl) {
           const exit = document.exitFullscreen || document.webkitExitFullscreen || document.webkitCancelFullScreen || document.mozCancelFullScreen || document.msExitFullscreen;
           if (exit) exit.call(document);
           return;
         }
+
         const req = el && (el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen);
         if (req) {
           const result = req.call(el);
-          if (result && result.catch) result.catch(() => { if (v && v.webkitEnterFullscreen) v.webkitEnterFullscreen(); });
+          if (result && result.catch) {
+            result.catch(() => {
+              // فشل ملء الشاشة القياسي على حاوية القص (متوقع بآيفون سفاري): لو فيه قص فعّال نستخدم الوضع
+              // البديل بدل مشغل آيفون الأصلي، لأن الأخير يتجاوز القص المخصص كليًا. غير هيك، نكمل بمشغل آيفون.
+              if (cropReady) { setPseudoFs(true); document.body.style.overflow = 'hidden'; }
+              else if (v && v.webkitEnterFullscreen) v.webkitEnterFullscreen();
+            });
+          }
+        } else if (cropReady) {
+          setPseudoFs(true);
+          document.body.style.overflow = 'hidden';
         } else if (v && v.webkitEnterFullscreen) {
-          // مسار آيفون: سفاري آيفون لا يدعم تكبير عنصر عادي، فقط الفيديو نفسه، لذا يظهر بدون القص المخصص أثناء ملء الشاشة (قيد نظام آيفون نفسه)
+          // مسار آيفون بدون قص فعّال: سفاري آيفون لا يدعم تكبير عنصر عادي، فقط الفيديو نفسه
           v.webkitEnterFullscreen();
         }
       };
@@ -1037,7 +1073,7 @@
       }
 
       return (
-        <div ref={wrapRef} className="video-crop-wrap aspect-video">
+        <div ref={wrapRef} className={`video-crop-wrap aspect-video ${pseudoFs ? 'pseudo-fullscreen' : ''}`}>
           {loading && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
               <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan animate-spin"></div>
@@ -1061,8 +1097,8 @@
               <button type="button" onClick={toggleMute} className="w-8 h-8 shrink-0 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white text-sm transition">
                 {ctrl.muted ? '🔇' : '🔊'}
               </button>
-              <button type="button" onClick={toggleFullscreen} title={isFs ? 'إنهاء ملء الشاشة' : 'ملء الشاشة'} className="w-8 h-8 shrink-0 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white transition">
-                <Icon name={isFs ? 'minimize' : 'maximize'} className="w-3.5 h-3.5" />
+              <button type="button" onClick={toggleFullscreen} title={(isFs || pseudoFs) ? 'إنهاء ملء الشاشة' : 'ملء الشاشة'} className="w-8 h-8 shrink-0 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white transition">
+                <Icon name={(isFs || pseudoFs) ? 'minimize' : 'maximize'} className="w-3.5 h-3.5" />
               </button>
             </div>
           )}
