@@ -64,7 +64,6 @@
     img { transition: opacity 0.35s ease; }
     button, a { -webkit-tap-highlight-color: transparent; }
     button:active { transform: scale(0.97); }
-    /* يمنع تكبير آيفون التلقائي للصفحة عند فتح لوحة المفاتيح (المتصفح يكبّر إذا كان حجم الخط أقل من 16px) */
     input, textarea, select { font-size: 16px !important; }
     @media (min-width: 768px) { input, textarea, select { font-size: 14px !important; } }
 
@@ -88,36 +87,27 @@
       box-shadow: 0 10px 30px -10px rgba(0, 240, 255, 0.2);
     }
 
-    /* ===== إصلاحات عامة لمنع أي تداخل أو تمرير أفقي ===== */
     html { width: 100%; height: 100%; }
     body { overflow-x: hidden; width: 100%; overscroll-behavior-y: none; }
     #root { overflow-x: hidden; min-height: 100%; }
 
-    /* ===== نجوم التقييم ===== */
     .star-btn { transition: transform 0.15s ease, color 0.15s ease; }
     .star-btn:active { transform: scale(1.2); }
 
-    /* ===== شبكة بروفايل بأسلوب Letterboxd ===== */
     .profile-poster-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
     @media (min-width: 640px) { .profile-poster-grid { grid-template-columns: repeat(6, 1fr); gap: 10px; } }
     @media (min-width: 768px) { .profile-poster-grid { grid-template-columns: repeat(8, 1fr); } }
 
-    /* ===== واجهة الجوال المخصصة ===== */
     @media (max-width: 767px) {
       .mobile-safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom) + 84px) !important; }
       h1 { font-size: 1.4rem !important; }
       .glass-panel, .glass-card { border-radius: 18px; }
     }
 
-    /* ===== حاوية الفيديو مع دعم القص المخصص ===== */
     .video-crop-wrap { position: relative; width: 100%; overflow: hidden; background: #000; }
     .video-crop-wrap video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-    /* عند تفعيل ملء الشاشة الحقيقي على حاوية القص، نلغي نسبة العرض/الارتفاع الثابتة (aspect-video)
-       لتملأ الحاوية كامل الشاشة فعليًا بدل أن تبقى محصورة بنسبة 16:9 وسط شريط أسود */
     .video-crop-wrap:fullscreen { width: 100vw !important; height: 100vh !important; aspect-ratio: auto !important; }
     .video-crop-wrap:-webkit-full-screen { width: 100vw !important; height: 100vh !important; aspect-ratio: auto !important; }
-    .video-crop-wrap:-moz-full-screen { width: 100vw !important; height: 100vh !important; aspect-ratio: auto !important; }
-    .video-crop-wrap:-ms-fullscreen { width: 100vw !important; height: 100vh !important; aspect-ratio: auto !important; }
   </style>
 </head>
 <body class="bg-glass-950 text-slate-100 min-h-screen selection:bg-accent-red selection:text-white">
@@ -132,30 +122,6 @@
     #bootLoader b { color: #00F0FF; }
   </style>
   <div id="bootLoader">
-    <svg class="boot-logo" viewBox="0 0 1080 1080" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="bootGlassStroke" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#E9D5FF"/><stop offset="45%" stop-color="#A855F7"/><stop offset="100%" stop-color="#00F0FF"/>
-        </linearGradient>
-        <linearGradient id="bootFilmStrip" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stop-color="#A855F7"/><stop offset="50%" stop-color="#7C3AED"/><stop offset="100%" stop-color="#00F0FF"/>
-        </linearGradient>
-        <linearGradient id="bootGlassFill" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stop-color="#3b2a5c" stop-opacity="0.7"/><stop offset="100%" stop-color="#161E2E" stop-opacity="0.7"/>
-        </linearGradient>
-        <linearGradient id="bootReelFill" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#241536" stop-opacity="0.95"/><stop offset="100%" stop-color="#0E131F" stop-opacity="0.95"/>
-        </linearGradient>
-      </defs>
-      <path d="M 195 555 C 140 500, 150 400, 235 355 C 300 320, 380 340, 420 400" fill="none" stroke="url(#bootFilmStrip)" stroke-width="46" stroke-linecap="round" opacity="0.9"/>
-      <path d="M 640 400 C 720 330, 810 320, 870 380 C 925 435, 915 520, 850 570" fill="none" stroke="url(#bootFilmStrip)" stroke-width="46" stroke-linecap="round" opacity="0.9"/>
-      <path d="M 330 660 C 480 610, 640 610, 800 585" fill="none" stroke="url(#bootFilmStrip)" stroke-width="46" stroke-linecap="round" opacity="0.9"/>
-      <rect x="405" y="430" width="330" height="200" rx="26" fill="url(#bootGlassFill)" stroke="url(#bootGlassStroke)" stroke-width="4"/>
-      <rect x="345" y="500" width="55" height="70" rx="12" fill="url(#bootGlassFill)" stroke="url(#bootGlassStroke)" stroke-width="3"/>
-      <rect x="745" y="590" width="55" height="26" rx="8" fill="url(#bootGlassFill)" stroke="url(#bootGlassStroke)" stroke-width="3"/>
-      <circle cx="480" cy="345" r="95" fill="url(#bootReelFill)" stroke="url(#bootGlassStroke)" stroke-width="5"/>
-      <circle cx="660" cy="345" r="95" fill="url(#bootReelFill)" stroke="url(#bootGlassStroke)" stroke-width="5"/>
-    </svg>
     <div class="spin"></div>
     <p>جاري تحميل <b>CineVerse</b>...</p>
   </div>
@@ -172,7 +138,8 @@
     const db = firebase.database();
     const storage = firebase.storage();
 
-    // رفع أي ملف (صورة/فيديو) مباشرة من الجهاز إلى Firebase Storage، مع تتبع نسبة التقدم
+    const CROP_API_BASE = "https://198.199.77.101.sslip.io";
+
     function uploadFile(file, folder, onProgress) {
       return new Promise((resolve, reject) => {
         const safeName = (file.name || `upload_${Date.now()}.jpg`).replace(/[^a-zA-Z0-9.\-_]/g, '_');
@@ -187,8 +154,6 @@
       });
     }
 
-    // ضغط أي صورة وتحويلها لـ base64 صالحة للتخزين المباشر في Realtime Database
-    // (تُستخدم لصور الحسابات الشخصية بدل الاعتماد على Firebase Storage المقيّد)
     function compressImageToDataUrl(file, maxSize = 300, maxBytes = 260000) {
       return new Promise((resolve, reject) => {
         if (!file || !file.type || !file.type.startsWith('image/')) { reject(new Error('ملف غير صالح')); return; }
@@ -216,8 +181,6 @@
       });
     }
 
-    // بعض روابط المشاركة (كوقل درايف مثلاً) هي صفحة عرض وليست رابط فيديو مباشر
-    // نحوّلها تلقائيًا لصيغة قابلة للتضمين تعمل بشكل صحيح على كل الأجهزة
     const isIOS = /iP(hone|od|ad)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const sanitizeKey = (s) => (s || '').replace(/[.#$\/\[\]]/g, '_');
 
@@ -237,7 +200,6 @@
     const TYPE_PLURAL = { movie: 'الأفلام', series: 'المسلسلات', anime: 'الأنميات' };
     const COMPLAINT_TYPES = { add: 'طلب إضافة عمل', problem: 'مشكلة في التشغيل أو التحميل', suggestion: 'اقتراح عام' };
 
-    // رمز الحماية الخاص بلوحة المطورين (يمكنك تغييره هنا)
     const DEV_SECRET_PIN = "MAVI7734"; 
 
     function fmtDateTime(ts) {
@@ -251,7 +213,6 @@
       return /\.(mp4|webm|ogg|mov|m3u8)(\?.*)?$/i.test(url || '');
     }
 
-    // هل الجهاز الحالي بحجم جوال (أقل من md=768px)؟
     function useIsMobile() {
       const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 768 : false);
       useEffect(() => {
@@ -308,7 +269,6 @@
       );
     }
 
-    // شعار CineVerse (نسخة مصغّرة من الشعار الرسمي، بدون النص، لاستخدامه في الهيدر والنوافذ)
     function CineVerseLogo({ className = "w-8 h-8" }) {
       const uid = useRef('lg' + Math.random().toString(36).slice(2)).current;
       return (
@@ -339,7 +299,6 @@
       );
     }
 
-    // نجوم تقييم تفاعلية (للاستخدام في نموذج التقييم)
     function StarRatingInput({ value, onChange, size = "w-7 h-7" }) {
       const [hover, setHover] = useState(0);
       return (
@@ -354,7 +313,6 @@
       );
     }
 
-    // عرض النجوم للقراءة فقط (متوسط التقييم)
     function StarRatingDisplay({ value, size = "w-3.5 h-3.5" }) {
       const rounded = Math.round((value || 0) * 2) / 2;
       return (
@@ -436,7 +394,6 @@
       );
     }
 
-    // البنر الرئيسي (Hero): قابل للسحب بالفأرة أو الإصبع، والنقاط تنقل مباشرة لأي بنر
     function Hero({ items, onOpen }) {
       const [idx, setIdx] = useState(0);
       const dragState = useRef({ startX: 0, dragging: false });
@@ -510,7 +467,6 @@
       );
     }
 
-    // شريط "أكمل المشاهدة" (يعتمد على آخر الأعمال المفتوحة، محفوظة محليًا بجهاز الزائر)
     function ContinueWatchingRow({ items, onOpen }) {
       if (!items.length) return null;
       return (
@@ -802,7 +758,6 @@
       );
     }
 
-    // نافذة التحقق من رمز المطورين واسم المستخدم للمطور
     function DevPinModal({ currentUser, onClose, onSuccess, onOpenAuth }) {
       const [pin, setPin] = useState('');
       const [error, setError] = useState('');
@@ -823,7 +778,6 @@
 
       const verify = () => {
         setError('');
-        // شرط أساسي: يوزر حسابة mavilovelife حصراً + الرمز السري الصحيح
         if (currentUser.username !== 'mavilovelife' || pin.trim() !== DEV_SECRET_PIN) {
           setError('عذراً هذا القسم للمطورين فقط.');
           return;
@@ -864,19 +818,11 @@
       );
     }
 
-    // مشغّل الفيديو: يدعم نطاق تشغيل مخصص (قص زمني)، وطريقة عرض مستقلة للجوال والحاسوب،
-    // وقص/تكبير/دوران احترافي دقيق مبني على القياس الفعلي لأبعاد الفيديو الطبيعية وحجم إطار العرض،
-    // بحيث تُطبَّق منطقة القص المختارة في لوحة التحكم بدقة أثناء المشاهدة الفعلية (وليست للمنظر فقط)
-    function VideoPlayer({ src, onError, trimStart, trimEnd, fitMobile, fitDesktop, crop }) {
+    function VideoPlayer({ src, onError, fitMobile, fitDesktop }) {
       const videoRef = useRef(null);
-      const wrapRef = useRef(null);
       const [loading, setLoading] = useState(true);
-      const [natural, setNatural] = useState({ w: 0, h: 0 });
-      const [stage, setStage] = useState({ w: 0, h: 0 });
       const isMobile = useIsMobile();
-      const c = crop || {};
       const fit = (isMobile ? fitMobile : fitDesktop) || 'contain';
-      const cropReady = fit === 'crop' && c.active && c.width > 0 && c.height > 0 && stage.w > 0 && stage.h > 0 && natural.w > 0 && natural.h > 0;
 
       useEffect(() => {
         const videoEl = videoRef.current;
@@ -895,177 +841,17 @@
         return () => { if (hls) hls.destroy(); };
       }, [src]);
 
-      // إنفاذ نطاق التشغيل المخصص (قص من البداية/النهاية)، وقراءة أبعاد الفيديو الطبيعية الحقيقية
-      useEffect(() => {
-        const videoEl = videoRef.current;
-        if (!videoEl) return;
-        const onLoaded = () => {
-          if (trimStart) { try { videoEl.currentTime = trimStart; } catch (e) {} }
-          setNatural({ w: videoEl.videoWidth || 0, h: videoEl.videoHeight || 0 });
-        };
-        const onTime = () => { if (trimEnd && videoEl.currentTime >= trimEnd) videoEl.pause(); };
-        videoEl.addEventListener('loadedmetadata', onLoaded);
-        videoEl.addEventListener('timeupdate', onTime);
-        return () => { videoEl.removeEventListener('loadedmetadata', onLoaded); videoEl.removeEventListener('timeupdate', onTime); };
-      }, [src, trimStart, trimEnd]);
-
-      // قياس حجم إطار العرض فعليًا (يتغيّر مع الشاشة/الاتجاه) لحساب القص بدقة بكسل بكسل
-      useEffect(() => {
-        const el = wrapRef.current;
-        if (!el || typeof ResizeObserver === 'undefined') return;
-        const ro = new ResizeObserver(entries => {
-          const cr = entries[0].contentRect;
-          setStage({ w: cr.width, h: cr.height });
-        });
-        ro.observe(el);
-        return () => ro.disconnect();
-      }, []);
-
-      // حالة عناصر التحكم المخصصة (تُستخدم فقط في وضع القص لأن أزرار المتصفح الأصلية تتحرك مع الفيديو المكبّر)
-      const [ctrl, setCtrl] = useState({ playing: true, muted: true, current: 0, duration: 0 });
-      useEffect(() => {
-        const videoEl = videoRef.current;
-        if (!videoEl) return;
-        const onPlay = () => setCtrl(c2 => ({ ...c2, playing: true }));
-        const onPause = () => setCtrl(c2 => ({ ...c2, playing: false }));
-        const onVolume = () => setCtrl(c2 => ({ ...c2, muted: videoEl.muted }));
-        const onLoadedMeta = () => setCtrl(c2 => ({ ...c2, duration: videoEl.duration || 0 }));
-        const onTimeUpdate = () => setCtrl(c2 => ({ ...c2, current: videoEl.currentTime || 0 }));
-        videoEl.addEventListener('play', onPlay);
-        videoEl.addEventListener('pause', onPause);
-        videoEl.addEventListener('volumechange', onVolume);
-        videoEl.addEventListener('loadedmetadata', onLoadedMeta);
-        videoEl.addEventListener('timeupdate', onTimeUpdate);
-        return () => {
-          videoEl.removeEventListener('play', onPlay);
-          videoEl.removeEventListener('pause', onPause);
-          videoEl.removeEventListener('volumechange', onVolume);
-          videoEl.removeEventListener('loadedmetadata', onLoadedMeta);
-          videoEl.removeEventListener('timeupdate', onTimeUpdate);
-        };
-      }, [src]);
-
-      const togglePlay = () => { const v = videoRef.current; if (!v) return; if (v.paused) v.play(); else v.pause(); };
-      const toggleMute = () => { const v = videoRef.current; if (!v) return; v.muted = !v.muted; };
-      const seekTo = (val) => { const v = videoRef.current; if (v) v.currentTime = Number(val); };
-      const skip = (delta) => {
-        const v = videoRef.current;
-        if (!v) return;
-        const dur = v.duration || Infinity;
-        v.currentTime = Math.min(Math.max(0, v.currentTime + delta), dur);
-      };
-
-      // ملء الشاشة الفعلي: يجرّب كل بادئات المتصفحات (كروم/فايرفوكس/سفاري/إيدج)، وإن لم يدعم
-      // المتصفح تكبير عنصر عادي (حالة آيفون سفاري) يرجع لتكبير الفيديو نفسه عبر واجهة آيفون الأصلية
-      const [isFs, setIsFs] = useState(false);
-      useEffect(() => {
-        const onFsChange = () => {
-          const fsEl = document.fullscreenElement || document.webkitFullscreenElement || document.webkitCurrentFullScreenElement || document.mozFullScreenElement || document.msFullscreenElement;
-          setIsFs(!!fsEl);
-        };
-        document.addEventListener('fullscreenchange', onFsChange);
-        document.addEventListener('webkitfullscreenchange', onFsChange);
-        document.addEventListener('mozfullscreenchange', onFsChange);
-        document.addEventListener('MSFullscreenChange', onFsChange);
-        return () => {
-          document.removeEventListener('fullscreenchange', onFsChange);
-          document.removeEventListener('webkitfullscreenchange', onFsChange);
-          document.removeEventListener('mozfullscreenchange', onFsChange);
-          document.removeEventListener('MSFullscreenChange', onFsChange);
-        };
-      }, []);
-      const toggleFullscreen = () => {
-        const el = wrapRef.current;
-        const v = videoRef.current;
-        const fsEl = document.fullscreenElement || document.webkitFullscreenElement || document.webkitCurrentFullScreenElement || document.mozFullScreenElement || document.msFullscreenElement;
-        if (fsEl) {
-          const exit = document.exitFullscreen || document.webkitExitFullscreen || document.webkitCancelFullScreen || document.mozCancelFullScreen || document.msExitFullscreen;
-          if (exit) exit.call(document);
-          return;
-        }
-        const req = el && (el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen);
-        if (req) {
-          const result = req.call(el);
-          if (result && result.catch) result.catch(() => { if (v && v.webkitEnterFullscreen) v.webkitEnterFullscreen(); });
-        } else if (v && v.webkitEnterFullscreen) {
-          // مسار آيفون: سفاري آيفون لا يدعم تكبير عنصر عادي، فقط الفيديو نفسه، لذا يظهر بدون القص المخصص أثناء ملء الشاشة (قيد نظام آيفون نفسه)
-          v.webkitEnterFullscreen();
-        }
-      };
-
-      // دعم أسهم لوحة المفاتيح للتقديم/التأخير 5 ثواني، ومفتاح المسافة أو Enter لإيقاف/تشغيل الفيديو (يتجاهل الكتابة داخل الحقول)
-      useEffect(() => {
-        const onKeyDown = (e) => {
-          const active = document.activeElement;
-          const tag = active ? active.tagName : '';
-          if (tag === 'INPUT' || tag === 'TEXTAREA' || (active && active.isContentEditable)) return;
-          if (e.key === 'ArrowRight') { e.preventDefault(); skip(5); }
-          else if (e.key === 'ArrowLeft') { e.preventDefault(); skip(-5); }
-          else if (e.key === ' ' || e.code === 'Space' || e.key === 'Spacebar') { e.preventDefault(); togglePlay(); }
-          else if (e.key === 'Enter') { e.preventDefault(); togglePlay(); }
-        };
-        window.addEventListener('keydown', onKeyDown);
-        return () => window.removeEventListener('keydown', onKeyDown);
-      }, []);
-
-      // حساب ستايل العرض بدقة: قص احترافي (منطقة x/y/width/height% من الفيديو الطبيعي + دوران)، أو ملء الشاشة، أو احتواء كامل
-      let videoStyle = { objectFit: 'contain' };
-      if (cropReady) {
-        const rotation = c.rotation || 0;
-        const rad = Math.abs(rotation) * Math.PI / 180;
-        const overscale = Math.cos(rad) + Math.sin(rad); // تكبير إضافي لتفادي ظهور حواف فارغة عند الدوران
-        const boxWpx = (c.width / 100) * natural.w;
-        const boxHpx = (c.height / 100) * natural.h;
-        const baseScale = Math.max(stage.w / boxWpx, stage.h / boxHpx);
-        const scale = baseScale * overscale;
-        const renderedW = natural.w * scale;
-        const renderedH = natural.h * scale;
-        const centerXpx = (((c.x || 0) + c.width / 2) / 100) * natural.w * scale;
-        const centerYpx = (((c.y || 0) + c.height / 2) / 100) * natural.h * scale;
-        const tx = stage.w / 2 - centerXpx;
-        const ty = stage.h / 2 - centerYpx;
-        videoStyle = {
-          position: 'absolute', top: 0, left: 0,
-          width: `${renderedW}px`, height: `${renderedH}px`,
-          maxWidth: 'none', maxHeight: 'none',
-          transformOrigin: `${(c.x || 0) + c.width / 2}% ${(c.y || 0) + c.height / 2}%`,
-          transform: `translate(${tx}px, ${ty}px) rotate(${rotation}deg)`,
-          objectFit: 'fill',
-        };
-      } else if (fit === 'cover') {
-        videoStyle = { objectFit: 'cover' };
-      }
-
       return (
-        <div ref={wrapRef} className="video-crop-wrap aspect-video">
+        <div className="video-crop-wrap aspect-video">
           {loading && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
               <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan animate-spin"></div>
             </div>
           )}
-          <video ref={videoRef} controls={!cropReady} autoPlay muted playsInline webkit-playsinline="true"
+          <video ref={videoRef} controls autoPlay muted playsInline webkit-playsinline="true"
             onCanPlay={() => setLoading(false)} onPlaying={() => setLoading(false)}
             onError={() => { setLoading(false); onError && onError(); }}
-            style={videoStyle} />
-          {cropReady && (
-            <div className="absolute inset-x-0 bottom-0 z-20 flex items-center gap-2 px-2.5 py-2 bg-gradient-to-t from-black/85 via-black/40 to-transparent flex-wrap" style={{ touchAction: 'none' }}>
-              <button type="button" onClick={() => skip(-5)} title="رجوع 5 ثواني" className="w-8 h-8 shrink-0 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white text-[10px] font-black transition">-5</button>
-              <button type="button" onClick={togglePlay} className="w-8 h-8 shrink-0 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white transition">
-                <Icon name={ctrl.playing ? 'pause' : 'play'} className="w-3.5 h-3.5 fill-current" />
-              </button>
-              <button type="button" onClick={() => skip(5)} title="تقديم 5 ثواني" className="w-8 h-8 shrink-0 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white text-[10px] font-black transition">+5</button>
-              <span className="text-[10px] font-mono text-white/80 shrink-0">{formatClock(ctrl.current)}</span>
-              <input type="range" min="0" max={ctrl.duration || 0} step="0.1" value={ctrl.current}
-                onChange={e => seekTo(e.target.value)} className="flex-1 min-w-[60px] accent-accent-cyan" />
-              <span className="text-[10px] font-mono text-white/80 shrink-0">{formatClock(ctrl.duration)}</span>
-              <button type="button" onClick={toggleMute} className="w-8 h-8 shrink-0 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white text-sm transition">
-                {ctrl.muted ? '🔇' : '🔊'}
-              </button>
-              <button type="button" onClick={toggleFullscreen} title={isFs ? 'إنهاء ملء الشاشة' : 'ملء الشاشة'} className="w-8 h-8 shrink-0 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white transition">
-                <Icon name={isFs ? 'minimize' : 'maximize'} className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
+            style={{ objectFit: fit }} />
         </div>
       );
     }
@@ -1118,7 +904,6 @@
         return () => ref.off('value', cb);
       }, [title.id, currentUser && currentUser.id]);
 
-      // تسجيل هذا العمل في "أكمل المشاهدة" (محليًا بجهاز الزائر)
       useEffect(() => {
         try {
           const raw = JSON.parse(localStorage.getItem('cv_continue') || '[]');
@@ -1167,13 +952,16 @@
         return null;
       };
 
+      const effectiveMovieUrl = title.croppedVideoUrl || title.videoUrl;
+      const effectiveEpisodeUrl = (ep) => (ep && (ep.croppedVideoUrl || ep.videoUrl)) || null;
+
       const handlePlay = () => {
         setVideoError(false);
-        if (title.type === 'movie') { setPlayingUrl(title.videoUrl || null); setPlayingMeta(title); }
-        else { const ep = firstEpisode(); setPlayingUrl(ep ? ep.videoUrl : null); setPlayingMeta(ep || {}); }
+        if (title.type === 'movie') { setPlayingUrl(effectiveMovieUrl || null); setPlayingMeta(title); }
+        else { const ep = firstEpisode(); setPlayingUrl(ep ? effectiveEpisodeUrl(ep) : null); setPlayingMeta(ep || {}); }
       };
 
-      const playEpisode = (ep) => { setVideoError(false); setPlayingUrl(ep.videoUrl); setPlayingMeta(ep); };
+      const playEpisode = (ep) => { setVideoError(false); setPlayingUrl(effectiveEpisodeUrl(ep)); setPlayingMeta(ep); };
 
       const shareLink = () => {
         const url = `${location.origin}${location.pathname}?t=${title.id}`;
@@ -1205,7 +993,6 @@
         db.ref(`comments/${title.id}/${commentId}/likes`).transaction(v => Math.max(0, (v || 0) + (isLiked ? -1 : 1)));
       };
 
-      // حذف تعليق: صاحب التعليق نفسه أو المشرف/المدير
       const canDeleteComment = (c) => canModerate || (currentUser && currentUser.username === c.username);
       const deleteComment = (commentId) => db.ref(`comments/${title.id}/${commentId}`).remove();
       const deleteReply = (commentId, replyId) => db.ref(`comments/${title.id}/${commentId}/replies/${replyId}`).remove();
@@ -1220,8 +1007,7 @@
                 <div className="relative">
                   {isDirectVideo(playingUrl) ? (
                     <VideoPlayer key={playingUrl} src={normalizeVideoUrl(playingUrl)} onError={() => setVideoError(true)}
-                      trimStart={playingMeta.trimStart} trimEnd={playingMeta.trimEnd}
-                      fitMobile={playingMeta.fitMobile} fitDesktop={playingMeta.fitDesktop} crop={playingMeta.crop} />
+                      fitMobile={playingMeta.fitMobile} fitDesktop={playingMeta.fitDesktop} />
                   ) : (
                     <iframe key={playingUrl} src={normalizeVideoUrl(playingUrl)} allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen
                       referrerPolicy="no-referrer-when-downgrade" className="w-full aspect-video bg-black" />
@@ -1578,7 +1364,6 @@
       );
     }
 
-    // صفحة الإعدادات: تغيير الاسم، الصورة، وكلمة المرور (المكان الوحيد لتعديل الملف الشخصي)
     function SettingsView({ currentUser, onUpdateName, onUpdateAvatar, onOpenAuth }) {
       const [name, setName] = useState(currentUser ? currentUser.name : '');
       const [nameMsg, setNameMsg] = useState({ text: '', ok: false });
@@ -1685,7 +1470,6 @@
       );
     }
 
-    // ملف شخصي عام لكل مستخدم بأسلوب Letterboxd: تقييماته، مراجعاته، وقائمته
     function ProfileView({ username, currentUser, titles, watchlist, onOpen, onOpenAuth }) {
       const [profileUser, setProfileUser] = useState(null);
       const [userRatings, setUserRatings] = useState({});
@@ -1838,7 +1622,7 @@
       );
     }
 
-    const FIT_OPTIONS = [['contain', 'احتواء كامل (بدون قص)'], ['cover', 'ملء الشاشة (تمدد)'], ['crop', 'قص احترافي مخصص']];
+    const FIT_OPTIONS = [['contain', 'احتواء كامل (بدون قص)'], ['cover', 'ملء الشاشة (تمدد)']];
     const CROP_ASPECTS = [['free', 'حر'], ['16:9', '16:9'], ['9:16', '9:16'], ['1:1', '1:1'], ['4:3', '4:3'], ['3:4', '3:4']];
 
     function parseAspectRatio(key) {
@@ -1854,7 +1638,15 @@
       return h > 0 ? `${p(h)}:${p(m)}:${p(s)}` : `${p(m)}:${p(s)}`;
     }
 
-    // خوارزمية تغيير حجم صندوق القص عبر المقابض الثمانية (سحب حر لكل حافة/زاوية)، مع دعم قفل نسبة العرض للارتفاع
+    function extractFilenameFromUrl(url) {
+      if (!url) return null;
+      try {
+        const clean = url.split('?')[0];
+        const parts = clean.split('/');
+        return parts[parts.length - 1];
+      } catch (e) { return null; }
+    }
+
     function resizeCropBox(handle, start, dxPct, dyPct, ratioLock) {
       const MIN = 5;
       let { x, y, w, h } = start;
@@ -1883,7 +1675,6 @@
         else if (handle === 'ne') { ny = anchorBottom - nh; }
         else if (handle === 'sw') { nx = anchorRight - nw; }
         else if (handle === 'nw') { nx = anchorRight - nw; ny = anchorBottom - nh; }
-        // se: تبقى x وy كما هي (زاوية الإرساء)
       }
 
       nx = Math.max(0, Math.min(nx, 100 - nw));
@@ -1893,25 +1684,23 @@
       return { x: nx, y: ny, w: nw, h: nh };
     }
 
-    // أداة قص احترافية فعلية للفيديو: سحب مقابض حقيقية، قفل نسب عرض/ارتفاع قياسية، دوران دقيق، وخط زمني لمعاينة أي لحظة قبل التأكيد
-    function CropStudioModal({ videoUrl, initial, onCancel, onSave }) {
+    function CropStudioModal({ videoUrl, filename, initial, onCancel, onSave }) {
       const videoRef = useRef(null);
       const stageRef = useRef(null);
       const dragRef = useRef(null);
       const [natural, setNatural] = useState({ w: 0, h: 0 });
       const [stageSize, setStageSize] = useState({ w: 0, h: 0 });
-      const [boxPct, setBoxPct] = useState(() => ({
-        x: initial && initial.x != null ? initial.x : 0,
-        y: initial && initial.y != null ? initial.y : 0,
-        w: initial && initial.width ? initial.width : 100,
-        h: initial && initial.height ? initial.height : 100,
-      }));
-      const [rotation, setRotation] = useState(initial && initial.rotation ? initial.rotation : 0);
+      const [boxPct, setBoxPct] = useState(() => ({ x: 0, y: 0, w: 100, h: 100 }));
+      const [rotation, setRotation] = useState(0);
       const [aspect, setAspect] = useState('free');
       const [duration, setDuration] = useState(0);
       const [currentTime, setCurrentTime] = useState(0);
       const [playing, setPlaying] = useState(false);
       const [ready, setReady] = useState(false);
+      const [trimStart, setTrimStart] = useState(initial && initial.trimStart ? initial.trimStart : 0);
+      const [trimEnd, setTrimEnd] = useState(initial && initial.trimEnd ? initial.trimEnd : 0);
+      const [processing, setProcessing] = useState(false);
+      const [processError, setProcessError] = useState('');
 
       useEffect(() => {
         const el = stageRef.current;
@@ -1927,7 +1716,7 @@
       useEffect(() => {
         const v = videoRef.current;
         if (!v) return;
-        const onLoaded = () => { setNatural({ w: v.videoWidth || 0, h: v.videoHeight || 0 }); setDuration(v.duration || 0); setReady(true); };
+        const onLoaded = () => { setNatural({ w: v.videoWidth || 0, h: v.videoHeight || 0 }); setDuration(v.duration || 0); setReady(true); if (!trimEnd) setTrimEnd(v.duration || 0); };
         const onTime = () => setCurrentTime(v.currentTime || 0);
         const onPlay = () => setPlaying(true);
         const onPause = () => setPlaying(false);
@@ -1941,7 +1730,6 @@
         };
       }, [videoUrl]);
 
-      // مستطيل عرض الفيديو الفعلي داخل المسرح (الفيديو معروض بوضع "احتواء كامل" فقد تظهر أشرطة سوداء أعلى/أسفل أو يمين/يسار)
       const renderedRect = React.useMemo(() => {
         if (!natural.w || !natural.h || !stageSize.w || !stageSize.h) return { left: 0, top: 0, width: stageSize.w || 0, height: stageSize.h || 0 };
         const stageAspect = stageSize.w / stageSize.h, vidAspect = natural.w / natural.h;
@@ -1950,7 +1738,6 @@
         return { left: (stageSize.w - w) / 2, top: (stageSize.h - h) / 2, width: w, height: h };
       }, [natural, stageSize]);
 
-      // قفل نسبة العرض للارتفاع محسوبًا كنسبة "٪عرض إلى ٪ارتفاع" (وليس بكسل حقيقي) لأن أبعاد الفيديو الطبيعية ليست بالضرورة مربعة
       const ratioLock = React.useMemo(() => {
         const ar = parseAspectRatio(aspect);
         if (!ar || !natural.w || !natural.h) return null;
@@ -1994,7 +1781,32 @@
       const resetAll = () => { setBoxPct({ x: 0, y: 0, w: 100, h: 100 }); setRotation(0); setAspect('free'); };
       const togglePlay = () => { const v = videoRef.current; if (!v) return; if (v.paused) v.play(); else v.pause(); };
       const seek = (val) => { const v = videoRef.current; if (!v) return; v.currentTime = val; setCurrentTime(val); };
-      const confirm = () => onSave({ active: true, x: boxPct.x, y: boxPct.y, width: boxPct.w, height: boxPct.h, rotation });
+
+      const hasCropChange = boxPct.x !== 0 || boxPct.y !== 0 || boxPct.w !== 100 || boxPct.h !== 100 || rotation !== 0;
+      const hasTrimChange = trimStart > 0 || (trimEnd > 0 && trimEnd < duration);
+
+      const confirm = async () => {
+        if (!filename) { setProcessError('لا يمكن تحديد اسم الملف على السيرفر لهذا الفيديو.'); return; }
+        if (!hasCropChange && !hasTrimChange) { onCancel(); return; }
+        setProcessing(true); setProcessError('');
+        try {
+          const res = await fetch(`${CROP_API_BASE}/crop`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              filename,
+              x: boxPct.x, y: boxPct.y, width: boxPct.w, height: boxPct.h,
+              rotation, trimStart, trimEnd
+            })
+          });
+          const data = await res.json();
+          if (!data.ok) { setProcessError(data.error || 'تعذرت معالجة الفيديو.'); setProcessing(false); return; }
+          onSave(data.url);
+        } catch (e) {
+          setProcessError('تعذر الاتصال بخادم المعالجة. تأكد أن الخدمة تعمل.');
+        }
+        setProcessing(false);
+      };
 
       const corners = [['nw', '0%', '0%', 'nwse-resize'], ['ne', '100%', '0%', 'nesw-resize'], ['sw', '0%', '100%', 'nesw-resize'], ['se', '100%', '100%', 'nwse-resize']];
       const edges = [['n', '50%', '0%', 'ns-resize', 'w-9 h-2.5 rounded-full'], ['s', '50%', '100%', 'ns-resize', 'w-9 h-2.5 rounded-full'], ['w', '0%', '50%', 'ew-resize', 'w-2.5 h-9 rounded-full'], ['e', '100%', '50%', 'ew-resize', 'w-2.5 h-9 rounded-full']];
@@ -2002,8 +1814,8 @@
       return ReactDOM.createPortal((
         <div className="modal-backdrop fixed inset-0 z-[80] bg-black flex flex-col" onClick={e => e.stopPropagation()} style={{ touchAction: 'none' }}>
           <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">
-            <span className="flex items-center gap-2 font-black text-white text-sm"><Icon name="crop" className="w-4 h-4 text-accent-cyan" />قص الفيديو الاحترافي</span>
-            <button type="button" onClick={onCancel} className="w-9 h-9 rounded-xl glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-300 hover:text-white transition"><Icon name="x" className="w-4 h-4" /></button>
+            <span className="flex items-center gap-2 font-black text-white text-sm"><Icon name="crop" className="w-4 h-4 text-accent-cyan" />قص الفيديو (معالجة حقيقية على الخادم)</span>
+            <button type="button" onClick={onCancel} disabled={processing} className="w-9 h-9 rounded-xl glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-300 hover:text-white transition disabled:opacity-50"><Icon name="x" className="w-4 h-4" /></button>
           </div>
 
           <div ref={stageRef} className="relative flex-1 min-h-0 bg-black overflow-hidden select-none" style={{ touchAction: 'none' }}>
@@ -2037,7 +1849,7 @@
             )}
           </div>
 
-          <div className="px-4 py-3 border-t border-white/10 shrink-0 space-y-3">
+          <div className="px-4 py-3 border-t border-white/10 shrink-0 space-y-3 max-h-[45vh] overflow-y-auto">
             <div className="flex items-center gap-3">
               <button type="button" onClick={togglePlay} className="w-8 h-8 rounded-lg glass-card border border-white/10 flex items-center justify-center text-accent-cyan shrink-0">
                 <Icon name={playing ? 'pause' : 'play'} className="w-3.5 h-3.5" />
@@ -2067,41 +1879,42 @@
               </div>
             </div>
 
+            <div>
+              <p className="text-[11px] font-bold text-slate-400 mb-1.5">نطاق القص الزمني (اختياري)</p>
+              <div className="grid grid-cols-2 gap-2.5">
+                <input type="number" min="0" value={trimStart} onChange={e => setTrimStart(Math.max(0, Number(e.target.value) || 0))} placeholder="بداية (ثانية)" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" />
+                <input type="number" min="0" value={trimEnd} onChange={e => setTrimEnd(Number(e.target.value) || 0)} placeholder="نهاية (ثانية)" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" />
+              </div>
+            </div>
+
+            {processError && <p className="text-rose-400 text-xs font-bold bg-rose-500/10 p-2.5 rounded-xl border border-rose-500/20">{processError}</p>}
+            {processing && <p className="text-accent-cyan text-xs font-bold bg-accent-cyan/10 p-2.5 rounded-xl border border-accent-cyan/20">جارٍ معالجة الفيديو فعليًا على الخادم (قد يستغرق دقيقة أو أكثر حسب حجم الملف)، الرجاء الانتظار وعدم إغلاق النافذة...</p>}
+
             <div className="flex gap-3 pt-1">
-              <button type="button" onClick={resetAll} className="flex-1 py-2.5 rounded-xl glass-card border border-white/10 text-xs font-bold text-slate-300 hover:bg-white/5 transition">إعادة ضبط</button>
-              <button type="button" onClick={confirm} disabled={!ready} className="flex-1 py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-xs font-black hover:brightness-110 shadow-[0_0_15px_rgba(0,240,255,0.4)] transition disabled:opacity-50">تأكيد القص</button>
+              <button type="button" onClick={resetAll} disabled={processing} className="flex-1 py-2.5 rounded-xl glass-card border border-white/10 text-xs font-bold text-slate-300 hover:bg-white/5 transition disabled:opacity-50">إعادة ضبط</button>
+              <button type="button" onClick={confirm} disabled={!ready || processing} className="flex-1 py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-xs font-black hover:brightness-110 shadow-[0_0_15px_rgba(0,240,255,0.4)] transition disabled:opacity-50">{processing ? 'جارٍ المعالجة...' : 'تأكيد وقص فعلي'}</button>
             </div>
           </div>
         </div>
       ), document.body);
     }
 
-    // ضبط عرض الفيديو: نطاق تشغيل (قص زمني)، طريقة عرض مستقلة بين الجوال والحاسوب، وأداة قص احترافية فعلية (سحب مقابض حقيقي، دوران، نسب قياسية) بدل الإعدادات الشكلية السابقة
     function VideoDisplaySettings({ value, onChange }) {
       const [open, setOpen] = useState(false);
       const [showCropStudio, setShowCropStudio] = useState(false);
       const v = value || {};
       const set = (k, val) => onChange({ ...v, [k]: val });
-      const crop = v.crop || {};
-      const showCropTools = v.fitMobile === 'crop' || v.fitDesktop === 'crop';
       const canCrop = v.videoUrl && isDirectVideo(v.videoUrl);
+      const filename = extractFilenameFromUrl(v.videoUrl);
 
       return (
         <div className="glass-card rounded-2xl border border-white/10 mt-3">
           <button type="button" onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3 text-xs font-bold text-slate-200">
-            <span className="flex items-center gap-2"><Icon name="crop" className="w-3.5 h-3.5 text-accent-cyan" />إعدادات العرض (اختياري)</span>
+            <span className="flex items-center gap-2"><Icon name="crop" className="w-3.5 h-3.5 text-accent-cyan" />إعدادات العرض والقص (اختياري)</span>
             <Icon name="chevronDown" className={`w-3.5 h-3.5 transition ${open ? 'rotate-180' : ''}`} />
           </button>
           {open && (
             <div className="px-4 pb-4 space-y-4 border-t border-white/10 pt-4">
-              <div>
-                <p className="text-[11px] font-bold text-slate-400 mb-2">قص من بداية أو نهاية الفيديو (بالثواني) — اختياري</p>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <input type="number" min="0" value={v.trimStart || ''} onChange={e => set('trimStart', Number(e.target.value) || 0)} placeholder="ثانية البداية" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" />
-                  <input type="number" min="0" value={v.trimEnd || ''} onChange={e => set('trimEnd', Number(e.target.value) || 0)} placeholder="ثانية النهاية" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" />
-                </div>
-              </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <p className="text-[11px] font-bold text-slate-400 mb-1.5 flex items-center gap-1"><Icon name="smartphone" className="w-3 h-3" />طريقة العرض بالجوال</p>
@@ -2117,51 +1930,42 @@
                 </div>
               </div>
 
-              {(v.fitMobile || 'contain') !== (v.fitDesktop || 'contain') && (
-                <div className="flex items-center justify-between gap-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2.5">
-                  <p className="text-[11px] font-bold text-amber-400 leading-relaxed">تنبيه: الجوال والحاسوب مضبوطين على طريقتين مختلفتين — هذا مقصود إذا تريده هيك، لكن إذا تريد نفس الإعداد بكل الأجهزة اضغط الزر.</p>
-                  <button type="button" onClick={() => { set('fitMobile', v.fitDesktop || 'contain'); }}
-                    className="shrink-0 px-3 py-2 rounded-lg bg-amber-500 text-glass-950 text-[11px] font-black hover:brightness-110 transition">طبّق إعداد الحاسوب على الجوال</button>
-                </div>
-              )}
-
-              {showCropTools && (
-                <div>
-                  {canCrop ? (
-                    <div className="flex items-center gap-2.5">
-                      <button type="button" onClick={() => setShowCropStudio(true)}
-                        className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-xs font-black hover:brightness-110 shadow-[0_0_15px_rgba(0,240,255,0.4)] transition">
-                        <Icon name="crop" className="w-4 h-4" />{crop.active ? 'تعديل القص' : 'فتح أداة القص الاحترافية'}
+              <div className="border-t border-white/10 pt-4">
+                <p className="text-[11px] font-bold text-slate-300 mb-2">قص حقيقي للفيديو (يعالج الملف فعليًا — النتيجة تشتغل بأي مكان وبملء الشاشة الحقيقي بدون أي قيود)</p>
+                {canCrop ? (
+                  <div className="flex items-center gap-2.5">
+                    <button type="button" onClick={() => setShowCropStudio(true)}
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-xs font-black hover:brightness-110 shadow-[0_0_15px_rgba(0,240,255,0.4)] transition">
+                      <Icon name="crop" className="w-4 h-4" />{v.croppedVideoUrl ? 'إعادة القص من جديد' : 'فتح أداة القص الحقيقي'}
+                    </button>
+                    {v.croppedVideoUrl && (
+                      <button type="button" onClick={() => set('croppedVideoUrl', '')} title="التراجع والرجوع للفيديو الأصلي"
+                        className="shrink-0 w-10 h-10 rounded-xl glass-card border border-white/10 hover:border-rose-400 text-rose-400 flex items-center justify-center transition">
+                        <Icon name="x" className="w-4 h-4" />
                       </button>
-                      {crop.active && (
-                        <button type="button" onClick={() => set('crop', {})} title="إزالة القص"
-                          className="shrink-0 w-10 h-10 rounded-xl glass-card border border-white/10 hover:border-rose-400 text-rose-400 flex items-center justify-center transition">
-                          <Icon name="x" className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-[11px] font-bold text-amber-400">
-                      {v.videoUrl ? 'أداة القص تعمل فقط مع ملفات فيديو مباشرة (mp4, webm...) وليست روابط تضمين/iframe' : 'ارفع ملف الفيديو أولًا لتفعيل أداة القص'}
-                    </p>
-                  )}
-                  {crop.active && <p className="text-[11px] text-slate-400 mt-2">تم ضبط القص بنجاح ✅ — دوران {crop.rotation || 0}°</p>}
-                </div>
-              )}
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-[11px] font-bold text-amber-400">
+                    {v.videoUrl ? 'أداة القص تعمل فقط مع فيديوهات مرفوعة من "رفع من الجهاز" (ملفات مباشرة على خادمنا)، وليست روابط خارجية/iframe' : 'ارفع ملف الفيديو أولًا لتفعيل أداة القص'}
+                  </p>
+                )}
+                {v.croppedVideoUrl && <p className="text-[11px] text-emerald-400 mt-2 font-bold">✅ يوجد نسخة مقصوصة فعليًا محفوظة، وهي المستخدمة بالعرض حاليًا.</p>}
+              </div>
             </div>
           )}
 
           {showCropStudio && (
-            <CropStudioModal videoUrl={normalizeVideoUrl(v.videoUrl)} initial={crop}
+            <CropStudioModal videoUrl={normalizeVideoUrl(v.videoUrl)} filename={filename}
               onCancel={() => setShowCropStudio(false)}
-              onSave={(newCrop) => { set('crop', newCrop); setShowCropStudio(false); }} />
+              onSave={(newUrl) => { set('croppedVideoUrl', newUrl); setShowCropStudio(false); }} />
           )}
         </div>
       );
     }
 
     function emptyForm(type) {
-      return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', rtRating: '', featured: false, status: 'draft', videoUrl: '', downloadUrl: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
+      return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', rtRating: '', featured: false, status: 'draft', videoUrl: '', croppedVideoUrl: '', downloadUrl: '', fitMobile: 'contain', fitDesktop: 'contain', seasons: [] };
     }
 
     function AdminContentForm({ initial, defaultType, onDone }) {
@@ -2176,7 +1980,7 @@
       const addSeason = () => setForm(prev => ({ ...prev, seasons: [...prev.seasons, { number: prev.seasons.length + 1, episodes: [] }] }));
       const removeSeason = (si) => setForm(prev => ({ ...prev, seasons: prev.seasons.filter((_, i) => i !== si) }));
       const updateSeasonNumber = (si, val) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, number: val }) }));
-      const addEpisode = (si) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: [...s.episodes, { number: s.episodes.length + 1, title: '', videoUrl: '', downloadUrl: '', imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {} }] }) }));
+      const addEpisode = (si) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: [...s.episodes, { number: s.episodes.length + 1, title: '', videoUrl: '', croppedVideoUrl: '', downloadUrl: '', imdb: '', rt: '', fitMobile: 'contain', fitDesktop: 'contain' }] }) }));
       const removeEpisode = (si, ei) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: s.episodes.filter((_, j) => j !== ei) }) }));
       const updateEpisode = (si, ei, key, val) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: s.episodes.map((e, j) => j !== ei ? e : { ...e, [key]: val }) }) }));
 
@@ -2204,22 +2008,20 @@
         };
         if (form.type === 'movie') {
           payload.videoUrl = form.videoUrl.trim();
+          payload.croppedVideoUrl = (form.croppedVideoUrl || '').trim();
           payload.downloadUrl = form.downloadUrl.trim();
-          payload.trimStart = Number(form.trimStart) || 0;
-          payload.trimEnd = Number(form.trimEnd) || 0;
           payload.fitMobile = form.fitMobile || 'contain';
           payload.fitDesktop = form.fitDesktop || 'contain';
-          payload.crop = form.crop || {};
           payload.seasons = [];
         } else {
           payload.seasons = form.seasons.map(s => ({
             number: Number(s.number) || 1,
             episodes: (s.episodes || []).map(e => ({
-              number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: (e.videoUrl || '').trim(), downloadUrl: (e.downloadUrl || '').trim(), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
-              trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}
+              number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: (e.videoUrl || '').trim(), croppedVideoUrl: (e.croppedVideoUrl || '').trim(), downloadUrl: (e.downloadUrl || '').trim(), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
+              fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain'
             }))
           }));
-          payload.videoUrl = ''; payload.downloadUrl = '';
+          payload.videoUrl = ''; payload.croppedVideoUrl = ''; payload.downloadUrl = '';
         }
         try {
           if (initial && initial.id) await db.ref(`titles/${initial.id}`).set(payload);
@@ -2604,7 +2406,6 @@
         return moderators[sanitizeKey(username)] ? 'moderator' : null;
       };
 
-      // مزامنة فورية لحالة المستخدم الحالي (شارة الإشراف / الحظر) دون الحاجة لتسجيل خروج ودخول
       useEffect(() => {
         if (!currentUser) return;
         const ref = db.ref(`users/${currentUser.id}`);
@@ -2625,13 +2426,11 @@
       const setView = (v) => {
         if (v === 'admin') {
           if (currentUser && (currentUser.username === 'mavilovelife' || currentUser.isModerator)) {
-            // المشرفون المعيّنون من قبل الإدارة يدخلون مباشرة دون الحاجة للرمز السري
             if (currentUser.isModerator && currentUser.username !== 'mavilovelife') {
               setViewRaw('admin'); setSearch(''); window.scrollTo({ top: 0, behavior: 'smooth' });
               return;
             }
           }
-          // فتح نافذة إدخال رمز الحماية للمطور
           setDevPinModal(true);
           return;
         }
@@ -2655,7 +2454,6 @@
           setBooted(true);
         };
         ref.on('value', cb);
-        // شبكة بطيئة أو مشكلة اتصال مؤقتة: لا تترك المستخدم ينتظر إلى الأبد أمام شاشة التحميل
         const safety = setTimeout(() => setBooted(true), 4000);
         return () => { ref.off('value', cb); clearTimeout(safety); };
       }, []);
@@ -2669,7 +2467,6 @@
         }
       }, [booted]);
 
-      // فتح عمل تلقائيًا لو الرابط يحتوي على معرّف مشاركة (?t=ID)
       useEffect(() => {
         if (!booted || !titles.length) return;
         const t = new URLSearchParams(location.search).get('t');
