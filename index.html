@@ -298,8 +298,13 @@
         crop: <path d="M6 2v14a2 2 0 0 0 2 2h14M18 22V8a2 2 0 0 0-2-2H2" />,
         settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>,
         chevronDown: <path d="m6 9 6 6 6-6" />,
+        chevronLeft: <path d="m15 18-6-6 6-6" />,
         smartphone: <><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></>,
         monitor: <><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></>,
+        copy: <><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></>,
+        arrowUp: <><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></>,
+        arrowDown: <><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></>,
+        layers: <><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></>,
       };
       return (
         <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -339,29 +344,68 @@
       );
     }
 
-    // نجوم تقييم تفاعلية (للاستخدام في نموذج التقييم)
+    // نجمة نصفية دقيقة تعتمد على "كسر" التعبئة (0 إلى 1) عبر قص SVG حقيقي بدل الاعتماد فقط على تلوين نجمة كاملة
+    function FractionalStar({ fraction = 0, size = "w-7 h-7", className = "" }) {
+      const uid = useRef('fs' + Math.random().toString(36).slice(2)).current;
+      const pct = Math.max(0, Math.min(1, fraction)) * 100;
+      return (
+        <svg viewBox="0 0 24 24" className={`${size} ${className}`} xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <clipPath id={`${uid}-clip`}><rect x="0" y="0" width={pct / 100 * 24} height="24" /></clipPath>
+          </defs>
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="text-slate-600" />
+          {pct > 0 && (
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="currentColor" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="text-amber-400" clipPath={`url(#${uid}-clip)`} />
+          )}
+        </svg>
+      );
+    }
+
+    // نجوم تقييم تفاعلية تدعم نصف نجمة (اضغط النصف الأيمن للنجمة الكاملة، والنصف الأيسر لنصفها)
     function StarRatingInput({ value, onChange, size = "w-7 h-7" }) {
       const [hover, setHover] = useState(0);
+      const display = hover || value || 0;
+
+      const handleMove = (e, n) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const frac = (e.clientX - rect.left) / rect.width;
+        // بسبب اتجاه dir="ltr" المستخدم هنا: النصف الأيسر من الأيقونة = القيمة الأقل (n-0.5)
+        setHover(frac < 0.5 ? n - 0.5 : n);
+      };
+      const handleClick = (e, n) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const frac = (e.clientX - rect.left) / rect.width;
+        onChange(frac < 0.5 ? n - 0.5 : n);
+      };
+
       return (
         <div className="flex items-center gap-1" dir="ltr">
-          {[1, 2, 3, 4, 5].map(n => (
-            <button key={n} type="button" onClick={() => onChange(n)} onMouseEnter={() => setHover(n)} onMouseLeave={() => setHover(0)}
-              className={`star-btn ${(hover || value) >= n ? 'text-amber-400' : 'text-slate-600'}`}>
-              <Icon name="star" className={size} />
-            </button>
-          ))}
+          {[1, 2, 3, 4, 5].map(n => {
+            const frac = Math.max(0, Math.min(1, display - (n - 1)));
+            return (
+              <button key={n} type="button"
+                onMouseMove={e => handleMove(e, n)}
+                onClick={e => handleClick(e, n)}
+                onMouseLeave={() => setHover(0)}
+                className="star-btn">
+                <FractionalStar fraction={frac} size={size} />
+              </button>
+            );
+          })}
+          {display > 0 && <span className="text-xs font-bold text-amber-400 mr-1.5">{display}</span>}
         </div>
       );
     }
 
-    // عرض النجوم للقراءة فقط (متوسط التقييم)
+    // عرض النجوم للقراءة فقط (متوسط التقييم)، يدعم كسور نصف النجمة بدقة (3.5، 4.5...)
     function StarRatingDisplay({ value, size = "w-3.5 h-3.5" }) {
       const rounded = Math.round((value || 0) * 2) / 2;
       return (
         <div className="flex items-center gap-0.5" dir="ltr">
-          {[1, 2, 3, 4, 5].map(n => (
-            <Icon key={n} name="star" className={`${size} ${rounded >= n ? 'text-amber-400' : 'text-slate-600'}`} />
-          ))}
+          {[1, 2, 3, 4, 5].map(n => {
+            const frac = Math.max(0, Math.min(1, rounded - (n - 1)));
+            return <FractionalStar key={n} fraction={frac} size={size} />;
+          })}
         </div>
       );
     }
@@ -1074,6 +1118,7 @@
       const [playingUrl, setPlayingUrl] = useState(null);
       const [playingMeta, setPlayingMeta] = useState({});
       const [activeSeason, setActiveSeason] = useState(0);
+      const [seasonView, setSeasonView] = useState(false);
       const [commentText, setCommentText] = useState('');
       const [comments, setComments] = useState([]);
       const [replyingTo, setReplyingTo] = useState(null);
@@ -1090,7 +1135,7 @@
       const [deleteMyRating, setDeleteMyRating] = useState(false);
 
       useEffect(() => {
-        setPlayingUrl(null); setActiveSeason(0); setCommentText(''); setReplyingTo(null); setVideoError(false);
+        setPlayingUrl(null); setActiveSeason(0); setSeasonView(false); setCommentText(''); setReplyingTo(null); setVideoError(false);
         const ref = db.ref(`comments/${title.id}`);
         const cb = snap => {
           const data = snap.val();
@@ -1174,6 +1219,7 @@
       };
 
       const playEpisode = (ep) => { setVideoError(false); setPlayingUrl(ep.videoUrl); setPlayingMeta(ep); };
+      const openSeason = (i) => { setActiveSeason(i); setSeasonView(true); };
 
       const shareLink = () => {
         const url = `${location.origin}${location.pathname}?t=${title.id}`;
@@ -1300,52 +1346,73 @@
                 <div className="mt-8 border-t border-white/10 pt-6">
                   <div className="flex items-center gap-2.5 mb-4">
                     <Icon name="tv" className="w-5 h-5 text-accent-cyan" />
-                    <h3 className="font-black text-lg text-white">المواسم والحلقات</h3>
+                    <h3 className="font-black text-lg text-white">
+                      {!seasonView ? 'المواسم' : `الموسم ${seasons[activeSeason] ? (seasons[activeSeason].number || activeSeason + 1) : ''}`}
+                    </h3>
+                    {seasonView && seasons.length > 1 && (
+                      <button onClick={() => setSeasonView(false)} className="mr-auto flex items-center gap-1.5 text-xs font-bold text-accent-cyan hover:text-white glass-card px-3 py-1.5 rounded-xl border border-white/10 transition">
+                        <Icon name="layers" className="w-3.5 h-3.5" />كل المواسم
+                      </button>
+                    )}
                   </div>
-                  {seasons.length > 1 && (
-                    <div className="flex gap-3 overflow-x-auto pb-2 pt-1 snap-x scrollbar-hide mb-5">
+
+                  {!seasonView ? (
+                    <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3.5">
                       {seasons.map((s, i) => {
                         const seasonImg = s.poster || title.backdrop || title.poster;
-                        const active = activeSeason === i;
                         return (
-                          <button key={i} onClick={() => setActiveSeason(i)} className={`group shrink-0 w-28 sm:w-32 snap-start text-right transition ${active ? '' : 'opacity-70 hover:opacity-100'}`}>
-                            <div className={`relative aspect-[2/3] rounded-xl overflow-hidden border-2 transition ${active ? 'border-accent-cyan shadow-[0_0_18px_rgba(0,240,255,0.35)]' : 'border-white/10'}`}>
+                          <button key={i} onClick={() => openSeason(i)} className="group text-right">
+                            <div className="relative aspect-[2/3] rounded-xl overflow-hidden glass-card border border-white/10 group-hover:border-accent-cyan/50 shadow-lg group-hover:scale-[1.02] transition duration-300">
                               {seasonImg ? (
                                 <img src={seasonImg} alt="" className="w-full h-full object-cover" />
                               ) : (
-                                <div className="w-full h-full bg-glass-800 flex items-center justify-center"><Icon name="tv" className="w-7 h-7 text-slate-600" /></div>
+                                <div className="w-full h-full bg-glass-800 flex items-center justify-center"><Icon name="tv" className="w-8 h-8 text-slate-600" /></div>
                               )}
-                              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent p-1.5">
-                                <p className={`text-[11px] font-black text-center ${active ? 'text-accent-cyan' : 'text-white'}`}>الموسم {s.number || i + 1}</p>
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent flex items-end justify-center pb-3">
+                                <div className="w-11 h-11 rounded-2xl bg-accent-red/90 flex items-center justify-center shadow-[0_0_15px_rgba(255,51,75,0.5)] group-hover:scale-110 transition">
+                                  <Icon name="play" className="w-4 h-4 text-white fill-current translate-x-0.5" />
+                                </div>
                               </div>
+                              <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-accent-cyan font-bold border border-accent-cyan/20">{(s.episodes || []).length} حلقة</span>
                             </div>
+                            <p className="mt-2 text-sm font-bold text-slate-100 group-hover:text-accent-cyan transition">الموسم {s.number || i + 1}</p>
+                            {s.year && <p className="text-xs text-slate-400 font-medium">{s.year}</p>}
                           </button>
                         );
                       })}
                     </div>
-                  )}
-                  <div className="space-y-2.5">
-                    {(seasons[activeSeason] && seasons[activeSeason].episodes || []).map((ep, ei) => (
-                      <div key={ei} className="flex items-center gap-3 glass-card rounded-2xl p-3.5 border border-white/5 hover:border-white/10 transition">
-                        {ep.thumbnail ? (
-                          <div className="relative w-16 h-11 sm:w-20 sm:h-12 shrink-0 rounded-lg overflow-hidden bg-glass-950">
-                            <img src={ep.thumbnail} alt="" className="w-full h-full object-cover" />
-                            <span className="absolute bottom-0.5 right-1 text-[10px] font-black text-white drop-shadow">{ep.number != null ? ep.number : ei + 1}</span>
+                  ) : (
+                    <div>
+                      {seasons[activeSeason] && seasons[activeSeason].year && (
+                        <p className="text-xs text-slate-400 font-bold mb-3">سنة الإصدار: {seasons[activeSeason].year}</p>
+                      )}
+                      <div className="space-y-2.5">
+                        {(seasons[activeSeason] && seasons[activeSeason].episodes || []).map((ep, ei) => (
+                          <div key={ei} className="flex items-center gap-3 glass-card rounded-2xl p-3.5 border border-white/5 hover:border-white/10 transition">
+                            {ep.thumbnail ? (
+                              <div className="relative w-16 h-11 sm:w-20 sm:h-12 shrink-0 rounded-lg overflow-hidden bg-glass-950">
+                                <img src={ep.thumbnail} alt="" className="w-full h-full object-cover" />
+                                <span className="absolute bottom-0.5 right-1 text-[10px] font-black text-white drop-shadow">{ep.number != null ? ep.number : ei + 1}</span>
+                              </div>
+                            ) : (
+                              <span className="w-8 h-8 shrink-0 rounded-xl bg-glass-700 flex items-center justify-center text-xs font-black text-accent-cyan">{ep.number != null ? ep.number : ei + 1}</span>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-bold text-slate-100 truncate mb-1">{ep.title || `الحلقة ${ep.number != null ? ep.number : ei + 1}`}</p>
+                              <RatingBadges imdb={ep.imdb} rt={ep.rt} size="xs" />
+                            </div>
+                            <button onClick={() => playEpisode(ep)} className="w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition"><Icon name="play" className="w-4 h-4 text-white fill-current translate-x-0.5" /></button>
+                            {ep.downloadUrl && (
+                              <a href={ep.downloadUrl} target="_blank" rel="noopener noreferrer" className="w-9 h-9 rounded-xl glass-card hover:bg-white/10 border border-white/10 flex items-center justify-center shrink-0 transition"><Icon name="download" className="w-4 h-4 text-accent-cyan" /></a>
+                            )}
                           </div>
-                        ) : (
-                          <span className="w-8 h-8 shrink-0 rounded-xl bg-glass-700 flex items-center justify-center text-xs font-black text-accent-cyan">{ep.number != null ? ep.number : ei + 1}</span>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold text-slate-100 truncate mb-1">{ep.title || `الحلقة ${ep.number != null ? ep.number : ei + 1}`}</p>
-                          <RatingBadges imdb={ep.imdb} rt={ep.rt} size="xs" />
-                        </div>
-                        <button onClick={() => playEpisode(ep)} className="w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition"><Icon name="play" className="w-4 h-4 text-white fill-current translate-x-0.5" /></button>
-                        {ep.downloadUrl && (
-                          <a href={ep.downloadUrl} target="_blank" rel="noopener noreferrer" className="w-9 h-9 rounded-xl glass-card hover:bg-white/10 border border-white/10 flex items-center justify-center shrink-0 transition"><Icon name="download" className="w-4 h-4 text-accent-cyan" /></a>
+                        ))}
+                        {(!seasons[activeSeason] || !seasons[activeSeason].episodes || !seasons[activeSeason].episodes.length) && (
+                          <p className="text-sm text-slate-500 font-medium">لا توجد حلقات في هذا الموسم بعد.</p>
                         )}
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1356,7 +1423,7 @@
                 </h3>
                 {currentUser ? (
                   <div className="glass-card rounded-2xl p-4 border border-white/10 mb-6">
-                    <p className="text-xs font-bold text-slate-300 mb-2.5">تقييمك الشخصي لهذا العمل</p>
+                    <p className="text-xs font-bold text-slate-300 mb-2.5">تقييمك الشخصي لهذا العمل (يدعم نصف نجمة، اضغط على النصف الأيسر للنجمة لاختيار نصفها)</p>
                     <StarRatingInput value={myStars} onChange={setMyStars} />
                     <textarea value={myReview} onChange={e => setMyReview(e.target.value)} placeholder="اكتب مراجعتك الشخصية (اختياري)..." rows={3}
                       className="w-full mt-3 bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition shadow-inner"></textarea>
@@ -2195,12 +2262,41 @@
       const [error, setError] = useState('');
 
       const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
-      const addSeason = () => setForm(prev => ({ ...prev, seasons: [...prev.seasons, { number: prev.seasons.length + 1, poster: '', episodes: [] }] }));
+      const addSeason = () => setForm(prev => ({ ...prev, seasons: [...prev.seasons, { number: prev.seasons.length + 1, year: '', poster: '', episodes: [] }] }));
       const removeSeason = (si) => setForm(prev => ({ ...prev, seasons: prev.seasons.filter((_, i) => i !== si) }));
+      const duplicateSeason = (si) => setForm(prev => {
+        const src = prev.seasons[si];
+        const copy = JSON.parse(JSON.stringify(src));
+        copy.number = prev.seasons.length + 1;
+        return { ...prev, seasons: [...prev.seasons, copy] };
+      });
+      const moveSeason = (si, dir) => setForm(prev => {
+        const arr = [...prev.seasons];
+        const ni = si + dir;
+        if (ni < 0 || ni >= arr.length) return prev;
+        [arr[si], arr[ni]] = [arr[ni], arr[si]];
+        return { ...prev, seasons: arr };
+      });
       const updateSeasonNumber = (si, val) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, number: val }) }));
       const updateSeasonField = (si, key, val) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, [key]: val }) }));
       const addEpisode = (si) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: [...s.episodes, { number: s.episodes.length + 1, title: '', thumbnail: '', videoUrl: '', downloadUrl: '', imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {} }] }) }));
       const removeEpisode = (si, ei) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: s.episodes.filter((_, j) => j !== ei) }) }));
+      const duplicateEpisode = (si, ei) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => {
+        if (i !== si) return s;
+        const src = s.episodes[ei];
+        const copy = JSON.parse(JSON.stringify(src));
+        copy.number = s.episodes.length + 1;
+        copy.title = src.title ? `${src.title} (نسخة)` : '';
+        return { ...s, episodes: [...s.episodes, copy] };
+      }) }));
+      const moveEpisode = (si, ei, dir) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => {
+        if (i !== si) return s;
+        const arr = [...s.episodes];
+        const ni = ei + dir;
+        if (ni < 0 || ni >= arr.length) return s;
+        [arr[ei], arr[ni]] = [arr[ni], arr[ei]];
+        return { ...s, episodes: arr };
+      }) }));
       const updateEpisode = (si, ei, key, val) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: s.episodes.map((e, j) => j !== ei ? e : { ...e, [key]: val }) }) }));
 
       const save = async () => {
@@ -2237,6 +2333,7 @@
         } else {
           payload.seasons = form.seasons.map(s => ({
             number: Number(s.number) || 1,
+            year: Number(s.year) || null,
             poster: (s.poster || '').trim(),
             episodes: (s.episodes || []).map(e => ({
               number: Number(e.number) || 1, title: (e.title || '').trim(), thumbnail: (e.thumbnail || '').trim(), videoUrl: (e.videoUrl || '').trim(), downloadUrl: (e.downloadUrl || '').trim(), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
@@ -2332,10 +2429,17 @@
                         </div>
                       </div>
                       <div className="flex-1 min-w-[220px] space-y-2.5">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs font-bold text-slate-300 shrink-0">رقم الموسم</span>
-                          <input type="number" value={s.number} onChange={e => updateSeasonNumber(si, e.target.value)} className="w-20 bg-glass-950 border border-white/10 rounded-xl px-3 py-1.5 text-xs font-bold text-white text-center" />
-                          <button onClick={() => removeSeason(si)} className="mr-auto text-rose-400 text-xs font-bold flex items-center gap-1 hover:text-rose-300 transition"><Icon name="trash-2" className="w-4 h-4" />حذف الموسم</button>
+                          <input type="number" value={s.number} onChange={e => updateSeasonNumber(si, e.target.value)} className="w-16 bg-glass-950 border border-white/10 rounded-xl px-2 py-1.5 text-xs font-bold text-white text-center" />
+                          <span className="text-xs font-bold text-slate-300 shrink-0 mr-1">سنة الإصدار</span>
+                          <input type="number" value={s.year || ''} onChange={e => updateSeasonField(si, 'year', e.target.value)} placeholder="مثال 2023" className="w-24 bg-glass-950 border border-white/10 rounded-xl px-2 py-1.5 text-xs font-bold text-white text-center" />
+                          <div className="flex items-center gap-1 mr-auto">
+                            <button onClick={() => moveSeason(si, -1)} disabled={si === 0} title="نقل للأعلى" className="w-7 h-7 rounded-lg glass-panel border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-300 disabled:opacity-30 transition"><Icon name="arrowUp" className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => moveSeason(si, 1)} disabled={si === form.seasons.length - 1} title="نقل للأسفل" className="w-7 h-7 rounded-lg glass-panel border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-300 disabled:opacity-30 transition"><Icon name="arrowDown" className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => duplicateSeason(si)} title="تكرار الموسم" className="w-7 h-7 rounded-lg glass-panel border border-white/10 hover:border-accent-cyan flex items-center justify-center text-accent-cyan transition"><Icon name="copy" className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => removeSeason(si)} title="حذف الموسم" className="w-7 h-7 rounded-lg bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 flex items-center justify-center text-rose-400 transition"><Icon name="trash-2" className="w-3.5 h-3.5" /></button>
+                          </div>
                         </div>
                         <FileUploadField compact label="صورة بوستر الموسم (اختياري)" value={s.poster || ''} onChange={v => updateSeasonField(si, 'poster', v)} folder="season-posters" accept="image/*" />
                       </div>
@@ -2350,8 +2454,13 @@
                             <div className="md:col-span-2"><FileUploadField compact value={e.downloadUrl} onChange={v => updateEpisode(si, ei, 'downloadUrl', v)} folder="episodes" accept="video/*" /></div>
                             <input value={e.imdb} onChange={ev => updateEpisode(si, ei, 'imdb', ev.target.value)} placeholder="IMDb" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white md:col-span-1" />
                             <input value={e.rt} onChange={ev => updateEpisode(si, ei, 'rt', ev.target.value)} placeholder="RT %" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white md:col-span-1" />
-                            <div className="md:col-span-5"><FileUploadField compact label="صورة مصغّرة للحلقة (اختياري)" value={e.thumbnail || ''} onChange={v => updateEpisode(si, ei, 'thumbnail', v)} folder="episode-thumbs" accept="image/*" /></div>
-                            <button onClick={() => removeEpisode(si, ei)} className="text-rose-400 flex items-center justify-center md:col-span-1 hover:text-rose-300 transition"><Icon name="trash-2" className="w-4 h-4" /></button>
+                            <div className="md:col-span-4"><FileUploadField compact label="صورة مصغّرة للحلقة (اختياري)" value={e.thumbnail || ''} onChange={v => updateEpisode(si, ei, 'thumbnail', v)} folder="episode-thumbs" accept="image/*" /></div>
+                            <div className="flex items-center gap-1 md:col-span-2 justify-end">
+                              <button onClick={() => moveEpisode(si, ei, -1)} disabled={ei === 0} title="نقل للأعلى" className="w-8 h-8 rounded-lg glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-300 disabled:opacity-30 transition"><Icon name="arrowUp" className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => moveEpisode(si, ei, 1)} disabled={ei === s.episodes.length - 1} title="نقل للأسفل" className="w-8 h-8 rounded-lg glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-300 disabled:opacity-30 transition"><Icon name="arrowDown" className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => duplicateEpisode(si, ei)} title="تكرار الحلقة" className="w-8 h-8 rounded-lg glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-accent-cyan transition"><Icon name="copy" className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => removeEpisode(si, ei)} title="حذف الحلقة" className="w-8 h-8 rounded-lg bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 flex items-center justify-center text-rose-400 transition"><Icon name="trash-2" className="w-3.5 h-3.5" /></button>
+                            </div>
                           </div>
                           <VideoDisplaySettings value={e} onChange={patch => { Object.keys(patch).forEach(k => updateEpisode(si, ei, k, patch[k])); }} />
                         </div>
@@ -2545,20 +2654,48 @@
       );
     }
 
+    function AdminDashboardStats({ titles }) {
+      const total = titles.length;
+      const published = titles.filter(t => t.status === 'published').length;
+      const drafts = total - published;
+      const totalViews = titles.reduce((s, t) => s + (t.views || 0), 0);
+      const totalLikes = titles.reduce((s, t) => s + (t.likes || 0), 0);
+      const cards = [
+        ['layers', total, 'إجمالي الأعمال', 'text-accent-cyan'],
+        ['eye', published, 'منشور', 'text-emerald-400'],
+        ['pencil', drafts, 'مسودة', 'text-amber-400'],
+        ['trendingUp', totalViews, 'إجمالي المشاهدات', 'text-accent-purple'],
+        ['heart', totalLikes, 'إجمالي الإعجابات', 'text-rose-400'],
+      ];
+      return (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+          {cards.map(([icon, val, label, color]) => (
+            <div key={label} className="glass-card rounded-2xl p-4 border border-white/10 text-center">
+              <Icon name={icon} className={`w-5 h-5 mx-auto mb-2 ${color}`} />
+              <p className="text-xl font-black text-white">{val}</p>
+              <p className="text-[11px] text-slate-400 font-bold mt-0.5">{label}</p>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
     function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
       const [tab, setTab] = useState('content');
       const [contentType, setContentType] = useState('movie');
       const [editing, setEditing] = useState(null);
       const [deleteTarget, setDeleteTarget] = useState(null);
+      const [query, setQuery] = useState('');
       const isFullAdmin = currentUser && currentUser.username === 'mavilovelife';
 
       const handleDelete = async (id) => { await db.ref(`titles/${id}`).remove(); await db.ref(`comments/${id}`).remove(); await db.ref(`ratings/${id}`).remove(); setDeleteTarget(null); };
       const togglePublish = (t) => db.ref(`titles/${t.id}/status`).set(t.status === 'published' ? 'draft' : 'published');
-      const filteredTitles = titles.filter(t => t.type === contentType);
+      const filteredTitles = titles.filter(t => t.type === contentType && (!query.trim() || (t.name || '').toLowerCase().includes(query.trim().toLowerCase())));
 
       return (
         <div>
           <h1 className="text-2xl md:text-3xl font-black mb-6 text-slate-100">لوحة تحكم ورفع الأفلام</h1>
+          <AdminDashboardStats titles={titles} />
           <div className="flex gap-3 mb-6 border-b border-white/10 pb-3 flex-wrap">
             <button onClick={() => { setTab('content'); setEditing(null); }} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'content' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>المحتوى (رفع الأفلام)</button>
             <button onClick={() => setTab('complaints')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'complaints' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>الشكاوى والطلبات</button>
@@ -2577,9 +2714,16 @@
                     <button key={k} onClick={() => setContentType(k)} className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-bold transition ${contentType === k ? 'bg-accent-red text-white shadow-[0_0_15px_rgba(255,51,75,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>{l} <span className="opacity-70 text-xs">({titles.filter(t => t.type === k).length})</span></button>
                   ))}
                 </div>
-                <button onClick={() => setEditing('new')} className="mb-6 flex items-center gap-2 px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition"><Icon name="plus" className="w-4 h-4" />رفع {TYPE_LABELS[contentType]} جديد</button>
+                <div className="flex items-center gap-3 mb-6 flex-wrap">
+                  <button onClick={() => setEditing('new')} className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition"><Icon name="plus" className="w-4 h-4" />رفع {TYPE_LABELS[contentType]} جديد</button>
+                  <div className="relative flex-1 min-w-[180px]">
+                    <Icon name="search" className="w-4 h-4 absolute top-1/2 -translate-y-1/2 right-3.5 text-slate-400" />
+                    <input value={query} onChange={e => setQuery(e.target.value)} placeholder="بحث ضمن هذا القسم..."
+                      className="w-full bg-glass-900 border border-white/10 rounded-2xl py-2.5 pr-10 pl-4 text-sm text-slate-100 outline-none focus:border-accent-cyan transition shadow-inner" />
+                  </div>
+                </div>
                 <div className="space-y-3">
-                  {filteredTitles.length === 0 && <p className="text-sm text-slate-500 font-medium">لا توجد أعمال في هذا القسم بعد.</p>}
+                  {filteredTitles.length === 0 && <p className="text-sm text-slate-500 font-medium">لا توجد أعمال مطابقة في هذا القسم.</p>}
                   {filteredTitles.map(t => (
                     <div key={t.id} className="glass-card rounded-2xl p-4 border border-white/10 flex items-center gap-4 flex-wrap">
                       <div className="w-12 h-16 rounded-xl bg-glass-900 overflow-hidden shrink-0 border border-white/5 shadow-md">
@@ -2587,7 +2731,7 @@
                       </div>
                       <div className="flex-1 min-w-[140px]">
                         <p className="font-bold text-white text-base truncate mb-1">{t.name}</p>
-                        <p className="text-xs text-slate-400 font-medium">{TYPE_LABELS[t.type]} · {t.year || ''}</p>
+                        <p className="text-xs text-slate-400 font-medium">{TYPE_LABELS[t.type]} · {t.year || ''}{t.type !== 'movie' ? ` · ${(t.seasons || []).length} موسم` : ''}</p>
                       </div>
                       <span className={`text-[11px] px-3 py-1 rounded-full font-bold shrink-0 ${t.status === 'published' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-glass-800 text-slate-400 border border-white/5'}`}>{t.status === 'published' ? 'منشور' : 'مسودة'}</span>
                       <button onClick={() => togglePublish(t)} title="تبديل حالة النشر" className="w-9 h-9 rounded-xl glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-200 transition shrink-0"><Icon name="eye" className="w-4 h-4" /></button>
