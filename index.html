@@ -1300,19 +1300,41 @@
                 <div className="mt-8 border-t border-white/10 pt-6">
                   <div className="flex items-center gap-2.5 mb-4">
                     <Icon name="tv" className="w-5 h-5 text-accent-cyan" />
-                    <h3 className="font-black text-lg text-white">الحلقات</h3>
+                    <h3 className="font-black text-lg text-white">المواسم والحلقات</h3>
                   </div>
                   {seasons.length > 1 && (
-                    <div className="flex gap-2 flex-wrap mb-4">
-                      {seasons.map((s, i) => (
-                        <button key={i} onClick={() => setActiveSeason(i)} className={`text-xs px-4 py-2 rounded-xl font-bold transition ${activeSeason === i ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>الموسم {s.number || i + 1}</button>
-                      ))}
+                    <div className="flex gap-3 overflow-x-auto pb-2 pt-1 snap-x scrollbar-hide mb-5">
+                      {seasons.map((s, i) => {
+                        const seasonImg = s.poster || title.backdrop || title.poster;
+                        const active = activeSeason === i;
+                        return (
+                          <button key={i} onClick={() => setActiveSeason(i)} className={`group shrink-0 w-28 sm:w-32 snap-start text-right transition ${active ? '' : 'opacity-70 hover:opacity-100'}`}>
+                            <div className={`relative aspect-[2/3] rounded-xl overflow-hidden border-2 transition ${active ? 'border-accent-cyan shadow-[0_0_18px_rgba(0,240,255,0.35)]' : 'border-white/10'}`}>
+                              {seasonImg ? (
+                                <img src={seasonImg} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full bg-glass-800 flex items-center justify-center"><Icon name="tv" className="w-7 h-7 text-slate-600" /></div>
+                              )}
+                              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent p-1.5">
+                                <p className={`text-[11px] font-black text-center ${active ? 'text-accent-cyan' : 'text-white'}`}>الموسم {s.number || i + 1}</p>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                   <div className="space-y-2.5">
                     {(seasons[activeSeason] && seasons[activeSeason].episodes || []).map((ep, ei) => (
                       <div key={ei} className="flex items-center gap-3 glass-card rounded-2xl p-3.5 border border-white/5 hover:border-white/10 transition">
-                        <span className="w-8 h-8 shrink-0 rounded-xl bg-glass-700 flex items-center justify-center text-xs font-black text-accent-cyan">{ep.number != null ? ep.number : ei + 1}</span>
+                        {ep.thumbnail ? (
+                          <div className="relative w-16 h-11 sm:w-20 sm:h-12 shrink-0 rounded-lg overflow-hidden bg-glass-950">
+                            <img src={ep.thumbnail} alt="" className="w-full h-full object-cover" />
+                            <span className="absolute bottom-0.5 right-1 text-[10px] font-black text-white drop-shadow">{ep.number != null ? ep.number : ei + 1}</span>
+                          </div>
+                        ) : (
+                          <span className="w-8 h-8 shrink-0 rounded-xl bg-glass-700 flex items-center justify-center text-xs font-black text-accent-cyan">{ep.number != null ? ep.number : ei + 1}</span>
+                        )}
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-bold text-slate-100 truncate mb-1">{ep.title || `الحلقة ${ep.number != null ? ep.number : ei + 1}`}</p>
                           <RatingBadges imdb={ep.imdb} rt={ep.rt} size="xs" />
@@ -2173,10 +2195,11 @@
       const [error, setError] = useState('');
 
       const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
-      const addSeason = () => setForm(prev => ({ ...prev, seasons: [...prev.seasons, { number: prev.seasons.length + 1, episodes: [] }] }));
+      const addSeason = () => setForm(prev => ({ ...prev, seasons: [...prev.seasons, { number: prev.seasons.length + 1, poster: '', episodes: [] }] }));
       const removeSeason = (si) => setForm(prev => ({ ...prev, seasons: prev.seasons.filter((_, i) => i !== si) }));
       const updateSeasonNumber = (si, val) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, number: val }) }));
-      const addEpisode = (si) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: [...s.episodes, { number: s.episodes.length + 1, title: '', videoUrl: '', downloadUrl: '', imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {} }] }) }));
+      const updateSeasonField = (si, key, val) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, [key]: val }) }));
+      const addEpisode = (si) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: [...s.episodes, { number: s.episodes.length + 1, title: '', thumbnail: '', videoUrl: '', downloadUrl: '', imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {} }] }) }));
       const removeEpisode = (si, ei) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: s.episodes.filter((_, j) => j !== ei) }) }));
       const updateEpisode = (si, ei, key, val) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: s.episodes.map((e, j) => j !== ei ? e : { ...e, [key]: val }) }) }));
 
@@ -2214,8 +2237,9 @@
         } else {
           payload.seasons = form.seasons.map(s => ({
             number: Number(s.number) || 1,
+            poster: (s.poster || '').trim(),
             episodes: (s.episodes || []).map(e => ({
-              number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: (e.videoUrl || '').trim(), downloadUrl: (e.downloadUrl || '').trim(), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
+              number: Number(e.number) || 1, title: (e.title || '').trim(), thumbnail: (e.thumbnail || '').trim(), videoUrl: (e.videoUrl || '').trim(), downloadUrl: (e.downloadUrl || '').trim(), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
               trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}
             }))
           }));
@@ -2301,10 +2325,20 @@
               <div className="space-y-4">
                 {form.seasons.map((s, si) => (
                   <div key={si} className="glass-card rounded-2xl p-4 border border-white/10">
-                    <div className="flex items-center gap-3 mb-4">
-                      <span className="text-xs font-bold text-slate-300">رقم الموسم</span>
-                      <input type="number" value={s.number} onChange={e => updateSeasonNumber(si, e.target.value)} className="w-20 bg-glass-950 border border-white/10 rounded-xl px-3 py-1.5 text-xs font-bold text-white text-center" />
-                      <button onClick={() => removeSeason(si)} className="mr-auto text-rose-400 text-xs font-bold flex items-center gap-1 hover:text-rose-300 transition"><Icon name="trash-2" className="w-4 h-4" />حذف الموسم</button>
+                    <div className="flex items-start gap-4 mb-4 flex-wrap">
+                      <div className="w-20 shrink-0">
+                        <div className="aspect-[2/3] rounded-xl overflow-hidden bg-glass-950 border border-white/10 flex items-center justify-center">
+                          {s.poster ? <img src={s.poster} className="w-full h-full object-cover" /> : <Icon name="tv" className="w-6 h-6 text-slate-600" />}
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-[220px] space-y-2.5">
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs font-bold text-slate-300 shrink-0">رقم الموسم</span>
+                          <input type="number" value={s.number} onChange={e => updateSeasonNumber(si, e.target.value)} className="w-20 bg-glass-950 border border-white/10 rounded-xl px-3 py-1.5 text-xs font-bold text-white text-center" />
+                          <button onClick={() => removeSeason(si)} className="mr-auto text-rose-400 text-xs font-bold flex items-center gap-1 hover:text-rose-300 transition"><Icon name="trash-2" className="w-4 h-4" />حذف الموسم</button>
+                        </div>
+                        <FileUploadField compact label="صورة بوستر الموسم (اختياري)" value={s.poster || ''} onChange={v => updateSeasonField(si, 'poster', v)} folder="season-posters" accept="image/*" />
+                      </div>
                     </div>
                     <div className="space-y-3">
                       {s.episodes.map((e, ei) => (
@@ -2316,6 +2350,7 @@
                             <div className="md:col-span-2"><FileUploadField compact value={e.downloadUrl} onChange={v => updateEpisode(si, ei, 'downloadUrl', v)} folder="episodes" accept="video/*" /></div>
                             <input value={e.imdb} onChange={ev => updateEpisode(si, ei, 'imdb', ev.target.value)} placeholder="IMDb" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white md:col-span-1" />
                             <input value={e.rt} onChange={ev => updateEpisode(si, ei, 'rt', ev.target.value)} placeholder="RT %" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white md:col-span-1" />
+                            <div className="md:col-span-5"><FileUploadField compact label="صورة مصغّرة للحلقة (اختياري)" value={e.thumbnail || ''} onChange={v => updateEpisode(si, ei, 'thumbnail', v)} folder="episode-thumbs" accept="image/*" /></div>
                             <button onClick={() => removeEpisode(si, ei)} className="text-rose-400 flex items-center justify-center md:col-span-1 hover:text-rose-300 transition"><Icon name="trash-2" className="w-4 h-4" /></button>
                           </div>
                           <VideoDisplaySettings value={e} onChange={patch => { Object.keys(patch).forEach(k => updateEpisode(si, ei, k, patch[k])); }} />
