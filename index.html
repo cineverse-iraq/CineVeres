@@ -110,6 +110,7 @@
     .video-crop-wrap:-webkit-full-screen { width: 100vw !important; height: 100vh !important; aspect-ratio: auto !important; }
     .video-crop-wrap:-moz-full-screen { width: 100vw !important; height: 100vh !important; aspect-ratio: auto !important; }
     .video-crop-wrap:-ms-fullscreen { width: 100vw !important; height: 100vh !important; aspect-ratio: auto !important; }
+    .ios-fake-fullscreen { position: fixed !important; inset: 0 !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; width: 100vw !important; height: 100vh !important; aspect-ratio: auto !important; z-index: 9999 !important; }
 
     .yt-controls-bottom {
       position: absolute; inset-inline: 0; bottom: 0; z-index: 20;
@@ -797,8 +798,22 @@
       const [username, setUsername] = useState('');
       const [password, setPassword] = useState('');
       const [avatar, setAvatar] = useState('');
+      const [avatarUploading, setAvatarUploading] = useState(false);
+      const avatarInputRef = useRef(null);
       const [error, setError] = useState('');
       const [loading, setLoading] = useState(false);
+
+      const handleAvatarFile = (e) => {
+        const file = e.target.files && e.target.files[0];
+        e.target.value = '';
+        if (!file) return;
+        setError('');
+        setAvatarUploading(true);
+        compressImageToDataUrl(file)
+          .then(dataUrl => setAvatar(dataUrl))
+          .catch(err => setError((err && err.message) || 'تعذر معالجة صورة الملف الشخصي.'))
+          .finally(() => setAvatarUploading(false));
+      };
 
       const submit = async () => {
         setError('');
@@ -838,7 +853,16 @@
               {tab === 'register' && (
                 <>
                   <input value={name} onChange={e => setName(e.target.value)} placeholder="الاسم الكامل" className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition" />
-                  <input value={avatar} onChange={e => setAvatar(e.target.value)} placeholder="رابط صورة الملف الشخصي (اختياري)" className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition" />
+                  <div className="flex items-center gap-3">
+                    <div className="w-14 h-14 rounded-2xl bg-glass-900 border border-white/10 flex items-center justify-center overflow-hidden shrink-0">
+                      {avatar ? <img src={avatar} alt="" className="w-full h-full object-cover" /> : <Icon name="user" className="w-6 h-6 text-slate-500" />}
+                    </div>
+                    <button type="button" onClick={() => avatarInputRef.current && avatarInputRef.current.click()} disabled={avatarUploading}
+                      className="flex-1 py-3 rounded-2xl glass-card border border-white/10 hover:border-accent-cyan text-xs font-bold text-slate-200 transition disabled:opacity-50">
+                      {avatarUploading ? 'جارٍ الرفع...' : (avatar ? 'تغيير صورة الملف الشخصي' : 'رفع صورة الملف الشخصي (اختياري)')}
+                    </button>
+                    <input ref={avatarInputRef} type="file" accept="image/*" onChange={handleAvatarFile} className="hidden" />
+                  </div>
                 </>
               )}
               <input value={username} onChange={e => setUsername(e.target.value)} placeholder="اسم المستخدم" className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition" />
@@ -925,6 +949,7 @@
       const [barVisible, setBarVisible] = useState(true);
       const [skipFlash, setSkipFlash] = useState(null);
       const [showSpeedMenu, setShowSpeedMenu] = useState(false);
+      const [fakeFullscreen, setFakeFullscreen] = useState(false);
 
       useEffect(() => {
         const videoEl = videoRef.current;
@@ -991,7 +1016,18 @@
           document.removeEventListener('MSFullscreenChange', onFsChange);
         };
       }, []);
+
+      // على أجهزة الآيفون، طلب ملء الشاشة الحقيقي للفيديو (webkitEnterFullscreen) يستبدل شريط
+      // التحكم المخصص بمشغل آبل الأصلي فتختفي أزرار السرعة والتقديم وغيرها. لذلك نستخدم بدلاً
+      // من ذلك "ملء شاشة وهمي" بواسطة CSS (تثبيت العنصر ليغطي الشاشة كاملة) يبقي شريط
+      // التحكم المخصص يعمل بكامل ميزاته على آيفون أيضًا.
+      const effectiveFs = isFs || fakeFullscreen;
       const toggleFullscreen = () => {
+        if (isIOS) {
+          setFakeFullscreen(v => !v);
+          showBarTemporarily();
+          return;
+        }
         const el = wrapRef.current;
         const v = videoRef.current;
         const fsEl = document.fullscreenElement || document.webkitFullscreenElement || document.webkitCurrentFullScreenElement || document.mozFullScreenElement || document.msFullscreenElement;
@@ -1008,6 +1044,13 @@
           v.webkitEnterFullscreen();
         }
       };
+
+      useEffect(() => {
+        if (!fakeFullscreen) return;
+        const prevOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => { document.body.style.overflow = prevOverflow; };
+      }, [fakeFullscreen]);
 
       const showBarTemporarily = () => {
         setBarVisible(true);
@@ -1032,10 +1075,11 @@
           else if (e.key === 'Enter') { e.preventDefault(); togglePlay(); showBarTemporarily(); }
           else if (e.key === 'm' || e.key === 'M') { toggleMute(); showBarTemporarily(); }
           else if (e.key === 'f' || e.key === 'F') { toggleFullscreen(); }
+          else if (e.key === 'Escape' && fakeFullscreen) { setFakeFullscreen(false); }
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-      }, []);
+      }, [fakeFullscreen]);
 
       const clickState = useRef({ count: 0, timer: null });
       const onStageClick = (e) => {
@@ -1085,7 +1129,7 @@
       const RATE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
       return (
-        <div ref={wrapRef} className="video-crop-wrap aspect-video" onMouseMove={showBarTemporarily} onClick={onStageClick}>
+        <div ref={wrapRef} className={`video-crop-wrap ${fakeFullscreen ? 'ios-fake-fullscreen' : 'aspect-video'}`} onMouseMove={showBarTemporarily} onClick={onStageClick}>
           {loading && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
               <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan yt-spinner"></div>
@@ -1165,8 +1209,8 @@
                 )}
               </div>
 
-              <button type="button" onClick={toggleFullscreen} title={isFs ? 'إنهاء ملء الشاشة (F)' : 'ملء الشاشة (F)'} className="yt-btn w-9 h-9 shrink-0">
-                <Icon name={isFs ? 'minimize' : 'maximize'} className="w-4.5 h-4.5" />
+              <button type="button" onClick={toggleFullscreen} title={effectiveFs ? 'إنهاء ملء الشاشة (F)' : 'ملء الشاشة (F)'} className="yt-btn w-9 h-9 shrink-0">
+                <Icon name={effectiveFs ? 'minimize' : 'maximize'} className="w-4.5 h-4.5" />
               </button>
             </div>
           </div>
@@ -1475,11 +1519,12 @@
                       <div className="space-y-2.5">
                         {(seasons[activeSeason] && seasons[activeSeason].episodes || []).map((ep, ei) => {
                           const isCurrent = playingMeta && playingMeta.videoUrl === ep.videoUrl && playingMeta.number === ep.number;
+                          const epThumb = (seasons[activeSeason] && seasons[activeSeason].episodeThumbnail) || ep.thumbnail;
                           return (
                           <div key={ei} className={`flex items-center gap-3 glass-card rounded-2xl p-3.5 border transition ${isCurrent ? 'border-accent-cyan/50 shadow-[0_0_15px_rgba(0,240,255,0.15)]' : 'border-white/5 hover:border-white/10'}`}>
-                            {ep.thumbnail ? (
+                            {epThumb ? (
                               <div className="relative w-16 h-11 sm:w-20 sm:h-12 shrink-0 rounded-lg overflow-hidden bg-glass-950">
-                                <img src={ep.thumbnail} alt="" className="w-full h-full object-cover" />
+                                <img src={epThumb} alt="" className="w-full h-full object-cover" />
                                 <span className="absolute bottom-0.5 right-1 text-[10px] font-black text-white drop-shadow">{ep.number != null ? ep.number : ei + 1}</span>
                               </div>
                             ) : (
@@ -2336,7 +2381,7 @@
     }
 
     function emptyEpisode(num) {
-      return { number: num, title: '', thumbnail: '', videoUrl: '', downloadUrl: '', imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {} };
+      return { number: num, title: '', videoUrl: '', downloadUrl: '', imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {} };
     }
 
     // محرر حلقة واحدة فقط: يظهر بعد اختيار موسم ثم اختيار حلقة، بدل عرض كل الحلقات دفعة واحدة
@@ -2375,7 +2420,6 @@
             <FileUploadField label="ملف الحلقة (فيديو مباشر أو رابط/iframe)" value={e.videoUrl} onChange={v => set('videoUrl', v)} folder="episodes" accept="video/*" />
             <FileUploadField label="ملف التحميل (اختياري)" value={e.downloadUrl} onChange={v => set('downloadUrl', v)} folder="episodes" accept="video/*" />
           </div>
-          <div className="mt-3.5"><FileUploadField label="صورة مصغّرة للحلقة (اختياري)" value={e.thumbnail || ''} onChange={v => set('thumbnail', v)} folder="episode-thumbs" accept="image/*" /></div>
           <div className="grid grid-cols-2 gap-3.5 mt-3.5">
             <div>
               <label className="text-xs font-bold text-slate-300 mb-1.5 block">تقييم IMDb</label>
@@ -2405,7 +2449,7 @@
       const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
       const addSeason = () => setForm(prev => {
-        const seasons = [...prev.seasons, { number: prev.seasons.length + 1, year: '', poster: '', episodes: [] }];
+        const seasons = [...prev.seasons, { number: prev.seasons.length + 1, year: '', poster: '', episodeThumbnail: '', episodes: [] }];
         setActiveSeasonIdx(seasons.length - 1);
         setEditingEpisodeIdx(null);
         return { ...prev, seasons };
@@ -2494,8 +2538,9 @@
             number: Number(s.number) || 1,
             year: Number(s.year) || null,
             poster: (s.poster || '').trim(),
+            episodeThumbnail: (s.episodeThumbnail || '').trim(),
             episodes: (s.episodes || []).map(e => ({
-              number: Number(e.number) || 1, title: (e.title || '').trim(), thumbnail: (e.thumbnail || '').trim(), videoUrl: (e.videoUrl || '').trim(), downloadUrl: (e.downloadUrl || '').trim(), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
+              number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: (e.videoUrl || '').trim(), downloadUrl: (e.downloadUrl || '').trim(), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
               trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}
             }))
           }));
@@ -2621,6 +2666,7 @@
                                 </div>
                               </div>
                               <FileUploadField compact label="صورة بوستر الموسم (اختياري)" value={activeSeason.poster || ''} onChange={v => updateSeasonField(activeSeasonIdx, 'poster', v)} folder="season-posters" accept="image/*" />
+                              <FileUploadField compact label="الصورة المصغّرة لحلقات هذا الموسم (تُطبَّق تلقائيًا على كل حلقات الموسم)" value={activeSeason.episodeThumbnail || ''} onChange={v => updateSeasonField(activeSeasonIdx, 'episodeThumbnail', v)} folder="season-episode-thumbs" accept="image/*" />
                             </div>
                           </div>
 
@@ -2629,8 +2675,8 @@
                           <div className="space-y-2">
                             {activeSeason.episodes.map((e, ei) => (
                               <div key={ei} className="flex items-center gap-3 glass-panel rounded-xl p-2.5 border border-white/5 hover:border-white/10 transition">
-                                {e.thumbnail ? (
-                                  <div className="w-14 h-9 shrink-0 rounded-lg overflow-hidden bg-glass-950"><img src={e.thumbnail} className="w-full h-full object-cover" /></div>
+                                {activeSeason.episodeThumbnail ? (
+                                  <div className="w-14 h-9 shrink-0 rounded-lg overflow-hidden bg-glass-950"><img src={activeSeason.episodeThumbnail} className="w-full h-full object-cover" /></div>
                                 ) : (
                                   <span className="w-8 h-8 shrink-0 rounded-lg bg-glass-700 flex items-center justify-center text-xs font-black text-accent-cyan">{e.number}</span>
                                 )}
