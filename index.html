@@ -1052,28 +1052,21 @@
       // التحكم المخصص يعمل بكامل ميزاته على آيفون أيضًا.
       const effectiveFs = isFs || fakeFullscreen;
       const toggleFullscreen = () => {
-        if (isIOS) {
-          setFakeFullscreen(v => !v);
-          showBarTemporarily();
-          return;
-        }
-        const el = wrapRef.current;
-        const v = videoRef.current;
-        const fsEl = document.fullscreenElement || document.webkitFullscreenElement || document.webkitCurrentFullScreenElement || document.mozFullScreenElement || document.msFullscreenElement;
-        if (fsEl) {
-          const exit = document.exitFullscreen || document.webkitExitFullscreen || document.webkitCancelFullScreen || document.mozCancelFullScreen || document.msExitFullscreen;
-          if (exit) exit.call(document);
-          return;
-        }
-        const req = el && (el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen);
-        if (req) {
-          const result = req.call(el);
-          if (result && result.catch) result.catch(() => { if (v && v.webkitEnterFullscreen) v.webkitEnterFullscreen(); });
-        } else if (v && v.webkitEnterFullscreen) {
-          v.webkitEnterFullscreen();
-        }
-      };
-
+  const v = videoRef.current;
+  if (isIOS && v && v.webkitEnterFullscreen) {
+    v.webkitEnterFullscreen();
+    return;
+  }
+  const el = wrapRef.current;
+  const fsEl = document.fullscreenElement || document.webkitFullscreenElement || document.webkitCurrentFullScreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+  if (fsEl) {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen || document.webkitCancelFullScreen || document.mozCancelFullScreen || document.msExitFullscreen;
+    if (exit) exit.call(document);
+    return;
+  }
+  const req = el && (el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen);
+  if (req) req.call(el);
+};
       useEffect(() => {
         if (!fakeFullscreen) return;
         const prevOverflow = document.body.style.overflow;
