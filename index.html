@@ -1050,7 +1050,7 @@
       // التحكم المخصص بمشغل آبل الأصلي فتختفي أزرار السرعة والتقديم وغيرها. لذلك نستخدم بدلاً
       // من ذلك "ملء شاشة وهمي" بواسطة CSS (تثبيت العنصر ليغطي الشاشة كاملة) يبقي شريط
       // التحكم المخصص يعمل بكامل ميزاته على آيفون أيضًا.
-      const effectiveFs = isFs || fakeFullscreen;
+      const effectiveFs = isFs
       const toggleFullscreen = () => {
   const v = videoRef.current;
   if (isIOS && v && v.webkitEnterFullscreen) {
