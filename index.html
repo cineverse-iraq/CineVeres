@@ -908,6 +908,12 @@
         const videoEl = videoRef.current;
         if (!videoEl || !src) return;
         setLoading(true);
+        // ضمان قبول Safari/iOS للتشغيل التلقائي: يجب أن تكون خاصية muted موجودة كخاصية
+        // HTML فعلية على العنصر وليس فقط كـ property جافاسكريبت، وإلا قد يرفض آيفون
+        // التشغيل التلقائي الصامت ويبقى الفيديو عالقًا في حالة تحميل دائمة.
+        videoEl.muted = true;
+        videoEl.defaultMuted = true;
+        try { videoEl.setAttribute('muted', ''); } catch (e) {}
         let hls;
         const isM3u8 = /\.m3u8(\?.*)?$/i.test(src);
         if (isM3u8 && window.Hls && window.Hls.isSupported()) {
@@ -917,8 +923,16 @@
           hls.on(window.Hls.Events.ERROR, (_e, data) => { if (data && data.fatal) onError && onError(); });
         } else {
           videoEl.src = src;
+          videoEl.load();
         }
-        return () => { if (hls) hls.destroy(); };
+        // بعض إصدارات Safari على آيفون تتجاهل خاصية autoplay عند ضبط src برمجيًا،
+        // لذلك نطلب play() يدويًا ونلتقط أي رفض دون كسر الواجهة (يبقى زر التشغيل ظاهرًا).
+        const tryPlay = () => { const p = videoEl.play(); if (p && p.catch) p.catch(() => {}); };
+        tryPlay();
+        // شبكة أمان: إن ظل مؤشر التحميل عالقًا أكثر من اللازم (مشكلة شبكة أو صيغة غير
+        // مدعومة على الجهاز) نوقفه ونظهر زر تشغيل يدوي بدل ترك الدائرة تدور للأبد.
+        const stuckTimer = setTimeout(() => { setLoading(false); }, 12000);
+        return () => { if (hls) hls.destroy(); clearTimeout(stuckTimer); };
       }, [src]);
 
       useEffect(() => {
@@ -945,7 +959,7 @@
         return () => ro.disconnect();
       }, []);
 
-      const [ctrl, setCtrl] = useState({ playing: true, muted: true, volume: 1, current: 0, duration: 0, buffered: 0, rate: 1 });
+      const [ctrl, setCtrl] = useState({ playing: false, muted: true, volume: 1, current: 0, duration: 0, buffered: 0, rate: 1 });
       const [barVisible, setBarVisible] = useState(true);
       const [skipFlash, setSkipFlash] = useState(null);
       const [showSpeedMenu, setShowSpeedMenu] = useState(false);
@@ -954,7 +968,7 @@
       useEffect(() => {
         const videoEl = videoRef.current;
         if (!videoEl) return;
-        const onPlay = () => setCtrl(c2 => ({ ...c2, playing: true }));
+        const onPlay = () => { setCtrl(c2 => ({ ...c2, playing: true })); setLoading(false); };
         const onPause = () => setCtrl(c2 => ({ ...c2, playing: false }));
         const onVolume = () => setCtrl(c2 => ({ ...c2, muted: videoEl.muted, volume: videoEl.volume }));
         const onLoadedMeta = () => setCtrl(c2 => ({ ...c2, duration: videoEl.duration || 0 }));
@@ -966,6 +980,10 @@
           } catch (e) {}
         };
         const onRate = () => setCtrl(c2 => ({ ...c2, rate: videoEl.playbackRate || 1 }));
+        // متابعة حالات الانتظار/التعثر لضبط دائرة التحميل بدقة أكبر على كل الأجهزة بما فيها آيفون
+        const onWaiting = () => setLoading(true);
+        const onStalled = () => setLoading(true);
+        const onLoadedData = () => setLoading(false);
         videoEl.addEventListener('play', onPlay);
         videoEl.addEventListener('pause', onPause);
         videoEl.addEventListener('volumechange', onVolume);
@@ -973,6 +991,9 @@
         videoEl.addEventListener('timeupdate', onTimeUpdate);
         videoEl.addEventListener('progress', onProgress);
         videoEl.addEventListener('ratechange', onRate);
+        videoEl.addEventListener('waiting', onWaiting);
+        videoEl.addEventListener('stalled', onStalled);
+        videoEl.addEventListener('loadeddata', onLoadedData);
         return () => {
           videoEl.removeEventListener('play', onPlay);
           videoEl.removeEventListener('pause', onPause);
@@ -981,10 +1002,18 @@
           videoEl.removeEventListener('timeupdate', onTimeUpdate);
           videoEl.removeEventListener('progress', onProgress);
           videoEl.removeEventListener('ratechange', onRate);
+          videoEl.removeEventListener('waiting', onWaiting);
+          videoEl.removeEventListener('stalled', onStalled);
+          videoEl.removeEventListener('loadeddata', onLoadedData);
         };
       }, [src]);
 
-      const togglePlay = () => { const v = videoRef.current; if (!v) return; if (v.paused) v.play(); else v.pause(); };
+      const togglePlay = () => {
+        const v = videoRef.current;
+        if (!v) return;
+        if (v.paused) { const p = v.play(); if (p && p.catch) p.catch(() => {}); }
+        else v.pause();
+      };
       const toggleMute = () => { const v = videoRef.current; if (!v) return; v.muted = !v.muted; if (!v.muted && v.volume === 0) v.volume = 0.5; };
       const setVolume = (val) => { const v = videoRef.current; if (!v) return; const num = Number(val); v.volume = num; v.muted = num === 0; };
       const seekTo = (val) => { const v = videoRef.current; if (v) v.currentTime = Number(val); };
@@ -1131,12 +1160,12 @@
       return (
         <div ref={wrapRef} className={`video-crop-wrap ${fakeFullscreen ? 'ios-fake-fullscreen' : 'aspect-video'}`} onMouseMove={showBarTemporarily} onClick={onStageClick}>
           {loading && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none z-10">
               <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan yt-spinner"></div>
             </div>
           )}
-          <video ref={videoRef} controls={false} autoPlay muted playsInline webkit-playsinline="true"
-            onCanPlay={() => setLoading(false)} onPlaying={() => setLoading(false)}
+          <video ref={videoRef} controls={false} autoPlay muted playsInline webkit-playsinline="true" x5-playsinline="true" preload="auto"
+            onCanPlay={() => setLoading(false)} onPlaying={() => setLoading(false)} onLoadedData={() => setLoading(false)}
             onError={() => { setLoading(false); onError && onError(); }}
             style={videoStyle} />
 
@@ -1165,53 +1194,55 @@
           )}
 
           <div className={`yt-controls-bottom ${barVisible ? '' : 'hidden-bar'}`} onClick={e => e.stopPropagation()}>
-            <input type="range" min="0" max={ctrl.duration || 0} step="0.1" value={ctrl.current}
-              onChange={e => seekTo(e.target.value)} className="yt-progress w-full mb-2" style={{
-                background: `linear-gradient(to left, #00F0FF ${(ctrl.current / (ctrl.duration || 1)) * 100}%, rgba(255,255,255,0.25) ${(ctrl.current / (ctrl.duration || 1)) * 100}%)`
-              }} />
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <button type="button" onClick={togglePlay} className="yt-btn w-9 h-9 shrink-0" title={ctrl.playing ? 'إيقاف مؤقت (مسافة)' : 'تشغيل (مسافة)'}>
-                <Icon name={ctrl.playing ? 'pause' : 'play'} className="w-4.5 h-4.5 fill-current" />
-              </button>
-              <button type="button" onClick={() => skip(-5)} className="yt-btn w-9 h-9 shrink-0" title="رجوع 5 ثواني (السهم الأيسر)">
-                <Icon name="rotateCcw5" className="w-4.5 h-4.5" />
-              </button>
-              <button type="button" onClick={() => skip(5)} className="yt-btn w-9 h-9 shrink-0" title="تقديم 5 ثواني (السهم الأيمن)">
-                <Icon name="rotateCw5" className="w-4.5 h-4.5" />
-              </button>
-
-              <div className="hidden sm:flex items-center gap-1.5 group/vol shrink-0">
-                <button type="button" onClick={toggleMute} className="yt-btn w-9 h-9" title="كتم/تشغيل الصوت (M)">
-                  <Icon name={ctrl.muted || ctrl.volume === 0 ? 'volumeX' : 'volume2'} className="w-4.5 h-4.5" />
+            <div className="yt-bar-inner">
+              <input type="range" min="0" max={ctrl.duration || 0} step="0.1" value={ctrl.current}
+                onChange={e => seekTo(e.target.value)} className="yt-progress w-full mb-1.5" style={{
+                  background: `linear-gradient(to left, #00F0FF ${(ctrl.current / (ctrl.duration || 1)) * 100}%, rgba(255,255,255,0.25) ${(ctrl.current / (ctrl.duration || 1)) * 100}%)`
+                }} />
+              <div className="flex items-center gap-1 flex-wrap">
+                <button type="button" onClick={togglePlay} className="yt-btn yt-btn-main w-8 h-8 shrink-0" title={ctrl.playing ? 'إيقاف مؤقت (مسافة)' : 'تشغيل (مسافة)'}>
+                  <Icon name={ctrl.playing ? 'pause' : 'play'} className="w-4 h-4 fill-current" />
                 </button>
-                <input type="range" min="0" max="1" step="0.05" value={ctrl.muted ? 0 : ctrl.volume}
-                  onChange={e => setVolume(e.target.value)} className="yt-vol w-16 md:w-20" />
-              </div>
-              <button type="button" onClick={toggleMute} className="yt-btn w-9 h-9 shrink-0 sm:hidden" title="كتم/تشغيل الصوت">
-                <Icon name={ctrl.muted || ctrl.volume === 0 ? 'volumeX' : 'volume2'} className="w-4.5 h-4.5" />
-              </button>
-
-              <span className="text-[11px] font-mono text-white/90 shrink-0 mr-1">{formatClock(ctrl.current)} / {formatClock(ctrl.duration)}</span>
-
-              <span className="flex-1"></span>
-
-              <div className="relative shrink-0">
-                <button type="button" onClick={() => setShowSpeedMenu(v => !v)} className="yt-btn h-9 px-2 gap-1 text-xs font-bold" title="سرعة التشغيل">
-                  <Icon name="gauge" className="w-4 h-4" /><span className="hidden xs:inline">{ctrl.rate}×</span>
+                <button type="button" onClick={() => skip(-5)} className="yt-btn w-7 h-7 shrink-0" title="رجوع 5 ثواني (السهم الأيسر)">
+                  <Icon name="rotateCcw5" className="w-3.5 h-3.5" />
                 </button>
-                {showSpeedMenu && (
-                  <div className="absolute bottom-11 left-0 bg-black/90 backdrop-blur-md rounded-xl border border-white/10 p-1.5 flex flex-col gap-0.5 shadow-2xl min-w-[70px] z-30">
-                    {RATE_OPTIONS.map(r => (
-                      <button key={r} type="button" onClick={() => setRate(r)}
-                        className={`text-xs font-bold px-3 py-1.5 rounded-lg transition ${ctrl.rate === r ? 'bg-accent-cyan text-glass-950' : 'text-white hover:bg-white/10'}`}>{r}×</button>
-                    ))}
-                  </div>
-                )}
-              </div>
+                <button type="button" onClick={() => skip(5)} className="yt-btn w-7 h-7 shrink-0" title="تقديم 5 ثواني (السهم الأيمن)">
+                  <Icon name="rotateCw5" className="w-3.5 h-3.5" />
+                </button>
 
-              <button type="button" onClick={toggleFullscreen} title={effectiveFs ? 'إنهاء ملء الشاشة (F)' : 'ملء الشاشة (F)'} className="yt-btn w-9 h-9 shrink-0">
-                <Icon name={effectiveFs ? 'minimize' : 'maximize'} className="w-4.5 h-4.5" />
-              </button>
+                <div className="hidden sm:flex items-center gap-1.5 group/vol shrink-0">
+                  <button type="button" onClick={toggleMute} className="yt-btn w-7 h-7" title="كتم/تشغيل الصوت (M)">
+                    <Icon name={ctrl.muted || ctrl.volume === 0 ? 'volumeX' : 'volume2'} className="w-3.5 h-3.5" />
+                  </button>
+                  <input type="range" min="0" max="1" step="0.05" value={ctrl.muted ? 0 : ctrl.volume}
+                    onChange={e => setVolume(e.target.value)} className="yt-vol w-14 md:w-16" />
+                </div>
+                <button type="button" onClick={toggleMute} className="yt-btn w-7 h-7 shrink-0 sm:hidden" title="كتم/تشغيل الصوت">
+                  <Icon name={ctrl.muted || ctrl.volume === 0 ? 'volumeX' : 'volume2'} className="w-3.5 h-3.5" />
+                </button>
+
+                <span className="text-[10px] font-mono text-white/90 shrink-0 mr-0.5">{formatClock(ctrl.current)} / {formatClock(ctrl.duration)}</span>
+
+                <span className="flex-1"></span>
+
+                <div className="relative shrink-0">
+                  <button type="button" onClick={() => setShowSpeedMenu(v => !v)} className="yt-btn h-7 px-2 gap-1 text-[11px] font-bold" title="سرعة التشغيل">
+                    <Icon name="gauge" className="w-3.5 h-3.5" /><span className="hidden xs:inline">{ctrl.rate}×</span>
+                  </button>
+                  {showSpeedMenu && (
+                    <div className="absolute bottom-10 left-0 bg-black/90 backdrop-blur-md rounded-xl border border-white/10 p-1.5 flex flex-col gap-0.5 shadow-2xl min-w-[64px] z-30">
+                      {RATE_OPTIONS.map(r => (
+                        <button key={r} type="button" onClick={() => setRate(r)}
+                          className={`text-[11px] font-bold px-3 py-1.5 rounded-lg transition ${ctrl.rate === r ? 'bg-accent-cyan text-glass-950' : 'text-white hover:bg-white/10'}`}>{r}×</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <button type="button" onClick={toggleFullscreen} title={effectiveFs ? 'إنهاء ملء الشاشة (F)' : 'ملء الشاشة (F)'} className="yt-btn w-7 h-7 shrink-0">
+                  <Icon name={effectiveFs ? 'minimize' : 'maximize'} className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
