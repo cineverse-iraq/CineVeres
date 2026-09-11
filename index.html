@@ -64,7 +64,6 @@
     img { transition: opacity 0.35s ease; }
     button, a { -webkit-tap-highlight-color: transparent; }
     button:active { transform: scale(0.97); }
-    /* يمنع تكبير آيفون التلقائي للصفحة عند فتح لوحة المفاتيح (المتصفح يكبّر إذا كان حجم الخط أقل من 16px) */
     input, textarea, select { font-size: 16px !important; }
     @media (min-width: 768px) { input, textarea, select { font-size: 14px !important; } }
 
@@ -75,7 +74,7 @@
       border: 1px solid rgba(255, 255, 255, 0.08);
       box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
     }
-    
+
     .glass-card {
       background: rgba(22, 30, 46, 0.6);
       backdrop-filter: blur(12px);
@@ -88,36 +87,51 @@
       box-shadow: 0 10px 30px -10px rgba(0, 240, 255, 0.2);
     }
 
-    /* ===== إصلاحات عامة لمنع أي تداخل أو تمرير أفقي ===== */
     html { width: 100%; height: 100%; }
     body { overflow-x: hidden; width: 100%; overscroll-behavior-y: none; }
     #root { overflow-x: hidden; min-height: 100%; }
 
-    /* ===== نجوم التقييم ===== */
     .star-btn { transition: transform 0.15s ease, color 0.15s ease; }
     .star-btn:active { transform: scale(1.2); }
 
-    /* ===== شبكة بروفايل بأسلوب Letterboxd ===== */
     .profile-poster-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
     @media (min-width: 640px) { .profile-poster-grid { grid-template-columns: repeat(6, 1fr); gap: 10px; } }
     @media (min-width: 768px) { .profile-poster-grid { grid-template-columns: repeat(8, 1fr); } }
 
-    /* ===== واجهة الجوال المخصصة ===== */
     @media (max-width: 767px) {
       .mobile-safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom) + 84px) !important; }
       h1 { font-size: 1.4rem !important; }
       .glass-panel, .glass-card { border-radius: 18px; }
     }
 
-    /* ===== حاوية الفيديو مع دعم القص المخصص ===== */
     .video-crop-wrap { position: relative; width: 100%; overflow: hidden; background: #000; }
     .video-crop-wrap video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-    /* عند تفعيل ملء الشاشة الحقيقي على حاوية القص، نلغي نسبة العرض/الارتفاع الثابتة (aspect-video)
-       لتملأ الحاوية كامل الشاشة فعليًا بدل أن تبقى محصورة بنسبة 16:9 وسط شريط أسود */
     .video-crop-wrap:fullscreen { width: 100vw !important; height: 100vh !important; aspect-ratio: auto !important; }
     .video-crop-wrap:-webkit-full-screen { width: 100vw !important; height: 100vh !important; aspect-ratio: auto !important; }
     .video-crop-wrap:-moz-full-screen { width: 100vw !important; height: 100vh !important; aspect-ratio: auto !important; }
     .video-crop-wrap:-ms-fullscreen { width: 100vw !important; height: 100vh !important; aspect-ratio: auto !important; }
+
+    .yt-controls-bottom {
+      position: absolute; inset-inline: 0; bottom: 0; z-index: 20;
+      background: linear-gradient(to top, rgba(0,0,0,0.88), rgba(0,0,0,0.35) 60%, transparent);
+      padding: 10px 10px calc(8px + env(safe-area-inset-bottom));
+      transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+    .yt-controls-bottom.hidden-bar { opacity: 0; pointer-events: none; transform: translateY(6px); }
+    .yt-progress { -webkit-appearance: none; appearance: none; height: 4px; border-radius: 999px; background: rgba(255,255,255,0.25); outline: none; cursor: pointer; }
+    .yt-progress::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 13px; height: 13px; border-radius: 50%; background: #00F0FF; box-shadow: 0 0 8px rgba(0,240,255,0.8); cursor: pointer; margin-top: -4.5px; }
+    .yt-progress::-moz-range-thumb { width: 13px; height: 13px; border-radius: 50%; background: #00F0FF; border: none; box-shadow: 0 0 8px rgba(0,240,255,0.8); cursor: pointer; }
+    .yt-progress::-moz-range-track { height: 4px; border-radius: 999px; background: rgba(255,255,255,0.25); }
+    .yt-vol { -webkit-appearance: none; appearance: none; height: 3px; border-radius: 999px; background: rgba(255,255,255,0.3); outline: none; cursor: pointer; }
+    .yt-vol::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 10px; height: 10px; border-radius: 50%; background: #fff; cursor: pointer; margin-top: -3.5px; }
+    .yt-vol::-moz-range-thumb { width: 10px; height: 10px; border-radius: 50%; background: #fff; border: none; cursor: pointer; }
+    .yt-btn { display: flex; align-items: center; justify-content: center; color: #fff; transition: opacity 0.15s ease, transform 0.1s ease; opacity: 0.9; }
+    .yt-btn:hover { opacity: 1; }
+    .yt-btn:active { transform: scale(0.9); }
+    @keyframes yt-skip-flash { 0% { opacity: 0.9; } 100% { opacity: 0; } }
+    .yt-skip-flash { animation: yt-skip-flash 0.55s ease-out forwards; }
+    @keyframes yt-spin { to { transform: rotate(360deg); } }
+    .yt-spinner { animation: yt-spin 0.9s linear infinite; }
   </style>
 </head>
 <body class="bg-glass-950 text-slate-100 min-h-screen selection:bg-accent-red selection:text-white">
@@ -172,7 +186,6 @@
     const db = firebase.database();
     const storage = firebase.storage();
 
-    // رفع أي ملف (صورة/فيديو) مباشرة من الجهاز إلى Firebase Storage، مع تتبع نسبة التقدم
     function uploadFile(file, folder, onProgress) {
       return new Promise((resolve, reject) => {
         const safeName = (file.name || `upload_${Date.now()}.jpg`).replace(/[^a-zA-Z0-9.\-_]/g, '_');
@@ -187,8 +200,6 @@
       });
     }
 
-    // ضغط أي صورة وتحويلها لـ base64 صالحة للتخزين المباشر في Realtime Database
-    // (تُستخدم لصور الحسابات الشخصية بدل الاعتماد على Firebase Storage المقيّد)
     function compressImageToDataUrl(file, maxSize = 300, maxBytes = 260000) {
       return new Promise((resolve, reject) => {
         if (!file || !file.type || !file.type.startsWith('image/')) { reject(new Error('ملف غير صالح')); return; }
@@ -216,8 +227,6 @@
       });
     }
 
-    // بعض روابط المشاركة (كوقل درايف مثلاً) هي صفحة عرض وليست رابط فيديو مباشر
-    // نحوّلها تلقائيًا لصيغة قابلة للتضمين تعمل بشكل صحيح على كل الأجهزة
     const isIOS = /iP(hone|od|ad)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const sanitizeKey = (s) => (s || '').replace(/[.#$\/\[\]]/g, '_');
 
@@ -237,9 +246,6 @@
     const TYPE_PLURAL = { movie: 'الأفلام', series: 'المسلسلات', anime: 'الأنميات' };
     const COMPLAINT_TYPES = { add: 'طلب إضافة عمل', problem: 'مشكلة في التشغيل أو التحميل', suggestion: 'اقتراح عام' };
 
-    // رمز الحماية الخاص بلوحة المطورين (يمكنك تغييره هنا)
-    const DEV_SECRET_PIN = "MAVI7734"; 
-
     function fmtDateTime(ts) {
       if (!ts) return '';
       const d = new Date(ts);
@@ -251,7 +257,6 @@
       return /\.(mp4|webm|ogg|mov|m3u8)(\?.*)?$/i.test(url || '');
     }
 
-    // هل الجهاز الحالي بحجم جوال (أقل من md=768px)؟
     function useIsMobile() {
       const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 768 : false);
       useEffect(() => {
@@ -299,12 +304,21 @@
         settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>,
         chevronDown: <path d="m6 9 6 6 6-6" />,
         chevronLeft: <path d="m15 18-6-6 6-6" />,
+        chevronRight: <path d="m9 18 6-6-6-6" />,
         smartphone: <><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></>,
         monitor: <><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></>,
         copy: <><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></>,
         arrowUp: <><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></>,
         arrowDown: <><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></>,
         layers: <><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></>,
+        volume2: <><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></>,
+        volumeX: <><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></>,
+        rotateCcw5: <><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/></>,
+        rotateCw5: <><path d="M21 3v5h-5"/><path d="M20.95 13A9 9 0 1 1 18 5.3L21 8"/></>,
+        gauge: <><path d="M12 14 15 10"/><path d="M10.5 20A7.5 7.5 0 1 1 18 10.6"/></>,
+        list: <><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></>,
+        skipForward: <><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></>,
+        bell: <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0" />,
       };
       return (
         <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -313,7 +327,6 @@
       );
     }
 
-    // شعار CineVerse (نسخة مصغّرة من الشعار الرسمي، بدون النص، لاستخدامه في الهيدر والنوافذ)
     function CineVerseLogo({ className = "w-8 h-8" }) {
       const uid = useRef('lg' + Math.random().toString(36).slice(2)).current;
       return (
@@ -344,7 +357,6 @@
       );
     }
 
-    // نجمة نصفية دقيقة تعتمد على "كسر" التعبئة (0 إلى 1) عبر قص SVG حقيقي بدل الاعتماد فقط على تلوين نجمة كاملة
     function FractionalStar({ fraction = 0, size = "w-7 h-7", className = "" }) {
       const uid = useRef('fs' + Math.random().toString(36).slice(2)).current;
       const pct = Math.max(0, Math.min(1, fraction)) * 100;
@@ -361,7 +373,6 @@
       );
     }
 
-    // نجوم تقييم تفاعلية تدعم نصف نجمة (اضغط النصف الأيمن للنجمة الكاملة، والنصف الأيسر لنصفها)
     function StarRatingInput({ value, onChange, size = "w-7 h-7" }) {
       const [hover, setHover] = useState(0);
       const display = hover || value || 0;
@@ -369,7 +380,6 @@
       const handleMove = (e, n) => {
         const rect = e.currentTarget.getBoundingClientRect();
         const frac = (e.clientX - rect.left) / rect.width;
-        // بسبب اتجاه dir="ltr" المستخدم هنا: النصف الأيسر من الأيقونة = القيمة الأقل (n-0.5)
         setHover(frac < 0.5 ? n - 0.5 : n);
       };
       const handleClick = (e, n) => {
@@ -397,7 +407,6 @@
       );
     }
 
-    // عرض النجوم للقراءة فقط (متوسط التقييم)، يدعم كسور نصف النجمة بدقة (3.5، 4.5...)
     function StarRatingDisplay({ value, size = "w-3.5 h-3.5" }) {
       const rounded = Math.round((value || 0) * 2) / 2;
       return (
@@ -480,7 +489,6 @@
       );
     }
 
-    // البنر الرئيسي (Hero): قابل للسحب بالفأرة أو الإصبع، والنقاط تنقل مباشرة لأي بنر
     function Hero({ items, onOpen }) {
       const [idx, setIdx] = useState(0);
       const dragState = useRef({ startX: 0, dragging: false });
@@ -554,7 +562,6 @@
       );
     }
 
-    // شريط "أكمل المشاهدة" (يعتمد على آخر الأعمال المفتوحة، محفوظة محليًا بجهاز الزائر)
     function ContinueWatchingRow({ items, onOpen }) {
       if (!items.length) return null;
       return (
@@ -846,53 +853,6 @@
       );
     }
 
-    // نافذة التحقق من رمز المطورين واسم المستخدم للمطور
-    function DevPinModal({ currentUser, onClose, onSuccess, onOpenAuth }) {
-      const [pin, setPin] = useState('');
-      const [error, setError] = useState('');
-
-      if (!currentUser) {
-        return (
-          <div className="modal-backdrop fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={onClose}>
-            <div onClick={e => e.stopPropagation()} className="modal-panel glass-panel border border-white/10 rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
-                <Icon name="shield" className="w-8 h-8" />
-              </div>
-              <p className="text-slate-200 font-bold mb-4">عذراً هذا القسم للمطورين فقط. يرجى تسجيل الدخول بحساب المطور أولاً.</p>
-              <button onClick={() => { onClose(); onOpenAuth('login'); }} className="w-full py-3 rounded-2xl bg-accent-red font-bold text-sm text-white">تسجيل الدخول</button>
-            </div>
-          </div>
-        );
-      }
-
-      const verify = () => {
-        setError('');
-        // شرط أساسي: يوزر حسابة mavilovelife حصراً + الرمز السري الصحيح
-        if (currentUser.username !== 'mavilovelife' || pin.trim() !== DEV_SECRET_PIN) {
-          setError('عذراً هذا القسم للمطورين فقط.');
-          return;
-        }
-        onSuccess();
-      };
-
-      return (
-        <div className="modal-backdrop fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={onClose}>
-          <div onClick={e => e.stopPropagation()} className="modal-panel glass-panel border border-white/10 rounded-3xl max-w-sm w-full p-6 shadow-2xl">
-            <div className="text-center mb-5">
-              <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
-                <Icon name="shield" className="w-7 h-7" />
-              </div>
-              <h3 className="font-black text-lg text-white">حماية لوحة التحكم ورفع الأفلام</h3>
-              <p className="text-slate-400 text-xs mt-1">أدخل رمز الحماية السري للمتابعة</p>
-            </div>
-            <input type="password" value={pin} onChange={e => setPin(e.target.value)} onKeyDown={e => e.key === 'Enter' && verify()} placeholder="رمز الحماية السري" className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan text-center tracking-widest mb-3 shadow-inner" />
-            {error && <p className="text-rose-400 text-xs font-bold text-center mb-3 bg-rose-500/10 p-3 rounded-xl border border-rose-500/20">{error}</p>}
-            <button onClick={verify} className="w-full py-3.5 rounded-2xl bg-accent-cyan hover:brightness-110 font-bold text-sm text-glass-950 shadow-[0_0_20px_rgba(0,240,255,0.4)] transition">تحقق ودخول</button>
-          </div>
-        </div>
-      );
-    }
-
     function ConfirmDialog({ title, body, confirmLabel, cancelLabel, onCancel, onConfirm }) {
       return (
         <div className="modal-backdrop fixed inset-0 z-[60] bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={onCancel}>
@@ -908,12 +868,10 @@
       );
     }
 
-    // مشغّل الفيديو: يدعم نطاق تشغيل مخصص (قص زمني)، وطريقة عرض مستقلة للجوال والحاسوب،
-    // وقص/تكبير/دوران احترافي دقيق مبني على القياس الفعلي لأبعاد الفيديو الطبيعية وحجم إطار العرض،
-    // بحيث تُطبَّق منطقة القص المختارة في لوحة التحكم بدقة أثناء المشاهدة الفعلية (وليست للمنظر فقط)
-    function VideoPlayer({ src, onError, trimStart, trimEnd, fitMobile, fitDesktop, crop }) {
+    function VideoPlayer({ src, onError, trimStart, trimEnd, fitMobile, fitDesktop, crop, episodeLabel }) {
       const videoRef = useRef(null);
       const wrapRef = useRef(null);
+      const hideTimerRef = useRef(null);
       const [loading, setLoading] = useState(true);
       const [natural, setNatural] = useState({ w: 0, h: 0 });
       const [stage, setStage] = useState({ w: 0, h: 0 });
@@ -939,7 +897,6 @@
         return () => { if (hls) hls.destroy(); };
       }, [src]);
 
-      // إنفاذ نطاق التشغيل المخصص (قص من البداية/النهاية)، وقراءة أبعاد الفيديو الطبيعية الحقيقية
       useEffect(() => {
         const videoEl = videoRef.current;
         if (!videoEl) return;
@@ -953,7 +910,6 @@
         return () => { videoEl.removeEventListener('loadedmetadata', onLoaded); videoEl.removeEventListener('timeupdate', onTime); };
       }, [src, trimStart, trimEnd]);
 
-      // قياس حجم إطار العرض فعليًا (يتغيّر مع الشاشة/الاتجاه) لحساب القص بدقة بكسل بكسل
       useEffect(() => {
         const el = wrapRef.current;
         if (!el || typeof ResizeObserver === 'undefined') return;
@@ -965,42 +921,59 @@
         return () => ro.disconnect();
       }, []);
 
-      // حالة عناصر التحكم المخصصة (تُستخدم فقط في وضع القص لأن أزرار المتصفح الأصلية تتحرك مع الفيديو المكبّر)
-      const [ctrl, setCtrl] = useState({ playing: true, muted: true, current: 0, duration: 0 });
+      const [ctrl, setCtrl] = useState({ playing: true, muted: true, volume: 1, current: 0, duration: 0, buffered: 0, rate: 1 });
+      const [barVisible, setBarVisible] = useState(true);
+      const [skipFlash, setSkipFlash] = useState(null);
+      const [showSpeedMenu, setShowSpeedMenu] = useState(false);
+
       useEffect(() => {
         const videoEl = videoRef.current;
         if (!videoEl) return;
         const onPlay = () => setCtrl(c2 => ({ ...c2, playing: true }));
         const onPause = () => setCtrl(c2 => ({ ...c2, playing: false }));
-        const onVolume = () => setCtrl(c2 => ({ ...c2, muted: videoEl.muted }));
+        const onVolume = () => setCtrl(c2 => ({ ...c2, muted: videoEl.muted, volume: videoEl.volume }));
         const onLoadedMeta = () => setCtrl(c2 => ({ ...c2, duration: videoEl.duration || 0 }));
         const onTimeUpdate = () => setCtrl(c2 => ({ ...c2, current: videoEl.currentTime || 0 }));
+        const onProgress = () => {
+          try {
+            const b = videoEl.buffered;
+            if (b && b.length) setCtrl(c2 => ({ ...c2, buffered: b.end(b.length - 1) }));
+          } catch (e) {}
+        };
+        const onRate = () => setCtrl(c2 => ({ ...c2, rate: videoEl.playbackRate || 1 }));
         videoEl.addEventListener('play', onPlay);
         videoEl.addEventListener('pause', onPause);
         videoEl.addEventListener('volumechange', onVolume);
         videoEl.addEventListener('loadedmetadata', onLoadedMeta);
         videoEl.addEventListener('timeupdate', onTimeUpdate);
+        videoEl.addEventListener('progress', onProgress);
+        videoEl.addEventListener('ratechange', onRate);
         return () => {
           videoEl.removeEventListener('play', onPlay);
           videoEl.removeEventListener('pause', onPause);
           videoEl.removeEventListener('volumechange', onVolume);
           videoEl.removeEventListener('loadedmetadata', onLoadedMeta);
           videoEl.removeEventListener('timeupdate', onTimeUpdate);
+          videoEl.removeEventListener('progress', onProgress);
+          videoEl.removeEventListener('ratechange', onRate);
         };
       }, [src]);
 
       const togglePlay = () => { const v = videoRef.current; if (!v) return; if (v.paused) v.play(); else v.pause(); };
-      const toggleMute = () => { const v = videoRef.current; if (!v) return; v.muted = !v.muted; };
+      const toggleMute = () => { const v = videoRef.current; if (!v) return; v.muted = !v.muted; if (!v.muted && v.volume === 0) v.volume = 0.5; };
+      const setVolume = (val) => { const v = videoRef.current; if (!v) return; const num = Number(val); v.volume = num; v.muted = num === 0; };
       const seekTo = (val) => { const v = videoRef.current; if (v) v.currentTime = Number(val); };
+      const setRate = (r) => { const v = videoRef.current; if (!v) return; v.playbackRate = r; setShowSpeedMenu(false); };
       const skip = (delta) => {
         const v = videoRef.current;
         if (!v) return;
         const dur = v.duration || Infinity;
         v.currentTime = Math.min(Math.max(0, v.currentTime + delta), dur);
+        setSkipFlash(delta > 0 ? 'fwd' : 'back');
+        setTimeout(() => setSkipFlash(null), 550);
+        showBarTemporarily();
       };
 
-      // ملء الشاشة الفعلي: يجرّب كل بادئات المتصفحات (كروم/فايرفوكس/سفاري/إيدج)، وإن لم يدعم
-      // المتصفح تكبير عنصر عادي (حالة آيفون سفاري) يرجع لتكبير الفيديو نفسه عبر واجهة آيفون الأصلية
       const [isFs, setIsFs] = useState(false);
       useEffect(() => {
         const onFsChange = () => {
@@ -1032,12 +1005,22 @@
           const result = req.call(el);
           if (result && result.catch) result.catch(() => { if (v && v.webkitEnterFullscreen) v.webkitEnterFullscreen(); });
         } else if (v && v.webkitEnterFullscreen) {
-          // مسار آيفون: سفاري آيفون لا يدعم تكبير عنصر عادي، فقط الفيديو نفسه، لذا يظهر بدون القص المخصص أثناء ملء الشاشة (قيد نظام آيفون نفسه)
           v.webkitEnterFullscreen();
         }
       };
 
-      // دعم أسهم لوحة المفاتيح للتقديم/التأخير 5 ثواني، ومفتاح المسافة أو Enter لإيقاف/تشغيل الفيديو (يتجاهل الكتابة داخل الحقول)
+      const showBarTemporarily = () => {
+        setBarVisible(true);
+        if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = setTimeout(() => { if (videoRef.current && !videoRef.current.paused) setBarVisible(false); }, 3000);
+      };
+      useEffect(() => {
+        if (!ctrl.playing) { setBarVisible(true); if (hideTimerRef.current) clearTimeout(hideTimerRef.current); }
+        else showBarTemporarily();
+        // eslint-disable-next-line
+      }, [ctrl.playing]);
+      useEffect(() => () => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current); }, []);
+
       useEffect(() => {
         const onKeyDown = (e) => {
           const active = document.activeElement;
@@ -1045,19 +1028,38 @@
           if (tag === 'INPUT' || tag === 'TEXTAREA' || (active && active.isContentEditable)) return;
           if (e.key === 'ArrowRight') { e.preventDefault(); skip(5); }
           else if (e.key === 'ArrowLeft') { e.preventDefault(); skip(-5); }
-          else if (e.key === ' ' || e.code === 'Space' || e.key === 'Spacebar') { e.preventDefault(); togglePlay(); }
-          else if (e.key === 'Enter') { e.preventDefault(); togglePlay(); }
+          else if (e.key === ' ' || e.code === 'Space' || e.key === 'Spacebar') { e.preventDefault(); togglePlay(); showBarTemporarily(); }
+          else if (e.key === 'Enter') { e.preventDefault(); togglePlay(); showBarTemporarily(); }
+          else if (e.key === 'm' || e.key === 'M') { toggleMute(); showBarTemporarily(); }
+          else if (e.key === 'f' || e.key === 'F') { toggleFullscreen(); }
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
       }, []);
 
-      // حساب ستايل العرض بدقة: قص احترافي (منطقة x/y/width/height% من الفيديو الطبيعي + دوران)، أو ملء الشاشة، أو احتواء كامل
+      const clickState = useRef({ count: 0, timer: null });
+      const onStageClick = (e) => {
+        if (e.target.closest && e.target.closest('.yt-controls-bottom')) return;
+        const rect = wrapRef.current.getBoundingClientRect();
+        const relX = (e.clientX - rect.left) / rect.width;
+        clickState.current.count += 1;
+        if (clickState.current.timer) clearTimeout(clickState.current.timer);
+        clickState.current.timer = setTimeout(() => {
+          if (clickState.current.count === 1) { setBarVisible(v => !v); if (!barVisible) showBarTemporarily(); }
+          clickState.current.count = 0;
+        }, 260);
+        if (clickState.current.count === 2) {
+          clickState.current.count = 0;
+          if (clickState.current.timer) clearTimeout(clickState.current.timer);
+          if (relX < 0.35) skip(-5); else if (relX > 0.65) skip(5); else togglePlay();
+        }
+      };
+
       let videoStyle = { objectFit: 'contain' };
       if (cropReady) {
         const rotation = c.rotation || 0;
         const rad = Math.abs(rotation) * Math.PI / 180;
-        const overscale = Math.cos(rad) + Math.sin(rad); // تكبير إضافي لتفادي ظهور حواف فارغة عند الدوران
+        const overscale = Math.cos(rad) + Math.sin(rad);
         const boxWpx = (c.width / 100) * natural.w;
         const boxHpx = (c.height / 100) * natural.h;
         const baseScale = Math.max(stage.w / boxWpx, stage.h / boxHpx);
@@ -1080,36 +1082,94 @@
         videoStyle = { objectFit: 'cover' };
       }
 
+      const RATE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
       return (
-        <div ref={wrapRef} className="video-crop-wrap aspect-video">
+        <div ref={wrapRef} className="video-crop-wrap aspect-video" onMouseMove={showBarTemporarily} onClick={onStageClick}>
           {loading && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-              <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan animate-spin"></div>
+              <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan yt-spinner"></div>
             </div>
           )}
-          <video ref={videoRef} controls={!cropReady} autoPlay muted playsInline webkit-playsinline="true"
+          <video ref={videoRef} controls={false} autoPlay muted playsInline webkit-playsinline="true"
             onCanPlay={() => setLoading(false)} onPlaying={() => setLoading(false)}
             onError={() => { setLoading(false); onError && onError(); }}
             style={videoStyle} />
-          {cropReady && (
-            <div className="absolute inset-x-0 bottom-0 z-20 flex items-center gap-2 px-2.5 py-2 bg-gradient-to-t from-black/85 via-black/40 to-transparent flex-wrap" style={{ touchAction: 'none' }}>
-              <button type="button" onClick={() => skip(-5)} title="رجوع 5 ثواني" className="w-8 h-8 shrink-0 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white text-[10px] font-black transition">-5</button>
-              <button type="button" onClick={togglePlay} className="w-8 h-8 shrink-0 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white transition">
-                <Icon name={ctrl.playing ? 'pause' : 'play'} className="w-3.5 h-3.5 fill-current" />
-              </button>
-              <button type="button" onClick={() => skip(5)} title="تقديم 5 ثواني" className="w-8 h-8 shrink-0 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white text-[10px] font-black transition">+5</button>
-              <span className="text-[10px] font-mono text-white/80 shrink-0">{formatClock(ctrl.current)}</span>
-              <input type="range" min="0" max={ctrl.duration || 0} step="0.1" value={ctrl.current}
-                onChange={e => seekTo(e.target.value)} className="flex-1 min-w-[60px] accent-accent-cyan" />
-              <span className="text-[10px] font-mono text-white/80 shrink-0">{formatClock(ctrl.duration)}</span>
-              <button type="button" onClick={toggleMute} className="w-8 h-8 shrink-0 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white text-sm transition">
-                {ctrl.muted ? '🔇' : '🔊'}
-              </button>
-              <button type="button" onClick={toggleFullscreen} title={isFs ? 'إنهاء ملء الشاشة' : 'ملء الشاشة'} className="w-8 h-8 shrink-0 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white transition">
-                <Icon name={isFs ? 'minimize' : 'maximize'} className="w-3.5 h-3.5" />
-              </button>
+
+          {episodeLabel && (
+            <div className={`absolute inset-x-0 top-0 z-20 p-3 md:p-4 bg-gradient-to-b from-black/80 to-transparent transition-opacity duration-300 ${barVisible ? 'opacity-100' : 'opacity-0'}`}>
+              <p className="text-white text-sm md:text-base font-bold truncate drop-shadow">{episodeLabel}</p>
             </div>
           )}
+
+          {skipFlash && (
+            <div className={`absolute inset-y-0 ${skipFlash === 'fwd' ? 'right-0' : 'left-0'} w-1/3 flex items-center justify-center pointer-events-none z-20`}>
+              <div className="w-16 h-16 rounded-full bg-black/50 flex flex-col items-center justify-center gap-0.5 yt-skip-flash">
+                <Icon name={skipFlash === 'fwd' ? 'rotateCw5' : 'rotateCcw5'} className="w-6 h-6 text-white" />
+                <span className="text-[10px] font-bold text-white">5 ث</span>
+              </div>
+            </div>
+          )}
+
+          {!ctrl.playing && !loading && (
+            <button type="button" onClick={(e) => { e.stopPropagation(); togglePlay(); }}
+              className="absolute inset-0 z-20 flex items-center justify-center">
+              <span className="w-16 h-16 rounded-full bg-accent-red/90 flex items-center justify-center shadow-[0_0_25px_rgba(255,51,75,0.6)]">
+                <Icon name="play" className="w-7 h-7 text-white fill-current translate-x-0.5" />
+              </span>
+            </button>
+          )}
+
+          <div className={`yt-controls-bottom ${barVisible ? '' : 'hidden-bar'}`} onClick={e => e.stopPropagation()}>
+            <input type="range" min="0" max={ctrl.duration || 0} step="0.1" value={ctrl.current}
+              onChange={e => seekTo(e.target.value)} className="yt-progress w-full mb-2" style={{
+                background: `linear-gradient(to left, #00F0FF ${(ctrl.current / (ctrl.duration || 1)) * 100}%, rgba(255,255,255,0.25) ${(ctrl.current / (ctrl.duration || 1)) * 100}%)`
+              }} />
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button type="button" onClick={togglePlay} className="yt-btn w-9 h-9 shrink-0" title={ctrl.playing ? 'إيقاف مؤقت (مسافة)' : 'تشغيل (مسافة)'}>
+                <Icon name={ctrl.playing ? 'pause' : 'play'} className="w-4.5 h-4.5 fill-current" />
+              </button>
+              <button type="button" onClick={() => skip(-5)} className="yt-btn w-9 h-9 shrink-0" title="رجوع 5 ثواني (السهم الأيسر)">
+                <Icon name="rotateCcw5" className="w-4.5 h-4.5" />
+              </button>
+              <button type="button" onClick={() => skip(5)} className="yt-btn w-9 h-9 shrink-0" title="تقديم 5 ثواني (السهم الأيمن)">
+                <Icon name="rotateCw5" className="w-4.5 h-4.5" />
+              </button>
+
+              <div className="hidden sm:flex items-center gap-1.5 group/vol shrink-0">
+                <button type="button" onClick={toggleMute} className="yt-btn w-9 h-9" title="كتم/تشغيل الصوت (M)">
+                  <Icon name={ctrl.muted || ctrl.volume === 0 ? 'volumeX' : 'volume2'} className="w-4.5 h-4.5" />
+                </button>
+                <input type="range" min="0" max="1" step="0.05" value={ctrl.muted ? 0 : ctrl.volume}
+                  onChange={e => setVolume(e.target.value)} className="yt-vol w-16 md:w-20" />
+              </div>
+              <button type="button" onClick={toggleMute} className="yt-btn w-9 h-9 shrink-0 sm:hidden" title="كتم/تشغيل الصوت">
+                <Icon name={ctrl.muted || ctrl.volume === 0 ? 'volumeX' : 'volume2'} className="w-4.5 h-4.5" />
+              </button>
+
+              <span className="text-[11px] font-mono text-white/90 shrink-0 mr-1">{formatClock(ctrl.current)} / {formatClock(ctrl.duration)}</span>
+
+              <span className="flex-1"></span>
+
+              <div className="relative shrink-0">
+                <button type="button" onClick={() => setShowSpeedMenu(v => !v)} className="yt-btn h-9 px-2 gap-1 text-xs font-bold" title="سرعة التشغيل">
+                  <Icon name="gauge" className="w-4 h-4" /><span className="hidden xs:inline">{ctrl.rate}×</span>
+                </button>
+                {showSpeedMenu && (
+                  <div className="absolute bottom-11 left-0 bg-black/90 backdrop-blur-md rounded-xl border border-white/10 p-1.5 flex flex-col gap-0.5 shadow-2xl min-w-[70px] z-30">
+                    {RATE_OPTIONS.map(r => (
+                      <button key={r} type="button" onClick={() => setRate(r)}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-lg transition ${ctrl.rate === r ? 'bg-accent-cyan text-glass-950' : 'text-white hover:bg-white/10'}`}>{r}×</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <button type="button" onClick={toggleFullscreen} title={isFs ? 'إنهاء ملء الشاشة (F)' : 'ملء الشاشة (F)'} className="yt-btn w-9 h-9 shrink-0">
+                <Icon name={isFs ? 'minimize' : 'maximize'} className="w-4.5 h-4.5" />
+              </button>
+            </div>
+          </div>
         </div>
       );
     }
@@ -1117,6 +1177,7 @@
     function TitleModal({ title, allTitles, currentUser, liked, inWatchlist, onLike, onToggleWatchlist, onClose, onOpenAuth, getRole, onOpenProfile, onOpen }) {
       const [playingUrl, setPlayingUrl] = useState(null);
       const [playingMeta, setPlayingMeta] = useState({});
+      const [playingLabel, setPlayingLabel] = useState('');
       const [activeSeason, setActiveSeason] = useState(0);
       const [seasonView, setSeasonView] = useState(false);
       const [commentText, setCommentText] = useState('');
@@ -1135,7 +1196,7 @@
       const [deleteMyRating, setDeleteMyRating] = useState(false);
 
       useEffect(() => {
-        setPlayingUrl(null); setActiveSeason(0); setSeasonView(false); setCommentText(''); setReplyingTo(null); setVideoError(false);
+        setPlayingUrl(null); setPlayingLabel(''); setActiveSeason(0); setSeasonView(false); setCommentText(''); setReplyingTo(null); setVideoError(false);
         const ref = db.ref(`comments/${title.id}`);
         const cb = snap => {
           const data = snap.val();
@@ -1163,7 +1224,6 @@
         return () => ref.off('value', cb);
       }, [title.id, currentUser && currentUser.id]);
 
-      // تسجيل هذا العمل في "أكمل المشاهدة" (محليًا بجهاز الزائر)
       useEffect(() => {
         try {
           const raw = JSON.parse(localStorage.getItem('cv_continue') || '[]');
@@ -1214,12 +1274,24 @@
 
       const handlePlay = () => {
         setVideoError(false);
-        if (title.type === 'movie') { setPlayingUrl(title.videoUrl || null); setPlayingMeta(title); }
-        else { const ep = firstEpisode(); setPlayingUrl(ep ? ep.videoUrl : null); setPlayingMeta(ep || {}); }
+        if (title.type === 'movie') { setPlayingUrl(title.videoUrl || null); setPlayingMeta(title); setPlayingLabel(title.name); }
+        else { const ep = firstEpisode(); setPlayingUrl(ep ? ep.videoUrl : null); setPlayingMeta(ep || {}); setPlayingLabel(ep ? `${title.name} · ${ep.title || `الحلقة ${ep.number || 1}`}` : title.name); }
       };
 
-      const playEpisode = (ep) => { setVideoError(false); setPlayingUrl(ep.videoUrl); setPlayingMeta(ep); };
+      const playEpisode = (ep) => {
+        setVideoError(false);
+        setPlayingUrl(ep.videoUrl);
+        setPlayingMeta(ep);
+        setPlayingLabel(`${title.name} · ${ep.title || `الحلقة ${ep.number != null ? ep.number : ''}`}`);
+      };
       const openSeason = (i) => { setActiveSeason(i); setSeasonView(true); };
+
+      const playNextEpisode = () => {
+        const season = seasons[activeSeason];
+        if (!season) return;
+        const idx = season.episodes.findIndex(e => e.videoUrl === playingMeta.videoUrl && e.number === playingMeta.number);
+        if (idx > -1 && idx < season.episodes.length - 1) playEpisode(season.episodes[idx + 1]);
+      };
 
       const shareLink = () => {
         const url = `${location.origin}${location.pathname}?t=${title.id}`;
@@ -1251,7 +1323,6 @@
         db.ref(`comments/${title.id}/${commentId}/likes`).transaction(v => Math.max(0, (v || 0) + (isLiked ? -1 : 1)));
       };
 
-      // حذف تعليق: صاحب التعليق نفسه أو المشرف/المدير
       const canDeleteComment = (c) => canModerate || (currentUser && currentUser.username === c.username);
       const deleteComment = (commentId) => db.ref(`comments/${title.id}/${commentId}`).remove();
       const deleteReply = (commentId, replyId) => db.ref(`comments/${title.id}/${commentId}/replies/${replyId}`).remove();
@@ -1267,7 +1338,8 @@
                   {isDirectVideo(playingUrl) ? (
                     <VideoPlayer key={playingUrl} src={normalizeVideoUrl(playingUrl)} onError={() => setVideoError(true)}
                       trimStart={playingMeta.trimStart} trimEnd={playingMeta.trimEnd}
-                      fitMobile={playingMeta.fitMobile} fitDesktop={playingMeta.fitDesktop} crop={playingMeta.crop} />
+                      fitMobile={playingMeta.fitMobile} fitDesktop={playingMeta.fitDesktop} crop={playingMeta.crop}
+                      episodeLabel={playingLabel} />
                   ) : (
                     <iframe key={playingUrl} src={normalizeVideoUrl(playingUrl)} allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen
                       referrerPolicy="no-referrer-when-downgrade" className="w-full aspect-video bg-black" />
@@ -1311,9 +1383,12 @@
                   </span>
                 )}
               </div>
-              <h2 className="text-2xl md:text-3xl font-black mb-3 text-white">{title.name}</h2>
+              <h2 className="text-2xl md:text-3xl font-black mb-1 text-white">{title.name}</h2>
+              {playingLabel && playingLabel !== title.name && (
+                <p className="text-sm text-accent-cyan font-bold mb-3 flex items-center gap-1.5"><Icon name="play" className="w-3.5 h-3.5 fill-current" />{playingLabel.split(' · ').slice(1).join(' · ')}</p>
+              )}
               {title.genres && title.genres.length > 0 && (
-                <div className="flex gap-2 flex-wrap mb-4">
+                <div className="flex gap-2 flex-wrap mb-4 mt-2">
                   {title.genres.map(g => <span key={g} className="text-xs px-3 py-1 rounded-xl glass-card text-slate-300 border border-white/5 font-semibold">{g}</span>)}
                 </div>
               )}
@@ -1329,6 +1404,11 @@
                 <button onClick={handlePlay} className="flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover text-sm font-bold text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition">
                   <Icon name="play" className="w-4 h-4 fill-current" />تشغيل
                 </button>
+                {isSeries && playingUrl && (
+                  <button onClick={playNextEpisode} className="flex items-center gap-2.5 px-5 py-3 rounded-2xl glass-card border border-white/10 hover:border-accent-cyan text-sm font-bold text-slate-200 transition">
+                    <Icon name="skipForward" className="w-4 h-4" />الحلقة التالية
+                  </button>
+                )}
                 {title.type === 'movie' && title.downloadUrl && (
                   <a href={title.downloadUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 px-6 py-3 rounded-2xl glass-card border border-white/10 hover:border-accent-cyan text-sm font-bold text-slate-200 transition">
                     <Icon name="download" className="w-4 h-4 text-accent-cyan" />تحميل
@@ -1345,6 +1425,12 @@
               {isSeries && seasons.length > 0 && (
                 <div className="mt-8 border-t border-white/10 pt-6">
                   <div className="flex items-center gap-2.5 mb-4">
+                    {seasonView && (
+                      <button onClick={() => setSeasonView(false)} title="الرجوع لكل المواسم"
+                        className="w-8 h-8 shrink-0 rounded-xl glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-accent-cyan transition">
+                        <Icon name="chevronRight" className="w-4 h-4" />
+                      </button>
+                    )}
                     <Icon name="tv" className="w-5 h-5 text-accent-cyan" />
                     <h3 className="font-black text-lg text-white">
                       {!seasonView ? 'المواسم' : `الموسم ${seasons[activeSeason] ? (seasons[activeSeason].number || activeSeason + 1) : ''}`}
@@ -1387,8 +1473,10 @@
                         <p className="text-xs text-slate-400 font-bold mb-3">سنة الإصدار: {seasons[activeSeason].year}</p>
                       )}
                       <div className="space-y-2.5">
-                        {(seasons[activeSeason] && seasons[activeSeason].episodes || []).map((ep, ei) => (
-                          <div key={ei} className="flex items-center gap-3 glass-card rounded-2xl p-3.5 border border-white/5 hover:border-white/10 transition">
+                        {(seasons[activeSeason] && seasons[activeSeason].episodes || []).map((ep, ei) => {
+                          const isCurrent = playingMeta && playingMeta.videoUrl === ep.videoUrl && playingMeta.number === ep.number;
+                          return (
+                          <div key={ei} className={`flex items-center gap-3 glass-card rounded-2xl p-3.5 border transition ${isCurrent ? 'border-accent-cyan/50 shadow-[0_0_15px_rgba(0,240,255,0.15)]' : 'border-white/5 hover:border-white/10'}`}>
                             {ep.thumbnail ? (
                               <div className="relative w-16 h-11 sm:w-20 sm:h-12 shrink-0 rounded-lg overflow-hidden bg-glass-950">
                                 <img src={ep.thumbnail} alt="" className="w-full h-full object-cover" />
@@ -1398,15 +1486,17 @@
                               <span className="w-8 h-8 shrink-0 rounded-xl bg-glass-700 flex items-center justify-center text-xs font-black text-accent-cyan">{ep.number != null ? ep.number : ei + 1}</span>
                             )}
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-bold text-slate-100 truncate mb-1">{ep.title || `الحلقة ${ep.number != null ? ep.number : ei + 1}`}</p>
+                              <p className={`text-sm font-bold truncate mb-1 ${isCurrent ? 'text-accent-cyan' : 'text-slate-100'}`}>{ep.title || `الحلقة ${ep.number != null ? ep.number : ei + 1}`}</p>
                               <RatingBadges imdb={ep.imdb} rt={ep.rt} size="xs" />
                             </div>
+                            {isCurrent && <span className="text-[10px] px-2 py-1 rounded-lg bg-accent-cyan/15 text-accent-cyan font-bold shrink-0">قيد التشغيل</span>}
                             <button onClick={() => playEpisode(ep)} className="w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition"><Icon name="play" className="w-4 h-4 text-white fill-current translate-x-0.5" /></button>
                             {ep.downloadUrl && (
                               <a href={ep.downloadUrl} target="_blank" rel="noopener noreferrer" className="w-9 h-9 rounded-xl glass-card hover:bg-white/10 border border-white/10 flex items-center justify-center shrink-0 transition"><Icon name="download" className="w-4 h-4 text-accent-cyan" /></a>
                             )}
                           </div>
-                        ))}
+                          );
+                        })}
                         {(!seasons[activeSeason] || !seasons[activeSeason].episodes || !seasons[activeSeason].episodes.length) && (
                           <p className="text-sm text-slate-500 font-medium">لا توجد حلقات في هذا الموسم بعد.</p>
                         )}
@@ -1667,7 +1757,6 @@
       );
     }
 
-    // صفحة الإعدادات: تغيير الاسم، الصورة، وكلمة المرور (المكان الوحيد لتعديل الملف الشخصي)
     function SettingsView({ currentUser, onUpdateName, onUpdateAvatar, onOpenAuth }) {
       const [name, setName] = useState(currentUser ? currentUser.name : '');
       const [nameMsg, setNameMsg] = useState({ text: '', ok: false });
@@ -1774,7 +1863,6 @@
       );
     }
 
-    // ملف شخصي عام لكل مستخدم بأسلوب Letterboxd: تقييماته، مراجعاته، وقائمته
     function ProfileView({ username, currentUser, titles, watchlist, onOpen, onOpenAuth }) {
       const [profileUser, setProfileUser] = useState(null);
       const [userRatings, setUserRatings] = useState({});
@@ -1943,7 +2031,6 @@
       return h > 0 ? `${p(h)}:${p(m)}:${p(s)}` : `${p(m)}:${p(s)}`;
     }
 
-    // خوارزمية تغيير حجم صندوق القص عبر المقابض الثمانية (سحب حر لكل حافة/زاوية)، مع دعم قفل نسبة العرض للارتفاع
     function resizeCropBox(handle, start, dxPct, dyPct, ratioLock) {
       const MIN = 5;
       let { x, y, w, h } = start;
@@ -1972,7 +2059,6 @@
         else if (handle === 'ne') { ny = anchorBottom - nh; }
         else if (handle === 'sw') { nx = anchorRight - nw; }
         else if (handle === 'nw') { nx = anchorRight - nw; ny = anchorBottom - nh; }
-        // se: تبقى x وy كما هي (زاوية الإرساء)
       }
 
       nx = Math.max(0, Math.min(nx, 100 - nw));
@@ -1982,7 +2068,6 @@
       return { x: nx, y: ny, w: nw, h: nh };
     }
 
-    // أداة قص احترافية فعلية للفيديو: سحب مقابض حقيقية، قفل نسب عرض/ارتفاع قياسية، دوران دقيق، وخط زمني لمعاينة أي لحظة قبل التأكيد
     function CropStudioModal({ videoUrl, initial, onCancel, onSave }) {
       const videoRef = useRef(null);
       const stageRef = useRef(null);
@@ -2030,7 +2115,6 @@
         };
       }, [videoUrl]);
 
-      // مستطيل عرض الفيديو الفعلي داخل المسرح (الفيديو معروض بوضع "احتواء كامل" فقد تظهر أشرطة سوداء أعلى/أسفل أو يمين/يسار)
       const renderedRect = React.useMemo(() => {
         if (!natural.w || !natural.h || !stageSize.w || !stageSize.h) return { left: 0, top: 0, width: stageSize.w || 0, height: stageSize.h || 0 };
         const stageAspect = stageSize.w / stageSize.h, vidAspect = natural.w / natural.h;
@@ -2039,7 +2123,6 @@
         return { left: (stageSize.w - w) / 2, top: (stageSize.h - h) / 2, width: w, height: h };
       }, [natural, stageSize]);
 
-      // قفل نسبة العرض للارتفاع محسوبًا كنسبة "٪عرض إلى ٪ارتفاع" (وليس بكسل حقيقي) لأن أبعاد الفيديو الطبيعية ليست بالضرورة مربعة
       const ratioLock = React.useMemo(() => {
         const ar = parseAspectRatio(aspect);
         if (!ar || !natural.w || !natural.h) return null;
@@ -2165,7 +2248,6 @@
       ), document.body);
     }
 
-    // ضبط عرض الفيديو: نطاق تشغيل (قص زمني)، طريقة عرض مستقلة بين الجوال والحاسوب، وأداة قص احترافية فعلية (سحب مقابض حقيقي، دوران، نسب قياسية) بدل الإعدادات الشكلية السابقة
     function VideoDisplaySettings({ value, onChange }) {
       const [open, setOpen] = useState(false);
       const [showCropStudio, setShowCropStudio] = useState(false);
@@ -2253,6 +2335,62 @@
       return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', rtRating: '', featured: false, status: 'draft', videoUrl: '', downloadUrl: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
     }
 
+    function emptyEpisode(num) {
+      return { number: num, title: '', thumbnail: '', videoUrl: '', downloadUrl: '', imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {} };
+    }
+
+    // محرر حلقة واحدة فقط: يظهر بعد اختيار موسم ثم اختيار حلقة، بدل عرض كل الحلقات دفعة واحدة
+    function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete }) {
+      const e = episode;
+      const set = (k, val) => onChange({ ...e, [k]: val });
+      return (
+        <div>
+          <div className="flex items-center gap-2.5 mb-4">
+            <button type="button" onClick={onBack} title="الرجوع لقائمة الحلقات"
+              className="w-9 h-9 shrink-0 rounded-xl glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-accent-cyan transition">
+              <Icon name="chevronRight" className="w-4 h-4" />
+            </button>
+            <div className="min-w-0">
+              <p className="text-[11px] text-slate-400 font-bold">الموسم {seasonNumber} · تعديل حلقة</p>
+              <h5 className="font-black text-white text-base truncate">{e.title || `الحلقة ${e.number}`}</h5>
+            </div>
+            <button type="button" onClick={onDelete} title="حذف الحلقة"
+              className="mr-auto w-9 h-9 shrink-0 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 flex items-center justify-center text-rose-400 transition">
+              <Icon name="trash-2" className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3.5">
+            <div>
+              <label className="text-xs font-bold text-slate-300 mb-1.5 block">رقم الحلقة</label>
+              <input type="number" value={e.number} onChange={ev => set('number', Number(ev.target.value) || 1)}
+                className="w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-accent-cyan" />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-300 mb-1.5 block">عنوان الحلقة</label>
+              <input value={e.title} onChange={ev => set('title', ev.target.value)} placeholder="مثال: البداية"
+                className="w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-accent-cyan" />
+            </div>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3.5 mt-3.5">
+            <FileUploadField label="ملف الحلقة (فيديو مباشر أو رابط/iframe)" value={e.videoUrl} onChange={v => set('videoUrl', v)} folder="episodes" accept="video/*" />
+            <FileUploadField label="ملف التحميل (اختياري)" value={e.downloadUrl} onChange={v => set('downloadUrl', v)} folder="episodes" accept="video/*" />
+          </div>
+          <div className="mt-3.5"><FileUploadField label="صورة مصغّرة للحلقة (اختياري)" value={e.thumbnail || ''} onChange={v => set('thumbnail', v)} folder="episode-thumbs" accept="image/*" /></div>
+          <div className="grid grid-cols-2 gap-3.5 mt-3.5">
+            <div>
+              <label className="text-xs font-bold text-slate-300 mb-1.5 block">تقييم IMDb</label>
+              <input value={e.imdb} onChange={ev => set('imdb', ev.target.value)} placeholder="8.4" className="w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-accent-cyan" />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-300 mb-1.5 block">تقييم Rotten Tomatoes</label>
+              <input value={e.rt} onChange={ev => set('rt', ev.target.value)} placeholder="92" className="w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-accent-cyan" />
+            </div>
+          </div>
+          <VideoDisplaySettings value={e} onChange={patch => onChange({ ...e, ...patch })} />
+        </div>
+      );
+    }
+
     function AdminContentForm({ initial, defaultType, onDone }) {
       const [form, setForm] = useState(() => {
         if (!initial) return emptyForm(defaultType);
@@ -2260,10 +2398,24 @@
       });
       const [saving, setSaving] = useState(false);
       const [error, setError] = useState('');
+      // التنقل الجديد: اختر موسمًا أولاً (activeSeasonIdx)، ثم اختر حلقة لتعديلها (editingEpisodeIdx)
+      const [activeSeasonIdx, setActiveSeasonIdx] = useState(0);
+      const [editingEpisodeIdx, setEditingEpisodeIdx] = useState(null);
 
       const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
-      const addSeason = () => setForm(prev => ({ ...prev, seasons: [...prev.seasons, { number: prev.seasons.length + 1, year: '', poster: '', episodes: [] }] }));
-      const removeSeason = (si) => setForm(prev => ({ ...prev, seasons: prev.seasons.filter((_, i) => i !== si) }));
+
+      const addSeason = () => setForm(prev => {
+        const seasons = [...prev.seasons, { number: prev.seasons.length + 1, year: '', poster: '', episodes: [] }];
+        setActiveSeasonIdx(seasons.length - 1);
+        setEditingEpisodeIdx(null);
+        return { ...prev, seasons };
+      });
+      const removeSeason = (si) => setForm(prev => {
+        const seasons = prev.seasons.filter((_, i) => i !== si);
+        setActiveSeasonIdx(idx => Math.max(0, Math.min(idx, seasons.length - 1)));
+        setEditingEpisodeIdx(null);
+        return { ...prev, seasons };
+      });
       const duplicateSeason = (si) => setForm(prev => {
         const src = prev.seasons[si];
         const copy = JSON.parse(JSON.stringify(src));
@@ -2279,7 +2431,13 @@
       });
       const updateSeasonNumber = (si, val) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, number: val }) }));
       const updateSeasonField = (si, key, val) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, [key]: val }) }));
-      const addEpisode = (si) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: [...s.episodes, { number: s.episodes.length + 1, title: '', thumbnail: '', videoUrl: '', downloadUrl: '', imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {} }] }) }));
+
+      const addEpisode = (si) => {
+        setForm(prev => {
+          const seasons = prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: [...s.episodes, emptyEpisode(s.episodes.length + 1)] });
+          return { ...prev, seasons };
+        });
+      };
       const removeEpisode = (si, ei) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: s.episodes.filter((_, j) => j !== ei) }) }));
       const duplicateEpisode = (si, ei) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => {
         if (i !== si) return s;
@@ -2298,6 +2456,7 @@
         return { ...s, episodes: arr };
       }) }));
       const updateEpisode = (si, ei, key, val) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: s.episodes.map((e, j) => j !== ei ? e : { ...e, [key]: val }) }) }));
+      const replaceEpisode = (si, ei, newEp) => setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: s.episodes.map((e, j) => j !== ei ? e : newEp) }) }));
 
       const save = async () => {
         setError('');
@@ -2352,6 +2511,7 @@
 
       const inputCls = "w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition shadow-inner";
       const labelCls = "text-xs font-bold text-slate-300 mb-1.5 block";
+      const activeSeason = form.seasons[activeSeasonIdx];
 
       return (
         <div className="glass-panel rounded-3xl p-5 md:p-7 border border-white/10 shadow-2xl">
@@ -2419,58 +2579,89 @@
                 <h4 className="font-black text-white text-base">المواسم والحلقات</h4>
                 <button onClick={addSeason} className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 font-bold hover:brightness-110 transition shadow-sm"><Icon name="plus" className="w-4 h-4" />إضافة موسم</button>
               </div>
-              <div className="space-y-4">
-                {form.seasons.map((s, si) => (
-                  <div key={si} className="glass-card rounded-2xl p-4 border border-white/10">
-                    <div className="flex items-start gap-4 mb-4 flex-wrap">
-                      <div className="w-20 shrink-0">
-                        <div className="aspect-[2/3] rounded-xl overflow-hidden bg-glass-950 border border-white/10 flex items-center justify-center">
-                          {s.poster ? <img src={s.poster} className="w-full h-full object-cover" /> : <Icon name="tv" className="w-6 h-6 text-slate-600" />}
-                        </div>
-                      </div>
-                      <div className="flex-1 min-w-[220px] space-y-2.5">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs font-bold text-slate-300 shrink-0">رقم الموسم</span>
-                          <input type="number" value={s.number} onChange={e => updateSeasonNumber(si, e.target.value)} className="w-16 bg-glass-950 border border-white/10 rounded-xl px-2 py-1.5 text-xs font-bold text-white text-center" />
-                          <span className="text-xs font-bold text-slate-300 shrink-0 mr-1">سنة الإصدار</span>
-                          <input type="number" value={s.year || ''} onChange={e => updateSeasonField(si, 'year', e.target.value)} placeholder="مثال 2023" className="w-24 bg-glass-950 border border-white/10 rounded-xl px-2 py-1.5 text-xs font-bold text-white text-center" />
-                          <div className="flex items-center gap-1 mr-auto">
-                            <button onClick={() => moveSeason(si, -1)} disabled={si === 0} title="نقل للأعلى" className="w-7 h-7 rounded-lg glass-panel border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-300 disabled:opacity-30 transition"><Icon name="arrowUp" className="w-3.5 h-3.5" /></button>
-                            <button onClick={() => moveSeason(si, 1)} disabled={si === form.seasons.length - 1} title="نقل للأسفل" className="w-7 h-7 rounded-lg glass-panel border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-300 disabled:opacity-30 transition"><Icon name="arrowDown" className="w-3.5 h-3.5" /></button>
-                            <button onClick={() => duplicateSeason(si)} title="تكرار الموسم" className="w-7 h-7 rounded-lg glass-panel border border-white/10 hover:border-accent-cyan flex items-center justify-center text-accent-cyan transition"><Icon name="copy" className="w-3.5 h-3.5" /></button>
-                            <button onClick={() => removeSeason(si)} title="حذف الموسم" className="w-7 h-7 rounded-lg bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 flex items-center justify-center text-rose-400 transition"><Icon name="trash-2" className="w-3.5 h-3.5" /></button>
-                          </div>
-                        </div>
-                        <FileUploadField compact label="صورة بوستر الموسم (اختياري)" value={s.poster || ''} onChange={v => updateSeasonField(si, 'poster', v)} folder="season-posters" accept="image/*" />
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      {s.episodes.map((e, ei) => (
-                        <div key={ei} className="glass-panel rounded-xl p-3 border border-white/5">
-                          <div className="grid md:grid-cols-6 gap-2.5 items-center">
-                            <input type="number" value={e.number} onChange={ev => updateEpisode(si, ei, 'number', ev.target.value)} placeholder="#" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white text-center md:col-span-1" />
-                            <input value={e.title} onChange={ev => updateEpisode(si, ei, 'title', ev.target.value)} placeholder="عنوان الحلقة" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white md:col-span-2" />
-                            <div className="md:col-span-2"><FileUploadField compact value={e.videoUrl} onChange={v => updateEpisode(si, ei, 'videoUrl', v)} folder="episodes" accept="video/*" /></div>
-                            <div className="md:col-span-2"><FileUploadField compact value={e.downloadUrl} onChange={v => updateEpisode(si, ei, 'downloadUrl', v)} folder="episodes" accept="video/*" /></div>
-                            <input value={e.imdb} onChange={ev => updateEpisode(si, ei, 'imdb', ev.target.value)} placeholder="IMDb" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white md:col-span-1" />
-                            <input value={e.rt} onChange={ev => updateEpisode(si, ei, 'rt', ev.target.value)} placeholder="RT %" className="bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white md:col-span-1" />
-                            <div className="md:col-span-4"><FileUploadField compact label="صورة مصغّرة للحلقة (اختياري)" value={e.thumbnail || ''} onChange={v => updateEpisode(si, ei, 'thumbnail', v)} folder="episode-thumbs" accept="image/*" /></div>
-                            <div className="flex items-center gap-1 md:col-span-2 justify-end">
-                              <button onClick={() => moveEpisode(si, ei, -1)} disabled={ei === 0} title="نقل للأعلى" className="w-8 h-8 rounded-lg glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-300 disabled:opacity-30 transition"><Icon name="arrowUp" className="w-3.5 h-3.5" /></button>
-                              <button onClick={() => moveEpisode(si, ei, 1)} disabled={ei === s.episodes.length - 1} title="نقل للأسفل" className="w-8 h-8 rounded-lg glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-300 disabled:opacity-30 transition"><Icon name="arrowDown" className="w-3.5 h-3.5" /></button>
-                              <button onClick={() => duplicateEpisode(si, ei)} title="تكرار الحلقة" className="w-8 h-8 rounded-lg glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-accent-cyan transition"><Icon name="copy" className="w-3.5 h-3.5" /></button>
-                              <button onClick={() => removeEpisode(si, ei)} title="حذف الحلقة" className="w-8 h-8 rounded-lg bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 flex items-center justify-center text-rose-400 transition"><Icon name="trash-2" className="w-3.5 h-3.5" /></button>
+
+              {form.seasons.length === 0 ? (
+                <p className="text-xs text-slate-500 font-medium">لا توجد مواسم بعد. اضغط "إضافة موسم" للبدء.</p>
+              ) : (
+                <div>
+                  {/* الخطوة 1: اختيار الموسم */}
+                  <p className="text-[11px] font-bold text-slate-400 mb-2">١) اختر الموسم</p>
+                  <div className="flex gap-2 flex-wrap mb-5">
+                    {form.seasons.map((s, si) => (
+                      <button key={si} onClick={() => { setActiveSeasonIdx(si); setEditingEpisodeIdx(null); }}
+                        className={`flex items-center gap-1.5 text-xs px-4 py-2.5 rounded-xl font-bold transition border ${activeSeasonIdx === si ? 'bg-accent-cyan text-glass-950 border-accent-cyan shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border-white/10 hover:border-white/20'}`}>
+                        <Icon name="tv" className="w-3.5 h-3.5" />الموسم {s.number || si + 1}
+                        <span className="opacity-70">({(s.episodes || []).length})</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {activeSeason && (
+                    <div className="glass-card rounded-2xl p-4 border border-white/10">
+                      {editingEpisodeIdx === null ? (
+                        <div>
+                          {/* بيانات الموسم نفسه */}
+                          <div className="flex items-start gap-4 mb-5 flex-wrap">
+                            <div className="w-20 shrink-0">
+                              <div className="aspect-[2/3] rounded-xl overflow-hidden bg-glass-950 border border-white/10 flex items-center justify-center">
+                                {activeSeason.poster ? <img src={activeSeason.poster} className="w-full h-full object-cover" /> : <Icon name="tv" className="w-6 h-6 text-slate-600" />}
+                              </div>
+                            </div>
+                            <div className="flex-1 min-w-[220px] space-y-2.5">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-xs font-bold text-slate-300 shrink-0">رقم الموسم</span>
+                                <input type="number" value={activeSeason.number} onChange={e => updateSeasonNumber(activeSeasonIdx, e.target.value)} className="w-16 bg-glass-950 border border-white/10 rounded-xl px-2 py-1.5 text-xs font-bold text-white text-center" />
+                                <span className="text-xs font-bold text-slate-300 shrink-0 mr-1">سنة الإصدار</span>
+                                <input type="number" value={activeSeason.year || ''} onChange={e => updateSeasonField(activeSeasonIdx, 'year', e.target.value)} placeholder="مثال 2023" className="w-24 bg-glass-950 border border-white/10 rounded-xl px-2 py-1.5 text-xs font-bold text-white text-center" />
+                                <div className="flex items-center gap-1 mr-auto">
+                                  <button onClick={() => moveSeason(activeSeasonIdx, -1)} disabled={activeSeasonIdx === 0} title="نقل للأعلى" className="w-7 h-7 rounded-lg glass-panel border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-300 disabled:opacity-30 transition"><Icon name="arrowUp" className="w-3.5 h-3.5" /></button>
+                                  <button onClick={() => moveSeason(activeSeasonIdx, 1)} disabled={activeSeasonIdx === form.seasons.length - 1} title="نقل للأسفل" className="w-7 h-7 rounded-lg glass-panel border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-300 disabled:opacity-30 transition"><Icon name="arrowDown" className="w-3.5 h-3.5" /></button>
+                                  <button onClick={() => duplicateSeason(activeSeasonIdx)} title="تكرار الموسم" className="w-7 h-7 rounded-lg glass-panel border border-white/10 hover:border-accent-cyan flex items-center justify-center text-accent-cyan transition"><Icon name="copy" className="w-3.5 h-3.5" /></button>
+                                  <button onClick={() => removeSeason(activeSeasonIdx)} title="حذف الموسم" className="w-7 h-7 rounded-lg bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 flex items-center justify-center text-rose-400 transition"><Icon name="trash-2" className="w-3.5 h-3.5" /></button>
+                                </div>
+                              </div>
+                              <FileUploadField compact label="صورة بوستر الموسم (اختياري)" value={activeSeason.poster || ''} onChange={v => updateSeasonField(activeSeasonIdx, 'poster', v)} folder="season-posters" accept="image/*" />
                             </div>
                           </div>
-                          <VideoDisplaySettings value={e} onChange={patch => { Object.keys(patch).forEach(k => updateEpisode(si, ei, k, patch[k])); }} />
+
+                          {/* الخطوة 2: اختيار حلقة لتعديلها */}
+                          <p className="text-[11px] font-bold text-slate-400 mb-2">٢) اختر حلقة لتعديلها، أو أضف حلقة جديدة</p>
+                          <div className="space-y-2">
+                            {activeSeason.episodes.map((e, ei) => (
+                              <div key={ei} className="flex items-center gap-3 glass-panel rounded-xl p-2.5 border border-white/5 hover:border-white/10 transition">
+                                {e.thumbnail ? (
+                                  <div className="w-14 h-9 shrink-0 rounded-lg overflow-hidden bg-glass-950"><img src={e.thumbnail} className="w-full h-full object-cover" /></div>
+                                ) : (
+                                  <span className="w-8 h-8 shrink-0 rounded-lg bg-glass-700 flex items-center justify-center text-xs font-black text-accent-cyan">{e.number}</span>
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-bold text-slate-100 truncate">{e.title || `الحلقة ${e.number}`}</p>
+                                  <p className="text-[11px] text-slate-500">{e.videoUrl ? 'يوجد ملف فيديو' : 'لم يُرفع فيديو بعد'}</p>
+                                </div>
+                                <button onClick={() => moveEpisode(activeSeasonIdx, ei, -1)} disabled={ei === 0} title="نقل للأعلى" className="w-8 h-8 shrink-0 rounded-lg glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-300 disabled:opacity-30 transition"><Icon name="arrowUp" className="w-3.5 h-3.5" /></button>
+                                <button onClick={() => moveEpisode(activeSeasonIdx, ei, 1)} disabled={ei === activeSeason.episodes.length - 1} title="نقل للأسفل" className="w-8 h-8 shrink-0 rounded-lg glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-300 disabled:opacity-30 transition"><Icon name="arrowDown" className="w-3.5 h-3.5" /></button>
+                                <button onClick={() => duplicateEpisode(activeSeasonIdx, ei)} title="تكرار" className="w-8 h-8 shrink-0 rounded-lg glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-accent-cyan transition"><Icon name="copy" className="w-3.5 h-3.5" /></button>
+                                <button onClick={() => setEditingEpisodeIdx(ei)} title="تعديل" className="w-8 h-8 shrink-0 rounded-lg bg-accent-cyan/15 border border-accent-cyan/30 hover:bg-accent-cyan/25 flex items-center justify-center text-accent-cyan transition"><Icon name="pencil" className="w-3.5 h-3.5" /></button>
+                                <button onClick={() => removeEpisode(activeSeasonIdx, ei)} title="حذف" className="w-8 h-8 shrink-0 rounded-lg bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 flex items-center justify-center text-rose-400 transition"><Icon name="trash-2" className="w-3.5 h-3.5" /></button>
+                              </div>
+                            ))}
+                            {activeSeason.episodes.length === 0 && <p className="text-xs text-slate-500 font-medium py-2">لا توجد حلقات في هذا الموسم بعد.</p>}
+                          </div>
+                          <button onClick={() => { addEpisode(activeSeasonIdx); setEditingEpisodeIdx(activeSeason.episodes.length); }} className="mt-3 flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl glass-card border border-white/10 hover:border-accent-cyan text-slate-200 font-bold transition"><Icon name="plus" className="w-3.5 h-3.5 text-accent-cyan" />إضافة حلقة جديدة</button>
                         </div>
-                      ))}
+                      ) : (
+                        <EpisodeEditor
+                          episode={activeSeason.episodes[editingEpisodeIdx]}
+                          seasonNumber={activeSeason.number}
+                          onChange={(newEp) => replaceEpisode(activeSeasonIdx, editingEpisodeIdx, newEp)}
+                          onBack={() => setEditingEpisodeIdx(null)}
+                          onDelete={() => { removeEpisode(activeSeasonIdx, editingEpisodeIdx); setEditingEpisodeIdx(null); }}
+                        />
+                      )}
                     </div>
-                    <button onClick={() => addEpisode(si)} className="mt-3 flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl glass-card border border-white/10 hover:border-accent-cyan text-slate-200 font-bold transition"><Icon name="plus" className="w-3.5 h-3.5 text-accent-cyan" />إضافة حلقة</button>
-                  </div>
-                ))}
-                {form.seasons.length === 0 && <p className="text-xs text-slate-500 font-medium">لا توجد مواسم بعد. اضغط "إضافة موسم" للبدء.</p>}
-              </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -2762,7 +2953,6 @@
       const [activeTitle, setActiveTitle] = useState(null);
       const [authModal, setAuthModal] = useState(null);
       const [accountSheet, setAccountSheet] = useState(false);
-      const [devPinModal, setDevPinModal] = useState(false);
       const [watchlist, setWatchlist] = useState(() => JSON.parse(localStorage.getItem('cv_watchlist') || '[]'));
       const [likedIds, setLikedIds] = useState(() => JSON.parse(localStorage.getItem('cv_likes') || '[]'));
       const [moderators, setModerators] = useState({});
@@ -2783,7 +2973,6 @@
         return moderators[sanitizeKey(username)] ? 'moderator' : null;
       };
 
-      // مزامنة فورية لحالة المستخدم الحالي (شارة الإشراف / الحظر) دون الحاجة لتسجيل خروج ودخول
       useEffect(() => {
         if (!currentUser) return;
         const ref = db.ref(`users/${currentUser.id}`);
@@ -2801,17 +2990,15 @@
         return () => ref.off('value', cb);
       }, [currentUser && currentUser.id]);
 
+      // الدخول للوحة التحكم أصبح مباشرًا لأي حساب مدير أو مشرف، دون رمز حماية إضافي —
+      // فالتحقق من الصلاحية (isModerator أو حساب المدير الرئيسي) محفوظ في قاعدة البيانات ولا يمكن لمستخدم عادي تعديله بنفسه
       const setView = (v) => {
         if (v === 'admin') {
-          if (currentUser && (currentUser.username === 'mavilovelife' || currentUser.isModerator)) {
-            // المشرفون المعيّنون من قبل الإدارة يدخلون مباشرة دون الحاجة للرمز السري
-            if (currentUser.isModerator && currentUser.username !== 'mavilovelife') {
-              setViewRaw('admin'); setSearch(''); window.scrollTo({ top: 0, behavior: 'smooth' });
-              return;
-            }
+          if (!currentUser || !(currentUser.username === 'mavilovelife' || currentUser.isModerator)) {
+            setAuthModal('login');
+            return;
           }
-          // فتح نافذة إدخال رمز الحماية للمطور
-          setDevPinModal(true);
+          setViewRaw('admin'); setSearch(''); window.scrollTo({ top: 0, behavior: 'smooth' });
           return;
         }
         setViewRaw(v); setSearch(''); window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2834,7 +3021,6 @@
           setBooted(true);
         };
         ref.on('value', cb);
-        // شبكة بطيئة أو مشكلة اتصال مؤقتة: لا تترك المستخدم ينتظر إلى الأبد أمام شاشة التحميل
         const safety = setTimeout(() => setBooted(true), 4000);
         return () => { ref.off('value', cb); clearTimeout(safety); };
       }, []);
@@ -2848,7 +3034,6 @@
         }
       }, [booted]);
 
-      // فتح عمل تلقائيًا لو الرابط يحتوي على معرّف مشاركة (?t=ID)
       useEffect(() => {
         if (!booted || !titles.length) return;
         const t = new URLSearchParams(location.search).get('t');
@@ -2951,12 +3136,6 @@
           )}
 
           {authModal && <AuthModal tab={authModal} onClose={() => setAuthModal(null)} onSuccess={handleAuthSuccess} />}
-
-          {devPinModal && (
-            <DevPinModal currentUser={currentUser} onClose={() => setDevPinModal(false)}
-              onSuccess={() => { setDevPinModal(false); setViewRaw('admin'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-              onOpenAuth={setAuthModal} />
-          )}
 
           {accountSheet && (
             <AccountSheet currentUser={currentUser} onClose={() => setAccountSheet(false)}
