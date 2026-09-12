@@ -247,6 +247,32 @@
     const TYPE_PLURAL = { movie: 'الأفلام', series: 'المسلسلات', anime: 'الأنميات' };
     const COMPLAINT_TYPES = { add: 'طلب إضافة عمل', problem: 'مشكلة في التشغيل أو التحميل', suggestion: 'اقتراح عام' };
 
+    // تحويل رقم إلى ترتيبي مؤنث بالعربية (يوافق كلمة "الحلقة"): 1 -> الأولى، 2 -> الثانية ...
+    const ORDINAL_ONES_F = ['', 'الأولى', 'الثانية', 'الثالثة', 'الرابعة', 'الخامسة', 'السادسة', 'السابعة', 'الثامنة', 'التاسعة'];
+    const ORDINAL_TEENS_F = ['العاشرة', 'الحادية عشرة', 'الثانية عشرة', 'الثالثة عشرة', 'الرابعة عشرة', 'الخامسة عشرة', 'السادسة عشرة', 'السابعة عشرة', 'الثامنة عشرة', 'التاسعة عشرة'];
+    const ORDINAL_TENS_F = ['', '', 'العشرون', 'الثلاثون', 'الأربعون', 'الخمسون', 'الستون', 'السبعون', 'الثمانون', 'التسعون'];
+
+    function arabicOrdinalFeminine(n) {
+      n = Number(n) || 0;
+      if (n <= 0) return `رقم ${n}`;
+      if (n < 10) return ORDINAL_ONES_F[n];
+      if (n < 20) return ORDINAL_TEENS_F[n - 10];
+      if (n < 100) {
+        const tens = Math.floor(n / 10), ones = n % 10;
+        return ones === 0 ? ORDINAL_TENS_F[tens] : `${ORDINAL_ONES_F[ones]} و${ORDINAL_TENS_F[tens]}`;
+      }
+      if (n === 100) return 'المئة';
+      return `رقم ${n}`;
+    }
+
+    // يبني تسمية الحلقة تلقائيًا: "الحلقة الأولى" / "الحلقة السابعة والأخيرة من الموسم" / "الحلقة السابعة والأخيرة"
+    function episodeAutoLabel(ep) {
+      const ord = arabicOrdinalFeminine(ep && ep.number);
+      if (ep && ep.finality === 'season') return `الحلقة ${ord} والأخيرة من الموسم`;
+      if (ep && ep.finality === 'series') return `الحلقة ${ord} والأخيرة`;
+      return `الحلقة ${ord}`;
+    }
+
     function fmtDateTime(ts) {
       if (!ts) return '';
       const d = new Date(ts);
@@ -812,7 +838,7 @@
 
                   {(currentUser.username === 'mavilovelife' || currentUser.isModerator) && (
                     <button onClick={() => onNavigate('admin')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold">
-                      <Icon name="shield" className="w-4 h-4 text-amber-400" />لوحة التحكم 
+                      <Icon name="shield" className="w-4 h-4 text-amber-400" />لوحة التحكم ورفع الأفلام
                     </button>
                   )}
 
@@ -1616,7 +1642,11 @@
                             )}
                             <div className="flex-1 min-w-0">
                               <p className="text-[10px] font-bold text-accent-cyan mb-0.5">الموسم {ep.seasonNumber} · الحلقة {ep.number}</p>
-                              <p className={`text-sm font-bold truncate ${isCurrent ? 'text-accent-cyan' : 'text-slate-100'}`}>{ep.title || `الحلقة ${ep.number}`}</p>
+                              <p className={`text-sm font-bold truncate ${isCurrent ? 'text-accent-cyan' : 'text-slate-100'}`}>
+                                {ep.title ? (
+                                  <>{ep.title} <span className="font-normal opacity-60">({episodeAutoLabel(ep)})</span></>
+                                ) : episodeAutoLabel(ep)}
+                              </p>
                             </div>
                             {done && <Icon name="check" className="w-4 h-4 text-emerald-400 shrink-0 hidden xs:block" />}
                             {isCurrent && <span className="text-[10px] px-2 py-1 rounded-lg bg-accent-cyan/15 text-accent-cyan font-bold shrink-0 hidden sm:inline">قيد التشغيل</span>}
@@ -1684,7 +1714,11 @@
                               </span>
                             )}
                             <div className="flex-1 min-w-0">
-                              <p className={`text-sm font-bold truncate mb-1 ${isCurrent ? 'text-accent-cyan' : 'text-slate-100'}`}>{ep.title || `الحلقة ${ep.number != null ? ep.number : ei + 1}`}</p>
+                              <p className={`text-sm font-bold truncate mb-1 ${isCurrent ? 'text-accent-cyan' : 'text-slate-100'}`}>
+                                {ep.title ? (
+                                  <>{ep.title} <span className="font-normal opacity-60">({episodeAutoLabel(ep)})</span></>
+                                ) : episodeAutoLabel(ep)}
+                              </p>
                               <RatingBadges imdb={ep.imdb} rt={ep.rt} size="xs" />
                             </div>
                             {done && <Icon name="check" className="w-4 h-4 text-emerald-400 shrink-0 hidden xs:block" />}
@@ -2675,7 +2709,7 @@
     }
 
     function emptyEpisode(num) {
-      return { number: num, title: '', videoUrl: '', downloadUrl: '', imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {} };
+      return { number: num, title: '', videoUrl: '', downloadUrl: '', imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
     }
 
     // محرر حلقة واحدة فقط: يظهر بعد اختيار موسم ثم اختيار حلقة، بدل عرض كل الحلقات دفعة واحدة
@@ -2709,6 +2743,16 @@
               <input value={e.title} onChange={ev => set('title', ev.target.value)} placeholder="مثال: البداية"
                 className="w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-accent-cyan" />
             </div>
+          </div>
+          <div className="mt-3.5">
+            <label className="text-xs font-bold text-slate-300 mb-1.5 block">حالة الحلقة (تُستخدم لتوليد تسمية الحلقة تلقائيًا للمستخدم، مثل: "الحلقة السابعة والأخيرة من الموسم")</label>
+            <select value={e.finality || 'none'} onChange={ev => set('finality', ev.target.value)}
+              className="w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-accent-cyan">
+              <option value="none">عادية</option>
+              <option value="season">آخر حلقة بالموسم</option>
+              <option value="series">آخر حلقة بالمسلسل (نهاية العمل)</option>
+            </select>
+            <p className="text-[11px] text-slate-500 mt-1.5">ستظهر للمستخدم تلقائيًا كـ: «{episodeAutoLabel(e)}»</p>
           </div>
           <div className="grid sm:grid-cols-2 gap-3.5 mt-3.5">
             <FileUploadField label="ملف الحلقة (فيديو مباشر أو رابط/iframe)" value={e.videoUrl} onChange={v => set('videoUrl', v)} folder="episodes" accept="video/*" />
@@ -2835,7 +2879,7 @@
             episodeThumbnail: (s.episodeThumbnail || '').trim(),
             episodes: (s.episodes || []).map(e => ({
               number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: (e.videoUrl || '').trim(), downloadUrl: (e.downloadUrl || '').trim(), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
-              trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}
+              trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
             }))
           }));
           payload.videoUrl = ''; payload.downloadUrl = '';
@@ -2976,7 +3020,7 @@
                                 )}
                                 <div className="flex-1 min-w-0">
                                   <p className="text-sm font-bold text-slate-100 truncate">{e.title || `الحلقة ${e.number}`}</p>
-                                  <p className="text-[11px] text-slate-500">{e.videoUrl ? 'يوجد ملف فيديو' : 'لم يُرفع فيديو بعد'}</p>
+                                  <p className="text-[11px] text-slate-500">{e.videoUrl ? 'يوجد ملف فيديو' : 'لم يُرفع فيديو بعد'}{e.finality === 'season' ? ' · آخر حلقة بالموسم' : e.finality === 'series' ? ' · آخر حلقة بالمسلسل' : ''}</p>
                                 </div>
                                 <button onClick={() => moveEpisode(activeSeasonIdx, ei, -1)} disabled={ei === 0} title="نقل للأعلى" className="w-8 h-8 shrink-0 rounded-lg glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-300 disabled:opacity-30 transition"><Icon name="arrowUp" className="w-3.5 h-3.5" /></button>
                                 <button onClick={() => moveEpisode(activeSeasonIdx, ei, 1)} disabled={ei === activeSeason.episodes.length - 1} title="نقل للأسفل" className="w-8 h-8 shrink-0 rounded-lg glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-300 disabled:opacity-30 transition"><Icon name="arrowDown" className="w-3.5 h-3.5" /></button>
@@ -3225,10 +3269,10 @@
 
       return (
         <div>
-          <h1 className="text-2xl md:text-3xl font-black mb-6 text-slate-100">لوحة تحكم </h1>
+          <h1 className="text-2xl md:text-3xl font-black mb-6 text-slate-100">لوحة تحكم ورفع الأفلام</h1>
           <AdminDashboardStats titles={titles} />
           <div className="flex gap-3 mb-6 border-b border-white/10 pb-3 flex-wrap">
-            <button onClick={() => { setTab('content'); setEditing(null); }} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'content' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>المحتوى (الرفع)</button>
+            <button onClick={() => { setTab('content'); setEditing(null); }} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'content' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>المحتوى (رفع الأفلام)</button>
             <button onClick={() => setTab('complaints')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'complaints' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>الشكاوى والطلبات</button>
             {isFullAdmin && (
               <button onClick={() => setTab('users')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'users' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>المستخدمون</button>
