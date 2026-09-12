@@ -742,7 +742,7 @@
       );
     }
 
-    function AccountSheet({ currentUser, onClose, onLogin, onRegister, onLogout, onNavigate }) {
+    function AccountSheet({ currentUser, onClose, onLogin, onRegister, onLogout, onNavigate, onSearchUsers }) {
       return (
         <div className="modal-backdrop fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end md:items-center justify-center p-0 md:p-4" onClick={onClose}>
           <div onClick={e => e.stopPropagation()} className="sheet-panel glass-panel border border-white/10 rounded-t-3xl md:rounded-3xl w-full md:max-w-sm p-6 shadow-2xl">
@@ -769,6 +769,7 @@
                   </div>
                 </div>
                 <div className="space-y-2.5">
+                  <button onClick={onSearchUsers} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold"><Icon name="search" className="w-4 h-4 text-accent-cyan" />البحث عن مستخدمين</button>
                   <button onClick={() => onNavigate('profile')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold"><Icon name="user" className="w-4 h-4 text-accent-cyan" />ملفي الشخصي</button>
                   <button onClick={() => onNavigate('settings')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold"><Icon name="settings" className="w-4 h-4 text-accent-cyan" />الإعدادات</button>
                   <button onClick={() => onNavigate('requests')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold"><Icon name="flag" className="w-4 h-4 text-accent-cyan" />طلباتي وشكاواي</button>
@@ -790,6 +791,7 @@
                 </div>
                 <button onClick={onLogin} className="w-full py-3.5 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition">تسجيل الدخول</button>
                 <button onClick={onRegister} className="w-full py-3.5 rounded-2xl glass-card hover:bg-white/5 border border-white/10 text-sm font-bold transition">إنشاء حساب جديد</button>
+                <button onClick={onSearchUsers} className="w-full py-3.5 rounded-2xl glass-card hover:bg-white/5 border border-white/10 text-sm font-bold transition flex items-center justify-center gap-2"><Icon name="search" className="w-4 h-4 text-accent-cyan" />البحث عن مستخدمين</button>
               </div>
             )}
           </div>
@@ -2075,6 +2077,71 @@
       );
     }
 
+    function UserSearchModal({ onClose, onOpenProfile }) {
+      const [query, setQuery] = useState('');
+      const [results, setResults] = useState(null);
+      const [loading, setLoading] = useState(false);
+
+      useEffect(() => {
+        const q = query.trim().toLowerCase();
+        if (!q) { setResults(null); setLoading(false); return; }
+        setLoading(true);
+        const handle = setTimeout(() => {
+          db.ref('users').orderByChild('username').startAt(q).endAt(q + '\uf8ff').limitToFirst(20).once('value')
+            .then(snap => {
+              const data = snap.val() || {};
+              const list = Object.keys(data).map(k => ({ id: k, ...data[k] })).filter(u => !u.banned);
+              list.sort((a, b) => (a.username || '').localeCompare(b.username || ''));
+              setResults(list);
+            })
+            .catch(() => setResults([]))
+            .finally(() => setLoading(false));
+        }, 300);
+        return () => clearTimeout(handle);
+      }, [query]);
+
+      return (
+        <div className="modal-backdrop fixed inset-0 z-[70] bg-black/80 backdrop-blur-md flex items-end md:items-center justify-center p-0 md:p-4" onClick={onClose}>
+          <div onClick={e => e.stopPropagation()} className="sheet-panel glass-panel border border-white/10 rounded-t-3xl md:rounded-3xl w-full md:max-w-sm max-h-[75vh] flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
+              <h3 className="font-black text-white text-base">البحث عن مستخدمين</h3>
+              <button onClick={onClose} className="w-8 h-8 rounded-xl glass-card border border-white/10 flex items-center justify-center text-slate-300 hover:text-white transition"><Icon name="x" className="w-4 h-4" /></button>
+            </div>
+            <div className="p-4 shrink-0">
+              <div className="relative">
+                <Icon name="search" className="w-4 h-4 absolute top-1/2 -translate-y-1/2 right-3.5 text-slate-400" />
+                <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="اكتب اسم المستخدم..."
+                  className="w-full bg-glass-900 border border-white/10 rounded-2xl py-2.5 pr-10 pl-4 text-sm text-slate-100 outline-none focus:border-accent-cyan focus:ring-1 focus:ring-accent-cyan transition shadow-inner" />
+              </div>
+            </div>
+            <div className="overflow-y-auto p-3 pt-0">
+              {!query.trim() ? (
+                <p className="text-sm text-slate-500 font-medium text-center py-8">اكتب جزءًا من اسم المستخدم للبحث.</p>
+              ) : loading ? (
+                <p className="text-sm text-slate-500 font-medium text-center py-8">جارٍ البحث...</p>
+              ) : !results || results.length === 0 ? (
+                <p className="text-sm text-slate-500 font-medium text-center py-8">لا يوجد مستخدم بهذا الاسم.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {results.map(u => (
+                    <button key={u.id} onClick={() => onOpenProfile(u.username)} className="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-white/5 transition text-right">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-accent-cyan to-blue-600 flex items-center justify-center font-black text-sm text-glass-950 overflow-hidden shrink-0">
+                        {u.avatar ? <img src={u.avatar} alt="" className="w-full h-full object-cover" /> : (u.name || '?').charAt(0)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-bold text-white text-sm truncate">{u.name}</p>
+                        <p className="text-slate-400 text-xs truncate">@{u.username}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     function ProfileView({ username, currentUser, titles, watchlist, onOpen, onOpenAuth, onOpenProfile }) {
       const [profileUser, setProfileUser] = useState(null);
       const [userRatings, setUserRatings] = useState({});
@@ -3256,6 +3323,7 @@
       const [likedIds, setLikedIds] = useState(() => JSON.parse(localStorage.getItem('cv_likes') || '[]'));
       const [moderators, setModerators] = useState({});
       const [profileTarget, setProfileTarget] = useState(null);
+      const [userSearchOpen, setUserSearchOpen] = useState(false);
       const [watched, setWatched] = useState(() => loadWatched());
 
       const openProfile = (uname) => { setProfileTarget(uname || null); setActiveTitle(null); setAccountSheet(false); setViewRaw('profile'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
@@ -3469,7 +3537,14 @@
               onLogin={() => { setAccountSheet(false); setAuthModal('login'); }}
               onRegister={() => { setAccountSheet(false); setAuthModal('register'); }}
               onLogout={handleLogout}
-              onNavigate={(v) => { if (v === 'profile') setProfileTarget(null); setView(v); setAccountSheet(false); }} />
+              onNavigate={(v) => { if (v === 'profile') setProfileTarget(null); setView(v); setAccountSheet(false); }}
+              onSearchUsers={() => { setAccountSheet(false); setUserSearchOpen(true); }} />
+          )}
+
+          {userSearchOpen && (
+            <UserSearchModal
+              onClose={() => setUserSearchOpen(false)}
+              onOpenProfile={(u) => { setUserSearchOpen(false); openProfile(u); }} />
           )}
         </div>
       );
