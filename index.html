@@ -812,7 +812,7 @@
 
                   {(currentUser.username === 'mavilovelife' || currentUser.isModerator) && (
                     <button onClick={() => onNavigate('admin')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold">
-                      <Icon name="shield" className="w-4 h-4 text-amber-400" />لوحة التحكم ورفع الأفلام
+                      <Icon name="shield" className="w-4 h-4 text-amber-400" />لوحة التحكم 
                     </button>
                   )}
 
@@ -3228,7 +3228,7 @@
           <h1 className="text-2xl md:text-3xl font-black mb-6 text-slate-100">لوحة تحكم ورفع الأفلام</h1>
           <AdminDashboardStats titles={titles} />
           <div className="flex gap-3 mb-6 border-b border-white/10 pb-3 flex-wrap">
-            <button onClick={() => { setTab('content'); setEditing(null); }} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'content' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>المحتوى (رفع الأفلام)</button>
+            <button onClick={() => { setTab('content'); setEditing(null); }} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'content' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>المحتوى (الرفع)</button>
             <button onClick={() => setTab('complaints')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'complaints' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>الشكاوى والطلبات</button>
             {isFullAdmin && (
               <button onClick={() => setTab('users')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'users' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>المستخدمون</button>
