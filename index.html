@@ -454,7 +454,7 @@
       );
     }
 
-    function PosterCard({ title, onOpen, compact }) {
+    function PosterCard({ title, onOpen, compact, watched }) {
       return (
         <button onClick={() => onOpen(title)} className={`group text-right ${compact ? 'shrink-0 w-32 sm:w-38 md:w-44 snap-start' : 'w-full'}`}>
           <div className="relative aspect-[2/3] rounded-xl overflow-hidden glass-card shadow-lg group-hover:scale-[1.02] transition duration-300">
@@ -467,6 +467,11 @@
               <RatingBadges imdb={title.imdbRating} rt={title.rtRating} size="xs" />
             </div>
             <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-accent-cyan font-bold border border-accent-cyan/20">{TYPE_LABELS[title.type]}</span>
+            {watched && (
+              <span title="تمت المشاهدة" className="absolute top-2 left-2 w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shadow-[0_0_10px_rgba(16,185,129,0.6)]">
+                <Icon name="check" className="w-3 h-3 text-white" />
+              </span>
+            )}
           </div>
           <p className="mt-2 text-sm font-bold text-slate-100 line-clamp-1 group-hover:text-accent-cyan transition">{title.name}</p>
           <p className="text-xs text-slate-400 font-medium">{title.year || ''}</p>
@@ -474,7 +479,7 @@
       );
     }
 
-    function Row({ label, items, onOpen }) {
+    function Row({ label, items, onOpen, watchedMap }) {
       if (!items.length) return null;
       return (
         <section className="mb-10">
@@ -484,7 +489,7 @@
             </h2>
           </div>
           <div className="flex gap-4 overflow-x-auto pb-3 pt-1 snap-x scrollbar-hide">
-            {items.map(it => <PosterCard key={it.id} title={it} onOpen={onOpen} compact />)}
+            {items.map(it => <PosterCard key={it.id} title={it} onOpen={onOpen} compact watched={watchedMap && isTitleWatched(watchedMap, it)} />)}
           </div>
         </section>
       );
@@ -579,7 +584,7 @@
       );
     }
 
-    function HomeView({ items, onOpen, continueItems }) {
+    function HomeView({ items, onOpen, continueItems, watchedMap }) {
       if (!items.length) return <EmptyState text="لا توجد أعمال منشورة بعد. تابعنا قريبًا!" />;
       const featured = items.filter(t => t.featured).length ? items.filter(t => t.featured) : items.slice(0, 5);
       const latest = [...items].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 12);
@@ -590,12 +595,12 @@
         <div>
           <Hero items={featured} onOpen={onOpen} />
           <ContinueWatchingRow items={continueItems} onOpen={onOpen} />
-          <Row label="أُضيف حديثًا" items={latest} onOpen={onOpen} />
-          <Row label="أفلام" items={items.filter(t => t.type === 'movie').slice(0, 12)} onOpen={onOpen} />
-          <Row label="مسلسلات" items={items.filter(t => t.type === 'series').slice(0, 12)} onOpen={onOpen} />
-          <Row label="أنمي" items={items.filter(t => t.type === 'anime').slice(0, 12)} onOpen={onOpen} />
+          <Row label="أُضيف حديثًا" items={latest} onOpen={onOpen} watchedMap={watchedMap} />
+          <Row label="أفلام" items={items.filter(t => t.type === 'movie').slice(0, 12)} onOpen={onOpen} watchedMap={watchedMap} />
+          <Row label="مسلسلات" items={items.filter(t => t.type === 'series').slice(0, 12)} onOpen={onOpen} watchedMap={watchedMap} />
+          <Row label="أنمي" items={items.filter(t => t.type === 'anime').slice(0, 12)} onOpen={onOpen} watchedMap={watchedMap} />
           {topGenres.map(g => (
-            <Row key={g} label={`تصنيف: ${g}`} items={items.filter(t => (t.genres || []).includes(g)).slice(0, 12)} onOpen={onOpen} />
+            <Row key={g} label={`تصنيف: ${g}`} items={items.filter(t => (t.genres || []).includes(g)).slice(0, 12)} onOpen={onOpen} watchedMap={watchedMap} />
           ))}
         </div>
       );
@@ -619,7 +624,7 @@
       return arr;
     }
 
-    function TypeGrid({ title, items, onOpen, showGenreFilter, emptyText }) {
+    function TypeGrid({ title, items, onOpen, showGenreFilter, emptyText, watchedMap }) {
       const [genre, setGenre] = useState('');
       const [year, setYear] = useState('');
       const [sortKey, setSortKey] = useState('newest');
@@ -666,7 +671,7 @@
             <EmptyState text={emptyText || 'لا توجد نتائج.'} />
           ) : (
             <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 md:gap-5">
-              {filtered.map(t => <PosterCard key={t.id} title={t} onOpen={onOpen} />)}
+              {filtered.map(t => <PosterCard key={t.id} title={t} onOpen={onOpen} watched={watchedMap && isTitleWatched(watchedMap, t)} />)}
             </div>
           )}
         </div>
@@ -892,10 +897,11 @@
       );
     }
 
-    function VideoPlayer({ src, onError, trimStart, trimEnd, fitMobile, fitDesktop, crop, episodeLabel }) {
+    function VideoPlayer({ src, onError, trimStart, trimEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete }) {
       const videoRef = useRef(null);
       const wrapRef = useRef(null);
       const hideTimerRef = useRef(null);
+      const completedRef = useRef(false);
       const [loading, setLoading] = useState(true);
       const [natural, setNatural] = useState({ w: 0, h: 0 });
       const [stage, setStage] = useState({ w: 0, h: 0 });
@@ -903,6 +909,13 @@
       const c = crop || {};
       const fit = (isMobile ? fitMobile : fitDesktop) || 'contain';
       const cropReady = fit === 'crop' && c.active && c.width > 0 && c.height > 0 && stage.w > 0 && stage.h > 0 && natural.w > 0 && natural.h > 0;
+
+      useEffect(() => { completedRef.current = false; }, [src]);
+      const fireComplete = () => {
+        if (completedRef.current) return;
+        completedRef.current = true;
+        onComplete && onComplete();
+      };
 
       useEffect(() => {
         const videoEl = videoRef.current;
@@ -942,22 +955,14 @@
           if (trimStart) { try { videoEl.currentTime = trimStart; } catch (e) {} }
           setNatural({ w: videoEl.videoWidth || 0, h: videoEl.videoHeight || 0 });
         };
-        const onTime = () => { if (trimEnd && videoEl.currentTime >= trimEnd) videoEl.pause(); };
+        const onTime = () => {
+          if (trimEnd && videoEl.currentTime >= trimEnd) { videoEl.pause(); fireComplete(); }
+          else if (!trimEnd && videoEl.duration && videoEl.currentTime >= videoEl.duration - 0.6) { fireComplete(); }
+        };
         videoEl.addEventListener('loadedmetadata', onLoaded);
         videoEl.addEventListener('timeupdate', onTime);
         return () => { videoEl.removeEventListener('loadedmetadata', onLoaded); videoEl.removeEventListener('timeupdate', onTime); };
       }, [src, trimStart, trimEnd]);
-
-      useEffect(() => {
-        const el = wrapRef.current;
-        if (!el || typeof ResizeObserver === 'undefined') return;
-        const ro = new ResizeObserver(entries => {
-          const cr = entries[0].contentRect;
-          setStage({ w: cr.width, h: cr.height });
-        });
-        ro.observe(el);
-        return () => ro.disconnect();
-      }, []);
 
       const [ctrl, setCtrl] = useState({ playing: false, muted: true, volume: 1, current: 0, duration: 0, buffered: 0, rate: 1 });
       const [barVisible, setBarVisible] = useState(true);
@@ -984,6 +989,7 @@
         const onWaiting = () => setLoading(true);
         const onStalled = () => setLoading(true);
         const onLoadedData = () => setLoading(false);
+        const onEnded = () => { fireComplete(); };
         videoEl.addEventListener('play', onPlay);
         videoEl.addEventListener('pause', onPause);
         videoEl.addEventListener('volumechange', onVolume);
@@ -994,6 +1000,7 @@
         videoEl.addEventListener('waiting', onWaiting);
         videoEl.addEventListener('stalled', onStalled);
         videoEl.addEventListener('loadeddata', onLoadedData);
+        videoEl.addEventListener('ended', onEnded);
         return () => {
           videoEl.removeEventListener('play', onPlay);
           videoEl.removeEventListener('pause', onPause);
@@ -1005,6 +1012,7 @@
           videoEl.removeEventListener('waiting', onWaiting);
           videoEl.removeEventListener('stalled', onStalled);
           videoEl.removeEventListener('loadeddata', onLoadedData);
+          videoEl.removeEventListener('ended', onEnded);
         };
       }, [src]);
 
@@ -1242,12 +1250,14 @@
       );
     }
 
-    function TitleModal({ title, allTitles, currentUser, liked, inWatchlist, onLike, onToggleWatchlist, onClose, onOpenAuth, getRole, onOpenProfile, onOpen }) {
+    function TitleModal({ title, allTitles, currentUser, liked, inWatchlist, onLike, onToggleWatchlist, onClose, onOpenAuth, getRole, onOpenProfile, onOpen, watched, onMarkEpisodeWatched, onMarkMovieWatched, isEpisodeWatched }) {
       const [playingUrl, setPlayingUrl] = useState(null);
       const [playingMeta, setPlayingMeta] = useState({});
       const [playingLabel, setPlayingLabel] = useState('');
+      const [playingSeasonNumber, setPlayingSeasonNumber] = useState(null);
       const [activeSeason, setActiveSeason] = useState(0);
       const [seasonView, setSeasonView] = useState(false);
+      const [showAllEpisodes, setShowAllEpisodes] = useState(false);
       const [commentText, setCommentText] = useState('');
       const [comments, setComments] = useState([]);
       const [replyingTo, setReplyingTo] = useState(null);
@@ -1264,7 +1274,7 @@
       const [deleteMyRating, setDeleteMyRating] = useState(false);
 
       useEffect(() => {
-        setPlayingUrl(null); setPlayingLabel(''); setActiveSeason(0); setSeasonView(false); setCommentText(''); setReplyingTo(null); setVideoError(false);
+        setPlayingUrl(null); setPlayingLabel(''); setActiveSeason(0); setSeasonView(false); setShowAllEpisodes(false); setCommentText(''); setReplyingTo(null); setVideoError(false);
         const ref = db.ref(`comments/${title.id}`);
         const cb = snap => {
           const data = snap.val();
@@ -1335,30 +1345,44 @@
         .sort((a, b) => (a.number || 0) - (b.number || 0));
       const isSeries = title.type !== 'movie';
 
+      // قائمة مسطّحة بجميع الحلقات من كل المواسم بالتسلسل (لخيار "كل الحلقات")، دون أي فواصل بين المواسم
+      const allEpisodesFlat = React.useMemo(() => {
+        const flat = [];
+        seasons.forEach(s => { (s.episodes || []).forEach(ep => flat.push({ ...ep, seasonNumber: s.number, episodeThumbnail: s.episodeThumbnail })); });
+        return flat;
+      }, [title.id, JSON.stringify(seasons.map(s => ({ n: s.number, c: (s.episodes || []).length })))]);
+
       const firstEpisode = () => {
-        for (const s of seasons) { if (s.episodes && s.episodes.length) return s.episodes[0]; }
+        for (const s of seasons) { if (s.episodes && s.episodes.length) return { ep: s.episodes[0], seasonNumber: s.number }; }
         return null;
       };
 
       const handlePlay = () => {
         setVideoError(false);
         if (title.type === 'movie') { setPlayingUrl(title.videoUrl || null); setPlayingMeta(title); setPlayingLabel(title.name); }
-        else { const ep = firstEpisode(); setPlayingUrl(ep ? ep.videoUrl : null); setPlayingMeta(ep || {}); setPlayingLabel(ep ? `${title.name} · ${ep.title || `الحلقة ${ep.number || 1}`}` : title.name); }
+        else {
+          const found = firstEpisode();
+          const ep = found ? found.ep : null;
+          setPlayingUrl(ep ? ep.videoUrl : null); setPlayingMeta(ep || {}); setPlayingSeasonNumber(found ? found.seasonNumber : null);
+          setPlayingLabel(ep ? `${title.name} · ${ep.title || `الحلقة ${ep.number || 1}`}` : title.name);
+        }
       };
 
-      const playEpisode = (ep) => {
+      const playEpisode = (ep, seasonNumber) => {
         setVideoError(false);
         setPlayingUrl(ep.videoUrl);
         setPlayingMeta(ep);
+        setPlayingSeasonNumber(seasonNumber != null ? seasonNumber : null);
         setPlayingLabel(`${title.name} · ${ep.title || `الحلقة ${ep.number != null ? ep.number : ''}`}`);
       };
-      const openSeason = (i) => { setActiveSeason(i); setSeasonView(true); };
+      const openSeason = (i) => { setActiveSeason(i); setSeasonView(true); setShowAllEpisodes(false); };
+      const openAllEpisodes = () => { setShowAllEpisodes(true); setSeasonView(false); };
 
       const playNextEpisode = () => {
         const season = seasons[activeSeason];
         if (!season) return;
         const idx = season.episodes.findIndex(e => e.videoUrl === playingMeta.videoUrl && e.number === playingMeta.number);
-        if (idx > -1 && idx < season.episodes.length - 1) playEpisode(season.episodes[idx + 1]);
+        if (idx > -1 && idx < season.episodes.length - 1) playEpisode(season.episodes[idx + 1], season.number);
       };
 
       const shareLink = () => {
@@ -1397,6 +1421,14 @@
 
       const similarTitles = (allTitles || []).filter(t => t.id !== title.id && t.status === 'published' && (t.genres || []).some(g => (title.genres || []).includes(g))).slice(0, 8);
 
+      const movieWatched = title.type === 'movie' && watched && watched[title.id] && watched[title.id].movie;
+
+      const handleEpisodeComplete = () => {
+        if (title.type === 'movie') return;
+        onMarkEpisodeWatched && onMarkEpisodeWatched(title.id, playingSeasonNumber, playingMeta.number);
+      };
+      const handleMovieComplete = () => { onMarkMovieWatched && onMarkMovieWatched(title.id); };
+
       return (
         <div className="modal-backdrop fixed inset-0 z-50 bg-black/90 backdrop-blur-lg md:p-6 md:flex md:items-center md:justify-center overflow-y-auto" onClick={onClose}>
           <div onClick={e => e.stopPropagation()} className="sheet-panel glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl">
@@ -1407,7 +1439,8 @@
                     <VideoPlayer key={playingUrl} src={normalizeVideoUrl(playingUrl)} onError={() => setVideoError(true)}
                       trimStart={playingMeta.trimStart} trimEnd={playingMeta.trimEnd}
                       fitMobile={playingMeta.fitMobile} fitDesktop={playingMeta.fitDesktop} crop={playingMeta.crop}
-                      episodeLabel={playingLabel} />
+                      episodeLabel={playingLabel}
+                      onComplete={title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete} />
                   ) : (
                     <iframe key={playingUrl} src={normalizeVideoUrl(playingUrl)} allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen
                       referrerPolicy="no-referrer-when-downgrade" className="w-full aspect-video bg-black" />
@@ -1448,6 +1481,11 @@
                 {ratingList.length > 0 && (
                   <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-black/60 backdrop-blur-md text-amber-400 font-bold border border-amber-400/20 shadow-sm">
                     <Icon name="star" className="w-3 h-3" />{avgRating.toFixed(1)} ({ratingList.length})
+                  </span>
+                )}
+                {movieWatched && (
+                  <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-emerald-500/15 backdrop-blur-md text-emerald-400 font-bold border border-emerald-500/30 shadow-sm">
+                    <Icon name="check" className="w-3 h-3" />تمت المشاهدة
                   </span>
                 )}
               </div>
@@ -1492,25 +1530,71 @@
 
               {isSeries && seasons.length > 0 && (
                 <div className="mt-8 border-t border-white/10 pt-6">
-                  <div className="flex items-center gap-2.5 mb-4">
-                    {seasonView && (
-                      <button onClick={() => setSeasonView(false)} title="الرجوع جميع المواسم"
+                  <div className="flex items-center gap-2.5 mb-4 flex-wrap">
+                    {(seasonView || showAllEpisodes) && (
+                      <button onClick={() => { setSeasonView(false); setShowAllEpisodes(false); }} title="الرجوع لجميع المواسم"
                         className="w-8 h-8 shrink-0 rounded-xl glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-accent-cyan transition">
                         <Icon name="chevronRight" className="w-4 h-4" />
                       </button>
                     )}
                     <Icon name="tv" className="w-5 h-5 text-accent-cyan" />
                     <h3 className="font-black text-lg text-white">
-                      {!seasonView ? 'المواسم' : `الموسم ${seasons[activeSeason] ? (seasons[activeSeason].number || activeSeason + 1) : ''}`}
+                      {showAllEpisodes ? 'كل الحلقات' : !seasonView ? 'المواسم' : `الموسم ${seasons[activeSeason] ? (seasons[activeSeason].number || activeSeason + 1) : ''}`}
                     </h3>
-                    {seasonView && seasons.length > 1 && (
-                      <button onClick={() => setSeasonView(false)} className="mr-auto flex items-center gap-1.5 text-xs font-bold text-accent-cyan hover:text-white glass-card px-3 py-1.5 rounded-xl border border-white/10 transition">
-                        <Icon name="layers" className="w-3.5 h-3.5" />كل المواسم
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2 mr-auto flex-wrap">
+                      {!showAllEpisodes && seasons.length > 1 && (
+                        <button onClick={openAllEpisodes} className="flex items-center gap-1.5 text-xs font-bold text-accent-cyan hover:text-white glass-card px-3 py-1.5 rounded-xl border border-white/10 transition">
+                          <Icon name="list" className="w-3.5 h-3.5" />كل الحلقات
+                        </button>
+                      )}
+                      {seasonView && !showAllEpisodes && seasons.length > 1 && (
+                        <button onClick={() => setSeasonView(false)} className="flex items-center gap-1.5 text-xs font-bold text-accent-cyan hover:text-white glass-card px-3 py-1.5 rounded-xl border border-white/10 transition">
+                          <Icon name="layers" className="w-3.5 h-3.5" />كل المواسم
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  {!seasonView ? (
+                  {showAllEpisodes ? (
+                    // عرض جميع حلقات كل المواسم في قائمة واحدة متسلسلة بدون أي فاصل بين المواسم — مخصص أيضًا لواجهة الجوال (قائمة عمودية بعناصر باللمس)
+                    <div className="space-y-2 md:space-y-2.5">
+                      {allEpisodesFlat.map((ep, idx) => {
+                        const isCurrent = playingMeta && playingMeta.videoUrl === ep.videoUrl && playingMeta.number === ep.number && playingSeasonNumber === ep.seasonNumber;
+                        const done = isEpisodeWatched && isEpisodeWatched(title.id, ep.seasonNumber, ep.number);
+                        return (
+                          <div key={`${ep.seasonNumber}-${ep.number}-${idx}`} className={`flex items-center gap-2.5 md:gap-3 glass-card rounded-2xl p-2.5 md:p-3.5 border transition ${isCurrent ? 'border-accent-cyan/50 shadow-[0_0_15px_rgba(0,240,255,0.15)]' : 'border-white/5 hover:border-white/10'}`}>
+                            {ep.episodeThumbnail ? (
+                              <div className="relative w-14 h-9 sm:w-20 sm:h-12 shrink-0 rounded-lg overflow-hidden bg-glass-950">
+                                <img src={ep.episodeThumbnail} alt="" className="w-full h-full object-cover" />
+                                {done && (
+                                  <span className="absolute -top-1 -left-1 w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center shadow-md">
+                                    <Icon name="check" className="w-2.5 h-2.5 text-white" />
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="relative w-8 h-8 shrink-0 rounded-xl bg-glass-700 flex items-center justify-center text-xs font-black text-accent-cyan">
+                                {ep.number}
+                                {done && (
+                                  <span className="absolute -top-1 -left-1 w-3.5 h-3.5 rounded-full bg-emerald-500 flex items-center justify-center shadow-md">
+                                    <Icon name="check" className="w-2 h-2 text-white" />
+                                  </span>
+                                )}
+                              </span>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] font-bold text-accent-cyan mb-0.5">الموسم {ep.seasonNumber} · الحلقة {ep.number}</p>
+                              <p className={`text-sm font-bold truncate ${isCurrent ? 'text-accent-cyan' : 'text-slate-100'}`}>{ep.title || `الحلقة ${ep.number}`}</p>
+                            </div>
+                            {done && <Icon name="check" className="w-4 h-4 text-emerald-400 shrink-0 hidden xs:block" />}
+                            {isCurrent && <span className="text-[10px] px-2 py-1 rounded-lg bg-accent-cyan/15 text-accent-cyan font-bold shrink-0 hidden sm:inline">قيد التشغيل</span>}
+                            <button onClick={() => playEpisode(ep, ep.seasonNumber)} className="w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition"><Icon name="play" className="w-4 h-4 text-white fill-current translate-x-0.5" /></button>
+                          </div>
+                        );
+                      })}
+                      {allEpisodesFlat.length === 0 && <p className="text-sm text-slate-500 font-medium">لا توجد حلقات بعد.</p>}
+                    </div>
+                  ) : !seasonView ? (
                     <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3.5">
                       {seasons.map((s, i) => {
                         const seasonImg = s.poster || title.backdrop || title.poster;
@@ -1544,22 +1628,36 @@
                         {(seasons[activeSeason] && seasons[activeSeason].episodes || []).map((ep, ei) => {
                           const isCurrent = playingMeta && playingMeta.videoUrl === ep.videoUrl && playingMeta.number === ep.number;
                           const epThumb = (seasons[activeSeason] && seasons[activeSeason].episodeThumbnail) || ep.thumbnail;
+                          const done = isEpisodeWatched && isEpisodeWatched(title.id, seasons[activeSeason].number, ep.number);
                           return (
                           <div key={ei} className={`flex items-center gap-3 glass-card rounded-2xl p-3.5 border transition ${isCurrent ? 'border-accent-cyan/50 shadow-[0_0_15px_rgba(0,240,255,0.15)]' : 'border-white/5 hover:border-white/10'}`}>
                             {epThumb ? (
                               <div className="relative w-16 h-11 sm:w-20 sm:h-12 shrink-0 rounded-lg overflow-hidden bg-glass-950">
                                 <img src={epThumb} alt="" className="w-full h-full object-cover" />
                                 <span className="absolute bottom-0.5 right-1 text-[10px] font-black text-white drop-shadow">{ep.number != null ? ep.number : ei + 1}</span>
+                                {done && (
+                                  <span className="absolute -top-1 -left-1 w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center shadow-md">
+                                    <Icon name="check" className="w-2.5 h-2.5 text-white" />
+                                  </span>
+                                )}
                               </div>
                             ) : (
-                              <span className="w-8 h-8 shrink-0 rounded-xl bg-glass-700 flex items-center justify-center text-xs font-black text-accent-cyan">{ep.number != null ? ep.number : ei + 1}</span>
+                              <span className="relative w-8 h-8 shrink-0 rounded-xl bg-glass-700 flex items-center justify-center text-xs font-black text-accent-cyan">
+                                {ep.number != null ? ep.number : ei + 1}
+                                {done && (
+                                  <span className="absolute -top-1 -left-1 w-3.5 h-3.5 rounded-full bg-emerald-500 flex items-center justify-center shadow-md">
+                                    <Icon name="check" className="w-2 h-2 text-white" />
+                                  </span>
+                                )}
+                              </span>
                             )}
                             <div className="flex-1 min-w-0">
                               <p className={`text-sm font-bold truncate mb-1 ${isCurrent ? 'text-accent-cyan' : 'text-slate-100'}`}>{ep.title || `الحلقة ${ep.number != null ? ep.number : ei + 1}`}</p>
                               <RatingBadges imdb={ep.imdb} rt={ep.rt} size="xs" />
                             </div>
+                            {done && <Icon name="check" className="w-4 h-4 text-emerald-400 shrink-0 hidden xs:block" />}
                             {isCurrent && <span className="text-[10px] px-2 py-1 rounded-lg bg-accent-cyan/15 text-accent-cyan font-bold shrink-0">قيد التشغيل</span>}
-                            <button onClick={() => playEpisode(ep)} className="w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition"><Icon name="play" className="w-4 h-4 text-white fill-current translate-x-0.5" /></button>
+                            <button onClick={() => playEpisode(ep, seasons[activeSeason].number)} className="w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition"><Icon name="play" className="w-4 h-4 text-white fill-current translate-x-0.5" /></button>
                             {ep.downloadUrl && (
                               <a href={ep.downloadUrl} target="_blank" rel="noopener noreferrer" className="w-9 h-9 rounded-xl glass-card hover:bg-white/10 border border-white/10 flex items-center justify-center shrink-0 transition"><Icon name="download" className="w-4 h-4 text-accent-cyan" /></a>
                             )}
@@ -3015,6 +3113,26 @@
       );
     }
 
+    // مساعد: هل العمل (فيلم/مسلسل) "مكتمل المشاهدة"؟ فيلم = تمت مشاهدته، مسلسل = تمت مشاهدة كل حلقاته
+    function isTitleWatched(watchedMap, title) {
+      if (!watchedMap || !title) return false;
+      const entry = watchedMap[title.id];
+      if (!entry) return false;
+      if (title.type === 'movie') return !!entry.movie;
+      const seasons = title.seasons || [];
+      const totalEpisodes = seasons.reduce((s, se) => s + ((se.episodes || []).length), 0);
+      if (!totalEpisodes) return false;
+      const doneCount = seasons.reduce((s, se) => s + (se.episodes || []).filter(ep => entry.episodes && entry.episodes[`s${se.number}e${ep.number}`]).length, 0);
+      return doneCount >= totalEpisodes;
+    }
+
+    function loadWatched() {
+      try { return JSON.parse(localStorage.getItem('cv_watched') || '{}'); } catch (e) { return {}; }
+    }
+    function saveWatchedToStorage(data) {
+      try { localStorage.setItem('cv_watched', JSON.stringify(data)); } catch (e) {}
+    }
+
     function App() {
       const [titles, setTitles] = useState([]);
       const [currentUser, setCurrentUser] = useState(() => JSON.parse(localStorage.getItem('cv_user') || 'null'));
@@ -3027,8 +3145,35 @@
       const [likedIds, setLikedIds] = useState(() => JSON.parse(localStorage.getItem('cv_likes') || '[]'));
       const [moderators, setModerators] = useState({});
       const [profileTarget, setProfileTarget] = useState(null);
+      const [watched, setWatched] = useState(() => loadWatched());
 
       const openProfile = (uname) => { setProfileTarget(uname || null); setActiveTitle(null); setAccountSheet(false); setViewRaw('profile'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+
+      const markEpisodeWatched = (titleId, seasonNumber, episodeNumber) => {
+        if (seasonNumber == null || episodeNumber == null) return;
+        setWatched(prev => {
+          const key = `s${seasonNumber}e${episodeNumber}`;
+          const entry = { ...(prev[titleId] || {}) };
+          entry.episodes = { ...(entry.episodes || {}), [key]: true };
+          const next = { ...prev, [titleId]: entry };
+          saveWatchedToStorage(next);
+          return next;
+        });
+      };
+      const markMovieWatched = (titleId) => {
+        setWatched(prev => {
+          const entry = { ...(prev[titleId] || {}), movie: true };
+          const next = { ...prev, [titleId]: entry };
+          saveWatchedToStorage(next);
+          return next;
+        });
+      };
+      const isEpisodeWatched = (titleId, seasonNumber, episodeNumber) => {
+        if (seasonNumber == null || episodeNumber == null) return false;
+        const entry = watched[titleId];
+        if (!entry || !entry.episodes) return false;
+        return !!entry.episodes[`s${seasonNumber}e${episodeNumber}`];
+      };
 
       useEffect(() => {
         const ref = db.ref('moderators');
@@ -3172,13 +3317,13 @@
           <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 md:py-8">
             <div key={searching ? 'search' : view} className="page-fade-in">
               {searching ? (
-                <TypeGrid title={`نتائج البحث عن "${search}"`} items={mainList} onOpen={setActiveTitle} emptyText="لا توجد نتائج مطابقة." />
+                <TypeGrid title={`نتائج البحث عن "${search}"`} items={mainList} onOpen={setActiveTitle} emptyText="لا توجد نتائج مطابقة." watchedMap={watched} />
               ) : view === 'home' ? (
-                <HomeView items={published} onOpen={setActiveTitle} continueItems={continueItems} />
+                <HomeView items={published} onOpen={setActiveTitle} continueItems={continueItems} watchedMap={watched} />
               ) : (view === 'movie' || view === 'series' || view === 'anime') ? (
-                <TypeGrid title={TYPE_PLURAL[view]} items={published.filter(t => t.type === view)} onOpen={setActiveTitle} showGenreFilter emptyText="لا توجد أعمال في هذا القسم بعد." />
+                <TypeGrid title={TYPE_PLURAL[view]} items={published.filter(t => t.type === view)} onOpen={setActiveTitle} showGenreFilter emptyText="لا توجد أعمال في هذا القسم بعد." watchedMap={watched} />
               ) : view === 'watchlist' ? (
-                <TypeGrid title="قائمتي المفضلة" items={published.filter(t => watchlist.includes(t.id))} onOpen={setActiveTitle} emptyText="لم تُضف أي عمل إلى قائمتك بعد." />
+                <TypeGrid title="قائمتي المفضلة" items={published.filter(t => watchlist.includes(t.id))} onOpen={setActiveTitle} emptyText="لم تُضف أي عمل إلى قائمتك بعد." watchedMap={watched} />
               ) : view === 'requests' ? (
                 <RequestsView currentUser={currentUser} onOpenAuth={setAuthModal} />
               ) : view === 'settings' ? (
@@ -3202,7 +3347,8 @@
               inWatchlist={watchlist.includes(activeTitle.id)} getRole={getRole}
               onLike={() => toggleLike(activeTitle)} onToggleWatchlist={() => toggleWatchlist(activeTitle.id)}
               onClose={() => { setActiveTitle(null); if (new URLSearchParams(location.search).get('t')) history.replaceState(null, '', location.pathname); }}
-              onOpenAuth={setAuthModal} onOpenProfile={openProfile} onOpen={setActiveTitle} />
+              onOpenAuth={setAuthModal} onOpenProfile={openProfile} onOpen={setActiveTitle}
+              watched={watched} onMarkEpisodeWatched={markEpisodeWatched} onMarkMovieWatched={markMovieWatched} isEpisodeWatched={isEpisodeWatched} />
           )}
 
           {authModal && <AuthModal tab={authModal} onClose={() => setAuthModal(null)} onSuccess={handleAuthSuccess} />}
