@@ -1547,11 +1547,6 @@
                           <Icon name="list" className="w-3.5 h-3.5" />كل الحلقات
                         </button>
                       )}
-                      {seasonView && !showAllEpisodes && seasons.length > 1 && (
-                        <button onClick={() => setSeasonView(false)} className="flex items-center gap-1.5 text-xs font-bold text-accent-cyan hover:text-white glass-card px-3 py-1.5 rounded-xl border border-white/10 transition">
-                          <Icon name="layers" className="w-3.5 h-3.5" />كل المواسم
-                        </button>
-                      )}
                     </div>
                   </div>
 
@@ -2030,10 +2025,65 @@
       );
     }
 
-    function ProfileView({ username, currentUser, titles, watchlist, onOpen, onOpenAuth }) {
+    // نافذة منبثقة تعرض قائمة متابعين/متابَعين، قابلة للنقر للانتقال لبروفايل أي منهم
+    function FollowListModal({ title, usernames, onOpenProfile, onClose }) {
+      const [users, setUsers] = useState(null);
+
+      useEffect(() => {
+        let cancelled = false;
+        if (!usernames.length) { setUsers([]); return; }
+        Promise.all(usernames.map(u =>
+          db.ref('users').orderByChild('username').equalTo(u).once('value').then(snap => {
+            const data = snap.val();
+            const key = data ? Object.keys(data)[0] : null;
+            return key ? { id: key, ...data[key] } : null;
+          })
+        )).then(list => { if (!cancelled) setUsers(list.filter(Boolean)); });
+        return () => { cancelled = true; };
+      }, [usernames.join(',')]);
+
+      return (
+        <div className="modal-backdrop fixed inset-0 z-[70] bg-black/80 backdrop-blur-md flex items-end md:items-center justify-center p-0 md:p-4" onClick={onClose}>
+          <div onClick={e => e.stopPropagation()} className="sheet-panel glass-panel border border-white/10 rounded-t-3xl md:rounded-3xl w-full md:max-w-sm max-h-[75vh] flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
+              <h3 className="font-black text-white text-base">{title}</h3>
+              <button onClick={onClose} className="w-8 h-8 rounded-xl glass-card border border-white/10 flex items-center justify-center text-slate-300 hover:text-white transition"><Icon name="x" className="w-4 h-4" /></button>
+            </div>
+            <div className="overflow-y-auto p-3">
+              {users === null ? (
+                <p className="text-sm text-slate-500 font-medium text-center py-8">جارٍ التحميل...</p>
+              ) : users.length === 0 ? (
+                <p className="text-sm text-slate-500 font-medium text-center py-8">لا يوجد أحد هنا بعد.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {users.map(u => (
+                    <button key={u.id} onClick={() => { onOpenProfile(u.username); onClose(); }} className="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-white/5 transition text-right">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-accent-cyan to-blue-600 flex items-center justify-center font-black text-sm text-glass-950 overflow-hidden shrink-0">
+                        {u.avatar ? <img src={u.avatar} alt="" className="w-full h-full object-cover" /> : (u.name || '?').charAt(0)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-bold text-white text-sm truncate">{u.name}</p>
+                        <p className="text-slate-400 text-xs truncate">@{u.username}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function ProfileView({ username, currentUser, titles, watchlist, onOpen, onOpenAuth, onOpenProfile }) {
       const [profileUser, setProfileUser] = useState(null);
       const [userRatings, setUserRatings] = useState({});
       const [loading, setLoading] = useState(true);
+      const [followers, setFollowers] = useState({});
+      const [following, setFollowing] = useState({});
+      const [myFollowing, setMyFollowing] = useState({});
+      const [followBusy, setFollowBusy] = useState(false);
+      const [listModal, setListModal] = useState(null); // 'followers' | 'following' | null
       const targetUsername = username || (currentUser && currentUser.username);
       const isOwn = currentUser && targetUsername === currentUser.username;
 
@@ -2054,6 +2104,27 @@
         return () => { if (userId) db.ref(`userRatings/${userId}`).off(); };
       }, [targetUsername]);
 
+      // متابعو ومتابَعو صاحب البروفايل الحالي
+      useEffect(() => {
+        if (!targetUsername) return;
+        const followersRef = db.ref(`followers/${sanitizeKey(targetUsername)}`);
+        const followingRef = db.ref(`following/${sanitizeKey(targetUsername)}`);
+        const cb1 = snap => setFollowers(snap.val() || {});
+        const cb2 = snap => setFollowing(snap.val() || {});
+        followersRef.on('value', cb1);
+        followingRef.on('value', cb2);
+        return () => { followersRef.off('value', cb1); followingRef.off('value', cb2); };
+      }, [targetUsername]);
+
+      // من يتابعهم المستخدم الحالي (عشان نعرف هل يتابع صاحب هذا البروفايل أو لأ)
+      useEffect(() => {
+        if (!currentUser) { setMyFollowing({}); return; }
+        const ref = db.ref(`following/${sanitizeKey(currentUser.username)}`);
+        const cb = snap => setMyFollowing(snap.val() || {});
+        ref.on('value', cb);
+        return () => ref.off('value', cb);
+      }, [currentUser && currentUser.username]);
+
       if (!targetUsername) {
         return (
           <div className="py-20 text-center">
@@ -2071,6 +2142,26 @@
       const avg = withTitles.length ? (withTitles.reduce((s, r) => s + (r.stars || 0), 0) / withTitles.length) : 0;
       const watchedPosters = withTitles.filter(r => r.title.poster);
 
+      const followersUsernames = Object.keys(followers);
+      const followingUsernames = Object.keys(following);
+      const iAmFollowing = currentUser && !!myFollowing[sanitizeKey(targetUsername)];
+
+      const toggleFollow = async () => {
+        if (!currentUser) { onOpenAuth('login'); return; }
+        if (isOwn) return;
+        setFollowBusy(true);
+        const meKey = sanitizeKey(currentUser.username), themKey = sanitizeKey(targetUsername);
+        try {
+          if (iAmFollowing) {
+            await db.ref(`following/${meKey}/${themKey}`).remove();
+            await db.ref(`followers/${themKey}/${meKey}`).remove();
+          } else {
+            await db.ref(`following/${meKey}/${themKey}`).set(true);
+            await db.ref(`followers/${themKey}/${meKey}`).set(true);
+          }
+        } finally { setFollowBusy(false); }
+      };
+
       return (
         <div>
           <div className="glass-panel rounded-3xl p-6 md:p-8 mb-8 border border-white/10 shadow-xl flex items-center gap-5 flex-wrap">
@@ -2085,11 +2176,23 @@
               </h1>
               <p className="text-slate-400 text-sm">@{profileUser.username}</p>
             </div>
-            <div className="flex items-center gap-6 mr-auto text-center">
+            <div className="flex items-center gap-6 mr-auto text-center flex-wrap">
+              <button onClick={() => setListModal('followers')} className="text-center hover:opacity-75 transition">
+                <p className="text-xl font-black text-white">{followersUsernames.length}</p><p className="text-[11px] text-slate-400 font-bold">متابعون</p>
+              </button>
+              <button onClick={() => setListModal('following')} className="text-center hover:opacity-75 transition">
+                <p className="text-xl font-black text-white">{followingUsernames.length}</p><p className="text-[11px] text-slate-400 font-bold">يتابع</p>
+              </button>
               <div><p className="text-xl font-black text-white">{withTitles.length}</p><p className="text-[11px] text-slate-400 font-bold">تقييم</p></div>
               <div><p className="text-xl font-black text-white flex items-center gap-1">{avg ? avg.toFixed(1) : '—'}<Icon name="star" className="w-4 h-4 text-amber-400" /></p><p className="text-[11px] text-slate-400 font-bold">متوسط تقييماته</p></div>
               {isOwn && <div><p className="text-xl font-black text-white">{watchlist.length}</p><p className="text-[11px] text-slate-400 font-bold">قائمتي</p></div>}
             </div>
+            {!isOwn && (
+              <button onClick={toggleFollow} disabled={followBusy}
+                className={`w-full md:w-auto px-6 py-2.5 rounded-2xl text-sm font-bold border transition disabled:opacity-50 ${iAmFollowing ? 'glass-card border-white/10 text-slate-200 hover:border-rose-400 hover:text-rose-400' : 'bg-accent-cyan text-glass-950 border-accent-cyan shadow-[0_0_15px_rgba(0,240,255,0.4)]'}`}>
+                {iAmFollowing ? 'إلغاء المتابعة' : 'متابعة'}
+              </button>
+            )}
           </div>
 
           {watchedPosters.length > 0 && (
@@ -2140,6 +2243,14 @@
               </div>
             )}
           </section>
+
+          {listModal && (
+            <FollowListModal
+              title={listModal === 'followers' ? 'المتابعون' : 'يتابع'}
+              usernames={listModal === 'followers' ? followersUsernames : followingUsernames}
+              onOpenProfile={(u) => { onOpenProfile ? onOpenProfile(u) : null; setListModal(null); }}
+              onClose={() => setListModal(null)} />
+          )}
         </div>
       );
     }
@@ -3329,7 +3440,7 @@
               ) : view === 'settings' ? (
                 <SettingsView currentUser={currentUser} onUpdateName={handleUpdateName} onUpdateAvatar={handleUpdateAvatar} onOpenAuth={setAuthModal} />
               ) : view === 'profile' ? (
-                <ProfileView username={profileTarget} currentUser={currentUser} titles={published} watchlist={watchlist} onOpen={setActiveTitle} onOpenAuth={setAuthModal} />
+                <ProfileView username={profileTarget} currentUser={currentUser} titles={published} watchlist={watchlist} onOpen={setActiveTitle} onOpenAuth={setAuthModal} onOpenProfile={openProfile} />
               ) : view === 'admin' ? (
                 <AdminPanel currentUser={currentUser} titles={titles} onOpenAuth={setAuthModal} moderators={moderators} />
               ) : null}
