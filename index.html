@@ -902,8 +902,21 @@
             onSuccess({ ...newUser, id: ref.key });
           } else {
             const matchedKey = Object.keys(users).find(k => users[k].password === cleanPass);
-            if (!matchedKey) { setError('اسم المستخدم أو كلمة المرور غير صحيحة.'); setLoading(false); return; }
-            if (users[matchedKey].banned) { setError('هذا الحساب محظور من قِبل الإدارة.'); setLoading(false); return; }
+            if (!matchedKey) {
+              const delSnap = await db.ref(`deletedUsernames/${sanitizeKey(cleanUser)}`).once('value');
+              if (delSnap.exists()) { setError('عذرًا، تم حذف هذا الحساب من قِبل الإدارة.'); setLoading(false); return; }
+              setError('اسم المستخدم أو كلمة المرور غير صحيحة.'); setLoading(false); return;
+            }
+            const u = users[matchedKey];
+            if (u.banned) {
+              if (u.banUntil && u.banUntil <= Date.now()) {
+                await db.ref(`users/${matchedKey}`).update({ banned: false, banReason: null, banUntil: null });
+              } else {
+                const untilTxt = u.banUntil ? ` إلى غاية ${fmtDateTime(u.banUntil)}` : '';
+                setError(`حسابك محظور من قِبل الإدارة${untilTxt}.${u.banReason ? ' السبب: ' + u.banReason : ''}`);
+                setLoading(false); return;
+              }
+            }
             onSuccess({ ...users[matchedKey], id: matchedKey });
           }
         } catch (e) { setError('حدث خطأ في الاتصال بالخادم.'); }
@@ -3352,6 +3365,7 @@
     function App() {
       const [titles, setTitles] = useState([]);
       const [currentUser, setCurrentUser] = useState(() => JSON.parse(localStorage.getItem('cv_user') || 'null'));
+      const [accountNotice, setAccountNotice] = useState(null);
       const [view, setViewRaw] = useState('home');
       const [search, setSearch] = useState('');
       const [activeTitle, setActiveTitle] = useState(null);
@@ -3409,8 +3423,21 @@
         const ref = db.ref(`users/${currentUser.id}`);
         const cb = snap => {
           const u = snap.val();
-          if (!u) return;
-          if (u.banned) { setCurrentUser(null); localStorage.removeItem('cv_user'); return; }
+          if (!u) {
+            setCurrentUser(null); localStorage.removeItem('cv_user');
+            setAccountNotice('عذرًا، تم حذف حسابك من قِبل الإدارة.');
+            return;
+          }
+          if (u.banned) {
+            if (u.banUntil && u.banUntil <= Date.now()) {
+              db.ref(`users/${currentUser.id}`).update({ banned: false, banReason: null, banUntil: null });
+            } else {
+              const untilTxt = u.banUntil ? ` إلى غاية ${fmtDateTime(u.banUntil)}` : '';
+              setCurrentUser(null); localStorage.removeItem('cv_user');
+              setAccountNotice(`حسابك محظور من قِبل الإدارة${untilTxt}.${u.banReason ? ' السبب: ' + u.banReason : ''}`);
+              return;
+            }
+          }
           if (u.isModerator !== currentUser.isModerator) {
             const updated = { ...currentUser, isModerator: u.isModerator };
             setCurrentUser(updated);
@@ -3568,6 +3595,16 @@
           )}
 
           {authModal && <AuthModal tab={authModal} onClose={() => setAuthModal(null)} onSuccess={handleAuthSuccess} />}
+
+          {accountNotice && (
+            <div className="modal-backdrop fixed inset-0 z-[70] bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setAccountNotice(null)}>
+              <div onClick={e => e.stopPropagation()} className="modal-panel glass-panel border border-white/10 rounded-3xl max-w-sm w-full p-6 shadow-2xl">
+                <h3 className="font-black text-lg text-white">إشعار الحساب</h3>
+                <p className="text-sm text-slate-300 mt-2 leading-relaxed">{accountNotice}</p>
+                <button onClick={() => setAccountNotice(null)} className="w-full mt-6 py-2.5 rounded-xl bg-accent-red hover:bg-accent-redHover text-sm font-bold text-white shadow-[0_0_15px_rgba(255,51,75,0.4)] transition">حسناً</button>
+              </div>
+            </div>
+          )}
 
           {accountSheet && (
             <AccountSheet currentUser={currentUser} onClose={() => setAccountSheet(false)}
