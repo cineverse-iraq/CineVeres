@@ -3242,32 +3242,6 @@
       );
     }
 
-    function AdminDashboardStats({ titles }) {
-      const total = titles.length;
-      const published = titles.filter(t => t.status === 'published').length;
-      const drafts = total - published;
-      const totalViews = titles.reduce((s, t) => s + (t.views || 0), 0);
-      const totalLikes = titles.reduce((s, t) => s + (t.likes || 0), 0);
-      const cards = [
-        ['layers', total, 'إجمالي الأعمال', 'text-accent-cyan'],
-        ['eye', published, 'منشور', 'text-emerald-400'],
-        ['pencil', drafts, 'مسودة', 'text-amber-400'],
-        ['trendingUp', totalViews, 'إجمالي المشاهدات', 'text-accent-purple'],
-        ['heart', totalLikes, 'إجمالي الإعجابات', 'text-rose-400'],
-      ];
-      return (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
-          {cards.map(([icon, val, label, color]) => (
-            <div key={label} className="glass-card rounded-2xl p-4 border border-white/10 text-center">
-              <Icon name={icon} className={`w-5 h-5 mx-auto mb-2 ${color}`} />
-              <p className="text-xl font-black text-white">{val}</p>
-              <p className="text-[11px] text-slate-400 font-bold mt-0.5">{label}</p>
-            </div>
-          ))}
-        </div>
-      );
-    }
-
     function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
       const [tab, setTab] = useState('content');
       const [contentType, setContentType] = useState('movie');
@@ -3283,7 +3257,6 @@
       return (
         <div>
           <h1 className="text-2xl md:text-3xl font-black mb-6 text-slate-100">لوحة تحكم  </h1>
-          <AdminDashboardStats titles={titles} />
           <div className="flex gap-3 mb-6 border-b border-white/10 pb-3 flex-wrap">
             <button onClick={() => { setTab('content'); setEditing(null); }} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'content' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>المحتوى (رفع )</button>
             <button onClick={() => setTab('complaints')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'complaints' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>الشكاوى والطلبات</button>
