@@ -231,6 +231,12 @@
     const isIOS = /iP(hone|od|ad)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const sanitizeKey = (s) => (s || '').replace(/[.#$\/\[\]]/g, '_');
 
+    // إرسال إشعار داخل الموقع لمستخدم معيّن (يظهر بجرس الإشعارات بالهيدر)
+    function pushNotification(toUsername, data) {
+      if (!toUsername) return;
+      db.ref(`notifications/${sanitizeKey(toUsername)}`).push({ ...data, date: Date.now(), read: false });
+    }
+
     function normalizeVideoUrl(url) {
       if (!url) return url;
       const clean = url.trim();
@@ -704,7 +710,7 @@
       );
     }
 
-    function Header({ currentUser, view, setView, search, setSearch, onOpenAccount, onOpenProfile }) {
+    function Header({ currentUser, view, setView, search, setSearch, onOpenAccount, onOpenProfile, onOpenTitleFromNotif }) {
       const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
       const [showUserResults, setShowUserResults] = useState(false);
       const userResults = useUserSearch(search);
@@ -767,6 +773,8 @@
                 <Icon name={mobileSearchOpen ? 'x' : 'search'} className="w-[18px] h-[18px]" />
               </button>
 
+              {currentUser && <NotificationsBell currentUser={currentUser} onOpenProfile={onOpenProfile} onOpenTitle={onOpenTitleFromNotif} />}
+
               <button onClick={onOpenAccount} className="w-10 h-10 rounded-2xl glass-card flex items-center justify-center hover:border-accent-cyan transition shrink-0 overflow-hidden">
                 {currentUser && currentUser.avatar ? (
                   <img src={currentUser.avatar} alt="" className="w-full h-full object-cover" />
@@ -789,6 +797,76 @@
             </div>
           )}
         </header>
+      );
+    }
+
+    // جرس الإشعارات: يعرض عداد غير المقروء ويفتح قائمة منسدلة بالإشعارات
+    function NotificationsBell({ currentUser, onOpenProfile, onOpenTitle }) {
+      const [open, setOpen] = useState(false);
+      const [items, setItems] = useState([]);
+
+      useEffect(() => {
+        const ref = db.ref(`notifications/${sanitizeKey(currentUser.username)}`).limitToLast(50);
+        const cb = snap => {
+          const data = snap.val();
+          const arr = data ? Object.keys(data).map(k => ({ id: k, ...data[k] })) : [];
+          arr.sort((a, b) => (b.date || 0) - (a.date || 0));
+          setItems(arr);
+        };
+        ref.on('value', cb);
+        return () => ref.off('value', cb);
+      }, [currentUser.username]);
+
+      const unreadCount = items.filter(n => !n.read).length;
+
+      const openPanel = () => {
+        setOpen(o => !o);
+        if (!open) {
+          items.filter(n => !n.read).forEach(n => db.ref(`notifications/${sanitizeKey(currentUser.username)}/${n.id}/read`).set(true));
+        }
+      };
+
+      const handleClick = (n) => {
+        setOpen(false);
+        if (n.titleId && onOpenTitle) onOpenTitle(n.titleId);
+        else if (n.fromUsername && onOpenProfile) onOpenProfile(n.fromUsername);
+      };
+
+      const notifText = (n) => {
+        if (n.type === 'follow') return 'بدأ بمتابعتك';
+        if (n.type === 'reply') return `رد على تعليقك: ${n.text || ''}`;
+        if (n.type === 'reviewReply') return `رد على مراجعتك: ${n.text || ''}`;
+        return n.text || '';
+      };
+
+      return (
+        <div className="relative">
+          <button onClick={openPanel} className="relative w-10 h-10 rounded-2xl glass-card flex items-center justify-center text-slate-200 hover:border-accent-cyan transition shrink-0">
+            <Icon name="bell" className="w-[18px] h-[18px]" />
+            {unreadCount > 0 && <span className="absolute -top-1 -left-1 min-w-[18px] h-[18px] px-1 rounded-full bg-accent-red text-white text-[10px] font-black flex items-center justify-center">{unreadCount > 9 ? '9+' : unreadCount}</span>}
+          </button>
+          {open && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setOpen(false)}></div>
+              <div className="absolute z-50 top-full left-0 mt-2 w-80 max-w-[85vw] glass-panel border border-white/10 rounded-2xl overflow-hidden shadow-2xl max-h-[70vh] overflow-y-auto">
+                <p className="px-4 pt-3 pb-2 text-sm font-black text-white border-b border-white/10">الإشعارات</p>
+                {items.length === 0 ? (
+                  <p className="text-xs text-slate-500 font-medium text-center py-8">لا توجد إشعارات بعد.</p>
+                ) : items.map(n => (
+                  <button key={n.id} onClick={() => handleClick(n)} className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition text-right border-b border-white/5 ${!n.read ? 'bg-accent-cyan/5' : ''}`}>
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-accent-cyan to-blue-600 flex items-center justify-center font-black text-xs text-glass-950 overflow-hidden shrink-0">
+                      {n.fromAvatar ? <img src={n.fromAvatar} alt="" className="w-full h-full object-cover" /> : (n.fromName || '?').charAt(0)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs text-slate-200"><span className="font-bold text-white">{n.fromName}</span> {notifText(n)}</p>
+                      <p className="text-[10px] text-slate-500 font-mono mt-0.5">{fmtDateTime(n.date)}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       );
     }
 
@@ -896,7 +974,11 @@
           const snap = await db.ref('users').orderByChild('username').equalTo(cleanUser).once('value');
           const users = snap.val() || {};
           if (tab === 'register') {
-            if (Object.keys(users).length > 0) { setError('اسم المستخدم مستخدم مسبقًا، اختر اسمًا آخر.'); setLoading(false); return; }
+            if (Object.keys(users).length > 0) {
+              const existingKey = Object.keys(users)[0];
+              if (users[existingKey].banned) { setError('اسم المستخدم هذا يخص حسابًا محظورًا من قِبل الإدارة، لا يمكن استخدامه.'); setLoading(false); return; }
+              setError('اسم المستخدم مستخدم مسبقًا، اختر اسمًا آخر.'); setLoading(false); return;
+            }
             const newUser = { name: cleanName, username: cleanUser, password: cleanPass, avatar: cleanAvatar, isModerator: false, banned: false, createdAt: Date.now() };
             const ref = await db.ref('users').push(newUser);
             onSuccess({ ...newUser, id: ref.key });
@@ -1247,7 +1329,7 @@
             style={videoStyle} />
 
           {episodeLabel && (
-            <div className={`absolute inset-x-0 top-0 z-30 p-3 md:p-4 bg-gradient-to-b from-black/80 to-transparent transition-opacity duration-300 ${barVisible ? 'opacity-100' : 'opacity-0'}`}>
+            <div className={`absolute inset-x-0 top-0 z-20 p-3 md:p-4 bg-gradient-to-b from-black/80 to-transparent transition-opacity duration-300 ${barVisible ? 'opacity-100' : 'opacity-0'}`}>
               <p className="text-white text-sm md:text-base font-bold truncate drop-shadow">{episodeLabel}</p>
             </div>
           )}
@@ -1343,6 +1425,18 @@
 
       const [ratings, setRatings] = useState({});
       const [myStars, setMyStars] = useState(0);
+      const [reviewReplyingTo, setReviewReplyingTo] = useState(null);
+      const [reviewReplyText, setReviewReplyText] = useState('');
+      const [myFollowingSet, setMyFollowingSet] = useState({});
+      const [showAddToList, setShowAddToList] = useState(false);
+
+      useEffect(() => {
+        if (!currentUser) { setMyFollowingSet({}); return; }
+        const ref = db.ref(`following/${sanitizeKey(currentUser.username)}`);
+        const cb = snap => setMyFollowingSet(snap.val() || {});
+        ref.on('value', cb);
+        return () => ref.off('value', cb);
+      }, [currentUser && currentUser.username]);
       const [myReview, setMyReview] = useState('');
       const [savingRating, setSavingRating] = useState(false);
       const [ratingMsg, setRatingMsg] = useState('');
@@ -1387,6 +1481,18 @@
       }, [title.id]);
 
       const ratingList = Object.keys(ratings).map(uid => ({ uid, ...ratings[uid] })).sort((a, b) => (b.date || 0) - (a.date || 0));
+      const followersRatings = ratingList.filter(r => myFollowingSet[sanitizeKey(r.username)]);
+
+      const submitReviewReply = async (ratingUid) => {
+        if (!currentUser) { onOpenAuth('login'); return; }
+        if (!reviewReplyText.trim()) return;
+        await db.ref(`ratings/${title.id}/${ratingUid}/replies`).push({ author: currentUser.name, username: currentUser.username, avatar: currentUser.avatar || '', text: reviewReplyText.trim(), date: Date.now() });
+        const targetRating = ratingList.find(r => r.uid === ratingUid);
+        if (targetRating && targetRating.username && targetRating.username !== currentUser.username) {
+          pushNotification(targetRating.username, { type: 'reviewReply', fromUsername: currentUser.username, fromName: currentUser.name, fromAvatar: currentUser.avatar || '', titleId: title.id, titleName: title.name, text: reviewReplyText.trim().slice(0, 80) });
+        }
+        setReviewReplyText(''); setReviewReplyingTo(null);
+      };
       const avgRating = ratingList.length ? ratingList.reduce((s, r) => s + (r.stars || 0), 0) / ratingList.length : 0;
       const canModerate = currentUser && (() => { const role = getRole ? getRole(currentUser.username) : null; return role === 'admin' || role === 'moderator'; })();
 
@@ -1479,6 +1585,10 @@
         if (!replyText.trim()) return;
         const mentionName = (replyingTo && replyingTo.mentionName) ? replyingTo.mentionName : null;
         await db.ref(`comments/${title.id}/${commentId}/replies`).push({ author: currentUser.name, username: currentUser.username, avatar: currentUser.avatar || '', mentionName, text: replyText.trim(), date: Date.now() });
+        const parentComment = comments.find(c => c.id === commentId);
+        if (parentComment && parentComment.username && parentComment.username !== currentUser.username) {
+          pushNotification(parentComment.username, { type: 'reply', fromUsername: currentUser.username, fromName: currentUser.name, fromAvatar: currentUser.avatar || '', titleId: title.id, titleName: title.name, text: replyText.trim().slice(0, 80) });
+        }
         setReplyText(''); setReplyingTo(null);
       };
 
@@ -1602,7 +1712,13 @@
                 <button onClick={onLike} className={`flex items-center gap-2.5 px-5 py-3 rounded-2xl text-sm font-bold border transition ${liked ? 'bg-rose-500 text-white border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.4)]' : 'glass-card border-white/10 text-slate-200 hover:border-white/20'}`}>
                   <Icon name="heart" className="w-4 h-4" />{title.likes || 0}
                 </button>
+                {currentUser && (
+                  <button onClick={() => setShowAddToList(true)} className="flex items-center gap-2.5 px-5 py-3 rounded-2xl glass-card border border-white/10 hover:border-accent-cyan text-sm font-bold text-slate-200 transition">
+                    <Icon name="list" className="w-4 h-4 text-accent-cyan" />أضف لقائمة
+                  </button>
+                )}
               </div>
+              {showAddToList && <AddToListModal currentUser={currentUser} title={title} onClose={() => setShowAddToList(false)} />
 
               {isSeries && seasons.length > 0 && (
                 <div className="mt-8 border-t border-white/10 pt-6">
@@ -1772,9 +1888,26 @@
                 ) : (
                   <button onClick={() => onOpenAuth('login')} className="w-full text-xs font-bold text-slate-300 mb-6 glass-card p-4 rounded-2xl text-center border border-white/10 hover:border-accent-cyan transition">سجّل الدخول لتقييم هذا العمل وكتابة مراجعة</button>
                 )}
+                {followersRatings.length > 0 && (
+                  <div className="mb-6">
+                    <p className="text-xs font-bold text-slate-400 mb-2.5 flex items-center gap-1.5"><Icon name="user" className="w-3.5 h-3.5 text-accent-cyan" />متابعينك قيّموه</p>
+                    <div className="flex gap-2 flex-wrap">
+                      {followersRatings.map(r => (
+                        <button key={r.uid} onClick={() => onOpenProfile && onOpenProfile(r.username)} className="flex items-center gap-1.5 glass-card px-2.5 py-1.5 rounded-xl border border-white/5 hover:border-accent-cyan/40 transition">
+                          <div className="w-5 h-5 rounded-md overflow-hidden bg-glass-700 shrink-0">{r.avatar && <img src={r.avatar} className="w-full h-full object-cover" />}</div>
+                          <span className="text-xs font-bold text-slate-200">{r.author}</span>
+                          <StarRatingDisplay value={r.stars} size="w-2.5 h-2.5" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {ratingList.filter(r => r.review).length > 0 && (
                   <div className="space-y-3 mb-8">
-                    {ratingList.filter(r => r.review).map(r => (
+                    {ratingList.filter(r => r.review).map(r => {
+                      const rReplies = r.replies ? Object.keys(r.replies).map(rk => ({ id: rk, ...r.replies[rk] })) : [];
+                      const isReplyingHere = reviewReplyingTo === r.uid;
+                      return (
                       <div key={r.uid} className="flex gap-3 items-start">
                         <button onClick={() => onOpenProfile && onOpenProfile(r.username)} className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center text-xs font-black text-white shrink-0 shadow-md overflow-hidden">
                           {r.avatar ? <img src={r.avatar} alt="" className="w-full h-full object-cover" /> : (r.author || '?').charAt(0)}
@@ -1790,9 +1923,27 @@
                             </div>
                           </div>
                           <p className="text-sm text-slate-200 leading-relaxed">{r.review}</p>
+                          <button onClick={() => { setReviewReplyingTo(isReplyingHere ? null : r.uid); setReviewReplyText(''); }} className="text-[11px] font-bold text-slate-400 hover:text-slate-200 transition mt-2">رد</button>
+                          {rReplies.length > 0 && (
+                            <div className="mt-2.5 space-y-2 border-r-2 border-accent-cyan/30 pr-3 mr-1">
+                              {rReplies.map(rr => (
+                                <div key={rr.id} className="text-xs glass-panel p-2.5 rounded-xl border border-white/5">
+                                  <button onClick={() => onOpenProfile && onOpenProfile(rr.username)} className="font-bold text-accent-cyan hover:underline">{rr.author}</button>
+                                  <span className="text-slate-300"> {rr.text}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {isReplyingHere && (
+                            <div className="flex gap-2 mt-2.5">
+                              <input value={reviewReplyText} onChange={e => setReviewReplyText(e.target.value)} onKeyDown={e => e.key === 'Enter' && submitReviewReply(r.uid)} placeholder="اكتب ردك على هذي المراجعة..." autoFocus className="flex-1 bg-glass-950 border border-white/10 rounded-xl px-4 py-2 text-xs text-slate-100 outline-none focus:border-accent-cyan" />
+                              <button onClick={() => submitReviewReply(r.uid)} className="px-4 py-2 rounded-xl bg-accent-red text-xs font-bold text-white">نشر</button>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -2183,6 +2334,168 @@
       return results;
     }
 
+    // نافذة إضافة عمل لإحدى قوائم المستخدم المخصصة، مع خيار إنشاء قائمة جديدة مباشرة
+    function AddToListModal({ currentUser, title, onClose }) {
+      const [lists, setLists] = useState(null);
+      const [newName, setNewName] = useState('');
+      const [creating, setCreating] = useState(false);
+      const key = sanitizeKey(currentUser.username);
+
+      useEffect(() => {
+        const ref = db.ref(`lists/${key}`);
+        const cb = snap => {
+          const data = snap.val() || {};
+          setLists(Object.keys(data).map(k => ({ id: k, ...data[k] })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
+        };
+        ref.on('value', cb);
+        return () => ref.off('value', cb);
+      }, [key]);
+
+      const toggleItem = (list) => {
+        const has = list.items && list.items[title.id];
+        db.ref(`lists/${key}/${list.id}/items/${title.id}`).set(has ? null : true);
+      };
+
+      const createList = async () => {
+        if (!newName.trim()) return;
+        setCreating(true);
+        const ref = await db.ref(`lists/${key}`).push({ name: newName.trim(), isPublic: true, createdAt: Date.now(), items: { [title.id]: true } });
+        setNewName(''); setCreating(false);
+      };
+
+      return (
+        <div className="modal-backdrop fixed inset-0 z-[70] bg-black/80 backdrop-blur-md flex items-end md:items-center justify-center p-0 md:p-4" onClick={onClose}>
+          <div onClick={e => e.stopPropagation()} className="sheet-panel glass-panel border border-white/10 rounded-t-3xl md:rounded-3xl w-full md:max-w-sm max-h-[80vh] flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between p-5 border-b border-white/10 shrink-0">
+              <h3 className="font-black text-lg text-white">أضف "{title.name}" لقائمة</h3>
+              <button onClick={onClose} className="w-8 h-8 rounded-xl glass-card border border-white/10 flex items-center justify-center text-slate-300"><Icon name="x" className="w-4 h-4" /></button>
+            </div>
+            <div className="p-4 space-y-2.5 overflow-y-auto flex-1">
+              {lists === null ? (
+                <p className="text-sm text-slate-500 font-medium text-center py-6">جارٍ التحميل...</p>
+              ) : lists.length === 0 ? (
+                <p className="text-sm text-slate-500 font-medium text-center py-6">ما عندك قوائم بعد، أنشئ أول قائمة بالأسفل.</p>
+              ) : lists.map(l => {
+                const has = l.items && l.items[title.id];
+                return (
+                  <button key={l.id} onClick={() => toggleItem(l)} className="w-full flex items-center justify-between gap-3 p-3 rounded-2xl glass-card border border-white/5 hover:border-accent-cyan/40 transition text-right">
+                    <span className="text-sm font-bold text-slate-200">{l.name}</span>
+                    <span className={`w-6 h-6 rounded-lg flex items-center justify-center border transition ${has ? 'bg-accent-cyan border-accent-cyan text-glass-950' : 'border-white/20 text-transparent'}`}><Icon name="check" className="w-4 h-4" /></span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="p-4 border-t border-white/10 shrink-0 flex gap-2">
+              <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === 'Enter' && createList()} placeholder="اسم قائمة جديدة..." className="flex-1 bg-glass-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-accent-cyan" />
+              <button onClick={createList} disabled={creating || !newName.trim()} className="px-4 py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-sm font-bold hover:brightness-110 transition disabled:opacity-50">إنشاء</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // عرض تفاصيل قائمة مخصصة واحدة (شبكة بوسترات + خيار الحذف والتحكم بالخصوصية لصاحبها)
+    function ListDetailModal({ list, isOwn, onClose, onOpen, listOwnerKey }) {
+      const [titlesMap, setTitlesMap] = useState(null);
+      const [isPublic, setIsPublic] = useState(list.isPublic !== false);
+
+      useEffect(() => {
+        db.ref('titles').once('value', snap => {
+          const data = snap.val() || {};
+          const map = {};
+          Object.keys(data).forEach(k => { map[k] = { id: k, ...data[k] }; });
+          setTitlesMap(map);
+        });
+      }, []);
+
+      const itemIds = Object.keys(list.items || {});
+      const items = titlesMap ? itemIds.map(id => titlesMap[id]).filter(Boolean) : [];
+
+      const removeItem = (id) => db.ref(`lists/${listOwnerKey}/${list.id}/items/${id}`).remove();
+      const togglePublic = () => { const next = !isPublic; setIsPublic(next); db.ref(`lists/${listOwnerKey}/${list.id}/isPublic`).set(next); };
+      const deleteList = () => { db.ref(`lists/${listOwnerKey}/${list.id}`).remove(); onClose(); };
+
+      return (
+        <div className="modal-backdrop fixed inset-0 z-[70] bg-black/80 backdrop-blur-md flex items-end md:items-center justify-center p-0 md:p-4" onClick={onClose}>
+          <div onClick={e => e.stopPropagation()} className="sheet-panel glass-panel border border-white/10 rounded-t-3xl md:rounded-3xl w-full md:max-w-2xl max-h-[85vh] flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between p-5 border-b border-white/10 shrink-0">
+              <div>
+                <h3 className="font-black text-lg text-white">{list.name}</h3>
+                <p className="text-xs text-slate-400">{items.length} عمل{isOwn ? (isPublic ? ' · عامة' : ' · خاصة') : ''}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {isOwn && (
+                  <button onClick={togglePublic} title="تبديل الخصوصية" className="text-xs px-3 py-1.5 rounded-xl glass-card border border-white/10 text-slate-300 font-bold">{isPublic ? 'اجعلها خاصة' : 'اجعلها عامة'}</button>
+                )}
+                {isOwn && (
+                  <button onClick={deleteList} title="حذف القائمة" className="w-8 h-8 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400"><Icon name="trash-2" className="w-4 h-4" /></button>
+                )}
+                <button onClick={onClose} className="w-8 h-8 rounded-xl glass-card border border-white/10 flex items-center justify-center text-slate-300"><Icon name="x" className="w-4 h-4" /></button>
+              </div>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1">
+              {titlesMap === null ? (
+                <p className="text-sm text-slate-500 font-medium text-center py-8">جارٍ التحميل...</p>
+              ) : items.length === 0 ? (
+                <p className="text-sm text-slate-500 font-medium text-center py-8">القائمة فاضية حاليًا.</p>
+              ) : (
+                <div className="profile-poster-grid">
+                  {items.map(t => (
+                    <div key={t.id} className="relative">
+                      <button onClick={() => { onOpen(t); onClose(); }} className="relative aspect-[2/3] w-full rounded-lg overflow-hidden glass-card">
+                        {t.poster && <img src={t.poster} alt={t.name} className="w-full h-full object-cover" />}
+                      </button>
+                      {isOwn && (
+                        <button onClick={() => removeItem(t.id)} title="إزالة من القائمة" className="absolute top-1 left-1 w-6 h-6 rounded-full bg-black/70 flex items-center justify-center text-rose-400"><Icon name="x" className="w-3.5 h-3.5" /></button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // قسم "قوائمي" بالملف الشخصي: يعرض قوائم المستخدم (كل قوائمه إذا ملفه هو، أو العامة فقط لغيره)
+    function ProfileLists({ username, isOwn, onOpen }) {
+      const [lists, setLists] = useState(null);
+      const [openList, setOpenList] = useState(null);
+      const key = sanitizeKey(username);
+
+      useEffect(() => {
+        const ref = db.ref(`lists/${key}`);
+        const cb = snap => {
+          const data = snap.val() || {};
+          let arr = Object.keys(data).map(k => ({ id: k, ...data[k] }));
+          if (!isOwn) arr = arr.filter(l => l.isPublic !== false);
+          arr.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          setLists(arr);
+        };
+        ref.on('value', cb);
+        return () => ref.off('value', cb);
+      }, [key, isOwn]);
+
+      if (lists === null) return null;
+      if (lists.length === 0) return null;
+
+      return (
+        <section className="mb-10">
+          <h2 className="text-lg font-black text-slate-100 mb-4">قوائم {isOwn ? 'ي' : 'ه'} المخصصة</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {lists.map(l => (
+              <button key={l.id} onClick={() => setOpenList(l)} className="glass-card rounded-2xl p-4 border border-white/10 hover:border-accent-cyan/40 transition text-right">
+                <p className="font-bold text-white text-sm truncate flex items-center gap-1.5"><Icon name="list" className="w-3.5 h-3.5 text-accent-cyan shrink-0" />{l.name}</p>
+                <p className="text-[11px] text-slate-400 mt-1">{Object.keys(l.items || {}).length} عمل{!isOwn ? '' : (l.isPublic === false ? ' · خاصة' : ' · عامة')}</p>
+              </button>
+            ))}
+          </div>
+          {openList && <ListDetailModal list={openList} isOwn={isOwn} listOwnerKey={key} onClose={() => setOpenList(null)} onOpen={onOpen} />}
+        </section>
+      );
+    }
+
     function ProfileView({ username, currentUser, titles, watchlist, onOpen, onOpenAuth, onOpenProfile }) {
       const [profileUser, setProfileUser] = useState(null);
       const [userRatings, setUserRatings] = useState({});
@@ -2192,6 +2505,7 @@
       const [myFollowing, setMyFollowing] = useState({});
       const [followBusy, setFollowBusy] = useState(false);
       const [listModal, setListModal] = useState(null); // 'followers' | 'following' | null
+      const [shareCopied, setShareCopied] = useState(false);
       const targetUsername = username || (currentUser && currentUser.username);
       const isOwn = currentUser && targetUsername === currentUser.username;
 
@@ -2266,6 +2580,7 @@
           } else {
             await db.ref(`following/${meKey}/${themKey}`).set(true);
             await db.ref(`followers/${themKey}/${meKey}`).set(true);
+            pushNotification(targetUsername, { type: 'follow', fromUsername: currentUser.username, fromName: currentUser.name, fromAvatar: currentUser.avatar || '' });
           }
         } finally { setFollowBusy(false); }
       };
@@ -2282,7 +2597,12 @@
                 {profileUser.username === 'mavilovelife' && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold">مدير النظام</span>}
                 {profileUser.isModerator && <span className="text-[10px] px-2 py-0.5 rounded-full bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/30 font-bold">مشرف النظام</span>}
               </h1>
-              <p className="text-slate-400 text-sm">@{profileUser.username}</p>
+              <p className="text-slate-400 text-sm flex items-center gap-2">
+                @{profileUser.username}
+                <button onClick={() => { const url = `${location.origin}${location.pathname}?u=${profileUser.username}`; if (navigator.clipboard) navigator.clipboard.writeText(url); setShareCopied(true); setTimeout(() => setShareCopied(false), 2000); }} title="نسخ رابط الملف الشخصي" className="text-slate-500 hover:text-accent-cyan transition">
+                  <Icon name={shareCopied ? 'check' : 'link'} className={`w-3.5 h-3.5 ${shareCopied ? 'text-emerald-400' : ''}`} />
+                </button>
+              </p>
             </div>
             <div className="flex items-center gap-6 mr-auto text-center flex-wrap">
               <button onClick={() => setListModal('followers')} className="text-center hover:opacity-75 transition">
@@ -2316,6 +2636,8 @@
               </div>
             </section>
           )}
+
+          <ProfileLists username={targetUsername} isOwn={isOwn} onOpen={onOpen} />
 
           {isOwn && watchlist.length > 0 && (
             <section className="mb-10">
@@ -3150,10 +3472,51 @@
       );
     }
 
-    function AdminUsers() {
+    // نافذة حظر مستخدم: سبب إلزامي + نوع الحظر (دائم/مؤقت)
+    function BanDialog({ user, onCancel, onConfirm }) {
+      const [reason, setReason] = useState('');
+      const [kind, setKind] = useState('permanent');
+      const [days, setDays] = useState(7);
+      const [error, setError] = useState('');
+
+      const confirm = () => {
+        if (!reason.trim()) { setError('كتابة سبب الحظر إلزامية.'); return; }
+        const until = kind === 'temporary' ? Date.now() + (Number(days) || 1) * 86400000 : null;
+        onConfirm(reason.trim(), until);
+      };
+
+      return (
+        <div className="modal-backdrop fixed inset-0 z-[60] bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={onCancel}>
+          <div onClick={e => e.stopPropagation()} className="modal-panel glass-panel border border-white/10 rounded-3xl max-w-sm w-full p-6 shadow-2xl">
+            <h3 className="font-black text-lg text-white mb-1">حظر @{user.username}</h3>
+            <p className="text-xs text-slate-400 mb-4">كتابة السبب إلزامية ويظهر للمستخدم عند محاولة الدخول.</p>
+            <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} placeholder="سبب الحظر (إلزامي)..."
+              className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition shadow-inner mb-3"></textarea>
+            <div className="flex gap-2.5 mb-3">
+              <button onClick={() => setKind('permanent')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition ${kind === 'permanent' ? 'bg-rose-500 text-white' : 'glass-card border border-white/10 text-slate-300'}`}>دائم</button>
+              <button onClick={() => setKind('temporary')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition ${kind === 'temporary' ? 'bg-rose-500 text-white' : 'glass-card border border-white/10 text-slate-300'}`}>مؤقت</button>
+            </div>
+            {kind === 'temporary' && (
+              <div className="flex items-center gap-2.5 mb-3">
+                <input type="number" min="1" value={days} onChange={e => setDays(e.target.value)} className="w-20 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-white text-center" />
+                <span className="text-xs text-slate-400 font-bold">يوم من الآن</span>
+              </div>
+            )}
+            {error && <p className="text-rose-400 text-xs font-bold mb-3 bg-rose-500/10 p-2.5 rounded-xl border border-rose-500/20">{error}</p>}
+            <div className="flex gap-3">
+              <button onClick={onCancel} className="flex-1 py-2.5 rounded-xl glass-card border border-white/10 text-sm font-bold text-slate-300 hover:bg-white/5 transition">إلغاء</button>
+              <button onClick={confirm} className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-sm font-bold text-white transition">تأكيد الحظر</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function AdminUsers({ currentUser }) {
       const [list, setList] = useState([]);
       const [query, setQuery] = useState('');
       const [deleteTarget, setDeleteTarget] = useState(null);
+      const [banTarget, setBanTarget] = useState(null);
       const [busyId, setBusyId] = useState(null);
 
       useEffect(() => {
@@ -3174,17 +3537,32 @@
         try {
           await db.ref(`users/${u.id}/isModerator`).set(next);
           await db.ref(`moderators/${sanitizeKey(u.username)}`).set(next ? true : null);
+          logAuditAction(currentUser, next ? 'منح شارة إشراف' : 'إزالة شارة إشراف', `@${u.username}`);
         } finally { setBusyId(null); }
       };
 
-      const toggleBan = async (u) => {
+      const confirmBan = async (reason, until) => {
+        const u = banTarget;
         setBusyId(u.id);
-        try { await db.ref(`users/${u.id}/banned`).set(!u.banned); } finally { setBusyId(null); }
+        try {
+          await db.ref(`users/${u.id}`).update({ banned: true, banReason: reason, banUntil: until });
+          logAuditAction(currentUser, 'حظر مستخدم', `@${u.username} — ${reason}${until ? ' (مؤقت إلى ' + fmtDateTime(until) + ')' : ' (دائم)'}`);
+        } finally { setBusyId(null); setBanTarget(null); }
+      };
+
+      const unban = async (u) => {
+        setBusyId(u.id);
+        try {
+          await db.ref(`users/${u.id}`).update({ banned: false, banReason: null, banUntil: null });
+          logAuditAction(currentUser, 'إلغاء حظر مستخدم', `@${u.username}`);
+        } finally { setBusyId(null); }
       };
 
       const removeUser = async (u) => {
         await db.ref(`users/${u.id}`).remove();
         if (u.isModerator) await db.ref(`moderators/${sanitizeKey(u.username)}`).remove();
+        await db.ref(`deletedUsernames/${sanitizeKey(u.username)}`).set(true);
+        logAuditAction(currentUser, 'حذف حساب مستخدم', `@${u.username}`);
         setDeleteTarget(null);
       };
 
@@ -3211,9 +3589,10 @@
                       {u.name}
                       {u.username === 'mavilovelife' && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold">مدير النظام</span>}
                       {u.isModerator && <span className="text-[10px] px-2 py-0.5 rounded-full bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/30 font-bold">مشرف النظام</span>}
-                      {u.banned && <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 font-bold">محظور</span>}
+                      {u.banned && <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 font-bold">محظور{u.banUntil ? ' مؤقتًا' : ''}</span>}
                     </p>
                     <p className="text-xs text-slate-400">@{u.username}</p>
+                    {u.banned && u.banReason && <p className="text-[11px] text-rose-300 mt-1">السبب: {u.banReason}{u.banUntil ? ` · إلى ${fmtDateTime(u.banUntil)}` : ''}</p>}
                   </div>
                   {u.username !== 'mavilovelife' && (
                     <>
@@ -3221,7 +3600,7 @@
                         className={`text-xs px-4 py-2 rounded-xl font-bold transition disabled:opacity-50 ${u.isModerator ? 'bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/30' : 'glass-card border border-white/10 hover:border-accent-cyan text-slate-200'}`}>
                         {u.isModerator ? 'إزالة شارة الإشراف' : 'منح شارة مشرف النظام'}
                       </button>
-                      <button onClick={() => toggleBan(u)} disabled={busyId === u.id}
+                      <button onClick={() => u.banned ? unban(u) : setBanTarget(u)} disabled={busyId === u.id}
                         className={`text-xs px-4 py-2 rounded-xl font-bold transition disabled:opacity-50 ${u.banned ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20'}`}>
                         {u.banned ? 'إلغاء الحظر' : 'حظر الحساب'}
                       </button>
@@ -3235,9 +3614,80 @@
           )}
 
           {deleteTarget && (
-            <ConfirmDialog title="حذف هذا الحساب؟" body={`سيتم حذف حساب @${deleteTarget.username} نهائيًا ولا يمكن التراجع عن هذا الإجراء.`}
+            <ConfirmDialog title="حذف هذا الحساب؟" body={`سيتم حذف حساب @${deleteTarget.username} نهائيًا ولا يمكن التراجع عن هذا الإجراء. سيظهر له إشعار بالحذف إذا حاول الدخول لاحقًا.`}
               confirmLabel="نعم، احذف" cancelLabel="إلغاء" onCancel={() => setDeleteTarget(null)} onConfirm={() => removeUser(deleteTarget)} />
           )}
+          {banTarget && <BanDialog user={banTarget} onCancel={() => setBanTarget(null)} onConfirm={confirmBan} />}
+        </div>
+      );
+    }
+
+    // سجل نشاط المشرفين: يسجّل أي إجراء إداري حساس مع اسم من قام فيه والوقت
+    function logAuditAction(currentUser, action, details) {
+      if (!currentUser) return;
+      db.ref('auditLog').push({ by: currentUser.name, byUsername: currentUser.username, action, details: details || '', date: Date.now() });
+    }
+
+    function AdminAuditLog() {
+      const [list, setList] = useState([]);
+      useEffect(() => {
+        const ref = db.ref('auditLog').limitToLast(200);
+        const cb = snap => {
+          const data = snap.val();
+          const arr = data ? Object.keys(data).map(k => ({ id: k, ...data[k] })) : [];
+          arr.sort((a, b) => (b.date || 0) - (a.date || 0));
+          setList(arr);
+        };
+        ref.on('value', cb);
+        return () => ref.off('value', cb);
+      }, []);
+      if (!list.length) return <p className="text-sm text-slate-500 font-medium">لا يوجد نشاط مسجّل بعد.</p>;
+      return (
+        <div className="space-y-2.5">
+          {list.map(l => (
+            <div key={l.id} className="glass-card rounded-2xl p-3.5 border border-white/10 flex items-start gap-3">
+              <div className="w-8 h-8 rounded-xl bg-glass-700 flex items-center justify-center text-accent-cyan shrink-0"><Icon name="shield" className="w-4 h-4" /></div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-slate-200"><span className="font-bold text-accent-cyan">{l.by}</span> — {l.action}</p>
+                {l.details && <p className="text-xs text-slate-400 mt-0.5">{l.details}</p>}
+                <p className="text-[10px] text-slate-500 font-mono mt-1">{fmtDateTime(l.date)}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    function AdminDashboardStats({ titles }) {
+      const [usersCount, setUsersCount] = useState(null);
+      const [openComplaints, setOpenComplaints] = useState(null);
+      useEffect(() => {
+        db.ref('users').once('value', snap => setUsersCount(snap.numChildren()));
+        db.ref('complaints').orderByChild('status').equalTo('open').once('value', snap => setOpenComplaints(snap.numChildren()));
+      }, []);
+      const total = titles.length;
+      const published = titles.filter(t => t.status === 'published').length;
+      const drafts = total - published;
+      const totalViews = titles.reduce((s, t) => s + (t.views || 0), 0);
+      const totalLikes = titles.reduce((s, t) => s + (t.likes || 0), 0);
+      const cards = [
+        ['layers', total, 'إجمالي الأعمال', 'text-accent-cyan'],
+        ['eye', published, 'منشور', 'text-emerald-400'],
+        ['pencil', drafts, 'مسودة', 'text-amber-400'],
+        ['user', usersCount === null ? '…' : usersCount, 'المستخدمون', 'text-accent-purple'],
+        ['flag', openComplaints === null ? '…' : openComplaints, 'شكاوى مفتوحة', 'text-rose-400'],
+        ['trendingUp', totalViews, 'إجمالي المشاهدات', 'text-accent-purple'],
+        ['heart', totalLikes, 'إجمالي الإعجابات', 'text-rose-400'],
+      ];
+      return (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
+          {cards.map(([icon, val, label, color]) => (
+            <div key={label} className="glass-card rounded-2xl p-4 border border-white/10 text-center">
+              <Icon name={icon} className={`w-5 h-5 mx-auto mb-2 ${color}`} />
+              <p className="text-xl font-black text-white">{val}</p>
+              <p className="text-[11px] text-slate-400 font-bold mt-0.5">{label}</p>
+            </div>
+          ))}
         </div>
       );
     }
@@ -3250,18 +3700,30 @@
       const [query, setQuery] = useState('');
       const isFullAdmin = currentUser && currentUser.username === 'mavilovelife';
 
-      const handleDelete = async (id) => { await db.ref(`titles/${id}`).remove(); await db.ref(`comments/${id}`).remove(); await db.ref(`ratings/${id}`).remove(); setDeleteTarget(null); };
-      const togglePublish = (t) => db.ref(`titles/${t.id}/status`).set(t.status === 'published' ? 'draft' : 'published');
+      const handleDelete = async (id) => {
+        const t = titles.find(x => x.id === id);
+        await db.ref(`titles/${id}`).remove(); await db.ref(`comments/${id}`).remove(); await db.ref(`ratings/${id}`).remove();
+        logAuditAction(currentUser, 'حذف عمل', t ? t.name : id);
+        setDeleteTarget(null);
+      };
+      const togglePublish = (t) => {
+        db.ref(`titles/${t.id}/status`).set(t.status === 'published' ? 'draft' : 'published');
+        logAuditAction(currentUser, t.status === 'published' ? 'تحويل عمل لمسودة' : 'نشر عمل', t.name);
+      };
       const filteredTitles = titles.filter(t => t.type === contentType && (!query.trim() || (t.name || '').toLowerCase().includes(query.trim().toLowerCase())));
 
       return (
         <div>
           <h1 className="text-2xl md:text-3xl font-black mb-6 text-slate-100">لوحة تحكم  </h1>
+          <AdminDashboardStats titles={titles} />
           <div className="flex gap-3 mb-6 border-b border-white/10 pb-3 flex-wrap">
             <button onClick={() => { setTab('content'); setEditing(null); }} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'content' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>المحتوى (رفع )</button>
             <button onClick={() => setTab('complaints')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'complaints' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>الشكاوى والطلبات</button>
             {isFullAdmin && (
               <button onClick={() => setTab('users')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'users' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>المستخدمون</button>
+            )}
+            {isFullAdmin && (
+              <button onClick={() => setTab('audit')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'audit' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>سجل النشاط</button>
             )}
           </div>
 
@@ -3306,7 +3768,8 @@
           )}
 
           {tab === 'complaints' && <AdminComplaints currentUser={currentUser} />}
-          {tab === 'users' && isFullAdmin && <AdminUsers />}
+          {tab === 'users' && isFullAdmin && <AdminUsers currentUser={currentUser} />}
+          {tab === 'audit' && isFullAdmin && <AdminAuditLog />}
 
           {deleteTarget && (
             <ConfirmDialog title="حذف هذا العمل؟" body="سيتم حذف العمل وجميع تعليقاته نهائيًا ولا يمكن استرجاعه." confirmLabel="نعم، احذف" cancelLabel="إلغاء" onCancel={() => setDeleteTarget(null)} onConfirm={() => handleDelete(deleteTarget)} />
@@ -3338,7 +3801,6 @@
     function App() {
       const [titles, setTitles] = useState([]);
       const [currentUser, setCurrentUser] = useState(() => JSON.parse(localStorage.getItem('cv_user') || 'null'));
-      const [accountNotice, setAccountNotice] = useState(null);
       const [view, setViewRaw] = useState('home');
       const [search, setSearch] = useState('');
       const [activeTitle, setActiveTitle] = useState(null);
@@ -3390,6 +3852,8 @@
         if (username === 'mavilovelife') return 'admin';
         return moderators[sanitizeKey(username)] ? 'moderator' : null;
       };
+
+      const [accountNotice, setAccountNotice] = useState(null);
 
       useEffect(() => {
         if (!currentUser) return;
@@ -3469,6 +3933,8 @@
         if (!booted || !titles.length) return;
         const t = new URLSearchParams(location.search).get('t');
         if (t) { const found = titles.find(x => x.id === t); if (found) setActiveTitle(found); }
+        const u = new URLSearchParams(location.search).get('u');
+        if (u) openProfile(u);
       }, [booted, titles]);
 
       const published = titles.filter(t => t.status === 'published');
@@ -3528,7 +3994,7 @@
 
       return (
         <div className="min-h-screen flex flex-col mobile-safe-bottom md:pb-0">
-          <Header currentUser={currentUser} view={view} setView={setView} search={search} setSearch={setSearch} onOpenAccount={() => setAccountSheet(true)} onOpenProfile={openProfile} />
+          <Header currentUser={currentUser} view={view} setView={setView} search={search} setSearch={setSearch} onOpenAccount={() => setAccountSheet(true)} onOpenProfile={openProfile} onOpenTitleFromNotif={(id) => { const t = titles.find(x => x.id === id); if (t) setActiveTitle(t); }} />
 
           <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 md:py-8">
             <div key={searching ? 'search' : view} className="page-fade-in">
@@ -3569,22 +4035,17 @@
 
           {authModal && <AuthModal tab={authModal} onClose={() => setAuthModal(null)} onSuccess={handleAuthSuccess} />}
 
-          {accountNotice && (
-            <div className="modal-backdrop fixed inset-0 z-[70] bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setAccountNotice(null)}>
-              <div onClick={e => e.stopPropagation()} className="modal-panel glass-panel border border-white/10 rounded-3xl max-w-sm w-full p-6 shadow-2xl">
-                <h3 className="font-black text-lg text-white">إشعار الحساب</h3>
-                <p className="text-sm text-slate-300 mt-2 leading-relaxed">{accountNotice}</p>
-                <button onClick={() => setAccountNotice(null)} className="w-full mt-6 py-2.5 rounded-xl bg-accent-red hover:bg-accent-redHover text-sm font-bold text-white shadow-[0_0_15px_rgba(255,51,75,0.4)] transition">حسناً</button>
-              </div>
-            </div>
-          )}
-
           {accountSheet && (
             <AccountSheet currentUser={currentUser} onClose={() => setAccountSheet(false)}
               onLogin={() => { setAccountSheet(false); setAuthModal('login'); }}
               onRegister={() => { setAccountSheet(false); setAuthModal('register'); }}
               onLogout={handleLogout}
               onNavigate={(v) => { if (v === 'profile') setProfileTarget(null); setView(v); setAccountSheet(false); }} />
+          )}
+
+          {accountNotice && (
+            <ConfirmDialog title="إشعار بخصوص حسابك" body={accountNotice} confirmLabel="حسنًا" cancelLabel="إغلاق"
+              onCancel={() => setAccountNotice(null)} onConfirm={() => setAccountNotice(null)} />
           )}
         </div>
       );
