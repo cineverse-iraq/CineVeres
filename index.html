@@ -174,6 +174,36 @@
     <div class="spin"></div>
     <p>جاري تحميل <b>CineVerse</b>...</p>
   </div>
+
+  <script>
+    (function () {
+      var forceHideTimeout = setTimeout(function () {
+        var loader = document.getElementById('bootLoader');
+        if (loader && !loader.classList.contains('fading')) {
+          loader.innerHTML =
+            '<div style="text-align:center;padding:24px;max-width:320px;">' +
+            '<p style="color:#F8FAFC;font-family:Cairo,sans-serif;font-weight:800;font-size:15px;margin-bottom:16px;line-height:1.6;">تعذّر تحميل الموقع، تحقق من اتصال الإنترنت وحاول مجددًا.</p>' +
+            '<button onclick="location.reload()" style="background:#FF334B;color:#fff;font-family:Cairo,sans-serif;font-weight:700;padding:12px 28px;border:none;border-radius:14px;font-size:14px;">إعادة المحاولة</button>' +
+            '</div>';
+        }
+      }, 9000);
+
+      window.addEventListener('error', function (e) {
+        if (e && e.target && e.target.tagName === 'SCRIPT') {
+          var loader = document.getElementById('bootLoader');
+          if (loader && !loader.classList.contains('fading')) {
+            clearTimeout(forceHideTimeout);
+            loader.innerHTML =
+              '<div style="text-align:center;padding:24px;max-width:320px;">' +
+              '<p style="color:#F8FAFC;font-family:Cairo,sans-serif;font-weight:800;font-size:15px;margin-bottom:16px;line-height:1.6;">تعذّر تحميل أحد ملفات الموقع الأساسية. تحقق من اتصال الإنترنت أو جرّب متصفحًا آخر.</p>' +
+              '<button onclick="location.reload()" style="background:#FF334B;color:#fff;font-family:Cairo,sans-serif;font-weight:700;padding:12px 28px;border:none;border-radius:14px;font-size:14px;">إعادة المحاولة</button>' +
+              '</div>';
+          }
+        }
+      }, true);
+    })();
+  </script>
+
   <div id="root"></div>
 
   <script type="text/babel">
@@ -1212,10 +1242,6 @@
         };
       }, []);
 
-      // على أجهزة الآيفون، طلب ملء الشاشة الحقيقي للفيديو (webkitEnterFullscreen) يستبدل شريط
-      // التحكم المخصص بمشغل آبل الأصلي فتختفي أزرار السرعة والتقديم وغيرها. لذلك نستخدم بدلاً
-      // من ذلك "ملء شاشة وهمي" بواسطة CSS (تثبيت العنصر ليغطي الشاشة كاملة) يبقي شريط
-      // التحكم المخصص يعمل بكامل ميزاته على آيفون أيضًا.
       const effectiveFs = isFs
       const toggleFullscreen = () => {
   const v = videoRef.current;
@@ -1718,7 +1744,7 @@
                   </button>
                 )}
               </div>
-              {showAddToList && <AddToListModal currentUser={currentUser} title={title} onClose={() => setShowAddToList(false)} />
+              {showAddToList && <AddToListModal currentUser={currentUser} title={title} onClose={() => setShowAddToList(false)} />}
 
               {isSeries && seasons.length > 0 && (
                 <div className="mt-8 border-t border-white/10 pt-6">
@@ -1743,7 +1769,6 @@
                   </div>
 
                   {showAllEpisodes ? (
-                    // عرض جميع حلقات كل المواسم في قائمة واحدة متسلسلة بدون أي فاصل بين المواسم — مخصص أيضًا لواجهة الجوال (قائمة عمودية بعناصر باللمس)
                     <div className="space-y-2 md:space-y-2.5">
                       {allEpisodesFlat.map((ep, idx) => {
                         const isCurrent = playingMeta && playingMeta.videoUrl === ep.videoUrl && playingMeta.number === ep.number && playingSeasonNumber === ep.seasonNumber;
@@ -2260,7 +2285,6 @@
       );
     }
 
-    // نافذة منبثقة تعرض قائمة متابعين/متابَعين، قابلة للنقر للانتقال لبروفايل أي منهم
     function FollowListModal({ title, usernames, onOpenProfile, onClose }) {
       const [users, setUsers] = useState(null);
 
@@ -2334,7 +2358,6 @@
       return results;
     }
 
-    // نافذة إضافة عمل لإحدى قوائم المستخدم المخصصة، مع خيار إنشاء قائمة جديدة مباشرة
     function AddToListModal({ currentUser, title, onClose }) {
       const [lists, setLists] = useState(null);
       const [newName, setNewName] = useState('');
@@ -2394,7 +2417,6 @@
       );
     }
 
-    // عرض تفاصيل قائمة مخصصة واحدة (شبكة بوسترات + خيار الحذف والتحكم بالخصوصية لصاحبها)
     function ListDetailModal({ list, isOwn, onClose, onOpen, listOwnerKey }) {
       const [titlesMap, setTitlesMap] = useState(null);
       const [isPublic, setIsPublic] = useState(list.isPublic !== false);
@@ -2458,7 +2480,6 @@
       );
     }
 
-    // قسم "قوائمي" بالملف الشخصي: يعرض قوائم المستخدم (كل قوائمه إذا ملفه هو، أو العامة فقط لغيره)
     function ProfileLists({ username, isOwn, onOpen }) {
       const [lists, setLists] = useState(null);
       const [openList, setOpenList] = useState(null);
@@ -2504,7 +2525,7 @@
       const [following, setFollowing] = useState({});
       const [myFollowing, setMyFollowing] = useState({});
       const [followBusy, setFollowBusy] = useState(false);
-      const [listModal, setListModal] = useState(null); // 'followers' | 'following' | null
+      const [listModal, setListModal] = useState(null);
       const [shareCopied, setShareCopied] = useState(false);
       const targetUsername = username || (currentUser && currentUser.username);
       const isOwn = currentUser && targetUsername === currentUser.username;
@@ -2526,7 +2547,6 @@
         return () => { if (userId) db.ref(`userRatings/${userId}`).off(); };
       }, [targetUsername]);
 
-      // متابعو ومتابَعو صاحب البروفايل الحالي
       useEffect(() => {
         if (!targetUsername) return;
         const followersRef = db.ref(`followers/${sanitizeKey(targetUsername)}`);
@@ -2538,7 +2558,6 @@
         return () => { followersRef.off('value', cb1); followingRef.off('value', cb2); };
       }, [targetUsername]);
 
-      // من يتابعهم المستخدم الحالي (عشان نعرف هل يتابع صاحب هذا البروفايل أو لأ)
       useEffect(() => {
         if (!currentUser) { setMyFollowing({}); return; }
         const ref = db.ref(`following/${sanitizeKey(currentUser.username)}`);
@@ -3047,7 +3066,6 @@
       return { number: num, title: '', videoUrl: '', downloadUrl: '', imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
     }
 
-    // محرر حلقة واحدة فقط: يظهر بعد اختيار موسم ثم اختيار حلقة، بدل عرض كل الحلقات دفعة واحدة
     function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete }) {
       const e = episode;
       const set = (k, val) => onChange({ ...e, [k]: val });
@@ -3115,7 +3133,6 @@
       });
       const [saving, setSaving] = useState(false);
       const [error, setError] = useState('');
-      // التنقل الجديد: اختر موسمًا أولاً (activeSeasonIdx)، ثم اختر حلقة لتعديلها (editingEpisodeIdx)
       const [activeSeasonIdx, setActiveSeasonIdx] = useState(0);
       const [editingEpisodeIdx, setEditingEpisodeIdx] = useState(null);
 
@@ -3302,7 +3319,6 @@
                 <p className="text-xs text-slate-500 font-medium">لا توجد مواسم بعد. اضغط "إضافة موسم" للبدء.</p>
               ) : (
                 <div>
-                  {/* الخطوة 1: اختيار الموسم */}
                   <p className="text-[11px] font-bold text-slate-400 mb-2">١) اختر الموسم</p>
                   <div className="flex gap-2 flex-wrap mb-5">
                     {form.seasons.map((s, si) => (
@@ -3318,7 +3334,6 @@
                     <div className="glass-card rounded-2xl p-4 border border-white/10">
                       {editingEpisodeIdx === null ? (
                         <div>
-                          {/* بيانات الموسم نفسه */}
                           <div className="flex items-start gap-4 mb-5 flex-wrap">
                             <div className="w-20 shrink-0">
                               <div className="aspect-[2/3] rounded-xl overflow-hidden bg-glass-950 border border-white/10 flex items-center justify-center">
@@ -3343,7 +3358,6 @@
                             </div>
                           </div>
 
-                          {/* الخطوة 2: اختيار حلقة لتعديلها */}
                           <p className="text-[11px] font-bold text-slate-400 mb-2">٢) اختر حلقة لتعديلها، أو أضف حلقة جديدة</p>
                           <div className="space-y-2">
                             {activeSeason.episodes.map((e, ei) => (
@@ -3472,7 +3486,6 @@
       );
     }
 
-    // نافذة حظر مستخدم: سبب إلزامي + نوع الحظر (دائم/مؤقت)
     function BanDialog({ user, onCancel, onConfirm }) {
       const [reason, setReason] = useState('');
       const [kind, setKind] = useState('permanent');
@@ -3622,7 +3635,6 @@
       );
     }
 
-    // سجل نشاط المشرفين: يسجّل أي إجراء إداري حساس مع اسم من قام فيه والوقت
     function logAuditAction(currentUser, action, details) {
       if (!currentUser) return;
       db.ref('auditLog').push({ by: currentUser.name, byUsername: currentUser.username, action, details: details || '', date: Date.now() });
@@ -3778,7 +3790,6 @@
       );
     }
 
-    // مساعد: هل العمل (فيلم/مسلسل) "مكتمل المشاهدة"؟ فيلم = تمت مشاهدته، مسلسل = تمت مشاهدة كل حلقاته
     function isTitleWatched(watchedMap, title) {
       if (!watchedMap || !title) return false;
       const entry = watchedMap[title.id];
@@ -3885,8 +3896,6 @@
         return () => ref.off('value', cb);
       }, [currentUser && currentUser.id]);
 
-      // الدخول للوحة التحكم أصبح مباشرًا لأي حساب مدير أو مشرف، دون رمز حماية إضافي —
-      // فالتحقق من الصلاحية (isModerator أو حساب المدير الرئيسي) محفوظ في قاعدة البيانات ولا يمكن لمستخدم عادي تعديله بنفسه
       const setView = (v) => {
         if (v === 'admin') {
           if (!currentUser || !(currentUser.username === 'mavilovelife' || currentUser.isModerator)) {
