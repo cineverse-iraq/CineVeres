@@ -356,6 +356,7 @@
         pencil: <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />,
         star: <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />,
         eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></>,
+        eyeOff: <><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></>,
         maximize: <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />,
         minimize: <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3m6 0v-3a2 2 0 0 1 2-2h3" />,
         barChart: <path d="M12 20V10M18 20V4M6 20v-4" />,
@@ -2179,6 +2180,53 @@
       );
     }
 
+    function PasswordStrengthMeter({ password }) {
+      const checks = React.useMemo(() => {
+        const p = password || '';
+        return {
+          length: p.length >= 6,
+          upperLower: /[a-z]/.test(p) && /[A-Z]/.test(p),
+          number: /[0-9]/.test(p),
+          symbol: /[^A-Za-z0-9]/.test(p),
+        };
+      }, [password]);
+      const score = Object.values(checks).filter(Boolean).length;
+      if (!password) return null;
+      const levels = [
+        { label: 'ضعيفة جدًا', color: 'bg-rose-500', text: 'text-rose-400' },
+        { label: 'ضعيفة', color: 'bg-rose-500', text: 'text-rose-400' },
+        { label: 'متوسطة', color: 'bg-amber-500', text: 'text-amber-400' },
+        { label: 'جيدة', color: 'bg-accent-cyan', text: 'text-accent-cyan' },
+        { label: 'قوية جدًا', color: 'bg-emerald-500', text: 'text-emerald-400' },
+      ];
+      const lvl = levels[Math.min(score, 4)];
+      return (
+        <div className="mt-2">
+          <div className="flex items-center gap-1.5">
+            {[0, 1, 2, 3].map(i => (
+              <div key={i} className={`h-1.5 flex-1 rounded-full transition-all ${i < score ? lvl.color : 'bg-glass-800'}`}></div>
+            ))}
+          </div>
+          <p className={`text-[11px] font-bold mt-1.5 ${lvl.text}`}>قوة كلمة المرور: {lvl.label}</p>
+        </div>
+      );
+    }
+
+    function PasswordField({ value, onChange, placeholder, onEnter, autoFocus }) {
+      const [show, setShow] = useState(false);
+      return (
+        <div className="relative">
+          <input type={show ? 'text' : 'password'} value={value} onChange={e => onChange(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && onEnter && onEnter()} placeholder={placeholder} autoFocus={autoFocus}
+            className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 pl-11 text-sm text-slate-100 outline-none focus:border-accent-cyan transition shadow-inner" />
+          <button type="button" onClick={() => setShow(s => !s)} tabIndex={-1}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-accent-cyan transition">
+            <Icon name={show ? 'eyeOff' : 'eye'} className="w-4 h-4" />
+          </button>
+        </div>
+      );
+    }
+
     function SettingsView({ currentUser, onUpdateName, onUpdateAvatar, onOpenAuth }) {
       const [name, setName] = useState(currentUser ? currentUser.name : '');
       const [nameMsg, setNameMsg] = useState({ text: '', ok: false });
@@ -2193,6 +2241,8 @@
       const [confirmPass, setConfirmPass] = useState('');
       const [passMsg, setPassMsg] = useState({ text: '', ok: false });
       const [changingPass, setChangingPass] = useState(false);
+      const [oldPassChecking, setOldPassChecking] = useState(false);
+      const [oldPassValid, setOldPassValid] = useState(null);
 
       if (!currentUser) {
         return (
@@ -2224,20 +2274,45 @@
           .finally(() => setUploading(false));
       };
 
+      // تحقّق حي من كلمة المرور الحالية أثناء الكتابة (تأخير بسيط لتفادي كثرة الطلبات)
+      useEffect(() => {
+        if (!oldPass.trim()) { setOldPassValid(null); return; }
+        setOldPassChecking(true);
+        const handle = setTimeout(async () => {
+          try {
+            const snap = await db.ref(`users/${currentUser.id}/password`).once('value');
+            setOldPassValid(snap.val() === oldPass.trim());
+          } catch (e) { setOldPassValid(null); }
+          setOldPassChecking(false);
+        }, 450);
+        return () => clearTimeout(handle);
+      }, [oldPass, currentUser.id]);
+
+      const newPassIsWeak = newPass && newPass.trim().length < 6;
+      const newPassSameAsOld = newPass && oldPass && newPass.trim() === oldPass.trim();
+      const passwordsMismatch = confirmPass && newPass !== confirmPass;
+      const canSubmitPassword = oldPass.trim() && newPass.trim().length >= 6 && newPass === confirmPass && !newPassSameAsOld && !changingPass;
+
       const changePassword = async () => {
         setPassMsg({ text: '', ok: false });
-        if (!oldPass || !newPass || !confirmPass) { setPassMsg({ text: 'الرجاء تعبئة كل الحقول.', ok: false }); return; }
-        if (newPass.length < 4) { setPassMsg({ text: 'كلمة المرور الجديدة قصيرة جدًا.', ok: false }); return; }
-        if (newPass !== confirmPass) { setPassMsg({ text: 'كلمة المرور الجديدة غير متطابقة مع التأكيد.', ok: false }); return; }
+        const oldTrim = oldPass.trim(), newTrim = newPass.trim(), confirmTrim = confirmPass.trim();
+        if (!oldTrim || !newTrim || !confirmTrim) { setPassMsg({ text: 'الرجاء تعبئة كل الحقول.', ok: false }); return; }
+        if (newTrim.length < 6) { setPassMsg({ text: 'كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل.', ok: false }); return; }
+        if (newTrim !== confirmTrim) { setPassMsg({ text: 'كلمة المرور الجديدة غير متطابقة مع التأكيد.', ok: false }); return; }
+        if (newTrim === oldTrim) { setPassMsg({ text: 'كلمة المرور الجديدة يجب أن تختلف عن الحالية.', ok: false }); return; }
         setChangingPass(true);
         try {
+          // إعادة قراءة كلمة المرور الحالية من قاعدة البيانات مباشرة لحظة الإرسال (وليس الاعتماد فقط على
+          // نتيجة التحقق الحي) لضمان أن العملية حقيقية وتعكس آخر حالة مخزّنة فعليًا في الحساب.
           const snap = await db.ref(`users/${currentUser.id}/password`).once('value');
           const storedPass = snap.val();
-          if (storedPass !== oldPass) { setPassMsg({ text: 'كلمة المرور القديمة غير صحيحة.', ok: false }); setChangingPass(false); return; }
-          await db.ref(`users/${currentUser.id}/password`).set(newPass);
-          setOldPass(''); setNewPass(''); setConfirmPass('');
+          if (storedPass == null) { setPassMsg({ text: 'تعذر العثور على الحساب، حاول تسجيل الدخول من جديد.', ok: false }); setChangingPass(false); return; }
+          if (String(storedPass) !== oldTrim) { setPassMsg({ text: 'كلمة المرور الحالية غير صحيحة.', ok: false }); setChangingPass(false); return; }
+          await db.ref(`users/${currentUser.id}`).update({ password: newTrim, passwordChangedAt: Date.now() });
+          logAuditAction(currentUser, 'تغيير كلمة المرور', 'قام المستخدم بتغيير كلمة مروره بنفسه');
+          setOldPass(''); setNewPass(''); setConfirmPass(''); setOldPassValid(null);
           setPassMsg({ text: 'تم تغيير كلمة المرور بنجاح.', ok: true });
-        } catch (e) { setPassMsg({ text: 'حدث خطأ، حاول مجددًا.', ok: false }); }
+        } catch (e) { setPassMsg({ text: 'حدث خطأ أثناء الاتصال بالخادم، حاول مجددًا.', ok: false }); }
         setChangingPass(false);
       };
 
@@ -2272,14 +2347,37 @@
           </div>
 
           <div className="glass-panel rounded-3xl p-5 md:p-7 border border-white/10 shadow-xl">
-            <h2 className="font-black text-lg text-white mb-4">تغيير كلمة المرور</h2>
+            <h2 className="font-black text-lg text-white mb-1 flex items-center gap-2"><Icon name="shield" className="w-4 h-4 text-accent-cyan" />تغيير كلمة المرور</h2>
+            <p className="text-[11px] text-slate-500 font-medium mb-4">يتم التحقق من كلمة مرورك الحالية مباشرة من قاعدة البيانات، والتغيير يُحفظ فورًا وبشكل حقيقي على حسابك.</p>
             <div className="space-y-3">
-              <input type="password" value={oldPass} onChange={e => setOldPass(e.target.value)} placeholder="كلمة المرور الحالية" className={inputCls} />
-              <input type="password" value={newPass} onChange={e => setNewPass(e.target.value)} placeholder="كلمة المرور الجديدة" className={inputCls} />
-              <input type="password" value={confirmPass} onChange={e => setConfirmPass(e.target.value)} onKeyDown={e => e.key === 'Enter' && changePassword()} placeholder="تأكيد كلمة المرور الجديدة" className={inputCls} />
+              <div>
+                <PasswordField value={oldPass} onChange={setOldPass} placeholder="كلمة المرور الحالية" />
+                {oldPass.trim() && (
+                  <p className={`text-[11px] font-bold mt-1.5 flex items-center gap-1.5 ${oldPassChecking ? 'text-slate-400' : oldPassValid ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {oldPassChecking ? (
+                      <>جارٍ التحقق...</>
+                    ) : oldPassValid ? (
+                      <><Icon name="check" className="w-3 h-3" />كلمة المرور الحالية صحيحة</>
+                    ) : (
+                      <><Icon name="x" className="w-3 h-3" />كلمة المرور الحالية غير صحيحة</>
+                    )}
+                  </p>
+                )}
+              </div>
+              <div>
+                <PasswordField value={newPass} onChange={setNewPass} placeholder="كلمة المرور الجديدة (6 أحرف على الأقل)" />
+                <PasswordStrengthMeter password={newPass} />
+                {newPassSameAsOld && <p className="text-[11px] font-bold text-amber-400 mt-1.5">اختر كلمة مرور مختلفة عن الحالية.</p>}
+              </div>
+              <div>
+                <PasswordField value={confirmPass} onChange={setConfirmPass} placeholder="تأكيد كلمة المرور الجديدة" onEnter={() => canSubmitPassword && changePassword()} />
+                {passwordsMismatch && <p className="text-[11px] font-bold text-rose-400 mt-1.5">كلمتا المرور غير متطابقتين.</p>}
+              </div>
             </div>
             {passMsg.text && <p className={`text-xs font-bold mt-3 p-2.5 rounded-xl border ${passMsg.ok ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : 'text-rose-400 bg-rose-500/10 border-rose-500/20'}`}>{passMsg.text}</p>}
-            <button onClick={changePassword} disabled={changingPass} className="mt-4 px-6 py-3 rounded-2xl bg-accent-cyan hover:brightness-110 font-bold text-sm text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)] transition disabled:opacity-50">{changingPass ? 'جارٍ التغيير...' : 'تغيير كلمة المرور'}</button>
+            <button onClick={changePassword} disabled={!canSubmitPassword} className="mt-4 flex items-center gap-2 px-6 py-3 rounded-2xl bg-accent-cyan hover:brightness-110 font-bold text-sm text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)] transition disabled:opacity-40 disabled:cursor-not-allowed">
+              {changingPass ? (<><span className="w-4 h-4 rounded-full border-2 border-glass-950/30 border-t-glass-950 animate-spin"></span>جارٍ التغيير...</>) : 'تغيير كلمة المرور'}
+            </button>
           </div>
         </div>
       );
@@ -4027,8 +4125,8 @@
             </div>
           </main>
 
-          <footer className="border-t border-white/10 py-6 text-center text-xs text-slate-500 glass-panel mb-20 md:mb-0">
-            <p>تصميم وبرمجة: <span className="text-slate-300 font-bold">محمود احمد</span> &nbsp;|&nbsp; للتواصل: <a href="tel:07734894407" className="font-mono text-accent-cyan font-bold hover:underline">07734894407</a></p>
+          <footer className="border-t border-white/10 py-3 text-center text-[10px] leading-relaxed text-slate-600 bg-glass-950 mt-auto mb-16 md:mb-0">
+            <p>تصميم وبرمجة: <span className="text-slate-500 font-bold">محمود احمد</span> &nbsp;|&nbsp; للتواصل: <a href="tel:07734894407" className="font-mono text-slate-500 font-bold hover:text-accent-cyan transition">07734894407</a></p>
           </footer>
 
           <MobileBottomNav view={view} setView={setView} />
