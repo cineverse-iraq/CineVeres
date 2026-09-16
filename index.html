@@ -980,7 +980,7 @@
         if (cleanUser.length < 3) { setError('اسم المستخدم قصير جدًا (٣ أحرف على الأقل).'); return; }
         setLoading(true);
         try {
-          const snap = await withTimeout(db.ref('users').orderByChild('username').equalTo(cleanUser).once('value'));
+          const snap = await db.ref('users').orderByChild('username').equalTo(cleanUser).once('value');
           const users = snap.val() || {};
           if (tab === 'register') {
             if (Object.keys(users).length > 0) {
@@ -989,19 +989,19 @@
               setError('اسم المستخدم مستخدم مسبقًا، اختر اسمًا آخر.'); setLoading(false); return;
             }
             const newUser = { name: cleanName, username: cleanUser, password: cleanPass, avatar: cleanAvatar, isModerator: false, banned: false, createdAt: Date.now() };
-            const ref = await withTimeout(db.ref('users').push(newUser));
+            const ref = await db.ref('users').push(newUser);
             onSuccess({ ...newUser, id: ref.key });
           } else {
             const matchedKey = Object.keys(users).find(k => users[k].password === cleanPass);
             if (!matchedKey) {
-              const delSnap = await withTimeout(db.ref(`deletedUsernames/${sanitizeKey(cleanUser)}`).once('value'));
+              const delSnap = await db.ref(`deletedUsernames/${sanitizeKey(cleanUser)}`).once('value');
               if (delSnap.exists()) { setError('عذرًا، تم حذف هذا الحساب من قِبل الإدارة.'); setLoading(false); return; }
               setError('اسم المستخدم أو كلمة المرور غير صحيحة.'); setLoading(false); return;
             }
             const u = users[matchedKey];
             if (u.banned) {
               if (u.banUntil && u.banUntil <= Date.now()) {
-                await withTimeout(db.ref(`users/${matchedKey}`).update({ banned: false, banReason: null, banUntil: null }));
+                await db.ref(`users/${matchedKey}`).update({ banned: false, banReason: null, banUntil: null });
               } else {
                 const untilTxt = u.banUntil ? ` إلى غاية ${fmtDateTime(u.banUntil)}` : '';
                 setError(`حسابك محظور من قِبل الإدارة${untilTxt}.${u.banReason ? ' السبب: ' + u.banReason : ''}`);
@@ -1010,7 +1010,7 @@
             }
             onSuccess({ ...users[matchedKey], id: matchedKey });
           }
-        } catch (e) { setError((e && e.message) || 'حدث خطأ في الاتصال بالخادم.'); }
+        } catch (e) { setError('حدث خطأ في الاتصال بالخادم.'); }
         setLoading(false);
       };
 
@@ -1221,24 +1221,27 @@
         };
       }, []);
 
-      const effectiveFs = isFs;
+      // على أجهزة الآيفون، طلب ملء الشاشة الحقيقي للفيديو (webkitEnterFullscreen) يستبدل شريط
+      // التحكم المخصص بمشغل آبل الأصلي فتختفي أزرار السرعة والتقديم وغيرها. لذلك نستخدم بدلاً
+      // من ذلك "ملء شاشة وهمي" بواسطة CSS (تثبيت العنصر ليغطي الشاشة كاملة) يبقي شريط
+      // التحكم المخصص يعمل بكامل ميزاته على آيفون أيضًا.
+      const effectiveFs = isFs
       const toggleFullscreen = () => {
-        const v = videoRef.current;
-        if (isIOS && v && v.webkitEnterFullscreen) {
-          v.webkitEnterFullscreen();
-          return;
-        }
-        const el = wrapRef.current;
-        const fsEl = document.fullscreenElement || document.webkitFullscreenElement || document.webkitCurrentFullScreenElement || document.mozFullScreenElement || document.msFullscreenElement;
-        if (fsEl) {
-          const exit = document.exitFullscreen || document.webkitExitFullscreen || document.webkitCancelFullScreen || document.mozCancelFullScreen || document.msExitFullscreen;
-          if (exit) exit.call(document);
-          return;
-        }
-        const req = el && (el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen);
-        if (req) req.call(el);
-      };
-
+  const v = videoRef.current;
+  if (isIOS && v && v.webkitEnterFullscreen) {
+    v.webkitEnterFullscreen();
+    return;
+  }
+  const el = wrapRef.current;
+  const fsEl = document.fullscreenElement || document.webkitFullscreenElement || document.webkitCurrentFullScreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+  if (fsEl) {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen || document.webkitCancelFullScreen || document.mozCancelFullScreen || document.msExitFullscreen;
+    if (exit) exit.call(document);
+    return;
+  }
+  const req = el && (el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen);
+  if (req) req.call(el);
+};
       useEffect(() => {
         if (!fakeFullscreen) return;
         const prevOverflow = document.body.style.overflow;
@@ -1508,8 +1511,8 @@
         setSavingRating(true); setRatingMsg('');
         const payload = { stars: myStars, review: myReview.trim(), author: currentUser.name, username: currentUser.username, avatar: currentUser.avatar || '', date: Date.now() };
         try {
-          await withTimeout(db.ref(`ratings/${title.id}/${currentUser.id}`).set(payload));
-          await withTimeout(db.ref(`userRatings/${currentUser.id}/${title.id}`).set({ stars: myStars, review: myReview.trim(), date: Date.now() }));
+          await db.ref(`ratings/${title.id}/${currentUser.id}`).set(payload);
+          await db.ref(`userRatings/${currentUser.id}/${title.id}`).set({ stars: myStars, review: myReview.trim(), date: Date.now() });
           setRatingMsg('تم حفظ تقييمك بنجاح.');
         } catch (e) { setRatingMsg('تعذر حفظ التقييم.'); }
         setSavingRating(false);
@@ -1724,7 +1727,7 @@
                   </button>
                 )}
               </div>
-              {showAddToList && <AddToListModal currentUser={currentUser} title={title} onClose={() => setShowAddToList(false)} />}
+              {showAddToList && <AddToListModal currentUser={currentUser} title={title} onClose={() => setShowAddToList(false)} />
 
               {isSeries && seasons.length > 0 && (
                 <div className="mt-8 border-t border-white/10 pt-6">
@@ -1749,7 +1752,7 @@
                   </div>
 
                   {showAllEpisodes ? (
-                    // عرض جميع حلقات كل المواسم في قائمة واحدة متسلسلة بدون أي فاصل بين المواسم
+                    // عرض جميع حلقات كل المواسم في قائمة واحدة متسلسلة بدون أي فاصل بين المواسم — مخصص أيضًا لواجهة الجوال (قائمة عمودية بعناصر باللمس)
                     <div className="space-y-2 md:space-y-2.5">
                       {allEpisodesFlat.map((ep, idx) => {
                         const isCurrent = playingMeta && playingMeta.videoUrl === ep.videoUrl && playingMeta.number === ep.number && playingSeasonNumber === ep.seasonNumber;
@@ -2189,7 +2192,7 @@
         if (!trimmed) { setNameMsg({ text: 'الرجاء إدخال اسم صالح.', ok: false }); return; }
         setSavingName(true);
         try { await onUpdateName(trimmed); setNameMsg({ text: 'تم حفظ الاسم بنجاح.', ok: true }); }
-        catch (e) { setNameMsg({ text: (e && e.message) || 'تعذر حفظ الاسم، حاول مجددًا.', ok: false }); }
+        catch (e) { setNameMsg({ text: 'تعذر حفظ الاسم، حاول مجددًا.', ok: false }); }
         setSavingName(false);
       };
 
@@ -2279,8 +2282,7 @@
             const key = data ? Object.keys(data)[0] : null;
             return key ? { id: key, ...data[key] } : null;
           })
-        )).then(list => { if (!cancelled) setUsers(list.filter(Boolean)); })
-          .catch(() => { if (!cancelled) setUsers([]); });
+        )).then(list => { if (!cancelled) setUsers(list.filter(Boolean)); });
         return () => { cancelled = true; };
       }, [usernames.join(',')]);
 
@@ -2355,8 +2357,7 @@
           setLists(Object.keys(data).map(k => ({ id: k, ...data[k] })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
         };
         ref.on('value', cb);
-        const safety = setTimeout(() => setLists(prev => (prev === null ? [] : prev)), 12000);
-        return () => { ref.off('value', cb); clearTimeout(safety); };
+        return () => ref.off('value', cb);
       }, [key]);
 
       const toggleItem = (list) => {
@@ -2367,11 +2368,8 @@
       const createList = async () => {
         if (!newName.trim()) return;
         setCreating(true);
-        try {
-          await withTimeout(db.ref(`lists/${key}`).push({ name: newName.trim(), isPublic: true, createdAt: Date.now(), items: { [title.id]: true } }));
-          setNewName('');
-        } catch (e) {}
-        setCreating(false);
+        const ref = await db.ref(`lists/${key}`).push({ name: newName.trim(), isPublic: true, createdAt: Date.now(), items: { [title.id]: true } });
+        setNewName(''); setCreating(false);
       };
 
       return (
@@ -2411,15 +2409,12 @@
       const [isPublic, setIsPublic] = useState(list.isPublic !== false);
 
       useEffect(() => {
-        let cancelled = false;
-        db.ref('titles').once('value').then(snap => {
-          if (cancelled) return;
+        db.ref('titles').once('value', snap => {
           const data = snap.val() || {};
           const map = {};
           Object.keys(data).forEach(k => { map[k] = { id: k, ...data[k] }; });
           setTitlesMap(map);
-        }).catch(() => { if (!cancelled) setTitlesMap({}); });
-        return () => { cancelled = true; };
+        });
       }, []);
 
       const itemIds = Object.keys(list.items || {});
@@ -2518,7 +2513,7 @@
       const [following, setFollowing] = useState({});
       const [myFollowing, setMyFollowing] = useState({});
       const [followBusy, setFollowBusy] = useState(false);
-      const [listModal, setListModal] = useState(null);
+      const [listModal, setListModal] = useState(null); // 'followers' | 'following' | null
       const [shareCopied, setShareCopied] = useState(false);
       const targetUsername = username || (currentUser && currentUser.username);
       const isOwn = currentUser && targetUsername === currentUser.username;
@@ -2537,8 +2532,7 @@
           if (!key) { setProfileUser(null); setLoading(false); return; }
           userId = key;
           setProfileUser({ id: key, ...data[key] });
-          setLoading(false);
-          db.ref(`userRatings/${key}`).on('value', rs => { if (!cancelled) setUserRatings(rs.val() || {}); });
+          db.ref(`userRatings/${key}`).on('value', rs => { if (!cancelled) { setUserRatings(rs.val() || {}); setLoading(false); } });
         };
         const failCb = err => { if (!cancelled) { setLoadError((err && err.message) || 'تعذّر تحميل الملف الشخصي، تحقق من اتصالك وحاول مجددًا.'); setLoading(false); } };
         usersRef.once('value', cb, failCb);
@@ -2558,7 +2552,7 @@
         return () => { followersRef.off('value', cb1); followingRef.off('value', cb2); };
       }, [targetUsername]);
 
-      // من يتابعهم المستخدم الحالي
+      // من يتابعهم المستخدم الحالي (عشان نعرف هل يتابع صاحب هذا البروفايل أو لأ)
       useEffect(() => {
         if (!currentUser) { setMyFollowing({}); return; }
         const ref = db.ref(`following/${sanitizeKey(currentUser.username)}`);
@@ -2601,14 +2595,14 @@
         const meKey = sanitizeKey(currentUser.username), themKey = sanitizeKey(targetUsername);
         try {
           if (iAmFollowing) {
-            await withTimeout(db.ref(`following/${meKey}/${themKey}`).remove());
-            await withTimeout(db.ref(`followers/${themKey}/${meKey}`).remove());
+            await db.ref(`following/${meKey}/${themKey}`).remove();
+            await db.ref(`followers/${themKey}/${meKey}`).remove();
           } else {
-            await withTimeout(db.ref(`following/${meKey}/${themKey}`).set(true));
-            await withTimeout(db.ref(`followers/${themKey}/${meKey}`).set(true));
+            await db.ref(`following/${meKey}/${themKey}`).set(true);
+            await db.ref(`followers/${themKey}/${meKey}`).set(true);
             pushNotification(targetUsername, { type: 'follow', fromUsername: currentUser.username, fromName: currentUser.name, fromAvatar: currentUser.avatar || '' });
           }
-        } catch (e) {} finally { setFollowBusy(false); }
+        } finally { setFollowBusy(false); }
       };
 
       return (
@@ -2734,7 +2728,7 @@
 
         // ملفات الفيديو/التحميل: رفع فعلي إلى Firebase Storage، بمهلة زمنية تمنع التعليق الدائم
         setProgress(0);
-        withTimeout(uploadFile(file, folder, setProgress), 300000, 'انتهت مهلة الرفع. تأكد من اتصالك، أو الصق رابط الفيديو المباشر بدل الرفع من الجهاز.')
+        withTimeout(uploadFile(file, folder, setProgress), 90000, 'انتهت مهلة الرفع. تأكد من اتصالك، أو الصق رابط الفيديو المباشر بدل الرفع من الجهاز.')
           .then(url => { onChange(url); setProgress(null); })
           .catch(err => { setError(`فشل الرفع: ${(err && (err.code || err.message)) || 'خطأ غير معروف'}. تقدر تلصق رابط الفيديو المباشر بالحقل بدل الرفع.`); setProgress(null); });
       };
@@ -2855,12 +2849,9 @@
         v.addEventListener('timeupdate', onTime);
         v.addEventListener('play', onPlay);
         v.addEventListener('pause', onPause);
-        // لو تعذّر تحميل بيانات الفيديو نفكّ قفل الواجهة بدل ترك دائرة التحميل تدور للأبد
-        const safety = setTimeout(() => setReady(true), 12000);
         return () => {
           v.removeEventListener('loadedmetadata', onLoaded); v.removeEventListener('timeupdate', onTime);
           v.removeEventListener('play', onPlay); v.removeEventListener('pause', onPause);
-          clearTimeout(safety);
         };
       }, [videoUrl]);
 
@@ -3156,7 +3147,7 @@
       });
       const [saving, setSaving] = useState(false);
       const [error, setError] = useState('');
-      // التنقل: اختر موسمًا أولاً (activeSeasonIdx)، ثم اختر حلقة لتعديلها (editingEpisodeIdx)
+      // التنقل الجديد: اختر موسمًا أولاً (activeSeasonIdx)، ثم اختر حلقة لتعديلها (editingEpisodeIdx)
       const [activeSeasonIdx, setActiveSeasonIdx] = useState(0);
       const [editingEpisodeIdx, setEditingEpisodeIdx] = useState(null);
 
@@ -3344,6 +3335,7 @@
                 <p className="text-xs text-slate-500 font-medium">لا توجد مواسم بعد. اضغط "إضافة موسم" للبدء.</p>
               ) : (
                 <div>
+                  {/* الخطوة 1: اختيار الموسم */}
                   <p className="text-[11px] font-bold text-slate-400 mb-2">١) اختر الموسم</p>
                   <div className="flex gap-2 flex-wrap mb-5">
                     {form.seasons.map((s, si) => (
@@ -3359,6 +3351,7 @@
                     <div className="glass-card rounded-2xl p-4 border border-white/10">
                       {editingEpisodeIdx === null ? (
                         <div>
+                          {/* بيانات الموسم نفسه */}
                           <div className="flex items-start gap-4 mb-5 flex-wrap">
                             <div className="w-20 shrink-0">
                               <div className="aspect-[2/3] rounded-xl overflow-hidden bg-glass-950 border border-white/10 flex items-center justify-center">
@@ -3383,6 +3376,7 @@
                             </div>
                           </div>
 
+                          {/* الخطوة 2: اختيار حلقة لتعديلها */}
                           <p className="text-[11px] font-bold text-slate-400 mb-2">٢) اختر حلقة لتعديلها، أو أضف حلقة جديدة</p>
                           <div className="space-y-2">
                             {activeSeason.episodes.map((e, ei) => (
@@ -3464,9 +3458,9 @@
         if (!text) return;
         setSavingReplyId(c.id);
         try {
-          await withTimeout(db.ref(`complaints/${c.id}`).update({ reply: text, replyDate: Date.now(), replyBy: (currentUser && currentUser.name) || 'الإدارة', status: 'resolved' }));
+          await db.ref(`complaints/${c.id}`).update({ reply: text, replyDate: Date.now(), replyBy: (currentUser && currentUser.name) || 'الإدارة', status: 'resolved' });
           setReplyDrafts(prev => ({ ...prev, [c.id]: '' }));
-        } catch (e) {} finally { setSavingReplyId(null); }
+        } finally { setSavingReplyId(null); }
       };
 
       if (!list.length) return <p className="text-sm text-slate-500 font-medium">لا توجد شكاوى أو طلبات حاليًا.</p>;
@@ -3574,27 +3568,27 @@
         setBusyId(u.id);
         const next = !u.isModerator;
         try {
-          await withTimeout(db.ref(`users/${u.id}/isModerator`).set(next));
-          await withTimeout(db.ref(`moderators/${sanitizeKey(u.username)}`).set(next ? true : null));
+          await db.ref(`users/${u.id}/isModerator`).set(next);
+          await db.ref(`moderators/${sanitizeKey(u.username)}`).set(next ? true : null);
           logAuditAction(currentUser, next ? 'منح شارة إشراف' : 'إزالة شارة إشراف', `@${u.username}`);
-        } catch (e) {} finally { setBusyId(null); }
+        } finally { setBusyId(null); }
       };
 
       const confirmBan = async (reason, until) => {
         const u = banTarget;
         setBusyId(u.id);
         try {
-          await withTimeout(db.ref(`users/${u.id}`).update({ banned: true, banReason: reason, banUntil: until }));
+          await db.ref(`users/${u.id}`).update({ banned: true, banReason: reason, banUntil: until });
           logAuditAction(currentUser, 'حظر مستخدم', `@${u.username} — ${reason}${until ? ' (مؤقت إلى ' + fmtDateTime(until) + ')' : ' (دائم)'}`);
-        } catch (e) {} finally { setBusyId(null); setBanTarget(null); }
+        } finally { setBusyId(null); setBanTarget(null); }
       };
 
       const unban = async (u) => {
         setBusyId(u.id);
         try {
-          await withTimeout(db.ref(`users/${u.id}`).update({ banned: false, banReason: null, banUntil: null }));
+          await db.ref(`users/${u.id}`).update({ banned: false, banReason: null, banUntil: null });
           logAuditAction(currentUser, 'إلغاء حظر مستخدم', `@${u.username}`);
-        } catch (e) {} finally { setBusyId(null); }
+        } finally { setBusyId(null); }
       };
 
       const removeUser = async (u) => {
@@ -3701,8 +3695,8 @@
       const [usersCount, setUsersCount] = useState(null);
       const [openComplaints, setOpenComplaints] = useState(null);
       useEffect(() => {
-        db.ref('users').once('value').then(snap => setUsersCount(snap.numChildren())).catch(() => setUsersCount(0));
-        db.ref('complaints').orderByChild('status').equalTo('open').once('value').then(snap => setOpenComplaints(snap.numChildren())).catch(() => setOpenComplaints(0));
+        db.ref('users').once('value', snap => setUsersCount(snap.numChildren()));
+        db.ref('complaints').orderByChild('status').equalTo('open').once('value', snap => setOpenComplaints(snap.numChildren()));
       }, []);
       const total = titles.length;
       const published = titles.filter(t => t.status === 'published').length;
@@ -3839,14 +3833,14 @@
 
     function App() {
       const [titles, setTitles] = useState([]);
-      const [currentUser, setCurrentUser] = useState(() => { try { return JSON.parse(localStorage.getItem('cv_user') || 'null'); } catch (e) { return null; } });
+      const [currentUser, setCurrentUser] = useState(() => JSON.parse(localStorage.getItem('cv_user') || 'null'));
       const [view, setViewRaw] = useState('home');
       const [search, setSearch] = useState('');
       const [activeTitle, setActiveTitle] = useState(null);
       const [authModal, setAuthModal] = useState(null);
       const [accountSheet, setAccountSheet] = useState(false);
-      const [watchlist, setWatchlist] = useState(() => { try { return JSON.parse(localStorage.getItem('cv_watchlist') || '[]'); } catch (e) { return []; } });
-      const [likedIds, setLikedIds] = useState(() => { try { return JSON.parse(localStorage.getItem('cv_likes') || '[]'); } catch (e) { return []; } });
+      const [watchlist, setWatchlist] = useState(() => JSON.parse(localStorage.getItem('cv_watchlist') || '[]'));
+      const [likedIds, setLikedIds] = useState(() => JSON.parse(localStorage.getItem('cv_likes') || '[]'));
       const [moderators, setModerators] = useState({});
       const [profileTarget, setProfileTarget] = useState(null);
       const [watched, setWatched] = useState(() => loadWatched());
@@ -3924,7 +3918,8 @@
         return () => ref.off('value', cb);
       }, [currentUser && currentUser.id]);
 
-      // الدخول للوحة التحكم مباشر لأي حساب مدير أو مشرف، والتحقق من الصلاحية محفوظ في قاعدة البيانات
+      // الدخول للوحة التحكم أصبح مباشرًا لأي حساب مدير أو مشرف، دون رمز حماية إضافي —
+      // فالتحقق من الصلاحية (isModerator أو حساب المدير الرئيسي) محفوظ في قاعدة البيانات ولا يمكن لمستخدم عادي تعديله بنفسه
       const setView = (v) => {
         if (v === 'admin') {
           if (!currentUser || !(currentUser.username === 'mavilovelife' || currentUser.isModerator)) {
@@ -3953,8 +3948,7 @@
           });
           setBooted(true);
         };
-        const errCb = () => setBooted(true);
-        ref.on('value', cb, errCb);
+        ref.on('value', cb);
         const safety = setTimeout(() => setBooted(true), 4000);
         return () => { ref.off('value', cb); clearTimeout(safety); };
       }, []);
@@ -4018,7 +4012,7 @@
       };
 
       const handleAuthSuccess = (user) => {
-        const u = { id: user.id, name: user.name, username: user.username, avatar: user.avatar || '', isModerator: !!user.isModerator };
+        const u = { id: user.id, name: user.name, username: user.username, avatar: user.avatar || '' };
         setCurrentUser(u);
         localStorage.setItem('cv_user', JSON.stringify(u));
         setAuthModal(null);
