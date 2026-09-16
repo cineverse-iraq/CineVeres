@@ -2381,7 +2381,7 @@
 
           <div className="glass-panel rounded-3xl p-5 md:p-7 border border-white/10 shadow-xl">
             <h2 className="font-black text-lg text-white mb-1 flex items-center gap-2"><Icon name="shield" className="w-4 h-4 text-accent-cyan" />تغيير كلمة المرور</h2>
-            <p className="text-[11px] text-slate-500 font-medium mb-4"> عند ادخال كلمة مرورك الحالية يتم التحقق منها مباشرة، والتغيير يُحفظ فورًا على حسابك.</p>
+            <p className="text-[11px] text-slate-500 font-medium mb-4">يتم التحقق من كلمة مرورك الحالية مباشرة من قاعدة البيانات، والتغيير يُحفظ فورًا وبشكل حقيقي على حسابك.</p>
             <div className="space-y-3">
               <div>
                 <PasswordField value={oldPass} onChange={setOldPass} placeholder="كلمة المرور الحالية" />
@@ -2494,6 +2494,7 @@
       const [newName, setNewName] = useState('');
       const [newIsPublic, setNewIsPublic] = useState(true);
       const [creating, setCreating] = useState(false);
+      const [justToggled, setJustToggled] = useState(null);
       const key = sanitizeKey(currentUser.username);
 
       useEffect(() => {
@@ -2508,6 +2509,8 @@
 
       const toggleItem = (list) => {
         const has = list.items && list.items[title.id];
+        setJustToggled(list.id);
+        setTimeout(() => setJustToggled(prev => prev === list.id ? null : prev), 420);
         db.ref(`lists/${key}/${list.id}/items/${title.id}`).set(has ? null : true)
           .then(() => showToast(has ? `تمت الإزالة من "${list.name}"` : `تمت الإضافة إلى "${list.name}"`))
           .catch(() => showToast('حدث خطأ، حاول مجددًا', 'error'));
@@ -2526,21 +2529,23 @@
       return (
         <div className="modal-backdrop fixed inset-0 z-[70] bg-black/80 backdrop-blur-md flex items-end md:items-center justify-center p-0 md:p-4" onClick={onClose}>
           <div onClick={e => e.stopPropagation()} className="sheet-panel glass-panel border border-white/10 rounded-t-3xl md:rounded-3xl w-full md:max-w-sm max-h-[80vh] flex flex-col shadow-2xl">
-            <div className="flex items-center justify-between p-5 border-b border-white/10 shrink-0">
-              <h3 className="font-black text-lg text-white">أضف "{title.name}" لقائمة</h3>
-              <button onClick={onClose} className="w-8 h-8 rounded-xl glass-card border border-white/10 flex items-center justify-center text-slate-300"><Icon name="x" className="w-4 h-4" /></button>
+            <div className="flex items-center gap-3 p-5 border-b border-white/10 shrink-0">
+              <div className="w-10 h-14 rounded-lg overflow-hidden bg-glass-900 shrink-0 border border-white/10">{title.poster && <img src={title.poster} className="w-full h-full object-cover" alt="" />}</div>
+              <h3 className="font-black text-base text-white flex-1 min-w-0 truncate">أضف "{title.name}" لقائمة</h3>
+              <button onClick={onClose} className="w-8 h-8 rounded-xl glass-card border border-white/10 flex items-center justify-center text-slate-300 shrink-0"><Icon name="x" className="w-4 h-4" /></button>
             </div>
             <div className="p-4 space-y-2.5 overflow-y-auto flex-1">
               {lists === null ? (
                 <p className="text-sm text-slate-500 font-medium text-center py-6">جارٍ التحميل...</p>
               ) : lists.length === 0 ? (
-                <p className="text-sm text-slate-500 font-medium text-center py-6">لاتوجد قوائم بعد، أنشئ أول قائمة الان !.</p>
+                <p className="text-sm text-slate-500 font-medium text-center py-6">ما عندك قوائم بعد، أنشئ أول قائمة بالأسفل.</p>
               ) : lists.map(l => {
                 const has = l.items && l.items[title.id];
                 return (
-                  <button key={l.id} onClick={() => toggleItem(l)} className="w-full flex items-center justify-between gap-3 p-3 rounded-2xl glass-card border border-white/5 hover:border-accent-cyan/40 transition text-right">
+                  <button key={l.id} onClick={() => toggleItem(l)}
+                    className={`w-full flex items-center justify-between gap-3 p-3 rounded-2xl glass-card border transition-all duration-300 text-right ${justToggled === l.id ? 'border-accent-cyan/60 scale-[0.98] bg-accent-cyan/5' : 'border-white/5 hover:border-accent-cyan/40'}`}>
                     <span className="text-sm font-bold text-slate-200">{l.name}</span>
-                    <span className={`w-6 h-6 rounded-lg flex items-center justify-center border transition ${has ? 'bg-accent-cyan border-accent-cyan text-glass-950' : 'border-white/20 text-transparent'}`}><Icon name="check" className="w-4 h-4" /></span>
+                    <span key={`${l.id}-${has}`} className={`w-6 h-6 rounded-lg flex items-center justify-center border transition ${has ? 'bg-accent-cyan border-accent-cyan text-glass-950 check-pop' : 'border-white/20 text-transparent'}`}><Icon name="check" className="w-4 h-4" /></span>
                   </button>
                 );
               })}
@@ -2551,8 +2556,8 @@
                 <button onClick={createList} disabled={creating || !newName.trim()} className="px-4 py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-sm font-bold hover:brightness-110 transition disabled:opacity-50">إنشاء</button>
               </div>
               <div className="flex gap-2">
-                <button type="button" onClick={() => setNewIsPublic(true)} className={`flex-1 py-2 rounded-xl text-xs font-bold transition border ${newIsPublic ? 'bg-accent-cyan/15 border-accent-cyan text-accent-cyan' : 'glass-card border-white/10 text-slate-400'}`}>عامة</button>
-                <button type="button" onClick={() => setNewIsPublic(false)} className={`flex-1 py-2 rounded-xl text-xs font-bold transition border ${!newIsPublic ? 'bg-accent-cyan/15 border-accent-cyan text-accent-cyan' : 'glass-card border-white/10 text-slate-400'}`}>خاصة</button>
+                <button type="button" onClick={() => setNewIsPublic(true)} className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold transition border ${newIsPublic ? 'bg-accent-cyan/15 border-accent-cyan text-accent-cyan' : 'glass-card border-white/10 text-slate-400'}`}><Icon name="eye" className="w-3.5 h-3.5" />عامة</button>
+                <button type="button" onClick={() => setNewIsPublic(false)} className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold transition border ${!newIsPublic ? 'bg-accent-cyan/15 border-accent-cyan text-accent-cyan' : 'glass-card border-white/10 text-slate-400'}`}><Icon name="eyeOff" className="w-3.5 h-3.5" />خاصة</button>
               </div>
             </div>
           </div>
