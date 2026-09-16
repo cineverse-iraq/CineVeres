@@ -784,7 +784,7 @@
               </button>
 
               <nav className="hidden md:flex items-center gap-1.5 bg-glass-900/80 p-1 rounded-2xl border border-white/5">
-                {[['home', 'الرئيسية'], ['movie', 'أفلام'], ['series', 'مسلسلات'], ['anime', 'أنمي'], ['watchlist', 'قائمتي']].map(([k, l]) => (
+                {[['home', 'الرئيسية'], ['movie', 'أفلام'], ['series', 'مسلسلات'], ['anime', 'أنمي'], ['lists', 'قوائمي']].map(([k, l]) => (
                   <button key={k} onClick={() => setView(k)} className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${view === k ? 'bg-accent-red text-white shadow-[0_0_15px_rgba(255,51,75,0.4)]' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}>{l}</button>
                 ))}
               </nav>
@@ -902,7 +902,7 @@
     }
 
     function MobileBottomNav({ view, setView }) {
-      const items = [['home', 'الرئيسية', 'home'], ['movie', 'أفلام', 'film'], ['series', 'مسلسلات', 'tv'], ['anime', 'أنمي', 'sparkles'], ['watchlist', 'قائمتي', 'bookmark']];
+      const items = [['home', 'الرئيسية', 'home'], ['movie', 'أفلام', 'film'], ['series', 'مسلسلات', 'tv'], ['anime', 'أنمي', 'sparkles'], ['lists', 'قوائمي', 'list']];
       return (
         <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 glass-panel border-t border-white/10 flex px-2 py-1 shadow-2xl" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 4px)' }}>
           {items.map(([k, l, icon]) => (
@@ -1435,7 +1435,7 @@
       );
     }
 
-    function TitleModal({ title, allTitles, currentUser, liked, inWatchlist, onLike, onToggleWatchlist, onClose, onOpenAuth, getRole, onOpenProfile, onOpen, watched, onMarkEpisodeWatched, onMarkMovieWatched, isEpisodeWatched }) {
+    function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onOpenAuth, getRole, onOpenProfile, onOpen, watched, onMarkEpisodeWatched, onMarkMovieWatched, isEpisodeWatched }) {
       const [playingUrl, setPlayingUrl] = useState(null);
       const [playingMeta, setPlayingMeta] = useState({});
       const [playingLabel, setPlayingLabel] = useState('');
@@ -1733,17 +1733,12 @@
                     <Icon name="download" className="w-4 h-4 text-accent-cyan" />تحميل
                   </a>
                 )}
-                <button onClick={onToggleWatchlist} className={`flex items-center gap-2.5 px-6 py-3 rounded-2xl text-sm font-bold border transition ${inWatchlist ? 'bg-accent-cyan text-glass-950 border-accent-cyan shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card border-white/10 text-slate-200 hover:border-white/20'}`}>
-                  <Icon name="bookmark" className="w-4 h-4" />{inWatchlist ? 'في قائمتي' : 'أضف لقائمتي'}
-                </button>
                 <button onClick={onLike} className={`flex items-center gap-2.5 px-5 py-3 rounded-2xl text-sm font-bold border transition ${liked ? 'bg-rose-500 text-white border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.4)]' : 'glass-card border-white/10 text-slate-200 hover:border-white/20'}`}>
                   <Icon name="heart" className="w-4 h-4" />{title.likes || 0}
                 </button>
-                {currentUser && (
-                  <button onClick={() => setShowAddToList(true)} className="flex items-center gap-2.5 px-5 py-3 rounded-2xl glass-card border border-white/10 hover:border-accent-cyan text-sm font-bold text-slate-200 transition">
-                    <Icon name="list" className="w-4 h-4 text-accent-cyan" />أضف لقائمة
-                  </button>
-                )}
+                <button onClick={() => { if (!currentUser) { onOpenAuth('login'); return; } setShowAddToList(true); }} className="flex items-center gap-2.5 px-6 py-3 rounded-2xl glass-card border border-white/10 hover:border-accent-cyan text-sm font-bold text-slate-200 transition">
+                  <Icon name="list" className="w-4 h-4 text-accent-cyan" />أضف لقائمتي
+                </button>
               </div>
               {showAddToList && <AddToListModal currentUser={currentUser} title={title} onClose={() => setShowAddToList(false)} />}
 
@@ -2459,6 +2454,7 @@
     function AddToListModal({ currentUser, title, onClose }) {
       const [lists, setLists] = useState(null);
       const [newName, setNewName] = useState('');
+      const [newIsPublic, setNewIsPublic] = useState(true);
       const [creating, setCreating] = useState(false);
       const key = sanitizeKey(currentUser.username);
 
@@ -2480,8 +2476,8 @@
       const createList = async () => {
         if (!newName.trim()) return;
         setCreating(true);
-        const ref = await db.ref(`lists/${key}`).push({ name: newName.trim(), isPublic: true, createdAt: Date.now(), items: { [title.id]: true } });
-        setNewName(''); setCreating(false);
+        await db.ref(`lists/${key}`).push({ name: newName.trim(), isPublic: newIsPublic, createdAt: Date.now(), items: { [title.id]: true } });
+        setNewName(''); setNewIsPublic(true); setCreating(false);
       };
 
       return (
@@ -2506,9 +2502,15 @@
                 );
               })}
             </div>
-            <div className="p-4 border-t border-white/10 shrink-0 flex gap-2">
-              <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === 'Enter' && createList()} placeholder="اسم قائمة جديدة..." className="flex-1 bg-glass-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-accent-cyan" />
-              <button onClick={createList} disabled={creating || !newName.trim()} className="px-4 py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-sm font-bold hover:brightness-110 transition disabled:opacity-50">إنشاء</button>
+            <div className="p-4 border-t border-white/10 shrink-0 space-y-2.5">
+              <div className="flex gap-2">
+                <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === 'Enter' && createList()} placeholder="اسم قائمة جديدة..." className="flex-1 bg-glass-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-accent-cyan" />
+                <button onClick={createList} disabled={creating || !newName.trim()} className="px-4 py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-sm font-bold hover:brightness-110 transition disabled:opacity-50">إنشاء</button>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setNewIsPublic(true)} className={`flex-1 py-2 rounded-xl text-xs font-bold transition border ${newIsPublic ? 'bg-accent-cyan/15 border-accent-cyan text-accent-cyan' : 'glass-card border-white/10 text-slate-400'}`}>عامة</button>
+                <button type="button" onClick={() => setNewIsPublic(false)} className={`flex-1 py-2 rounded-xl text-xs font-bold transition border ${!newIsPublic ? 'bg-accent-cyan/15 border-accent-cyan text-accent-cyan' : 'glass-card border-white/10 text-slate-400'}`}>خاصة</button>
+              </div>
             </div>
           </div>
         </div>
@@ -2518,6 +2520,11 @@
     function ListDetailModal({ list, isOwn, onClose, onOpen, listOwnerKey }) {
       const [titlesMap, setTitlesMap] = useState(null);
       const [isPublic, setIsPublic] = useState(list.isPublic !== false);
+      const [name, setName] = useState(list.name);
+      const [editingName, setEditingName] = useState(false);
+      const [nameDraft, setNameDraft] = useState(list.name);
+      const [showAddPanel, setShowAddPanel] = useState(false);
+      const [addQuery, setAddQuery] = useState('');
 
       useEffect(() => {
         db.ref('titles').once('value', snap => {
@@ -2530,20 +2537,46 @@
 
       const itemIds = Object.keys(list.items || {});
       const items = titlesMap ? itemIds.map(id => titlesMap[id]).filter(Boolean) : [];
+      const allTitlesList = titlesMap ? Object.values(titlesMap).filter(t => t.status === 'published') : [];
+      const addResults = addQuery.trim()
+        ? allTitlesList.filter(t => !itemIds.includes(t.id) && (t.name || '').toLowerCase().includes(addQuery.trim().toLowerCase())).slice(0, 20)
+        : [];
 
       const removeItem = (id) => db.ref(`lists/${listOwnerKey}/${list.id}/items/${id}`).remove();
+      const addItem = (id) => db.ref(`lists/${listOwnerKey}/${list.id}/items/${id}`).set(true);
       const togglePublic = () => { const next = !isPublic; setIsPublic(next); db.ref(`lists/${listOwnerKey}/${list.id}/isPublic`).set(next); };
       const deleteList = () => { db.ref(`lists/${listOwnerKey}/${list.id}`).remove(); onClose(); };
+      const saveName = () => {
+        const trimmed = nameDraft.trim();
+        if (!trimmed) { setNameDraft(name); setEditingName(false); return; }
+        setName(trimmed);
+        db.ref(`lists/${listOwnerKey}/${list.id}/name`).set(trimmed);
+        setEditingName(false);
+      };
 
       return (
         <div className="modal-backdrop fixed inset-0 z-[70] bg-black/80 backdrop-blur-md flex items-end md:items-center justify-center p-0 md:p-4" onClick={onClose}>
           <div onClick={e => e.stopPropagation()} className="sheet-panel glass-panel border border-white/10 rounded-t-3xl md:rounded-3xl w-full md:max-w-2xl max-h-[85vh] flex flex-col shadow-2xl">
-            <div className="flex items-center justify-between p-5 border-b border-white/10 shrink-0">
-              <div>
-                <h3 className="font-black text-lg text-white">{list.name}</h3>
+            <div className="flex items-center justify-between p-5 border-b border-white/10 shrink-0 gap-3">
+              <div className="min-w-0 flex-1">
+                {editingName ? (
+                  <div className="flex items-center gap-2">
+                    <input autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)} onKeyDown={e => e.key === 'Enter' && saveName()}
+                      className="flex-1 min-w-0 bg-glass-900 border border-accent-cyan/50 rounded-xl px-3 py-1.5 text-base font-black text-white outline-none" />
+                    <button onClick={saveName} className="shrink-0 px-3 py-1.5 rounded-xl bg-accent-cyan text-glass-950 text-xs font-bold">حفظ</button>
+                  </div>
+                ) : (
+                  <h3 className="font-black text-lg text-white flex items-center gap-2 truncate">
+                    {name}
+                    {isOwn && <button onClick={() => { setNameDraft(name); setEditingName(true); }} title="تعديل الاسم" className="text-slate-400 hover:text-accent-cyan transition shrink-0"><Icon name="pencil" className="w-3.5 h-3.5" /></button>}
+                  </h3>
+                )}
                 <p className="text-xs text-slate-400">{items.length} عمل{isOwn ? (isPublic ? ' · عامة' : ' · خاصة') : ''}</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
+                {isOwn && (
+                  <button onClick={() => setShowAddPanel(v => !v)} title="إضافة أعمال" className={`text-xs px-3 py-1.5 rounded-xl border font-bold flex items-center gap-1.5 transition ${showAddPanel ? 'bg-accent-cyan text-glass-950 border-accent-cyan' : 'glass-card border-white/10 text-slate-300'}`}><Icon name="plus" className="w-3.5 h-3.5" />أضف عمل</button>
+                )}
                 {isOwn && (
                   <button onClick={togglePublic} title="تبديل الخصوصية" className="text-xs px-3 py-1.5 rounded-xl glass-card border border-white/10 text-slate-300 font-bold">{isPublic ? 'اجعلها خاصة' : 'اجعلها عامة'}</button>
                 )}
@@ -2554,6 +2587,30 @@
               </div>
             </div>
             <div className="p-4 overflow-y-auto flex-1">
+              {showAddPanel && (
+                <div className="mb-4 glass-card rounded-2xl p-3.5 border border-accent-cyan/20">
+                  <div className="relative mb-2.5">
+                    <Icon name="search" className="w-4 h-4 absolute top-1/2 -translate-y-1/2 right-3.5 text-slate-400" />
+                    <input value={addQuery} onChange={e => setAddQuery(e.target.value)} autoFocus placeholder="ابحث عن فيلم أو مسلسل لإضافته..."
+                      className="w-full bg-glass-900 border border-white/10 rounded-xl py-2.5 pr-10 pl-4 text-sm text-white outline-none focus:border-accent-cyan" />
+                  </div>
+                  {addQuery.trim() && (
+                    addResults.length === 0 ? (
+                      <p className="text-xs text-slate-500 font-medium text-center py-3">لا توجد نتائج مطابقة.</p>
+                    ) : (
+                      <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                        {addResults.map(t => (
+                          <button key={t.id} onClick={() => addItem(t.id)} className="w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-white/5 transition text-right">
+                            <div className="w-8 h-11 rounded-lg overflow-hidden bg-glass-900 shrink-0">{t.poster && <img src={t.poster} className="w-full h-full object-cover" />}</div>
+                            <span className="text-xs font-bold text-slate-200 flex-1 min-w-0 truncate">{t.name}</span>
+                            <Icon name="plus" className="w-3.5 h-3.5 text-accent-cyan shrink-0" />
+                          </button>
+                        ))}
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
               {titlesMap === null ? (
                 <p className="text-sm text-slate-500 font-medium text-center py-8">جارٍ التحميل...</p>
               ) : items.length === 0 ? (
@@ -2615,7 +2672,99 @@
       );
     }
 
-    function ProfileView({ username, currentUser, titles, watchlist, onOpen, onOpenAuth, onOpenProfile }) {
+    function ListsView({ currentUser, onOpen, onOpenAuth }) {
+      const [lists, setLists] = useState(null);
+      const [openList, setOpenList] = useState(null);
+      const [showCreate, setShowCreate] = useState(false);
+      const [newName, setNewName] = useState('');
+      const [newIsPublic, setNewIsPublic] = useState(true);
+      const [creating, setCreating] = useState(false);
+      const key = currentUser ? sanitizeKey(currentUser.username) : null;
+
+      useEffect(() => {
+        if (!key) return;
+        const ref = db.ref(`lists/${key}`);
+        const cb = snap => {
+          const data = snap.val() || {};
+          const arr = Object.keys(data).map(k => ({ id: k, ...data[k] }));
+          arr.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          setLists(arr);
+        };
+        ref.on('value', cb);
+        return () => ref.off('value', cb);
+      }, [key]);
+
+      if (!currentUser) {
+        return (
+          <div className="py-20 text-center">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl glass-card flex items-center justify-center border border-white/5 text-slate-400">
+              <Icon name="list" className="w-8 h-8" />
+            </div>
+            <p className="text-slate-300 font-medium mb-4">سجّل الدخول لإنشاء قوائمك الخاصة وإدارتها.</p>
+            <button onClick={() => onOpenAuth('login')} className="px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition">تسجيل الدخول</button>
+          </div>
+        );
+      }
+
+      const createList = async () => {
+        if (!newName.trim()) return;
+        setCreating(true);
+        await db.ref(`lists/${key}`).push({ name: newName.trim(), isPublic: newIsPublic, createdAt: Date.now(), items: {} });
+        setNewName(''); setNewIsPublic(true); setCreating(false); setShowCreate(false);
+      };
+
+      return (
+        <div>
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-6">
+            <h1 className="text-2xl md:text-3xl font-black text-slate-100">قوائمي</h1>
+            <button onClick={() => setShowCreate(v => !v)} className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_15px_rgba(255,51,75,0.4)] transition"><Icon name="plus" className="w-4 h-4" />إنشاء قائمة جديدة</button>
+          </div>
+
+          {showCreate && (
+            <div className="glass-panel rounded-3xl p-5 border border-white/10 shadow-xl mb-8">
+              <label className="text-xs font-bold text-slate-300 mb-1.5 block">اسم القائمة</label>
+              <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === 'Enter' && createList()} placeholder="مثال: أفلام أكشن مفضلة"
+                className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white outline-none focus:border-accent-cyan mb-3" />
+              <div className="flex gap-2 mb-4">
+                <button type="button" onClick={() => setNewIsPublic(true)} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition border ${newIsPublic ? 'bg-accent-cyan/15 border-accent-cyan text-accent-cyan' : 'glass-card border-white/10 text-slate-400'}`}>عامة</button>
+                <button type="button" onClick={() => setNewIsPublic(false)} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition border ${!newIsPublic ? 'bg-accent-cyan/15 border-accent-cyan text-accent-cyan' : 'glass-card border-white/10 text-slate-400'}`}>خاصة</button>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={createList} disabled={creating || !newName.trim()} className="px-6 py-2.5 rounded-2xl bg-accent-cyan text-glass-950 text-sm font-bold hover:brightness-110 transition disabled:opacity-50">إنشاء</button>
+                <button onClick={() => setShowCreate(false)} className="px-6 py-2.5 rounded-2xl glass-card border border-white/10 text-sm font-bold text-slate-300">إلغاء</button>
+              </div>
+            </div>
+          )}
+
+          {lists === null ? (
+            <p className="text-sm text-slate-500 font-medium text-center py-10">جارٍ التحميل...</p>
+          ) : lists.length === 0 ? (
+            !showCreate && (
+              <div className="py-16 text-center">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl glass-card flex items-center justify-center border border-white/5 text-slate-400">
+                  <Icon name="list" className="w-8 h-8" />
+                </div>
+                <p className="text-slate-300 font-medium mb-4">ما عندك أي قائمة بعد.</p>
+                <button onClick={() => setShowCreate(true)} className="px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition">إنشاء أول قائمة</button>
+              </div>
+            )
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3.5">
+              {lists.map(l => (
+                <button key={l.id} onClick={() => setOpenList(l)} className="glass-card rounded-2xl p-4 border border-white/10 hover:border-accent-cyan/40 transition text-right">
+                  <p className="font-bold text-white text-sm truncate flex items-center gap-1.5"><Icon name="list" className="w-3.5 h-3.5 text-accent-cyan shrink-0" />{l.name}</p>
+                  <p className="text-[11px] text-slate-400 mt-1">{Object.keys(l.items || {}).length} عمل · {l.isPublic === false ? 'خاصة' : 'عامة'}</p>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {openList && <ListDetailModal list={openList} isOwn={true} listOwnerKey={key} onClose={() => setOpenList(null)} onOpen={onOpen} />}
+        </div>
+      );
+    }
+
+    function ProfileView({ username, currentUser, titles, onOpen, onOpenAuth, onOpenProfile }) {
       const [profileUser, setProfileUser] = useState(null);
       const [userRatings, setUserRatings] = useState({});
       const [loading, setLoading] = useState(true);
@@ -2730,7 +2879,6 @@
               </button>
               <div><p className="text-xl font-black text-white">{withTitles.length}</p><p className="text-[11px] text-slate-400 font-bold">تقييم</p></div>
               <div><p className="text-xl font-black text-white flex items-center gap-1">{avg ? avg.toFixed(1) : '—'}<Icon name="star" className="w-4 h-4 text-amber-400" /></p><p className="text-[11px] text-slate-400 font-bold">متوسط تقييماته</p></div>
-              {isOwn && <div><p className="text-xl font-black text-white">{watchlist.length}</p><p className="text-[11px] text-slate-400 font-bold">قائمتي</p></div>}
             </div>
             {!isOwn && (
               <button onClick={toggleFollow} disabled={followBusy}
@@ -2755,19 +2903,6 @@
           )}
 
           <ProfileLists username={targetUsername} isOwn={isOwn} onOpen={onOpen} />
-
-          {isOwn && watchlist.length > 0 && (
-            <section className="mb-10">
-              <h2 className="text-lg font-black text-slate-100 mb-4">قائمتي المفضلة</h2>
-              <div className="profile-poster-grid">
-                {titles.filter(t => watchlist.includes(t.id)).map(t => (
-                  <button key={t.id} onClick={() => onOpen(t)} className="relative aspect-[2/3] rounded-lg overflow-hidden glass-card">
-                    {t.poster && <img src={t.poster} alt={t.name} className="w-full h-full object-cover" />}
-                  </button>
-                ))}
-              </div>
-            </section>
-          )}
 
           <section>
             <h2 className="text-lg font-black text-slate-100 mb-4">المراجعات</h2>
@@ -3915,7 +4050,6 @@
       const [activeTitle, setActiveTitle] = useState(null);
       const [authModal, setAuthModal] = useState(null);
       const [accountSheet, setAccountSheet] = useState(false);
-      const [watchlist, setWatchlist] = useState(() => JSON.parse(localStorage.getItem('cv_watchlist') || '[]'));
       const [likedIds, setLikedIds] = useState(() => JSON.parse(localStorage.getItem('cv_likes') || '[]'));
       const [moderators, setModerators] = useState({});
       const [profileTarget, setProfileTarget] = useState(null);
@@ -4051,14 +4185,6 @@
       }, [titles, activeTitle]);
       const continueItems = continueWatchingIds.map(id => published.find(t => t.id === id)).filter(Boolean).slice(0, 10);
 
-      const toggleWatchlist = (id) => {
-        setWatchlist(prev => {
-          const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
-          localStorage.setItem('cv_watchlist', JSON.stringify(next));
-          return next;
-        });
-      };
-
       const toggleLike = (title) => {
         const isLiked = likedIds.includes(title.id);
         const next = isLiked ? likedIds.filter(x => x !== title.id) : [...likedIds, title.id];
@@ -4111,14 +4237,14 @@
                 <HomeView items={published} onOpen={setActiveTitle} continueItems={continueItems} watchedMap={watched} />
               ) : (view === 'movie' || view === 'series' || view === 'anime') ? (
                 <TypeGrid title={TYPE_PLURAL[view]} items={published.filter(t => t.type === view)} onOpen={setActiveTitle} showGenreFilter emptyText="لا توجد أعمال في هذا القسم بعد." watchedMap={watched} />
-              ) : view === 'watchlist' ? (
-                <TypeGrid title="قائمتي المفضلة" items={published.filter(t => watchlist.includes(t.id))} onOpen={setActiveTitle} emptyText="لم تُضف أي عمل إلى قائمتك بعد." watchedMap={watched} />
+              ) : view === 'lists' ? (
+                <ListsView currentUser={currentUser} onOpen={setActiveTitle} onOpenAuth={setAuthModal} />
               ) : view === 'requests' ? (
                 <RequestsView currentUser={currentUser} onOpenAuth={setAuthModal} />
               ) : view === 'settings' ? (
                 <SettingsView currentUser={currentUser} onUpdateName={handleUpdateName} onUpdateAvatar={handleUpdateAvatar} onOpenAuth={setAuthModal} />
               ) : view === 'profile' ? (
-                <ProfileView username={profileTarget} currentUser={currentUser} titles={published} watchlist={watchlist} onOpen={setActiveTitle} onOpenAuth={setAuthModal} onOpenProfile={openProfile} />
+                <ProfileView username={profileTarget} currentUser={currentUser} titles={published} onOpen={setActiveTitle} onOpenAuth={setAuthModal} onOpenProfile={openProfile} />
               ) : view === 'admin' ? (
                 <AdminPanel currentUser={currentUser} titles={titles} onOpenAuth={setAuthModal} moderators={moderators} />
               ) : null}
@@ -4133,8 +4259,8 @@
 
           {activeTitle && (
             <TitleModal title={activeTitle} allTitles={published} currentUser={currentUser} liked={likedIds.includes(activeTitle.id)}
-              inWatchlist={watchlist.includes(activeTitle.id)} getRole={getRole}
-              onLike={() => toggleLike(activeTitle)} onToggleWatchlist={() => toggleWatchlist(activeTitle.id)}
+              getRole={getRole}
+              onLike={() => toggleLike(activeTitle)}
               onClose={() => { setActiveTitle(null); if (new URLSearchParams(location.search).get('t')) history.replaceState(null, '', location.pathname); }}
               onOpenAuth={setAuthModal} onOpenProfile={openProfile} onOpen={setActiveTitle}
               watched={watched} onMarkEpisodeWatched={markEpisodeWatched} onMarkMovieWatched={markMovieWatched} isEpisodeWatched={isEpisodeWatched} />
