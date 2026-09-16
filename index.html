@@ -2412,7 +2412,7 @@
 
           <div className="glass-panel rounded-3xl p-5 md:p-7 border border-white/10 shadow-xl">
             <h2 className="font-black text-lg text-white mb-1 flex items-center gap-2"><Icon name="shield" className="w-4 h-4 text-accent-cyan" />تغيير كلمة المرور</h2>
-            <p className="text-[11px] text-slate-500 font-medium mb-4">يتم التحقق من كلمة مرورك الحالية مباشرة من قاعدة البيانات، والتغيير يُحفظ فورًا وبشكل حقيقي على حسابك.</p>
+            <p className="text-[11px] text-slate-500 font-medium mb-4">يتم التحقق من كلمة مرورك الحالية مباشرة عند ادخالها والتغيير يُحفظ فورًا على حسابك.</p>
             <div className="space-y-3">
               <div>
                 <PasswordField value={oldPass} onChange={setOldPass} placeholder="كلمة المرور الحالية" />
@@ -2569,7 +2569,7 @@
               {lists === null ? (
                 <p className="text-sm text-slate-500 font-medium text-center py-6">جارٍ التحميل...</p>
               ) : lists.length === 0 ? (
-                <p className="text-sm text-slate-500 font-medium text-center py-6">ما عندك قوائم بعد، أنشئ أول قائمة بالأسفل.</p>
+                <p className="text-sm text-slate-500 font-medium text-center py-6">لا توجد قوائم بعد، أنشئ أول قائمة الان!.</p>
               ) : lists.map(l => {
                 const has = l.items && l.items[title.id];
                 return (
