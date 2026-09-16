@@ -174,6 +174,36 @@
     <div class="spin"></div>
     <p>جاري تحميل <b>CineVerse</b>...</p>
   </div>
+
+  <script>
+    (function () {
+      var forceHideTimeout = setTimeout(function () {
+        var loader = document.getElementById('bootLoader');
+        if (loader && !loader.classList.contains('fading')) {
+          loader.innerHTML =
+            '<div style="text-align:center;padding:24px;max-width:320px;">' +
+            '<p style="color:#F8FAFC;font-family:Cairo,sans-serif;font-weight:800;font-size:15px;margin-bottom:16px;line-height:1.6;">تعذّر تحميل الموقع، تحقق من اتصال الإنترنت وحاول مجددًا.</p>' +
+            '<button onclick="location.reload()" style="background:#FF334B;color:#fff;font-family:Cairo,sans-serif;font-weight:700;padding:12px 28px;border:none;border-radius:14px;font-size:14px;">إعادة المحاولة</button>' +
+            '</div>';
+        }
+      }, 9000);
+
+      window.addEventListener('error', function (e) {
+        if (e && e.target && e.target.tagName === 'SCRIPT') {
+          var loader = document.getElementById('bootLoader');
+          if (loader && !loader.classList.contains('fading')) {
+            clearTimeout(forceHideTimeout);
+            loader.innerHTML =
+              '<div style="text-align:center;padding:24px;max-width:320px;">' +
+              '<p style="color:#F8FAFC;font-family:Cairo,sans-serif;font-weight:800;font-size:15px;margin-bottom:16px;line-height:1.6;">تعذّر تحميل أحد ملفات الموقع الأساسية. تحقق من اتصال الإنترنت أو جرّب متصفحًا آخر.</p>' +
+              '<button onclick="location.reload()" style="background:#FF334B;color:#fff;font-family:Cairo,sans-serif;font-weight:700;padding:12px 28px;border:none;border-radius:14px;font-size:14px;">إعادة المحاولة</button>' +
+              '</div>';
+          }
+        }
+      }, true);
+    })();
+  </script>
+
   <div id="root"></div>
 
   <script type="text/babel">
@@ -185,15 +215,6 @@
     };
     if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
-
-    // يمنع أي طلب لقاعدة البيانات أو التخزين من التعليق للأبد بدون رد
-    // (لو انقطع الاتصال أو تعذّر الوصول للخادم، يرجّع خطأ واضح بعد 12 ثانية بدل ما تضل الواجهة "جارٍ..." للأبد)
-    function withTimeout(promise, ms = 12000, msg = 'انتهت مهلة الاتصال بالخادم. تحقق من اتصالك بالإنترنت وحاول مجددًا.') {
-      return Promise.race([
-        promise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error(msg)), ms))
-      ]);
-    }
     const storage = firebase.storage();
 
     function uploadFile(file, folder, onProgress) {
@@ -335,6 +356,7 @@
         pencil: <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />,
         star: <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />,
         eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></>,
+        eyeOff: <><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></>,
         maximize: <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />,
         minimize: <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3m6 0v-3a2 2 0 0 1 2-2h3" />,
         barChart: <path d="M12 20V10M18 20V4M6 20v-4" />,
@@ -1221,10 +1243,6 @@
         };
       }, []);
 
-      // على أجهزة الآيفون، طلب ملء الشاشة الحقيقي للفيديو (webkitEnterFullscreen) يستبدل شريط
-      // التحكم المخصص بمشغل آبل الأصلي فتختفي أزرار السرعة والتقديم وغيرها. لذلك نستخدم بدلاً
-      // من ذلك "ملء شاشة وهمي" بواسطة CSS (تثبيت العنصر ليغطي الشاشة كاملة) يبقي شريط
-      // التحكم المخصص يعمل بكامل ميزاته على آيفون أيضًا.
       const effectiveFs = isFs
       const toggleFullscreen = () => {
   const v = videoRef.current;
@@ -1727,7 +1745,7 @@
                   </button>
                 )}
               </div>
-              {showAddToList && <AddToListModal currentUser={currentUser} title={title} onClose={() => setShowAddToList(false)} />
+              {showAddToList && <AddToListModal currentUser={currentUser} title={title} onClose={() => setShowAddToList(false)} />}
 
               {isSeries && seasons.length > 0 && (
                 <div className="mt-8 border-t border-white/10 pt-6">
@@ -1752,7 +1770,6 @@
                   </div>
 
                   {showAllEpisodes ? (
-                    // عرض جميع حلقات كل المواسم في قائمة واحدة متسلسلة بدون أي فاصل بين المواسم — مخصص أيضًا لواجهة الجوال (قائمة عمودية بعناصر باللمس)
                     <div className="space-y-2 md:space-y-2.5">
                       {allEpisodesFlat.map((ep, idx) => {
                         const isCurrent = playingMeta && playingMeta.videoUrl === ep.videoUrl && playingMeta.number === ep.number && playingSeasonNumber === ep.seasonNumber;
@@ -2163,6 +2180,53 @@
       );
     }
 
+    function PasswordStrengthMeter({ password }) {
+      const checks = React.useMemo(() => {
+        const p = password || '';
+        return {
+          length: p.length >= 6,
+          upperLower: /[a-z]/.test(p) && /[A-Z]/.test(p),
+          number: /[0-9]/.test(p),
+          symbol: /[^A-Za-z0-9]/.test(p),
+        };
+      }, [password]);
+      const score = Object.values(checks).filter(Boolean).length;
+      if (!password) return null;
+      const levels = [
+        { label: 'ضعيفة جدًا', color: 'bg-rose-500', text: 'text-rose-400' },
+        { label: 'ضعيفة', color: 'bg-rose-500', text: 'text-rose-400' },
+        { label: 'متوسطة', color: 'bg-amber-500', text: 'text-amber-400' },
+        { label: 'جيدة', color: 'bg-accent-cyan', text: 'text-accent-cyan' },
+        { label: 'قوية جدًا', color: 'bg-emerald-500', text: 'text-emerald-400' },
+      ];
+      const lvl = levels[Math.min(score, 4)];
+      return (
+        <div className="mt-2">
+          <div className="flex items-center gap-1.5">
+            {[0, 1, 2, 3].map(i => (
+              <div key={i} className={`h-1.5 flex-1 rounded-full transition-all ${i < score ? lvl.color : 'bg-glass-800'}`}></div>
+            ))}
+          </div>
+          <p className={`text-[11px] font-bold mt-1.5 ${lvl.text}`}>قوة كلمة المرور: {lvl.label}</p>
+        </div>
+      );
+    }
+
+    function PasswordField({ value, onChange, placeholder, onEnter, autoFocus }) {
+      const [show, setShow] = useState(false);
+      return (
+        <div className="relative">
+          <input type={show ? 'text' : 'password'} value={value} onChange={e => onChange(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && onEnter && onEnter()} placeholder={placeholder} autoFocus={autoFocus}
+            className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 pl-11 text-sm text-slate-100 outline-none focus:border-accent-cyan transition shadow-inner" />
+          <button type="button" onClick={() => setShow(s => !s)} tabIndex={-1}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-accent-cyan transition">
+            <Icon name={show ? 'eyeOff' : 'eye'} className="w-4 h-4" />
+          </button>
+        </div>
+      );
+    }
+
     function SettingsView({ currentUser, onUpdateName, onUpdateAvatar, onOpenAuth }) {
       const [name, setName] = useState(currentUser ? currentUser.name : '');
       const [nameMsg, setNameMsg] = useState({ text: '', ok: false });
@@ -2177,6 +2241,8 @@
       const [confirmPass, setConfirmPass] = useState('');
       const [passMsg, setPassMsg] = useState({ text: '', ok: false });
       const [changingPass, setChangingPass] = useState(false);
+      const [oldPassChecking, setOldPassChecking] = useState(false);
+      const [oldPassValid, setOldPassValid] = useState(null);
 
       if (!currentUser) {
         return (
@@ -2208,20 +2274,45 @@
           .finally(() => setUploading(false));
       };
 
+      // تحقّق حي من كلمة المرور الحالية أثناء الكتابة (تأخير بسيط لتفادي كثرة الطلبات)
+      useEffect(() => {
+        if (!oldPass.trim()) { setOldPassValid(null); return; }
+        setOldPassChecking(true);
+        const handle = setTimeout(async () => {
+          try {
+            const snap = await db.ref(`users/${currentUser.id}/password`).once('value');
+            setOldPassValid(snap.val() === oldPass.trim());
+          } catch (e) { setOldPassValid(null); }
+          setOldPassChecking(false);
+        }, 450);
+        return () => clearTimeout(handle);
+      }, [oldPass, currentUser.id]);
+
+      const newPassIsWeak = newPass && newPass.trim().length < 6;
+      const newPassSameAsOld = newPass && oldPass && newPass.trim() === oldPass.trim();
+      const passwordsMismatch = confirmPass && newPass !== confirmPass;
+      const canSubmitPassword = oldPass.trim() && newPass.trim().length >= 6 && newPass === confirmPass && !newPassSameAsOld && !changingPass;
+
       const changePassword = async () => {
         setPassMsg({ text: '', ok: false });
-        if (!oldPass || !newPass || !confirmPass) { setPassMsg({ text: 'الرجاء تعبئة كل الحقول.', ok: false }); return; }
-        if (newPass.length < 4) { setPassMsg({ text: 'كلمة المرور الجديدة قصيرة جدًا.', ok: false }); return; }
-        if (newPass !== confirmPass) { setPassMsg({ text: 'كلمة المرور الجديدة غير متطابقة مع التأكيد.', ok: false }); return; }
+        const oldTrim = oldPass.trim(), newTrim = newPass.trim(), confirmTrim = confirmPass.trim();
+        if (!oldTrim || !newTrim || !confirmTrim) { setPassMsg({ text: 'الرجاء تعبئة كل الحقول.', ok: false }); return; }
+        if (newTrim.length < 6) { setPassMsg({ text: 'كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل.', ok: false }); return; }
+        if (newTrim !== confirmTrim) { setPassMsg({ text: 'كلمة المرور الجديدة غير متطابقة مع التأكيد.', ok: false }); return; }
+        if (newTrim === oldTrim) { setPassMsg({ text: 'كلمة المرور الجديدة يجب أن تختلف عن الحالية.', ok: false }); return; }
         setChangingPass(true);
         try {
-          const snap = await withTimeout(db.ref(`users/${currentUser.id}/password`).once('value'));
+          // إعادة قراءة كلمة المرور الحالية من قاعدة البيانات مباشرة لحظة الإرسال (وليس الاعتماد فقط على
+          // نتيجة التحقق الحي) لضمان أن العملية حقيقية وتعكس آخر حالة مخزّنة فعليًا في الحساب.
+          const snap = await db.ref(`users/${currentUser.id}/password`).once('value');
           const storedPass = snap.val();
-          if (storedPass !== oldPass) { setPassMsg({ text: 'كلمة المرور القديمة غير صحيحة.', ok: false }); setChangingPass(false); return; }
-          await withTimeout(db.ref(`users/${currentUser.id}/password`).set(newPass));
-          setOldPass(''); setNewPass(''); setConfirmPass('');
+          if (storedPass == null) { setPassMsg({ text: 'تعذر العثور على الحساب، حاول تسجيل الدخول من جديد.', ok: false }); setChangingPass(false); return; }
+          if (String(storedPass) !== oldTrim) { setPassMsg({ text: 'كلمة المرور الحالية غير صحيحة.', ok: false }); setChangingPass(false); return; }
+          await db.ref(`users/${currentUser.id}`).update({ password: newTrim, passwordChangedAt: Date.now() });
+          logAuditAction(currentUser, 'تغيير كلمة المرور', 'قام المستخدم بتغيير كلمة مروره بنفسه');
+          setOldPass(''); setNewPass(''); setConfirmPass(''); setOldPassValid(null);
           setPassMsg({ text: 'تم تغيير كلمة المرور بنجاح.', ok: true });
-        } catch (e) { setPassMsg({ text: (e && e.message) || 'حدث خطأ، حاول مجددًا.', ok: false }); }
+        } catch (e) { setPassMsg({ text: 'حدث خطأ أثناء الاتصال بالخادم، حاول مجددًا.', ok: false }); }
         setChangingPass(false);
       };
 
@@ -2256,20 +2347,42 @@
           </div>
 
           <div className="glass-panel rounded-3xl p-5 md:p-7 border border-white/10 shadow-xl">
-            <h2 className="font-black text-lg text-white mb-4">تغيير كلمة المرور</h2>
+            <h2 className="font-black text-lg text-white mb-1 flex items-center gap-2"><Icon name="shield" className="w-4 h-4 text-accent-cyan" />تغيير كلمة المرور</h2>
+            <p className="text-[11px] text-slate-500 font-medium mb-4">يتم التحقق من كلمة مرورك الحالية مباشرة من قاعدة البيانات، والتغيير يُحفظ فورًا وبشكل حقيقي على حسابك.</p>
             <div className="space-y-3">
-              <input type="password" value={oldPass} onChange={e => setOldPass(e.target.value)} placeholder="كلمة المرور الحالية" className={inputCls} />
-              <input type="password" value={newPass} onChange={e => setNewPass(e.target.value)} placeholder="كلمة المرور الجديدة" className={inputCls} />
-              <input type="password" value={confirmPass} onChange={e => setConfirmPass(e.target.value)} onKeyDown={e => e.key === 'Enter' && changePassword()} placeholder="تأكيد كلمة المرور الجديدة" className={inputCls} />
+              <div>
+                <PasswordField value={oldPass} onChange={setOldPass} placeholder="كلمة المرور الحالية" />
+                {oldPass.trim() && (
+                  <p className={`text-[11px] font-bold mt-1.5 flex items-center gap-1.5 ${oldPassChecking ? 'text-slate-400' : oldPassValid ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {oldPassChecking ? (
+                      <>جارٍ التحقق...</>
+                    ) : oldPassValid ? (
+                      <><Icon name="check" className="w-3 h-3" />كلمة المرور الحالية صحيحة</>
+                    ) : (
+                      <><Icon name="x" className="w-3 h-3" />كلمة المرور الحالية غير صحيحة</>
+                    )}
+                  </p>
+                )}
+              </div>
+              <div>
+                <PasswordField value={newPass} onChange={setNewPass} placeholder="كلمة المرور الجديدة (6 أحرف على الأقل)" />
+                <PasswordStrengthMeter password={newPass} />
+                {newPassSameAsOld && <p className="text-[11px] font-bold text-amber-400 mt-1.5">اختر كلمة مرور مختلفة عن الحالية.</p>}
+              </div>
+              <div>
+                <PasswordField value={confirmPass} onChange={setConfirmPass} placeholder="تأكيد كلمة المرور الجديدة" onEnter={() => canSubmitPassword && changePassword()} />
+                {passwordsMismatch && <p className="text-[11px] font-bold text-rose-400 mt-1.5">كلمتا المرور غير متطابقتين.</p>}
+              </div>
             </div>
             {passMsg.text && <p className={`text-xs font-bold mt-3 p-2.5 rounded-xl border ${passMsg.ok ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : 'text-rose-400 bg-rose-500/10 border-rose-500/20'}`}>{passMsg.text}</p>}
-            <button onClick={changePassword} disabled={changingPass} className="mt-4 px-6 py-3 rounded-2xl bg-accent-cyan hover:brightness-110 font-bold text-sm text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)] transition disabled:opacity-50">{changingPass ? 'جارٍ التغيير...' : 'تغيير كلمة المرور'}</button>
+            <button onClick={changePassword} disabled={!canSubmitPassword} className="mt-4 flex items-center gap-2 px-6 py-3 rounded-2xl bg-accent-cyan hover:brightness-110 font-bold text-sm text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)] transition disabled:opacity-40 disabled:cursor-not-allowed">
+              {changingPass ? (<><span className="w-4 h-4 rounded-full border-2 border-glass-950/30 border-t-glass-950 animate-spin"></span>جارٍ التغيير...</>) : 'تغيير كلمة المرور'}
+            </button>
           </div>
         </div>
       );
     }
 
-    // نافذة منبثقة تعرض قائمة متابعين/متابَعين، قابلة للنقر للانتقال لبروفايل أي منهم
     function FollowListModal({ title, usernames, onOpenProfile, onClose }) {
       const [users, setUsers] = useState(null);
 
@@ -2343,7 +2456,6 @@
       return results;
     }
 
-    // نافذة إضافة عمل لإحدى قوائم المستخدم المخصصة، مع خيار إنشاء قائمة جديدة مباشرة
     function AddToListModal({ currentUser, title, onClose }) {
       const [lists, setLists] = useState(null);
       const [newName, setNewName] = useState('');
@@ -2403,7 +2515,6 @@
       );
     }
 
-    // عرض تفاصيل قائمة مخصصة واحدة (شبكة بوسترات + خيار الحذف والتحكم بالخصوصية لصاحبها)
     function ListDetailModal({ list, isOwn, onClose, onOpen, listOwnerKey }) {
       const [titlesMap, setTitlesMap] = useState(null);
       const [isPublic, setIsPublic] = useState(list.isPublic !== false);
@@ -2467,7 +2578,6 @@
       );
     }
 
-    // قسم "قوائمي" بالملف الشخصي: يعرض قوائم المستخدم (كل قوائمه إذا ملفه هو، أو العامة فقط لغيره)
     function ProfileLists({ username, isOwn, onOpen }) {
       const [lists, setLists] = useState(null);
       const [openList, setOpenList] = useState(null);
@@ -2513,34 +2623,28 @@
       const [following, setFollowing] = useState({});
       const [myFollowing, setMyFollowing] = useState({});
       const [followBusy, setFollowBusy] = useState(false);
-      const [listModal, setListModal] = useState(null); // 'followers' | 'following' | null
+      const [listModal, setListModal] = useState(null);
       const [shareCopied, setShareCopied] = useState(false);
       const targetUsername = username || (currentUser && currentUser.username);
       const isOwn = currentUser && targetUsername === currentUser.username;
 
-      const [loadError, setLoadError] = useState('');
       useEffect(() => {
-        setLoading(true); setLoadError('');
+        setLoading(true);
         if (!targetUsername) { setLoading(false); return; }
         let userId = null;
-        let cancelled = false;
         const usersRef = db.ref('users').orderByChild('username').equalTo(targetUsername);
         const cb = snap => {
-          if (cancelled) return;
           const data = snap.val();
           const key = data ? Object.keys(data)[0] : null;
           if (!key) { setProfileUser(null); setLoading(false); return; }
           userId = key;
           setProfileUser({ id: key, ...data[key] });
-          db.ref(`userRatings/${key}`).on('value', rs => { if (!cancelled) { setUserRatings(rs.val() || {}); setLoading(false); } });
+          db.ref(`userRatings/${key}`).on('value', rs => { setUserRatings(rs.val() || {}); setLoading(false); });
         };
-        const failCb = err => { if (!cancelled) { setLoadError((err && err.message) || 'تعذّر تحميل الملف الشخصي، تحقق من اتصالك وحاول مجددًا.'); setLoading(false); } };
-        usersRef.once('value', cb, failCb);
-        const timer = setTimeout(() => { if (!cancelled) failCb(new Error('انتهت مهلة الاتصال بالخادم. حاول تحديث الصفحة.')); }, 12000);
-        return () => { cancelled = true; clearTimeout(timer); if (userId) db.ref(`userRatings/${userId}`).off(); };
+        usersRef.once('value', cb);
+        return () => { if (userId) db.ref(`userRatings/${userId}`).off(); };
       }, [targetUsername]);
 
-      // متابعو ومتابَعو صاحب البروفايل الحالي
       useEffect(() => {
         if (!targetUsername) return;
         const followersRef = db.ref(`followers/${sanitizeKey(targetUsername)}`);
@@ -2552,7 +2656,6 @@
         return () => { followersRef.off('value', cb1); followingRef.off('value', cb2); };
       }, [targetUsername]);
 
-      // من يتابعهم المستخدم الحالي (عشان نعرف هل يتابع صاحب هذا البروفايل أو لأ)
       useEffect(() => {
         if (!currentUser) { setMyFollowing({}); return; }
         const ref = db.ref(`following/${sanitizeKey(currentUser.username)}`);
@@ -2570,12 +2673,6 @@
         );
       }
       if (loading) return <div className="py-20 text-center text-slate-400 font-bold">جارٍ التحميل...</div>;
-      if (loadError) return (
-        <div className="py-20 text-center">
-          <p className="text-rose-400 font-bold mb-4">{loadError}</p>
-          <button onClick={() => window.location.reload()} className="px-6 py-3 rounded-2xl glass-card border border-white/10 text-sm font-bold text-slate-200 hover:border-accent-cyan transition">إعادة المحاولة</button>
-        </div>
-      );
       if (!profileUser) return <EmptyState text="هذا المستخدم غير موجود." />;
 
       const ratingEntries = Object.keys(userRatings).map(titleId => ({ titleId, ...userRatings[titleId] }));
@@ -2709,28 +2806,16 @@
       const inputRef = useRef(null);
       const [progress, setProgress] = useState(null);
       const [error, setError] = useState('');
-      const isImage = (accept || '').includes('image');
 
       const handleFile = (e) => {
         const file = e.target.files && e.target.files[0];
         e.target.value = '';
         if (!file) return;
         setError('');
-
-        if (isImage) {
-          // الصور تُحوَّل وتُحفظ مباشرة (base64) بدون المرور عبر Firebase Storage — أسرع وأضمن دائمًا
-          setProgress(0);
-          compressImageToDataUrl(file, 900, 900000)
-            .then(dataUrl => { onChange(dataUrl); setProgress(null); })
-            .catch(err => { setError((err && err.message) || 'تعذّر معالجة هذه الصورة.'); setProgress(null); });
-          return;
-        }
-
-        // ملفات الفيديو/التحميل: رفع فعلي إلى Firebase Storage، بمهلة زمنية تمنع التعليق الدائم
         setProgress(0);
-        withTimeout(uploadFile(file, folder, setProgress), 90000, 'انتهت مهلة الرفع. تأكد من اتصالك، أو الصق رابط الفيديو المباشر بدل الرفع من الجهاز.')
+        uploadFile(file, folder, setProgress)
           .then(url => { onChange(url); setProgress(null); })
-          .catch(err => { setError(`فشل الرفع: ${(err && (err.code || err.message)) || 'خطأ غير معروف'}. تقدر تلصق رابط الفيديو المباشر بالحقل بدل الرفع.`); setProgress(null); });
+          .catch(err => { setError(`فشل الرفع: ${(err && (err.code || err.message)) || 'خطأ غير معروف'}`); setProgress(null); });
       };
 
       return (
@@ -2747,7 +2832,7 @@
           </div>
           {progress !== null && (
             <div className="mt-1.5 h-1.5 bg-glass-900 rounded-full overflow-hidden">
-              <div className="h-full bg-accent-cyan transition-all duration-200" style={{ width: `${isImage ? 100 : progress}%` }}></div>
+              <div className="h-full bg-accent-cyan transition-all duration-200" style={{ width: `${progress}%` }}></div>
             </div>
           )}
           {error && <p className="text-rose-400 text-[11px] font-bold mt-1.5">{error}</p>}
@@ -3079,7 +3164,6 @@
       return { number: num, title: '', videoUrl: '', downloadUrl: '', imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
     }
 
-    // محرر حلقة واحدة فقط: يظهر بعد اختيار موسم ثم اختيار حلقة، بدل عرض كل الحلقات دفعة واحدة
     function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete }) {
       const e = episode;
       const set = (k, val) => onChange({ ...e, [k]: val });
@@ -3147,7 +3231,6 @@
       });
       const [saving, setSaving] = useState(false);
       const [error, setError] = useState('');
-      // التنقل الجديد: اختر موسمًا أولاً (activeSeasonIdx)، ثم اختر حلقة لتعديلها (editingEpisodeIdx)
       const [activeSeasonIdx, setActiveSeasonIdx] = useState(0);
       const [editingEpisodeIdx, setEditingEpisodeIdx] = useState(null);
 
@@ -3252,11 +3335,10 @@
           payload.videoUrl = ''; payload.downloadUrl = '';
         }
         try {
-          if (initial && initial.id) await withTimeout(db.ref(`titles/${initial.id}`).set(payload));
-          else await withTimeout(db.ref('titles').push(payload));
+          if (initial && initial.id) await db.ref(`titles/${initial.id}`).set(payload);
+          else await db.ref('titles').push(payload);
           onDone();
-          return;
-        } catch (e) { setError((e && e.message) || 'حدث خطأ أثناء الحفظ.'); }
+        } catch (e) { setError('حدث خطأ أثناء الحفظ.'); }
         setSaving(false);
       };
 
@@ -3335,7 +3417,6 @@
                 <p className="text-xs text-slate-500 font-medium">لا توجد مواسم بعد. اضغط "إضافة موسم" للبدء.</p>
               ) : (
                 <div>
-                  {/* الخطوة 1: اختيار الموسم */}
                   <p className="text-[11px] font-bold text-slate-400 mb-2">١) اختر الموسم</p>
                   <div className="flex gap-2 flex-wrap mb-5">
                     {form.seasons.map((s, si) => (
@@ -3351,7 +3432,6 @@
                     <div className="glass-card rounded-2xl p-4 border border-white/10">
                       {editingEpisodeIdx === null ? (
                         <div>
-                          {/* بيانات الموسم نفسه */}
                           <div className="flex items-start gap-4 mb-5 flex-wrap">
                             <div className="w-20 shrink-0">
                               <div className="aspect-[2/3] rounded-xl overflow-hidden bg-glass-950 border border-white/10 flex items-center justify-center">
@@ -3376,7 +3456,6 @@
                             </div>
                           </div>
 
-                          {/* الخطوة 2: اختيار حلقة لتعديلها */}
                           <p className="text-[11px] font-bold text-slate-400 mb-2">٢) اختر حلقة لتعديلها، أو أضف حلقة جديدة</p>
                           <div className="space-y-2">
                             {activeSeason.episodes.map((e, ei) => (
@@ -3505,7 +3584,6 @@
       );
     }
 
-    // نافذة حظر مستخدم: سبب إلزامي + نوع الحظر (دائم/مؤقت)
     function BanDialog({ user, onCancel, onConfirm }) {
       const [reason, setReason] = useState('');
       const [kind, setKind] = useState('permanent');
@@ -3655,7 +3733,6 @@
       );
     }
 
-    // سجل نشاط المشرفين: يسجّل أي إجراء إداري حساس مع اسم من قام فيه والوقت
     function logAuditAction(currentUser, action, details) {
       if (!currentUser) return;
       db.ref('auditLog').push({ by: currentUser.name, byUsername: currentUser.username, action, details: details || '', date: Date.now() });
@@ -3811,7 +3888,6 @@
       );
     }
 
-    // مساعد: هل العمل (فيلم/مسلسل) "مكتمل المشاهدة"؟ فيلم = تمت مشاهدته، مسلسل = تمت مشاهدة كل حلقاته
     function isTitleWatched(watchedMap, title) {
       if (!watchedMap || !title) return false;
       const entry = watchedMap[title.id];
@@ -3918,8 +3994,6 @@
         return () => ref.off('value', cb);
       }, [currentUser && currentUser.id]);
 
-      // الدخول للوحة التحكم أصبح مباشرًا لأي حساب مدير أو مشرف، دون رمز حماية إضافي —
-      // فالتحقق من الصلاحية (isModerator أو حساب المدير الرئيسي) محفوظ في قاعدة البيانات ولا يمكن لمستخدم عادي تعديله بنفسه
       const setView = (v) => {
         if (v === 'admin') {
           if (!currentUser || !(currentUser.username === 'mavilovelife' || currentUser.isModerator)) {
@@ -3997,7 +4071,7 @@
 
       const handleUpdateAvatar = async (dataUrl) => {
         if (!currentUser) return;
-        await withTimeout(db.ref(`users/${currentUser.id}/avatar`).set(dataUrl));
+        await db.ref(`users/${currentUser.id}/avatar`).set(dataUrl);
         const updated = { ...currentUser, avatar: dataUrl };
         setCurrentUser(updated);
         localStorage.setItem('cv_user', JSON.stringify(updated));
@@ -4005,7 +4079,7 @@
 
       const handleUpdateName = async (newName) => {
         if (!currentUser) return;
-        await withTimeout(db.ref(`users/${currentUser.id}/name`).set(newName));
+        await db.ref(`users/${currentUser.id}/name`).set(newName);
         const updated = { ...currentUser, name: newName };
         setCurrentUser(updated);
         localStorage.setItem('cv_user', JSON.stringify(updated));
@@ -4051,8 +4125,8 @@
             </div>
           </main>
 
-          <footer className="border-t border-white/10 py-6 text-center text-xs text-slate-500 glass-panel mb-20 md:mb-0">
-            <p>تصميم وبرمجة: <span className="text-slate-300 font-bold">محمود احمد</span> &nbsp;|&nbsp; للتواصل: <a href="tel:07734894407" className="font-mono text-accent-cyan font-bold hover:underline">07734894407</a></p>
+          <footer className="border-t border-white/10 py-3 text-center text-[10px] leading-relaxed text-slate-600 bg-glass-950 mt-auto mb-16 md:mb-0">
+            <p>تصميم وبرمجة: <span className="text-slate-500 font-bold">محمود احمد</span> &nbsp;|&nbsp; للتواصل: <a href="tel:07734894407" className="font-mono text-slate-500 font-bold hover:text-accent-cyan transition">07734894407</a></p>
           </footer>
 
           <MobileBottomNav view={view} setView={setView} />
