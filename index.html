@@ -53,25 +53,26 @@
     .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 
-    :root { --spring: cubic-bezier(0.22, 1, 0.36, 1); --spring-fast: cubic-bezier(0.16, 1, 0.3, 1); --collapse: cubic-bezier(0.4, 0, 1, 1); }
+    :root { --spring: cubic-bezier(0.16, 1, 0.3, 1); --spring-fast: cubic-bezier(0.19, 1, 0.22, 1); --collapse: cubic-bezier(0.45, 0, 0.2, 1); --liquid: cubic-bezier(0.19, 1, 0.22, 1); }
 
     @keyframes fadeInBackdrop { from { opacity: 0; } to { opacity: 1; } }
     @keyframes fadeOutBackdrop { from { opacity: 1; } to { opacity: 0; } }
-    @keyframes scaleInPanel { from { opacity: 0; transform: scale(0.94) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-    @keyframes scaleOutPanel { from { opacity: 1; transform: scale(1) translateY(0); } to { opacity: 0; transform: scale(0.95) translateY(8px); } }
-    @keyframes slideUpSheet { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
-    @keyframes slideDownSheet { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(22px); } }
-    @keyframes fadeInContent { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-    .modal-backdrop { animation: fadeInBackdrop 0.22s var(--spring-fast); }
-    .modal-backdrop-out { animation: fadeOutBackdrop 0.2s var(--collapse) forwards; }
-    .modal-panel { animation: scaleInPanel 0.32s var(--spring); }
-    .modal-panel-out { animation: scaleOutPanel 0.2s var(--collapse) forwards; }
-    .sheet-panel { animation: slideUpSheet 0.36s var(--spring); }
-    .sheet-panel-out { animation: slideDownSheet 0.22s var(--collapse) forwards; }
-    .page-fade-in { animation: fadeInContent 0.35s var(--spring-fast); }
-    @keyframes toastIn { from { opacity: 0; transform: translateY(14px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
-    @keyframes toastOut { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(10px) scale(0.96); } }
-    .toast-item { animation: toastIn 0.32s var(--spring-fast); }
+    @keyframes scaleInPanel { from { opacity: 0; transform: scale(0.92) translateY(14px); filter: blur(4px); } to { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); } }
+    @keyframes scaleOutPanel { from { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); } to { opacity: 0; transform: scale(0.94) translateY(10px); filter: blur(3px); } }
+    @keyframes slideUpSheet { from { opacity: 0; transform: translateY(38px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    @keyframes slideDownSheet { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(30px) scale(0.98); } }
+    @keyframes fadeInContent { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .modal-backdrop { animation: fadeInBackdrop 0.45s var(--liquid); backdrop-filter: blur(12px); transition: backdrop-filter 0.45s var(--liquid); }
+    .modal-backdrop-out { animation: fadeOutBackdrop 0.38s var(--collapse) forwards; }
+    .modal-panel { animation: scaleInPanel 0.5s var(--liquid); }
+    .modal-panel-out { animation: scaleOutPanel 0.38s var(--collapse) forwards; }
+    .sheet-panel { animation: slideUpSheet 0.56s var(--liquid); }
+    .sheet-panel-out { animation: slideDownSheet 0.4s var(--collapse) forwards; }
+    .page-fade-in { animation: fadeInContent 0.5s var(--liquid); }
+    @keyframes toastIn { from { opacity: 0; transform: translateY(18px) scale(0.94); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    @keyframes toastOut { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(12px) scale(0.94); } }
+    .toast-item { animation: toastIn 0.48s var(--liquid); }
+    .toast-item-out { animation: toastOut 0.32s var(--collapse) forwards; }
 
     /* عنصر يُضاف/يُحذف من قائمة: دخول وخروج سلس بدل الظهور المفاجئ */
     @keyframes itemSinkIn { 0% { opacity: 0; transform: scale(0.7) translateY(-16px); } 60% { opacity: 1; transform: scale(1.04) translateY(2px); } 100% { opacity: 1; transform: scale(1) translateY(0); } }
@@ -373,6 +374,19 @@
       return isMobile;
     }
 
+    // هوك مشترك يعطي أي مودال/شيت حركة إغلاق حقيقية وسلسة (زجاجية) بدل الاختفاء المفاجئ:
+    // بدل استدعاء onClose مباشرة، نستدعي requestClose الذي يفعّل كلاس الخروج
+    // ثم يستدعي onClose الحقيقي بعد اكتمال الحركة بقليل
+    function useClosable(onClose, duration = 380) {
+      const [closing, setClosing] = useState(false);
+      const requestClose = (...args) => {
+        if (closing) return;
+        setClosing(true);
+        setTimeout(() => onClose(...args), duration);
+      };
+      return [closing, requestClose];
+    }
+
     function Icon({ name, className = "w-4 h-4" }) {
       const icons = {
         film: <path d="M2 6.5A2.5 2.5 0 0 1 4.5 4h15A2.5 2.5 0 0 1 22 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-15A2.5 2.5 0 0 1 2 17.5v-11zM7 4v16M17 4v16M2 12h20M2 8h5M17 8h5M2 16h5" />,
@@ -554,7 +568,10 @@
       useEffect(() => {
         const handler = (toast) => {
           setToasts(prev => [...prev, toast]);
-          setTimeout(() => setToasts(prev => prev.filter(t => t.id !== toast.id)), 3000);
+          setTimeout(() => {
+            setToasts(prev => prev.map(t => t.id === toast.id ? { ...t, leaving: true } : t));
+            setTimeout(() => setToasts(prev => prev.filter(t => t.id !== toast.id)), 320);
+          }, 3000);
         };
         toastListeners.push(handler);
         return () => { toastListeners = toastListeners.filter(fn => fn !== handler); };
@@ -564,7 +581,7 @@
       return (
         <div className="fixed z-[100] inset-x-0 bottom-24 md:bottom-8 flex flex-col items-center gap-2.5 px-4 pointer-events-none">
           {toasts.map(t => (
-            <div key={t.id} className={`toast-item pointer-events-auto w-full max-w-sm flex items-center gap-3 px-4 py-3.5 rounded-2xl glass-panel border shadow-2xl ${t.type === 'error' ? 'border-rose-500/30' : 'border-emerald-500/30'}`}>
+            <div key={t.id} className={`${t.leaving ? 'toast-item-out' : 'toast-item'} pointer-events-auto w-full max-w-sm flex items-center gap-3 px-4 py-3.5 rounded-2xl glass-panel border shadow-2xl ${t.type === 'error' ? 'border-rose-500/30' : 'border-emerald-500/30'}`}>
               <span className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${t.type === 'error' ? 'bg-rose-500/20 text-rose-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
                 <Icon name={t.type === 'error' ? 'x' : 'check'} className="w-4 h-4" />
               </span>
@@ -815,6 +832,34 @@
       const [showUserResults, setShowUserResults] = useState(false);
       const userResults = useUserSearch(search);
       const hasUserResults = showUserResults && search.trim().length > 0 && userResults.length > 0;
+      const mobileSearchInputRef = useRef(null);
+
+      // اسكر شريط البحث بالموبايل تلقائيًا عند تغيير التاب (الرئيسية/أفلام/...)
+      useEffect(() => { setMobileSearchOpen(false); }, [view]);
+
+      // ركّز على الحقل تلقائيًا عند فتح شريط البحث بالموبايل
+      useEffect(() => {
+        if (mobileSearchOpen) {
+          const t = setTimeout(() => mobileSearchInputRef.current && mobileSearchInputRef.current.focus(), 60);
+          return () => clearTimeout(t);
+        }
+      }, [mobileSearchOpen]);
+
+      // اسكره أيضًا لو ضغط المستخدم بأي مكان خارج منطقة البحث نفسها (الزر أو الصندوق المفتوح)
+      useEffect(() => {
+        if (!mobileSearchOpen) return;
+        const onDocPress = (e) => {
+          if (!e.target.closest('[data-mobile-search-group]')) {
+            setMobileSearchOpen(false);
+          }
+        };
+        document.addEventListener('mousedown', onDocPress);
+        document.addEventListener('touchstart', onDocPress);
+        return () => {
+          document.removeEventListener('mousedown', onDocPress);
+          document.removeEventListener('touchstart', onDocPress);
+        };
+      }, [mobileSearchOpen]);
 
       const selectUser = (u) => {
         setSearch('');
@@ -869,9 +914,11 @@
                 {hasUserResults && <UserResultsDropdown />}
               </div>
 
-              <button onClick={() => setMobileSearchOpen(v => !v)} className="md:hidden w-10 h-10 rounded-2xl glass-card flex items-center justify-center text-slate-200 shrink-0">
-                <Icon name={mobileSearchOpen ? 'x' : 'search'} className="w-[18px] h-[18px]" />
-              </button>
+              <div data-mobile-search-group className="md:hidden contents">
+                <button onClick={() => setMobileSearchOpen(v => !v)} className="md:hidden w-10 h-10 rounded-2xl glass-card flex items-center justify-center text-slate-200 shrink-0">
+                  <Icon name={mobileSearchOpen ? 'x' : 'search'} className="w-[18px] h-[18px]" />
+                </button>
+              </div>
 
               {currentUser && <NotificationsBell currentUser={currentUser} onOpenProfile={onOpenProfile} onOpenTitle={onOpenTitleFromNotif} />}
 
@@ -884,18 +931,18 @@
               </button>
             </div>
           </div>
-          {mobileSearchOpen && (
-            <div className="md:hidden px-3 pb-3 -mt-1">
+          <div data-mobile-search-group className={`mobile-search-morph md:hidden ${mobileSearchOpen ? 'open' : ''}`}>
+            <div className="px-3 pb-3 -mt-1">
               <div className="relative">
                 <Icon name="search" className="w-4 h-4 absolute top-1/2 -translate-y-1/2 right-3.5 text-slate-400" />
-                <input autoFocus value={search} onChange={e => setSearch(e.target.value)}
+                <input ref={mobileSearchInputRef} value={search} onChange={e => setSearch(e.target.value)}
                   onFocus={() => setShowUserResults(true)} onBlur={() => setTimeout(() => setShowUserResults(false), 150)}
                   placeholder="ابحث عن فيلم، مسلسل، أنمي أو مستخدم..."
                   className="w-full bg-glass-900 border border-white/10 rounded-2xl py-2.5 pr-10 pl-4 text-sm text-slate-100 outline-none focus:border-accent-cyan focus:ring-1 focus:ring-accent-cyan transition shadow-inner" />
                 {hasUserResults && <UserResultsDropdown />}
               </div>
             </div>
-          )}
+          </div>
         </header>
       );
     }
@@ -1018,9 +1065,11 @@
     }
 
     function AccountSheet({ currentUser, onClose, onLogin, onRegister, onLogout, onNavigate }) {
+      const [closing, requestClose] = useClosable(onClose);
+      const navigate = (v) => { setTimeout(() => onNavigate(v), 0); requestClose(); };
       return (
-        <div className="modal-backdrop fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end md:items-center justify-center p-0 md:p-4" onClick={onClose}>
-          <div onClick={e => e.stopPropagation()} className="sheet-panel glass-panel border border-white/10 rounded-t-3xl md:rounded-3xl w-full md:max-w-sm p-6 shadow-2xl">
+        <div className={`${closing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-50 bg-black/80 flex items-end md:items-center justify-center p-0 md:p-4`} onClick={requestClose}>
+          <div onClick={e => e.stopPropagation()} className={`${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel border border-white/10 rounded-t-3xl md:rounded-3xl w-full md:max-w-sm p-6 shadow-2xl`}>
             {currentUser ? (
               <div>
                 <div className="flex items-center gap-3 mb-4 pb-4 border-b border-white/10">
@@ -1044,17 +1093,17 @@
                   </div>
                 </div>
                 <div className="space-y-2.5">
-                  <button onClick={() => onNavigate('profile')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold"><Icon name="user" className="w-4 h-4 text-accent-cyan" />ملفي الشخصي</button>
-                  <button onClick={() => onNavigate('settings')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold"><Icon name="settings" className="w-4 h-4 text-accent-cyan" />الإعدادات</button>
-                  <button onClick={() => onNavigate('requests')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold"><Icon name="flag" className="w-4 h-4 text-accent-cyan" />طلباتي وشكاواي</button>
+                  <button onClick={() => navigate('profile')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold"><Icon name="user" className="w-4 h-4 text-accent-cyan" />ملفي الشخصي</button>
+                  <button onClick={() => navigate('settings')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold"><Icon name="settings" className="w-4 h-4 text-accent-cyan" />الإعدادات</button>
+                  <button onClick={() => navigate('requests')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold"><Icon name="flag" className="w-4 h-4 text-accent-cyan" />طلباتي وشكاواي</button>
 
                   {(currentUser.username === 'mavilovelife' || currentUser.isModerator) && (
-                    <button onClick={() => onNavigate('admin')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold">
+                    <button onClick={() => navigate('admin')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold">
                       <Icon name="shield" className="w-4 h-4 text-amber-400" />لوحة التحكم ورفع 
                     </button>
                   )}
 
-                  <button onClick={onLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 text-sm font-semibold transition"><Icon name="logOut" className="w-4 h-4" />تسجيل الخروج</button>
+                  <button onClick={() => { setTimeout(onLogout, 0); requestClose(); }} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 text-sm font-semibold transition"><Icon name="logOut" className="w-4 h-4" />تسجيل الخروج</button>
                 </div>
               </div>
             ) : (
@@ -1063,8 +1112,8 @@
                   <h3 className="font-black text-xl text-white mb-1">مرحباً بك في CineVerse</h3>
                   <p className="text-slate-400 text-xs">سجّل دخولك لمتابعة أعمالك المفضلة والتفاعل</p>
                 </div>
-                <button onClick={onLogin} className="w-full py-3.5 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition">تسجيل الدخول</button>
-                <button onClick={onRegister} className="w-full py-3.5 rounded-2xl glass-card hover:bg-white/5 border border-white/10 text-sm font-bold transition">إنشاء حساب جديد</button>
+                <button onClick={() => { setTimeout(onLogin, 0); requestClose(); }} className="w-full py-3.5 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition">تسجيل الدخول</button>
+                <button onClick={() => { setTimeout(onRegister, 0); requestClose(); }} className="w-full py-3.5 rounded-2xl glass-card hover:bg-white/5 border border-white/10 text-sm font-bold transition">إنشاء حساب جديد</button>
               </div>
             )}
           </div>
@@ -1073,6 +1122,7 @@
     }
 
     function AuthModal({ tab: initialTab, onClose, onSuccess }) {
+      const [closing, requestClose] = useClosable(onClose);
       const [tab, setTab] = useState(initialTab);
       const [name, setName] = useState('');
       const [username, setUsername] = useState('');
@@ -1140,8 +1190,8 @@
       };
 
       return (
-        <div className="modal-backdrop fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={onClose}>
-          <div onClick={e => e.stopPropagation()} className="modal-panel glass-panel border border-white/10 rounded-3xl max-w-sm w-full p-6 shadow-2xl">
+        <div className={`${closing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4`} onClick={requestClose}>
+          <div onClick={e => e.stopPropagation()} className={`${closing ? 'modal-panel-out' : 'modal-panel'} glass-panel border border-white/10 rounded-3xl max-w-sm w-full p-6 shadow-2xl`}>
             <div className="flex gap-4 border-b border-white/10 pb-3 mb-5">
               <button onClick={() => setTab('login')} className={`font-bold text-sm pb-2 -mb-3 transition ${tab === 'login' ? 'text-accent-cyan border-b-2 border-accent-cyan' : 'text-slate-400'}`}>تسجيل الدخول</button>
               <button onClick={() => setTab('register')} className={`font-bold text-sm pb-2 -mb-3 transition ${tab === 'register' ? 'text-accent-cyan border-b-2 border-accent-cyan' : 'text-slate-400'}`}>إنشاء حساب</button>
@@ -1175,14 +1225,18 @@
     }
 
     function ConfirmDialog({ title, body, confirmLabel, cancelLabel, onCancel, onConfirm }) {
+      const [closing, requestClose] = useClosable(onCancel, 320);
+      const [closingConfirm, setClosingConfirm] = useState(false);
+      const doConfirm = () => { setClosingConfirm(true); setTimeout(onConfirm, 320); };
+      const isClosing = closing || closingConfirm;
       return (
-        <div className="modal-backdrop fixed inset-0 z-[60] bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={onCancel}>
-          <div onClick={e => e.stopPropagation()} className="modal-panel glass-panel border border-white/10 rounded-3xl max-w-sm w-full p-6 shadow-2xl">
+        <div className={`${isClosing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4`} onClick={requestClose}>
+          <div onClick={e => e.stopPropagation()} className={`${isClosing ? 'modal-panel-out' : 'modal-panel'} glass-panel border border-white/10 rounded-3xl max-w-sm w-full p-6 shadow-2xl`}>
             <h3 className="font-black text-lg text-white">{title}</h3>
             <p className="text-sm text-slate-300 mt-2 leading-relaxed">{body}</p>
             <div className="flex gap-3 mt-6">
-              <button onClick={onCancel} className="flex-1 py-2.5 rounded-xl glass-card border border-white/10 text-sm font-bold text-slate-300 hover:bg-white/5 transition">{cancelLabel}</button>
-              <button onClick={onConfirm} className="flex-1 py-2.5 rounded-xl bg-accent-red hover:bg-accent-redHover text-sm font-bold text-white shadow-[0_0_15px_rgba(255,51,75,0.4)] transition">{confirmLabel}</button>
+              <button onClick={requestClose} className="flex-1 py-2.5 rounded-xl glass-card border border-white/10 text-sm font-bold text-slate-300 hover:bg-white/5 transition">{cancelLabel}</button>
+              <button onClick={doConfirm} className="flex-1 py-2.5 rounded-xl bg-accent-red hover:bg-accent-redHover text-sm font-bold text-white shadow-[0_0_15px_rgba(255,51,75,0.4)] transition">{confirmLabel}</button>
             </div>
           </div>
         </div>
@@ -1539,6 +1593,7 @@
     }
 
     function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onOpenAuth, getRole, onOpenProfile, onOpen, watched, onMarkEpisodeWatched, onMarkMovieWatched, isEpisodeWatched }) {
+      const [closing, requestClose] = useClosable(onClose);
       const [playingUrl, setPlayingUrl] = useState(null);
       const [playingMeta, setPlayingMeta] = useState({});
       const [playingLabel, setPlayingLabel] = useState('');
@@ -1746,8 +1801,8 @@
       const handleMovieComplete = () => { onMarkMovieWatched && onMarkMovieWatched(title.id); };
 
       return (
-        <div className="modal-backdrop fixed inset-0 z-50 bg-black/90 backdrop-blur-lg md:p-6 md:flex md:items-center md:justify-center overflow-y-auto" onClick={onClose}>
-          <div onClick={e => e.stopPropagation()} className="sheet-panel glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl">
+        <div className={`${closing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-50 bg-black/90 md:p-6 md:flex md:items-center md:justify-center overflow-y-auto`} onClick={requestClose}>
+          <div onClick={e => e.stopPropagation()} className={`${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl`}>
             <div className="relative">
               {playingUrl ? (
                 <div className="relative">
@@ -1781,7 +1836,7 @@
                   </div>
                 </div>
               )}
-              <button onClick={onClose} className="absolute top-4 left-4 w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black transition">
+              <button onClick={requestClose} className="absolute top-4 left-4 w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black transition">
                 <Icon name="x" className="w-5 h-5" />
               </button>
               <button onClick={shareLink} title="نسخ رابط المشاركة" className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black transition">
@@ -2446,7 +2501,7 @@
 
           <div className="glass-panel rounded-3xl p-5 md:p-7 border border-white/10 shadow-xl">
             <h2 className="font-black text-lg text-white mb-1 flex items-center gap-2"><Icon name="shield" className="w-4 h-4 text-accent-cyan" />تغيير كلمة المرور</h2>
-            <p className="text-[11px] text-slate-500 font-medium mb-4">يتم التحقق من كلمة مرورك الحالية مباشرةً، والتغيير يُحفظ فورًا على حسابك.</p>
+            <p className="text-[11px] text-slate-500 font-medium mb-4">يتم التحقق من كلمة مرورك الحالية مباشرة من قاعدة البيانات، والتغيير يُحفظ فورًا وبشكل حقيقي على حسابك.</p>
             <div className="space-y-3">
               <div>
                 <PasswordField value={oldPass} onChange={setOldPass} placeholder="كلمة المرور الحالية" />
@@ -2477,12 +2532,15 @@
               {changingPass ? (<><span className="w-4 h-4 rounded-full border-2 border-glass-950/30 border-t-glass-950 animate-spin"></span>جارٍ التغيير...</>) : 'تغيير كلمة المرور'}
             </button>
           </div>
+
+          <p className="text-center text-[10px] leading-relaxed text-slate-600 mt-8">تصميم وبرمجة: <span className="text-slate-500 font-bold">محمود احمد</span> &nbsp;|&nbsp; للتواصل: <a href="tel:07734894407" className="font-mono text-slate-500 font-bold hover:text-accent-cyan transition">07734894407</a></p>
         </div>
       );
     }
 
     function FollowListModal({ title, usernames, onOpenProfile, onClose }) {
       const [users, setUsers] = useState(null);
+      const [closing, requestClose] = useClosable(onClose);
 
       useEffect(() => {
         let cancelled = false;
@@ -2498,11 +2556,11 @@
       }, [usernames.join(',')]);
 
       return (
-        <div className="modal-backdrop fixed inset-0 z-[70] bg-black/80 backdrop-blur-md flex items-end md:items-center justify-center p-0 md:p-4" onClick={onClose}>
-          <div onClick={e => e.stopPropagation()} className="sheet-panel glass-panel border border-white/10 rounded-t-3xl md:rounded-3xl w-full md:max-w-sm max-h-[75vh] flex flex-col shadow-2xl">
+        <div className={`${closing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-[70] bg-black/80 flex items-end md:items-center justify-center p-0 md:p-4`} onClick={requestClose}>
+          <div onClick={e => e.stopPropagation()} className={`${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel border border-white/10 rounded-t-3xl md:rounded-3xl w-full md:max-w-sm max-h-[75vh] flex flex-col shadow-2xl`}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
               <h3 className="font-black text-white text-base">{title}</h3>
-              <button onClick={onClose} className="w-8 h-8 rounded-xl glass-card border border-white/10 flex items-center justify-center text-slate-300 hover:text-white transition"><Icon name="x" className="w-4 h-4" /></button>
+              <button onClick={requestClose} className="w-8 h-8 rounded-xl glass-card border border-white/10 flex items-center justify-center text-slate-300 hover:text-white transition"><Icon name="x" className="w-4 h-4" /></button>
             </div>
             <div className="overflow-y-auto p-3">
               {users === null ? (
@@ -2512,7 +2570,7 @@
               ) : (
                 <div className="space-y-1.5">
                   {users.map(u => (
-                    <button key={u.id} onClick={() => { onOpenProfile(u.username); onClose(); }} className="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-white/5 transition text-right">
+                    <button key={u.id} onClick={() => { onOpenProfile(u.username); requestClose(); }} className="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-white/5 transition text-right">
                       <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-accent-cyan to-blue-600 flex items-center justify-center font-black text-sm text-glass-950 overflow-hidden shrink-0">
                         {u.avatar ? <img src={u.avatar} alt="" className="w-full h-full object-cover" /> : (u.name || '?').charAt(0)}
                       </div>
@@ -2555,6 +2613,7 @@
     }
 
     function AddToListModal({ currentUser, title, onClose }) {
+      const [closing, requestClose] = useClosable(onClose);
       const [lists, setLists] = useState(null);
       const [newName, setNewName] = useState('');
       const [newIsPublic, setNewIsPublic] = useState(true);
@@ -2592,12 +2651,12 @@
       };
 
       return (
-        <div className="modal-backdrop fixed inset-0 z-[70] bg-black/80 backdrop-blur-md flex items-end md:items-center justify-center p-0 md:p-4" onClick={onClose}>
-          <div onClick={e => e.stopPropagation()} className="sheet-panel glass-panel border border-white/10 rounded-t-3xl md:rounded-3xl w-full md:max-w-sm max-h-[80vh] flex flex-col shadow-2xl">
+        <div className={`${closing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-[70] bg-black/80 flex items-end md:items-center justify-center p-0 md:p-4`} onClick={requestClose}>
+          <div onClick={e => e.stopPropagation()} className={`${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel border border-white/10 rounded-t-3xl md:rounded-3xl w-full md:max-w-sm max-h-[80vh] flex flex-col shadow-2xl`}>
             <div className="flex items-center gap-3 p-5 border-b border-white/10 shrink-0">
               <div className="w-10 h-14 rounded-lg overflow-hidden bg-glass-900 shrink-0 border border-white/10">{title.poster && <img src={title.poster} className="w-full h-full object-cover" alt="" />}</div>
               <h3 className="font-black text-base text-white flex-1 min-w-0 truncate">أضف "{title.name}" لقائمة</h3>
-              <button onClick={onClose} className="w-8 h-8 rounded-xl glass-card border border-white/10 flex items-center justify-center text-slate-300 shrink-0"><Icon name="x" className="w-4 h-4" /></button>
+              <button onClick={requestClose} className="w-8 h-8 rounded-xl glass-card border border-white/10 flex items-center justify-center text-slate-300 shrink-0"><Icon name="x" className="w-4 h-4" /></button>
             </div>
             <div className="p-4 space-y-2.5 overflow-y-auto flex-1">
               {lists === null ? (
@@ -2631,6 +2690,7 @@
     }
 
     function ListDetailModal({ list, isOwn, onClose, onOpen, listOwnerKey }) {
+      const [closing, requestClose] = useClosable(onClose);
       const [titlesMap, setTitlesMap] = useState(null);
       const [liveItems, setLiveItems] = useState(list.items || {});
       const [isPublic, setIsPublic] = useState(list.isPublic !== false);
@@ -2683,7 +2743,7 @@
       };
       const addItem = (id) => db.ref(`lists/${listOwnerKey}/${list.id}/items/${id}`).set(true).then(() => showToast('تمت إضافة العمل للقائمة'));
       const togglePublic = () => { const next = !isPublic; setIsPublic(next); db.ref(`lists/${listOwnerKey}/${list.id}/isPublic`).set(next); showToast(next ? 'أصبحت القائمة عامة' : 'أصبحت القائمة خاصة'); };
-      const deleteList = () => { db.ref(`lists/${listOwnerKey}/${list.id}`).remove(); showToast('تم حذف القائمة'); setConfirmDelete(false); onClose(); };
+      const deleteList = () => { db.ref(`lists/${listOwnerKey}/${list.id}`).remove(); showToast('تم حذف القائمة'); setConfirmDelete(false); requestClose(); };
       const saveName = () => {
         const trimmed = nameDraft.trim();
         if (!trimmed) { setNameDraft(name); setEditingName(false); return; }
@@ -2694,8 +2754,8 @@
       };
 
       return (
-        <div className="modal-backdrop fixed inset-0 z-[70] bg-black/80 backdrop-blur-md flex items-end md:items-center justify-center p-0 md:p-4" onClick={onClose}>
-          <div onClick={e => e.stopPropagation()} className="sheet-panel glass-panel border border-white/10 rounded-t-3xl md:rounded-3xl w-full md:max-w-2xl max-h-[85vh] flex flex-col shadow-2xl">
+        <div className={`${closing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-[70] bg-black/80 flex items-end md:items-center justify-center p-0 md:p-4`} onClick={requestClose}>
+          <div onClick={e => e.stopPropagation()} className={`${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel border border-white/10 rounded-t-3xl md:rounded-3xl w-full md:max-w-2xl max-h-[85vh] flex flex-col shadow-2xl`}>
             <div className="flex items-center justify-between p-5 border-b border-white/10 shrink-0 gap-3">
               <div className="min-w-0 flex-1">
                 {editingName ? (
@@ -2722,7 +2782,7 @@
                 {isOwn && (
                   <button onClick={() => setConfirmDelete(true)} title="حذف القائمة" className="w-8 h-8 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 flex items-center justify-center text-rose-400 transition"><Icon name="trash-2" className="w-4 h-4" /></button>
                 )}
-                <button onClick={onClose} className="w-8 h-8 rounded-xl glass-card border border-white/10 flex items-center justify-center text-slate-300"><Icon name="x" className="w-4 h-4" /></button>
+                <button onClick={requestClose} className="w-8 h-8 rounded-xl glass-card border border-white/10 flex items-center justify-center text-slate-300"><Icon name="x" className="w-4 h-4" /></button>
               </div>
             </div>
             <div className="p-4 overflow-y-auto flex-1">
@@ -2758,7 +2818,7 @@
                 <div className="profile-poster-grid">
                   {items.map(t => (
                     <div key={t.id} className={`relative ${removingIds[t.id] ? 'item-pop-out' : 'item-sink-in'}`}>
-                      <button onClick={() => { onOpen(t); onClose(); }} className="relative aspect-[2/3] w-full rounded-lg overflow-hidden glass-card">
+                      <button onClick={() => { onOpen(t); requestClose(); }} className="relative aspect-[2/3] w-full rounded-lg overflow-hidden glass-card">
                         {t.poster && <img src={t.poster} alt={t.name} className="w-full h-full object-cover" />}
                       </button>
                       {isOwn && (
@@ -2836,6 +2896,7 @@
 
     function ListsView({ currentUser, titles, onOpen, onOpenAuth }) {
       const [lists, setLists] = useState(null);
+      const [showSkeleton, setShowSkeleton] = useState(false);
       const [openList, setOpenList] = useState(null);
       const [showCreate, setShowCreate] = useState(false);
       const [newName, setNewName] = useState('');
@@ -2850,15 +2911,22 @@
 
       useEffect(() => {
         if (!key) return;
+        // ما نعرض هيكل التحميل إلا إذا البيانات تأخّرت فعليًا (250ms+)،
+        // حتى لا يظهر "فلاش" سريع بين الهيكل وحالة الفراغ عندما تكون الاستجابة فورية
+        let done = false;
+        const skeletonTimer = setTimeout(() => { if (!done) setShowSkeleton(true); }, 250);
         const ref = db.ref(`lists/${key}`);
         const cb = snap => {
+          done = true;
+          clearTimeout(skeletonTimer);
           const data = snap.val() || {};
           const arr = Object.keys(data).map(k => ({ id: k, ...data[k] }));
           arr.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
           setLists(arr);
+          setShowSkeleton(false);
         };
         ref.on('value', cb);
-        return () => ref.off('value', cb);
+        return () => { ref.off('value', cb); clearTimeout(skeletonTimer); };
       }, [key]);
 
       if (!currentUser) {
@@ -2921,24 +2989,25 @@
           </div>
 
           {lists === null ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3.5">
-              {[0, 1, 2, 3].map(i => (
-                <div key={i} className="rounded-2xl overflow-hidden border border-white/5">
-                  <div className="w-full aspect-[16/10] bg-glass-800 animate-pulse" />
-                  <div className="p-4 bg-glass-900/60 space-y-2">
-                    <div className="h-3 w-2/3 bg-glass-800 rounded animate-pulse" />
-                    <div className="h-2.5 w-1/3 bg-glass-800 rounded animate-pulse" />
+            showSkeleton && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3.5 page-fade-in">
+                {[0, 1, 2, 3].map(i => (
+                  <div key={i} className="rounded-2xl overflow-hidden border border-white/5">
+                    <div className="w-full aspect-[16/10] bg-glass-800 animate-pulse" />
+                    <div className="p-4 bg-glass-900/60 space-y-2">
+                      <div className="h-3 w-2/3 bg-glass-800 rounded animate-pulse" />
+                      <div className="h-2.5 w-1/3 bg-glass-800 rounded animate-pulse" />
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )
           ) : lists.length === 0 ? (
             !showCreate && (
-              <div className="py-16 text-center page-fade-in">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl glass-card flex items-center justify-center border border-white/5 text-slate-400">
+              <div className="py-16 text-center page-fade-in">                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl glass-card flex items-center justify-center border border-white/5 text-slate-400">
                   <Icon name="list" className="w-8 h-8" />
                 </div>
-                <p className="text-slate-300 font-medium mb-4">لا توجد أي قائمة بعد.</p>
+                <p className="text-slate-300 font-medium mb-4">ما عندك أي قائمة بعد.</p>
                 <button onClick={() => setShowCreate(true)} className="px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition transform hover:scale-105 active:scale-95">إنشاء أول قائمة</button>
               </div>
             )
@@ -3929,16 +3998,20 @@
       const [kind, setKind] = useState('permanent');
       const [days, setDays] = useState(7);
       const [error, setError] = useState('');
+      const [closing, requestClose] = useClosable(onCancel, 320);
+      const [closingConfirm, setClosingConfirm] = useState(false);
 
       const confirm = () => {
         if (!reason.trim()) { setError('كتابة سبب الحظر إلزامية.'); return; }
         const until = kind === 'temporary' ? Date.now() + (Number(days) || 1) * 86400000 : null;
-        onConfirm(reason.trim(), until);
+        setClosingConfirm(true);
+        setTimeout(() => onConfirm(reason.trim(), until), 320);
       };
+      const isClosing = closing || closingConfirm;
 
       return (
-        <div className="modal-backdrop fixed inset-0 z-[60] bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={onCancel}>
-          <div onClick={e => e.stopPropagation()} className="modal-panel glass-panel border border-white/10 rounded-3xl max-w-sm w-full p-6 shadow-2xl">
+        <div className={`${isClosing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4`} onClick={requestClose}>
+          <div onClick={e => e.stopPropagation()} className={`${isClosing ? 'modal-panel-out' : 'modal-panel'} glass-panel border border-white/10 rounded-3xl max-w-sm w-full p-6 shadow-2xl`}>
             <h3 className="font-black text-lg text-white mb-1">حظر @{user.username}</h3>
             <p className="text-xs text-slate-400 mb-4">كتابة السبب إلزامية ويظهر للمستخدم عند محاولة الدخول.</p>
             <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} placeholder="سبب الحظر (إلزامي)..."
@@ -3955,7 +4028,7 @@
             )}
             {error && <p className="text-rose-400 text-xs font-bold mb-3 bg-rose-500/10 p-2.5 rounded-xl border border-rose-500/20">{error}</p>}
             <div className="flex gap-3">
-              <button onClick={onCancel} className="flex-1 py-2.5 rounded-xl glass-card border border-white/10 text-sm font-bold text-slate-300 hover:bg-white/5 transition">إلغاء</button>
+              <button onClick={requestClose} className="flex-1 py-2.5 rounded-xl glass-card border border-white/10 text-sm font-bold text-slate-300 hover:bg-white/5 transition">إلغاء</button>
               <button onClick={confirm} className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-sm font-bold text-white transition">تأكيد الحظر</button>
             </div>
           </div>
@@ -4457,10 +4530,6 @@
               ) : null}
             </div>
           </main>
-
-          <footer className="border-t border-white/10 py-3 text-center text-[10px] leading-relaxed text-slate-600 bg-glass-950 mt-auto mb-16 md:mb-0">
-            <p>تصميم وبرمجة: <span className="text-slate-500 font-bold">محمود احمد</span> &nbsp;|&nbsp; للتواصل: <a href="tel:07734894407" className="font-mono text-slate-500 font-bold hover:text-accent-cyan transition">07734894407</a></p>
-          </footer>
 
           <MobileBottomNav view={view} setView={setView} />
           <ToastHost />
