@@ -53,7 +53,7 @@
     .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 
-    :root { --spring: cubic-bezier(0.16, 1, 0.3, 1); --spring-fast: cubic-bezier(0.19, 1, 0.22, 1); --collapse: cubic-bezier(0.45, 0, 0.2, 1); --liquid: cubic-bezier(0.19, 1, 0.22, 1); }
+    :root { --liquid: cubic-bezier(0.32, 1.5, 0.55, 1); --spring: cubic-bezier(0.32, 1.5, 0.55, 1); --spring-fast: cubic-bezier(0.3, 1.6, 0.5, 1); --collapse: cubic-bezier(0.4, 0, 0.7, 0.2); }
 
     @keyframes fadeInBackdrop { from { opacity: 0; } to { opacity: 1; } }
     @keyframes fadeOutBackdrop { from { opacity: 1; } to { opacity: 0; } }
@@ -62,22 +62,22 @@
     @keyframes slideUpSheet { from { opacity: 0; transform: translateY(38px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
     @keyframes slideDownSheet { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(30px) scale(0.98); } }
     @keyframes fadeInContent { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-    .modal-backdrop { animation: fadeInBackdrop 0.45s var(--liquid); backdrop-filter: blur(12px); transition: backdrop-filter 0.45s var(--liquid); }
-    .modal-backdrop-out { animation: fadeOutBackdrop 0.38s var(--collapse) forwards; }
-    .modal-panel { animation: scaleInPanel 0.5s var(--liquid); }
-    .modal-panel-out { animation: scaleOutPanel 0.38s var(--collapse) forwards; }
-    .sheet-panel { animation: slideUpSheet 0.56s var(--liquid); }
-    .sheet-panel-out { animation: slideDownSheet 0.4s var(--collapse) forwards; }
-    .page-fade-in { animation: fadeInContent 0.5s var(--liquid); }
+    .modal-backdrop { animation: fadeInBackdrop 0.24s ease-out; backdrop-filter: blur(12px); transition: backdrop-filter 0.24s ease-out; }
+    .modal-backdrop-out { animation: fadeOutBackdrop 0.2s var(--collapse) forwards; }
+    .modal-panel { animation: scaleInPanel 0.38s var(--liquid); }
+    .modal-panel-out { animation: scaleOutPanel 0.22s var(--collapse) forwards; }
+    .sheet-panel { animation: slideUpSheet 0.4s var(--liquid); }
+    .sheet-panel-out { animation: slideDownSheet 0.24s var(--collapse) forwards; }
+    .page-fade-in { animation: fadeInContent 0.32s var(--liquid); }
     @keyframes toastIn { from { opacity: 0; transform: translateY(18px) scale(0.94); } to { opacity: 1; transform: translateY(0) scale(1); } }
     @keyframes toastOut { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(12px) scale(0.94); } }
-    .toast-item { animation: toastIn 0.48s var(--liquid); }
-    .toast-item-out { animation: toastOut 0.32s var(--collapse) forwards; }
+    .toast-item { animation: toastIn 0.32s var(--liquid); }
+    .toast-item-out { animation: toastOut 0.22s var(--collapse) forwards; }
 
     /* عنصر يُضاف/يُحذف من قائمة: دخول وخروج سلس بدل الظهور المفاجئ */
     @keyframes itemSinkIn { 0% { opacity: 0; transform: scale(0.7) translateY(-16px); } 60% { opacity: 1; transform: scale(1.04) translateY(2px); } 100% { opacity: 1; transform: scale(1) translateY(0); } }
     @keyframes itemPopOut { 0% { opacity: 1; transform: scale(1) translateY(0); } 100% { opacity: 0; transform: scale(0.6) translateY(14px); } }
-    .item-sink-in { animation: itemSinkIn 0.44s var(--spring); }
+    .item-sink-in { animation: itemSinkIn 0.34s var(--spring); }
     .item-pop-out { animation: itemPopOut 0.3s var(--collapse) forwards; }
     @keyframes rowSinkIn { 0% { opacity: 0; transform: translateY(-10px) scale(0.96); max-height: 0; } 100% { opacity: 1; transform: translateY(0) scale(1); max-height: 80px; } }
     @keyframes rowPopOut { 0% { opacity: 1; transform: scale(1) translateX(0); max-height: 80px; } 100% { opacity: 0; transform: scale(0.85) translateX(14px); max-height: 0; } }
@@ -93,8 +93,8 @@
     .nav-pill-active { transition: transform 0.45s var(--spring), width 0.45s var(--spring); }
 
     /* مربع البحث بالموبايل: يتمدد من الزر بدل الظهور فجأة */
-    .mobile-search-morph { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 0.38s var(--spring), opacity 0.28s ease; }
-    .mobile-search-morph.open { grid-template-rows: 1fr; opacity: 1; }
+    .mobile-search-morph { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 0.3s var(--collapse), opacity 0.2s ease; }
+    .mobile-search-morph.open { grid-template-rows: 1fr; opacity: 1; transition: grid-template-rows 0.3s var(--liquid), opacity 0.22s ease; }
     .mobile-search-morph > div { overflow: hidden; min-height: 0; }
     img { transition: opacity 0.35s ease; }
     button, a { -webkit-tap-highlight-color: transparent; }
@@ -377,7 +377,7 @@
     // هوك مشترك يعطي أي مودال/شيت حركة إغلاق حقيقية وسلسة (زجاجية) بدل الاختفاء المفاجئ:
     // بدل استدعاء onClose مباشرة، نستدعي requestClose الذي يفعّل كلاس الخروج
     // ثم يستدعي onClose الحقيقي بعد اكتمال الحركة بقليل
-    function useClosable(onClose, duration = 380) {
+    function useClosable(onClose, duration = 260) {
       const [closing, setClosing] = useState(false);
       const requestClose = (...args) => {
         if (closing) return;
@@ -1052,7 +1052,7 @@
           style={{
             paddingBottom: 'calc(env(safe-area-inset-bottom) + 4px)',
             transform: hidden ? 'translateY(115%)' : 'translateY(0)',
-            transition: 'transform 0.42s var(--spring, cubic-bezier(0.22, 1, 0.36, 1))',
+            transition: 'transform 0.32s var(--spring)',
             willChange: 'transform'
           }}>
           {items.map(([k, l, icon]) => (
@@ -1225,9 +1225,9 @@
     }
 
     function ConfirmDialog({ title, body, confirmLabel, cancelLabel, onCancel, onConfirm }) {
-      const [closing, requestClose] = useClosable(onCancel, 320);
+      const [closing, requestClose] = useClosable(onCancel, 240);
       const [closingConfirm, setClosingConfirm] = useState(false);
-      const doConfirm = () => { setClosingConfirm(true); setTimeout(onConfirm, 320); };
+      const doConfirm = () => { setClosingConfirm(true); setTimeout(onConfirm, 240); };
       const isClosing = closing || closingConfirm;
       return (
         <div className={`${isClosing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4`} onClick={requestClose}>
@@ -2662,7 +2662,7 @@
               {lists === null ? (
                 <p className="text-sm text-slate-500 font-medium text-center py-6">جارٍ التحميل...</p>
               ) : lists.length === 0 ? (
-                <p className="text-sm text-slate-500 font-medium text-center py-6">لا توجد لديك أي قائمة بعد، أنشئ أول قائمة الان!.</p>
+                <p className="text-sm text-slate-500 font-medium text-center py-6">لاتوجد لديك أي قائمة بعد، أنشئ أول قائمة الان! .</p>
               ) : lists.map(l => {
                 const has = l.items && l.items[title.id];
                 return (
@@ -2965,7 +2965,7 @@
             )}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateRows: showCreate ? '1fr' : '0fr', opacity: showCreate ? 1 : 0, transition: 'grid-template-rows 0.4s var(--spring, cubic-bezier(0.22,1,0.36,1)), opacity 0.3s ease', overflow: 'hidden' }}>
+          <div style={{ display: 'grid', gridTemplateRows: showCreate ? '1fr' : '0fr', opacity: showCreate ? 1 : 0, transition: 'grid-template-rows 0.32s var(--liquid), opacity 0.22s ease', overflow: 'hidden' }}>
             <div className="min-h-0 overflow-hidden">
               <div className="glass-panel rounded-3xl p-5 border border-accent-cyan/20 shadow-xl mb-8">
                 <div className="flex items-center gap-2 mb-4">
@@ -2977,8 +2977,8 @@
                   className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white outline-none focus:border-accent-cyan mb-3 transition" />
                 <label className="text-xs font-bold text-slate-300 mb-1.5 block">من يشاهد هذي القائمة؟</label>
                 <div className="flex gap-2 mb-4">
-                  <button type="button" onClick={() => setNewIsPublic(true)} className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all duration-300 border ${newIsPublic ? 'bg-accent-cyan/15 border-accent-cyan text-accent-cyan scale-[1.02]' : 'glass-card border-white/10 text-slate-400'}`}><Icon name="eye" className="w-3.5 h-3.5" />عامة · (تظهر في ملفك الشخصي)</button>
-                  <button type="button" onClick={() => setNewIsPublic(false)} className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all duration-300 border ${!newIsPublic ? 'bg-accent-cyan/15 border-accent-cyan text-accent-cyan scale-[1.02]' : 'glass-card border-white/10 text-slate-400'}`}><Icon name="eyeOff" className="w-3.5 h-3.5" />خاصة · (تظهر لك فقط) </button>
+                  <button type="button" onClick={() => setNewIsPublic(true)} className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all duration-300 border ${newIsPublic ? 'bg-accent-cyan/15 border-accent-cyan text-accent-cyan scale-[1.02]' : 'glass-card border-white/10 text-slate-400'}`}><Icon name="eye" className="w-3.5 h-3.5" />عامة · يشوفها الكل</button>
+                  <button type="button" onClick={() => setNewIsPublic(false)} className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all duration-300 border ${!newIsPublic ? 'bg-accent-cyan/15 border-accent-cyan text-accent-cyan scale-[1.02]' : 'glass-card border-white/10 text-slate-400'}`}><Icon name="eyeOff" className="w-3.5 h-3.5" />خاصة · تخصك بس</button>
                 </div>
                 <div className="flex gap-3">
                   <button onClick={createList} disabled={creating || !newName.trim()} className="px-6 py-2.5 rounded-2xl bg-accent-cyan text-glass-950 text-sm font-bold hover:brightness-110 transition disabled:opacity-50 transform active:scale-95">إنشاء</button>
@@ -3998,14 +3998,14 @@
       const [kind, setKind] = useState('permanent');
       const [days, setDays] = useState(7);
       const [error, setError] = useState('');
-      const [closing, requestClose] = useClosable(onCancel, 320);
+      const [closing, requestClose] = useClosable(onCancel, 240);
       const [closingConfirm, setClosingConfirm] = useState(false);
 
       const confirm = () => {
         if (!reason.trim()) { setError('كتابة سبب الحظر إلزامية.'); return; }
         const until = kind === 'temporary' ? Date.now() + (Number(days) || 1) * 86400000 : null;
         setClosingConfirm(true);
-        setTimeout(() => onConfirm(reason.trim(), until), 320);
+        setTimeout(() => onConfirm(reason.trim(), until), 240);
       };
       const isClosing = closing || closingConfirm;
 
