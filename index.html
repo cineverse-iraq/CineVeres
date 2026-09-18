@@ -246,7 +246,7 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
+    const { useState, useEffect, useRef, useLayoutEffect } = React;
 
     const firebaseConfig = {
       databaseURL: "https://mnste-78361-default-rtdb.firebaseio.com",
@@ -376,6 +376,52 @@
         return () => window.removeEventListener('resize', onResize);
       }, []);
       return isMobile;
+    }
+
+    // شريط تبويبات بمؤشر ينزلق بسلاسة خلف العنصر النشط (نفس أسلوب تسجيل الدخول/إنشاء حساب)،
+    // يُستخدم لكل تبويبات الموقع: التنقل الرئيسي، لوحة التحكم، الفلاتر...الخ
+    function SlidingTabs({ items, active, onChange, containerClassName = '', trackClassName = 'bg-accent-red shadow-[0_0_15px_rgba(255,51,75,0.4)]', getButtonClassName }) {
+      const containerRef = useRef(null);
+      const btnRefs = useRef({});
+      const [style, setStyle] = useState(null);
+
+      const measure = () => {
+        const btn = btnRefs.current[active];
+        const container = containerRef.current;
+        if (!btn || !container) return;
+        setStyle(prev => {
+          const next = { left: btn.offsetLeft, top: btn.offsetTop, width: btn.offsetWidth, height: btn.offsetHeight };
+          if (prev && prev.left === next.left && prev.top === next.top && prev.width === next.width && prev.height === next.height) return prev;
+          return next;
+        });
+      };
+
+      useLayoutEffect(measure, [active, items.map(i => i.key).join(',')]);
+      useEffect(() => {
+        const onResize = () => measure();
+        window.addEventListener('resize', onResize);
+        const ro = typeof ResizeObserver !== 'undefined' && containerRef.current ? new ResizeObserver(onResize) : null;
+        if (ro && containerRef.current) ro.observe(containerRef.current);
+        return () => { window.removeEventListener('resize', onResize); if (ro) ro.disconnect(); };
+      }, [active]);
+
+      return (
+        <div ref={containerRef} className={`relative ${containerClassName}`}>
+          {style && (
+            <div className={`absolute rounded-xl pointer-events-none ${trackClassName}`}
+              style={{ left: style.left, top: style.top, width: style.width, height: style.height, transition: 'left 0.45s var(--liquid, var(--spring)), top 0.45s var(--liquid, var(--spring)), width 0.45s var(--liquid, var(--spring)), height 0.45s var(--liquid, var(--spring))' }} />
+          )}
+          {items.map(it => {
+            const isActive = active === it.key;
+            return (
+              <button key={it.key} ref={el => { if (el) btnRefs.current[it.key] = el; }} onClick={() => onChange(it.key)}
+                className={`relative z-10 ${getButtonClassName ? getButtonClassName(isActive) : ''}`}>
+                {it.render ? it.render(isActive) : it.label}
+              </button>
+            );
+          })}
+        </div>
+      );
     }
 
     // هوك مشترك يعطي أي مودال/شيت حركة إغلاق حقيقية وسلسة (زجاجية) بدل الاختفاء المفاجئ:
@@ -813,12 +859,13 @@
             )}
           </div>
           {showGenreFilter && genres.length > 0 && (
-            <div className="flex gap-2 flex-wrap mb-6">
-              <button onClick={() => setGenre('')} className={`text-xs px-4 py-2 rounded-xl transition font-bold border ${!genre ? 'bg-accent-cyan text-glass-950 border-accent-cyan shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 hover:border-white/20'}`}>الكل</button>
-              {genres.map(g => (
-                <button key={g} onClick={() => setGenre(g)} className={`text-xs px-4 py-2 rounded-xl transition font-bold border ${genre === g ? 'bg-accent-cyan text-glass-950 border-accent-cyan shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 hover:border-white/20'}`}>{g}</button>
-              ))}
-            </div>
+            <SlidingTabs
+              containerClassName="flex gap-2 flex-wrap mb-6"
+              items={[{ key: '__all__', label: 'الكل' }, ...genres.map(g => ({ key: g, label: g }))]}
+              active={genre || '__all__'} onChange={(k) => setGenre(k === '__all__' ? '' : k)}
+              trackClassName="bg-accent-cyan border border-accent-cyan shadow-[0_0_15px_rgba(0,240,255,0.4)]"
+              getButtonClassName={(isActive) => `text-xs px-4 py-2 rounded-xl font-bold border ${isActive ? 'text-glass-950 border-transparent' : 'glass-card text-slate-300 border-white/10 hover:border-white/20'}`}
+            />
           )}
           {filtered.length === 0 ? (
             <EmptyState text={emptyText || 'لا توجد نتائج.'} />
@@ -901,10 +948,13 @@
                 <span className="tracking-wide hidden xs:inline">Cine<span className="text-accent-cyan">Verse</span></span>
               </button>
 
-              <nav className="hidden md:flex items-center gap-1.5 bg-glass-900/80 p-1 rounded-2xl border border-white/5">
-                {[['home', 'الرئيسية'], ['movie', 'أفلام'], ['series', 'مسلسلات'], ['anime', 'أنمي'], ['lists', 'قوائمي']].map(([k, l]) => (
-                  <button key={k} onClick={() => setView(k)} className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${view === k ? 'bg-accent-red text-white shadow-[0_0_15px_rgba(255,51,75,0.4)]' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}>{l}</button>
-                ))}
+              <nav className="hidden md:block">
+                <SlidingTabs
+                  containerClassName="flex items-center gap-1.5 bg-glass-900/80 p-1 rounded-2xl border border-white/5"
+                  items={[['home', 'الرئيسية'], ['movie', 'أفلام'], ['series', 'مسلسلات'], ['anime', 'أنمي'], ['lists', 'قوائمي']].map(([k, l]) => ({ key: k, label: l }))}
+                  active={view} onChange={setView}
+                  getButtonClassName={(isActive) => `px-4 py-2 rounded-xl text-sm font-semibold ${isActive ? 'text-white' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}
+                />
               </nav>
             </div>
 
@@ -1059,11 +1109,13 @@
             transition: 'transform 0.32s var(--spring)',
             willChange: 'transform'
           }}>
-          {items.map(([k, l, icon]) => (
-            <button key={k} onClick={() => setView(k)} className={`flex-1 flex flex-col items-center gap-1 py-2 text-[11px] font-bold transition rounded-xl ${view === k ? 'text-accent-cyan bg-white/5 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}>
-              <Icon name={icon} className="w-5 h-5" />{l}
-            </button>
-          ))}
+          <SlidingTabs
+            containerClassName="flex-1 flex"
+            items={items.map(([k, l, icon]) => ({ key: k, render: () => (<><Icon name={icon} className="w-5 h-5" />{l}</>) }))}
+            active={view} onChange={setView}
+            trackClassName="bg-white/5 shadow-sm"
+            getButtonClassName={(isActive) => `flex-1 flex flex-col items-center gap-1 py-2 text-[11px] font-bold rounded-xl ${isActive ? 'text-accent-cyan' : 'text-slate-400 hover:text-slate-200'}`}
+          />
         </nav>
       );
     }
@@ -2296,11 +2348,13 @@
         <div>
           <h1 className="text-2xl md:text-3xl font-black mb-6 text-slate-100">طلباتي وشكاواي</h1>
           <div className="glass-panel rounded-3xl p-5 md:p-7 mb-8 border border-white/10 shadow-xl">
-            <div className="flex gap-2.5 flex-wrap mb-4">
-              {Object.entries(COMPLAINT_TYPES).map(([k, l]) => (
-                <button key={k} onClick={() => setType(k)} className={`text-xs px-4 py-2 rounded-xl font-bold transition ${type === k ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>{l}</button>
-              ))}
-            </div>
+            <SlidingTabs
+              containerClassName="flex gap-2.5 flex-wrap mb-4"
+              items={Object.entries(COMPLAINT_TYPES).map(([k, l]) => ({ key: k, label: l }))}
+              active={type} onChange={setType}
+              trackClassName="bg-accent-cyan shadow-[0_0_15px_rgba(0,240,255,0.4)]"
+              getButtonClassName={(isActive) => `text-xs px-4 py-2 rounded-xl font-bold ${isActive ? 'text-glass-950' : 'glass-card text-slate-300 border border-white/5'}`}
+            />
             <input value={titleName} onChange={e => setTitleName(e.target.value)} placeholder="اسم العمل (اختياري)" className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan mb-3 transition shadow-inner" />
             <textarea value={message} onChange={e => setMessage(e.target.value)} placeholder="اكتب تفاصيل طلبك أو مشكلتك..." rows={4} className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan mb-4 transition shadow-inner"></textarea>
             <button onClick={submit} className="px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition">إرسال الطلب</button>
@@ -2684,10 +2738,16 @@
                 <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === 'Enter' && createList()} placeholder="اسم قائمة جديدة..." className="flex-1 bg-glass-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-accent-cyan" />
                 <button onClick={createList} disabled={creating || !newName.trim()} className="px-4 py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-sm font-bold hover:brightness-110 transition disabled:opacity-50">إنشاء</button>
               </div>
-              <div className="flex gap-2">
-                <button type="button" onClick={() => setNewIsPublic(true)} className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold transition border ${newIsPublic ? 'bg-accent-cyan/15 border-accent-cyan text-accent-cyan' : 'glass-card border-white/10 text-slate-400'}`}><Icon name="eye" className="w-3.5 h-3.5" />عامة</button>
-                <button type="button" onClick={() => setNewIsPublic(false)} className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold transition border ${!newIsPublic ? 'bg-accent-cyan/15 border-accent-cyan text-accent-cyan' : 'glass-card border-white/10 text-slate-400'}`}><Icon name="eyeOff" className="w-3.5 h-3.5" />خاصة</button>
-              </div>
+              <SlidingTabs
+                containerClassName="flex gap-2"
+                items={[
+                  { key: 'public', render: () => (<><Icon name="eye" className="w-3.5 h-3.5" />عامة</>) },
+                  { key: 'private', render: () => (<><Icon name="eyeOff" className="w-3.5 h-3.5" />خاصة</>) },
+                ]}
+                active={newIsPublic ? 'public' : 'private'} onChange={(k) => setNewIsPublic(k === 'public')}
+                trackClassName="bg-accent-cyan/15 border border-accent-cyan"
+                getButtonClassName={(isActive) => `flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold border ${isActive ? 'text-accent-cyan border-transparent' : 'glass-card border-white/10 text-slate-400'}`}
+              />
             </div>
           </div>
         </div>
@@ -2981,10 +3041,16 @@
                 <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === 'Enter' && createList()} placeholder="مثال: أفلام أكشن مفضلة"
                   className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white outline-none focus:border-accent-cyan mb-3 transition" />
                 <label className="text-xs font-bold text-slate-300 mb-1.5 block">من يشاهد هذي القائمة؟</label>
-                <div className="flex gap-2 mb-4">
-                  <button type="button" onClick={() => setNewIsPublic(true)} className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all duration-300 border ${newIsPublic ? 'bg-accent-cyan/15 border-accent-cyan text-accent-cyan scale-[1.02]' : 'glass-card border-white/10 text-slate-400'}`}><Icon name="eye" className="w-3.5 h-3.5" />عامة ·  </button>
-                  <button type="button" onClick={() => setNewIsPublic(false)} className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all duration-300 border ${!newIsPublic ? 'bg-accent-cyan/15 border-accent-cyan text-accent-cyan scale-[1.02]' : 'glass-card border-white/10 text-slate-400'}`}><Icon name="eyeOff" className="w-3.5 h-3.5" />خاصة ·  </button>
-                </div>
+                <SlidingTabs
+                  containerClassName="flex gap-2 mb-4"
+                  items={[
+                    { key: 'public', render: () => (<><Icon name="eye" className="w-3.5 h-3.5" />عامة ·  </>) },
+                    { key: 'private', render: () => (<><Icon name="eyeOff" className="w-3.5 h-3.5" />خاصة ·  </>) },
+                  ]}
+                  active={newIsPublic ? 'public' : 'private'} onChange={(k) => setNewIsPublic(k === 'public')}
+                  trackClassName="bg-accent-cyan/15 border border-accent-cyan"
+                  getButtonClassName={(isActive) => `flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold border ${isActive ? 'text-accent-cyan border-transparent' : 'glass-card border-white/10 text-slate-400'}`}
+                />
                 <div className="flex gap-3">
                   <button onClick={createList} disabled={creating || !newName.trim()} className="px-6 py-2.5 rounded-2xl bg-accent-cyan text-glass-950 text-sm font-bold hover:brightness-110 transition disabled:opacity-50 transform active:scale-95">إنشاء</button>
                   <button onClick={() => setShowCreate(false)} className="px-6 py-2.5 rounded-2xl glass-card border border-white/10 text-sm font-bold text-slate-300 transform active:scale-95">إلغاء</button>
@@ -3832,15 +3898,16 @@
               ) : (
                 <div>
                   <p className="text-[11px] font-bold text-slate-400 mb-2">١) اختر الموسم</p>
-                  <div className="flex gap-2 flex-wrap mb-5">
-                    {form.seasons.map((s, si) => (
-                      <button key={si} onClick={() => { setActiveSeasonIdx(si); setEditingEpisodeIdx(null); }}
-                        className={`flex items-center gap-1.5 text-xs px-4 py-2.5 rounded-xl font-bold transition border ${activeSeasonIdx === si ? 'bg-accent-cyan text-glass-950 border-accent-cyan shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border-white/10 hover:border-white/20'}`}>
-                        <Icon name="tv" className="w-3.5 h-3.5" />الموسم {s.number || si + 1}
-                        <span className="opacity-70">({(s.episodes || []).length})</span>
-                      </button>
-                    ))}
-                  </div>
+                  <SlidingTabs
+                    containerClassName="flex gap-2 flex-wrap mb-5"
+                    items={form.seasons.map((s, si) => ({
+                      key: String(si),
+                      render: () => (<><Icon name="tv" className="w-3.5 h-3.5" />الموسم {s.number || si + 1}<span className="opacity-70">({(s.episodes || []).length})</span></>)
+                    }))}
+                    active={String(activeSeasonIdx)} onChange={(k) => { setActiveSeasonIdx(Number(k)); setEditingEpisodeIdx(null); }}
+                    trackClassName="bg-accent-cyan shadow-[0_0_15px_rgba(0,240,255,0.4)]"
+                    getButtonClassName={(isActive) => `flex items-center gap-1.5 text-xs px-4 py-2.5 rounded-xl font-bold border ${isActive ? 'text-glass-950 border-transparent' : 'glass-card text-slate-300 border-white/10 hover:border-white/20'}`}
+                  />
 
                   {activeSeason && (
                     <div className="glass-card rounded-2xl p-4 border border-white/10">
@@ -4211,27 +4278,32 @@
       return (
         <div>
           <h1 className="text-2xl md:text-3xl font-black mb-6 text-slate-100">لوحة تحكم  </h1>
-          <div className="flex gap-3 mb-6 border-b border-white/10 pb-3 flex-wrap">
-            <button onClick={() => { setTab('content'); setEditing(null); }} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'content' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>المحتوى (رفع )</button>
-            <button onClick={() => setTab('complaints')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'complaints' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>الشكاوى والطلبات</button>
-            {isFullAdmin && (
-              <button onClick={() => setTab('users')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'users' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>المستخدمون</button>
-            )}
-            {isFullAdmin && (
-              <button onClick={() => setTab('audit')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'audit' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>سجل النشاط</button>
-            )}
-          </div>
+          <SlidingTabs
+            containerClassName="flex gap-3 mb-6 border-b border-white/10 pb-3 flex-wrap"
+            items={[
+              { key: 'content', label: 'المحتوى (رفع )' },
+              { key: 'complaints', label: 'الشكاوى والطلبات' },
+              ...(isFullAdmin ? [{ key: 'users', label: 'المستخدمون' }] : []),
+              ...(isFullAdmin ? [{ key: 'audit', label: 'سجل النشاط' }] : []),
+            ]}
+            active={tab} onChange={(k) => { setTab(k); if (k === 'content') setEditing(null); }}
+            trackClassName="bg-accent-cyan shadow-[0_0_15px_rgba(0,240,255,0.4)]"
+            getButtonClassName={(isActive) => `px-5 py-2.5 rounded-xl text-sm font-bold ${isActive ? 'text-glass-950' : 'glass-card text-slate-300 border border-white/5'}`}
+          />
 
           {tab === 'content' && (
             editing ? (
               <AdminContentForm initial={editing === 'new' ? null : editing} defaultType={contentType} onDone={() => setEditing(null)} />
             ) : (
               <div>
-                <div className="flex gap-2.5 mb-5">
-                  {[['movie', 'أفلام'], ['series', 'مسلسلات'], ['anime', 'أنمي']].map(([k, l]) => (
-                    <button key={k} onClick={() => setContentType(k)} className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-bold transition ${contentType === k ? 'bg-accent-red text-white shadow-[0_0_15px_rgba(255,51,75,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>{l} <span className="opacity-70 text-xs">({titles.filter(t => t.type === k).length})</span></button>
-                  ))}
-                </div>
+                <SlidingTabs
+                  containerClassName="flex gap-2.5 mb-5"
+                  items={[['movie', 'أفلام'], ['series', 'مسلسلات'], ['anime', 'أنمي']].map(([k, l]) => ({
+                    key: k, render: () => (<>{l} <span className="opacity-70 text-xs">({titles.filter(t => t.type === k).length})</span></>)
+                  }))}
+                  active={contentType} onChange={setContentType}
+                  getButtonClassName={(isActive) => `flex-1 px-4 py-2.5 rounded-xl text-sm font-bold ${isActive ? 'text-white' : 'glass-card text-slate-300 border border-white/5'}`}
+                />
                 <div className="flex items-center gap-3 mb-6 flex-wrap">
                   <button onClick={() => setEditing('new')} className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition"><Icon name="plus" className="w-4 h-4" />رفع {TYPE_LABELS[contentType]} جديد</button>
                   <div className="relative flex-1 min-w-[180px]">
