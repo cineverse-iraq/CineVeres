@@ -97,30 +97,34 @@
     .mobile-search-morph.open { grid-template-rows: 1fr; opacity: 1; transition: grid-template-rows 0.3s var(--liquid), opacity 0.22s ease; }
     .mobile-search-morph > div { overflow: hidden; min-height: 0; }
     img { transition: opacity 0.35s ease; }
-    button, a { -webkit-tap-highlight-color: transparent; }
-    button:active { transform: scale(0.97); }
-    input, textarea, select { font-size: 16px !important; }
+    button, a { -webkit-tap-highlight-color: transparent; transition: transform 0.18s var(--spring), background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.3s ease, color 0.25s ease; }
+    button:active { transform: scale(0.96); }
+    input, textarea, select { font-size: 16px !important; transition: border-color 0.25s ease, box-shadow 0.25s ease; }
     @media (min-width: 768px) { input, textarea, select { font-size: 14px !important; } }
 
+    /* زجاج سائل بأسلوب iOS 26: طبقة انعكاس علوية + بريق حي + عمق حقيقي */
     .glass-panel {
-      background: rgba(14, 19, 31, 0.75);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+      background: linear-gradient(165deg, rgba(255,255,255,0.09), rgba(255,255,255,0) 38%), rgba(14, 19, 31, 0.72);
+      backdrop-filter: blur(26px) saturate(1.7);
+      -webkit-backdrop-filter: blur(26px) saturate(1.7);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.09);
     }
 
     .glass-card {
-      background: rgba(22, 30, 46, 0.6);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      background: linear-gradient(165deg, rgba(255,255,255,0.07), rgba(255,255,255,0) 45%), rgba(22, 30, 46, 0.55);
+      backdrop-filter: blur(16px) saturate(1.6);
+      -webkit-backdrop-filter: blur(16px) saturate(1.6);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      transition: all 0.35s var(--liquid, var(--spring));
     }
     .glass-card:hover {
-      border-color: rgba(0, 240, 255, 0.4);
-      box-shadow: 0 10px 30px -10px rgba(0, 240, 255, 0.2);
+      border-color: rgba(0, 240, 255, 0.42);
+      box-shadow: 0 12px 34px -10px rgba(0, 240, 255, 0.25), inset 0 1px 0 rgba(255,255,255,0.12);
+      transform: translateY(-1.5px);
     }
+
+    .auth-pill-highlight { transition: inset-inline-start 0.5s var(--liquid, var(--spring)); }
 
     html { width: 100%; height: 100%; }
     body { overflow-x: hidden; width: 100%; overscroll-behavior-y: none; }
@@ -1192,11 +1196,12 @@
       return (
         <div className={`${closing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4`} onClick={requestClose}>
           <div onClick={e => e.stopPropagation()} className={`${closing ? 'modal-panel-out' : 'modal-panel'} glass-panel border border-white/10 rounded-3xl max-w-sm w-full p-6 shadow-2xl`}>
-            <div className="flex gap-4 border-b border-white/10 pb-3 mb-5">
-              <button onClick={() => setTab('login')} className={`font-bold text-sm pb-2 -mb-3 transition ${tab === 'login' ? 'text-accent-cyan border-b-2 border-accent-cyan' : 'text-slate-400'}`}>تسجيل الدخول</button>
-              <button onClick={() => setTab('register')} className={`font-bold text-sm pb-2 -mb-3 transition ${tab === 'register' ? 'text-accent-cyan border-b-2 border-accent-cyan' : 'text-slate-400'}`}>إنشاء حساب</button>
+            <div className="relative grid grid-cols-2 bg-glass-900/80 border border-white/10 rounded-2xl p-1 mb-5 overflow-hidden shadow-inner">
+              <div className="auth-pill-highlight absolute inset-y-1 w-[calc(50%-4px)] rounded-xl bg-accent-cyan shadow-[0_0_18px_rgba(0,240,255,0.45)]" style={{ insetInlineStart: tab === 'login' ? '4px' : 'calc(50% + 0px)' }}></div>
+              <button type="button" onClick={() => setTab('login')} className={`relative z-10 py-2.5 rounded-xl text-sm font-bold ${tab === 'login' ? 'text-glass-950' : 'text-slate-300 hover:text-white'}`}>تسجيل الدخول</button>
+              <button type="button" onClick={() => setTab('register')} className={`relative z-10 py-2.5 rounded-xl text-sm font-bold ${tab === 'register' ? 'text-glass-950' : 'text-slate-300 hover:text-white'}`}>إنشاء حساب</button>
             </div>
-            <div className="space-y-3.5">
+            <div key={tab} className="space-y-3.5 page-fade-in">
               {tab === 'register' && (
                 <>
                   <input value={name} onChange={e => setName(e.target.value)} placeholder="الاسم الكامل" className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition" />
@@ -4181,40 +4186,6 @@
       );
     }
 
-    function AdminDashboardStats({ titles }) {
-      const [usersCount, setUsersCount] = useState(null);
-      const [openComplaints, setOpenComplaints] = useState(null);
-      useEffect(() => {
-        db.ref('users').once('value', snap => setUsersCount(snap.numChildren()));
-        db.ref('complaints').orderByChild('status').equalTo('open').once('value', snap => setOpenComplaints(snap.numChildren()));
-      }, []);
-      const total = titles.length;
-      const published = titles.filter(t => t.status === 'published').length;
-      const drafts = total - published;
-      const totalViews = titles.reduce((s, t) => s + (t.views || 0), 0);
-      const totalLikes = titles.reduce((s, t) => s + (t.likes || 0), 0);
-      const cards = [
-        ['layers', total, 'إجمالي الأعمال', 'text-accent-cyan'],
-        ['eye', published, 'منشور', 'text-emerald-400'],
-        ['pencil', drafts, 'مسودة', 'text-amber-400'],
-        ['user', usersCount === null ? '…' : usersCount, 'المستخدمون', 'text-accent-purple'],
-        ['flag', openComplaints === null ? '…' : openComplaints, 'شكاوى مفتوحة', 'text-rose-400'],
-        ['trendingUp', totalViews, 'إجمالي المشاهدات', 'text-accent-purple'],
-        ['heart', totalLikes, 'إجمالي الإعجابات', 'text-rose-400'],
-      ];
-      return (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
-          {cards.map(([icon, val, label, color]) => (
-            <div key={label} className="glass-card rounded-2xl p-4 border border-white/10 text-center">
-              <Icon name={icon} className={`w-5 h-5 mx-auto mb-2 ${color}`} />
-              <p className="text-xl font-black text-white">{val}</p>
-              <p className="text-[11px] text-slate-400 font-bold mt-0.5">{label}</p>
-            </div>
-          ))}
-        </div>
-      );
-    }
-
     function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
       const [tab, setTab] = useState('content');
       const [contentType, setContentType] = useState('movie');
@@ -4240,7 +4211,6 @@
       return (
         <div>
           <h1 className="text-2xl md:text-3xl font-black mb-6 text-slate-100">لوحة تحكم  </h1>
-          <AdminDashboardStats titles={titles} />
           <div className="flex gap-3 mb-6 border-b border-white/10 pb-3 flex-wrap">
             <button onClick={() => { setTab('content'); setEditing(null); }} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'content' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>المحتوى (رفع )</button>
             <button onClick={() => setTab('complaints')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition ${tab === 'complaints' ? 'bg-accent-cyan text-glass-950 shadow-[0_0_15px_rgba(0,240,255,0.4)]' : 'glass-card text-slate-300 border border-white/5'}`}>الشكاوى والطلبات</button>
