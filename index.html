@@ -385,24 +385,33 @@
       const btnRefs = useRef({});
       const [style, setStyle] = useState(null);
 
+      // نقيس الموضع عبر getBoundingClientRect (إحداثيات فعلية بالشاشة) بدل offsetLeft/offsetTop
+      // لأن offsetLeft يعتمد على offsetParent وقد يُعطي نتائج غير دقيقة داخل حاويات RTL/متحركة،
+      // بينما الفرق بين مستطيلي الزر والحاوية يبقى صحيحًا دائمًا مهما كان الاتجاه أو التحريك.
       const measure = () => {
         const btn = btnRefs.current[active];
         const container = containerRef.current;
         if (!btn || !container) return;
+        const cRect = container.getBoundingClientRect();
+        const bRect = btn.getBoundingClientRect();
+        if (bRect.width < 1 || bRect.height < 1) return; // العنصر غير ظاهر/مقاس بعد (مثلاً داخل لوحة مطوية)
         setStyle(prev => {
-          const next = { left: btn.offsetLeft, top: btn.offsetTop, width: btn.offsetWidth, height: btn.offsetHeight };
-          if (prev && prev.left === next.left && prev.top === next.top && prev.width === next.width && prev.height === next.height) return prev;
+          const next = { left: bRect.left - cRect.left, top: bRect.top - cRect.top, width: bRect.width, height: bRect.height };
+          if (prev && Math.abs(prev.left - next.left) < 0.5 && Math.abs(prev.top - next.top) < 0.5 && Math.abs(prev.width - next.width) < 0.5 && Math.abs(prev.height - next.height) < 0.5) return prev;
           return next;
         });
       };
 
       useLayoutEffect(measure, [active, items.map(i => i.key).join(',')]);
       useEffect(() => {
+        // إعادة قياس بعد أي حركة/تحريك محتمل بالحاوية (مثل توسّع لوحة مطوية) لضمان مطابقة دقيقة
+        const raf1 = requestAnimationFrame(() => requestAnimationFrame(measure));
+        const t = setTimeout(measure, 360);
         const onResize = () => measure();
         window.addEventListener('resize', onResize);
         const ro = typeof ResizeObserver !== 'undefined' && containerRef.current ? new ResizeObserver(onResize) : null;
         if (ro && containerRef.current) ro.observe(containerRef.current);
-        return () => { window.removeEventListener('resize', onResize); if (ro) ro.disconnect(); };
+        return () => { cancelAnimationFrame(raf1); clearTimeout(t); window.removeEventListener('resize', onResize); if (ro) ro.disconnect(); };
       }, [active]);
 
       return (
