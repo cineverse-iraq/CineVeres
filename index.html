@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>CineVerse - أفلام ومسلسلات وأنمي</title>
 
+  <!-- تحميل خط الموقع أول شي بالصفحة (قبل أي سكربت) حتى ما تطلع شاشة التحميل بخط افتراضي ثم تتبدل -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap">
+
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -43,7 +48,6 @@
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
 
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap');
     html { scroll-behavior: smooth; }
     body { font-family: 'Cairo', sans-serif; background-color: #07090E; color: #F8FAFC; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
     * { -webkit-tap-highlight-color: transparent; }
@@ -2464,13 +2468,14 @@
       );
     }
 
-    // أيقونة عين تتحول بسلاسة: نفس شكل العين يبقى ثابت، وخط الشطب يُرسم تدريجيًا بدل ما يظهر أو يختفي فجأة
+    // أيقونة عين تتحول بسلاسة وبسرعة ثابتة: نفس شكل العين يبقى ثابت، وخط الشطب يُرسم تدريجيًا بدل ما يظهر أو يختفي فجأة
     function EyeToggle({ crossed, className }) {
       return (
-        <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" style={{ transition: 'opacity 0.35s var(--spring, ease)', opacity: crossed ? 0.4 : 1 }} />
-          <circle cx="12" cy="12" r="3" style={{ transition: 'opacity 0.35s var(--spring, ease), transform 0.35s var(--spring, ease)', transformOrigin: '12px 12px', opacity: crossed ? 0.4 : 1, transform: crossed ? 'scale(0.55)' : 'scale(1)' }} />
-          <line x1="3" y1="3" x2="21" y2="21" pathLength="1" style={{ strokeDasharray: 1, strokeDashoffset: crossed ? 0 : 1, transition: 'stroke-dashoffset 0.4s var(--spring, ease)' }} />
+        <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+          style={{ transition: 'transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1)', transform: crossed ? 'rotate(-8deg)' : 'rotate(0deg)' }}>
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" style={{ transition: 'opacity 0.28s ease-out', opacity: crossed ? 0.4 : 1 }} />
+          <circle cx="12" cy="12" r="3" style={{ transition: 'opacity 0.28s ease-out, transform 0.28s ease-out', transformOrigin: '12px 12px', opacity: crossed ? 0.4 : 1, transform: crossed ? 'scale(0.55)' : 'scale(1)' }} />
+          <line x1="3" y1="3" x2="21" y2="21" pathLength="1" style={{ strokeDasharray: 1, strokeDashoffset: crossed ? 0 : 1, transition: 'stroke-dashoffset 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }} />
         </svg>
       );
     }
