@@ -304,8 +304,6 @@
     const isIOS = /iP(hone|od|ad)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const sanitizeKey = (s) => (s || '').replace(/[.#$\/\[\]]/g, '_');
 
-    // نظام إشعارات خفيفة (Toast) يظهر تلقائيًا أعلى الشاشة ثم يختفي وحده،
-    // يُستخدم لتأكيد نجاح العمليات (حفظ/حذف/إضافة) دون الحاجة لتفاعل من المستخدم
     let toastListeners = [];
     let toastIdCounter = 0;
     function showToast(message, type = 'success') {
@@ -313,7 +311,6 @@
       toastListeners.forEach(fn => fn(toast));
     }
 
-    // إرسال إشعار داخل الموقع لمستخدم معيّن (يظهر بجرس الإشعارات بالهيدر)
     function pushNotification(toUsername, data) {
       if (!toUsername) return;
       db.ref(`notifications/${sanitizeKey(toUsername)}`).push({ ...data, date: Date.now(), read: false });
@@ -335,7 +332,6 @@
     const TYPE_PLURAL = { movie: 'الأفلام', series: 'المسلسلات', anime: 'الأنميات' };
     const COMPLAINT_TYPES = { add: 'طلب إضافة عمل', problem: 'مشكلة في التشغيل أو التحميل', suggestion: 'اقتراح عام' };
 
-    // تحويل رقم إلى ترتيبي مؤنث بالعربية (يوافق كلمة "الحلقة"): 1 -> الأولى، 2 -> الثانية ...
     const ORDINAL_ONES_F = ['', 'الأولى', 'الثانية', 'الثالثة', 'الرابعة', 'الخامسة', 'السادسة', 'السابعة', 'الثامنة', 'التاسعة'];
     const ORDINAL_TEENS_F = ['العاشرة', 'الحادية عشرة', 'الثانية عشرة', 'الثالثة عشرة', 'الرابعة عشرة', 'الخامسة عشرة', 'السادسة عشرة', 'السابعة عشرة', 'الثامنة عشرة', 'التاسعة عشرة'];
     const ORDINAL_TENS_F = ['', '', 'العشرون', 'الثلاثون', 'الأربعون', 'الخمسون', 'الستون', 'السبعون', 'الثمانون', 'التسعون'];
@@ -353,7 +349,6 @@
       return `رقم ${n}`;
     }
 
-    // يبني تسمية الحلقة تلقائيًا: "الحلقة الأولى" / "الحلقة السابعة والأخيرة من الموسم" / "الحلقة السابعة والأخيرة"
     function episodeAutoLabel(ep) {
       const ord = arabicOrdinalFeminine(ep && ep.number);
       if (ep && ep.finality === 'season') return `الحلقة ${ord} والأخيرة من الموسم`;
@@ -368,12 +363,36 @@
              d.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
     }
 
+    async function checkAppealNotice(username) {
+      if (!username) return null;
+      const snap = await db.ref('appeals').orderByChild('username').equalTo(username).once('value');
+      const data = snap.val() || {};
+      const list = Object.keys(data).map(k => ({ id: k, ...data[k] })).filter(a => a.status !== 'pending' && !a.notifiedSeen);
+      if (!list.length) return null;
+      list.sort((a, b) => (b.respondedAt || 0) - (a.respondedAt || 0));
+      const appeal = list[0];
+      await db.ref(`appeals/${appeal.id}/notifiedSeen`).set(true);
+      const typeLabel = appeal.type === 'deleted' ? 'محذوف' : 'محظور';
+      const restoreLabel = appeal.type === 'deleted' ? 'وتمت استعادته' : 'وتمت إزالة الحظر عنه';
+      const message = appeal.status === 'approved'
+        ? `تمت الموافقة على طعن حساب (${username}) ${restoreLabel}.`
+        : `لم تتم الموافقة على طعن حساب (${username})، وسيبقى ${typeLabel}.`;
+      return { message, approved: appeal.status === 'approved' };
+    }
+
+    async function submitAppeal(username, type, reason) {
+      const pendingSnap = await db.ref('appeals').orderByChild('username').equalTo(username).once('value');
+      const data = pendingSnap.val() || {};
+      const hasPending = Object.values(data).some(a => a.status === 'pending');
+      if (hasPending) return { alreadyPending: true };
+      await db.ref('appeals').push({ username, type, reason, status: 'pending', submittedAt: Date.now(), notifiedSeen: false });
+      return { alreadyPending: false };
+    }
+
     function isDirectVideo(url) {
       return /\.(mp4|webm|ogg|mov|m3u8)(\?.*)?$/i.test(url || '');
     }
 
-    // يبني رابط تضمين (embed) جاهز من خدمة VidAPI (vaplayer.ru) اعتمادًا على معرف IMDB (يبدأ بـ tt) أو TMDB (أرقام فقط)
-    // مرجع التوثيق: https://vidapi.ru/api — لا يحتاج مفتاح API داخل الرابط، الحماية تصير عبر Domain Whitelisting من لوحة vadash.app
     function buildVidApiUrl(kind, rawId, season, episode) {
       const id = (rawId || '').trim();
       if (!id) return '';
@@ -382,7 +401,6 @@
       return `https://vaplayer.ru/embed/tv/${id}/${s}/${e}`;
     }
 
-    // أداة سريعة بلوحة التحكم: تدخل معرف IMDB أو TMDB وتولّد رابط تشغيل VidAPI جاهز تلقائيًا
     function VidApiHelper({ kind, season, episode, onGenerate }) {
       const [id, setId] = useState('');
       const generate = () => {
@@ -413,23 +431,18 @@
       return isMobile;
     }
 
-    // شريط تبويبات بمؤشر ينزلق بسلاسة خلف العنصر النشط (نفس أسلوب تسجيل الدخول/إنشاء حساب)،
-    // يُستخدم لكل تبويبات الموقع: التنقل الرئيسي، لوحة التحكم، الفلاتر...الخ
     function SlidingTabs({ items, active, onChange, containerClassName = '', trackClassName = 'bg-accent-red shadow-[0_0_15px_rgba(255,51,75,0.4)]', getButtonClassName }) {
       const containerRef = useRef(null);
       const btnRefs = useRef({});
       const [style, setStyle] = useState(null);
 
-      // نقيس الموضع عبر getBoundingClientRect (إحداثيات فعلية بالشاشة) بدل offsetLeft/offsetTop
-      // لأن offsetLeft يعتمد على offsetParent وقد يُعطي نتائج غير دقيقة داخل حاويات RTL/متحركة،
-      // بينما الفرق بين مستطيلي الزر والحاوية يبقى صحيحًا دائمًا مهما كان الاتجاه أو التحريك.
       const measure = () => {
         const btn = btnRefs.current[active];
         const container = containerRef.current;
         if (!btn || !container) return;
         const cRect = container.getBoundingClientRect();
         const bRect = btn.getBoundingClientRect();
-        if (bRect.width < 1 || bRect.height < 1) return; // العنصر غير ظاهر/مقاس بعد (مثلاً داخل لوحة مطوية)
+        if (bRect.width < 1 || bRect.height < 1) return;
         setStyle(prev => {
           const next = { left: bRect.left - cRect.left, top: bRect.top - cRect.top, width: bRect.width, height: bRect.height };
           if (prev && Math.abs(prev.left - next.left) < 0.5 && Math.abs(prev.top - next.top) < 0.5 && Math.abs(prev.width - next.width) < 0.5 && Math.abs(prev.height - next.height) < 0.5) return prev;
@@ -439,7 +452,6 @@
 
       useLayoutEffect(measure, [active, items.map(i => i.key).join(',')]);
       useEffect(() => {
-        // إعادة قياس بعد أي حركة/تحريك محتمل بالحاوية (مثل توسّع لوحة مطوية) لضمان مطابقة دقيقة
         const raf1 = requestAnimationFrame(() => requestAnimationFrame(measure));
         const t = setTimeout(measure, 360);
         const onResize = () => measure();
@@ -468,9 +480,6 @@
       );
     }
 
-    // هوك مشترك يعطي أي مودال/شيت حركة إغلاق حقيقية وسلسة (زجاجية) بدل الاختفاء المفاجئ:
-    // بدل استدعاء onClose مباشرة، نستدعي requestClose الذي يفعّل كلاس الخروج
-    // ثم يستدعي onClose الحقيقي بعد اكتمال الحركة بقليل
     function useClosable(onClose, duration = 260) {
       const [closing, setClosing] = useState(false);
       const requestClose = (...args) => {
@@ -929,10 +938,8 @@
       const hasUserResults = showUserResults && search.trim().length > 0 && userResults.length > 0;
       const mobileSearchInputRef = useRef(null);
 
-      // اسكر شريط البحث بالموبايل تلقائيًا عند تغيير التاب (الرئيسية/أفلام/...)
       useEffect(() => { setMobileSearchOpen(false); }, [view]);
 
-      // ركّز على الحقل تلقائيًا عند فتح شريط البحث بالموبايل
       useEffect(() => {
         if (mobileSearchOpen) {
           const t = setTimeout(() => mobileSearchInputRef.current && mobileSearchInputRef.current.focus(), 60);
@@ -940,7 +947,6 @@
         }
       }, [mobileSearchOpen]);
 
-      // اسكره أيضًا لو ضغط المستخدم بأي مكان خارج منطقة البحث نفسها (الزر أو الصندوق المفتوح)
       useEffect(() => {
         if (!mobileSearchOpen) return;
         const onDocPress = (e) => {
@@ -1045,7 +1051,6 @@
       );
     }
 
-    // جرس الإشعارات: يعرض عداد غير المقروء ويفتح قائمة منسدلة بالإشعارات
     function NotificationsBell({ currentUser, onOpenProfile, onOpenTitle }) {
       const [open, setOpen] = useState(false);
       const [items, setItems] = useState([]);
@@ -1232,6 +1237,8 @@
       const avatarInputRef = useRef(null);
       const [error, setError] = useState('');
       const [loading, setLoading] = useState(false);
+      const [appealTarget, setAppealTarget] = useState(null);
+      const [showAppealModal, setShowAppealModal] = useState(false);
 
       const handleAvatarFile = (e) => {
         const file = e.target.files && e.target.files[0];
@@ -1261,6 +1268,7 @@
             if (Object.keys(users).length > 0) {
               const existingKey = Object.keys(users)[0];
               if (users[existingKey].banned) { setError('اسم المستخدم هذا يخص حسابًا محظورًا من قِبل الإدارة، لا يمكن استخدامه.'); setLoading(false); return; }
+              if (users[existingKey].deleted) { setError('اسم المستخدم هذا يخص حسابًا محذوفًا من قِبل الإدارة، لا يمكن استخدامه.'); setLoading(false); return; }
               setError('اسم المستخدم مستخدم مسبقًا، اختر اسمًا آخر.'); setLoading(false); return;
             }
             const newUser = { name: cleanName, username: cleanUser, password: cleanPass, avatar: cleanAvatar, isModerator: false, banned: false, createdAt: Date.now() };
@@ -1273,6 +1281,11 @@
               if (delSnap.exists()) { setError('عذرًا، تم حذف هذا الحساب من قِبل الإدارة.'); setLoading(false); return; }
               setError('اسم المستخدم أو كلمة المرور غير صحيحة.'); setLoading(false); return;
             }
+            const outcome = await checkAppealNotice(cleanUser);
+            if (outcome && !outcome.approved) {
+              setError(outcome.message); setLoading(false); return;
+            }
+            if (outcome && outcome.approved) { showToast(outcome.message); }
             const u = users[matchedKey];
             if (u.banned) {
               if (u.banUntil && u.banUntil <= Date.now()) {
@@ -1280,8 +1293,14 @@
               } else {
                 const untilTxt = u.banUntil ? ` إلى غاية ${fmtDateTime(u.banUntil)}` : '';
                 setError(`حسابك محظور من قِبل الإدارة${untilTxt}.${u.banReason ? ' السبب: ' + u.banReason : ''}`);
+                setAppealTarget({ username: cleanUser, type: 'banned' });
                 setLoading(false); return;
               }
+            }
+            if (u.deleted) {
+              setError('حسابك محذوف من قِبل الإدارة.');
+              setAppealTarget({ username: cleanUser, type: 'deleted' });
+              setLoading(false); return;
             }
             onSuccess({ ...users[matchedKey], id: matchedKey });
           }
@@ -1315,12 +1334,23 @@
               )}
               <input value={username} onChange={e => setUsername(e.target.value)} placeholder="اسم المستخدم" className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition" />
               <PasswordField value={password} onChange={setPassword} placeholder="كلمة المرور" onEnter={submit} />
-              {error && <p className="text-rose-400 text-xs font-medium bg-rose-500/10 p-2.5 rounded-xl border border-rose-500/20">{error}</p>}
+              {error && (
+                <div className="bg-rose-500/10 p-2.5 rounded-xl border border-rose-500/20">
+                  <p className="text-rose-400 text-xs font-medium">{error}</p>
+                </div>
+              )}
+              {appealTarget && (
+                <button type="button" onClick={() => setShowAppealModal(true)} className="w-full text-xs font-bold text-accent-cyan hover:underline text-center">تقديم طعن على هذا الإجراء</button>
+              )}
               <button onClick={submit} disabled={loading} className="w-full py-3.5 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition disabled:opacity-50">
                 {loading ? 'جارٍ التحقق...' : (tab === 'login' ? 'دخول' : 'إنشاء الحساب')}
               </button>
             </div>
           </div>
+          {showAppealModal && appealTarget && (
+            <AppealModal username={appealTarget.username} type={appealTarget.type} initialStage="form"
+              onClose={() => setShowAppealModal(false)} />
+          )}
         </div>
       );
     }
@@ -1368,9 +1398,6 @@
         const videoEl = videoRef.current;
         if (!videoEl || !src) return;
         setLoading(true);
-        // ضمان قبول Safari/iOS للتشغيل التلقائي: يجب أن تكون خاصية muted موجودة كخاصية
-        // HTML فعلية على العنصر وليس فقط كـ property جافاسكريبت، وإلا قد يرفض آيفون
-        // التشغيل التلقائي الصامت ويبقى الفيديو عالقًا في حالة تحميل دائمة.
         videoEl.muted = true;
         videoEl.defaultMuted = true;
         try { videoEl.setAttribute('muted', ''); } catch (e) {}
@@ -1385,12 +1412,8 @@
           videoEl.src = src;
           videoEl.load();
         }
-        // بعض إصدارات Safari على آيفون تتجاهل خاصية autoplay عند ضبط src برمجيًا،
-        // لذلك نطلب play() يدويًا ونلتقط أي رفض دون كسر الواجهة (يبقى زر التشغيل ظاهرًا).
         const tryPlay = () => { const p = videoEl.play(); if (p && p.catch) p.catch(() => {}); };
         tryPlay();
-        // شبكة أمان: إن ظل مؤشر التحميل عالقًا أكثر من اللازم (مشكلة شبكة أو صيغة غير
-        // مدعومة على الجهاز) نوقفه ونظهر زر تشغيل يدوي بدل ترك الدائرة تدور للأبد.
         const stuckTimer = setTimeout(() => { setLoading(false); }, 12000);
         return () => { if (hls) hls.destroy(); clearTimeout(stuckTimer); };
       }, [src]);
@@ -1432,7 +1455,6 @@
           } catch (e) {}
         };
         const onRate = () => setCtrl(c2 => ({ ...c2, rate: videoEl.playbackRate || 1 }));
-        // متابعة حالات الانتظار/التعثر لضبط دائرة التحميل بدقة أكبر على كل الأجهزة بما فيها آيفون
         const onWaiting = () => setLoading(true);
         const onStalled = () => setLoading(true);
         const onLoadedData = () => setLoading(false);
@@ -1813,7 +1835,6 @@
         .sort((a, b) => (a.number || 0) - (b.number || 0));
       const isSeries = title.type !== 'movie';
 
-      // قائمة مسطّحة بجميع الحلقات من كل المواسم بالتسلسل (لخيار "كل الحلقات")، دون أي فواصل بين المواسم
       const allEpisodesFlat = React.useMemo(() => {
         const flat = [];
         seasons.forEach(s => { (s.episodes || []).forEach(ep => flat.push({ ...ep, seasonNumber: s.number, episodeThumbnail: s.episodeThumbnail })); });
@@ -2468,7 +2489,6 @@
       );
     }
 
-    // أيقونة عين تتحول بسلاسة وبسرعة ثابتة: نفس شكل العين يبقى ثابت، وخط الشطب يُرسم تدريجيًا بدل ما يظهر أو يختفي فجأة
     function EyeToggle({ crossed, className }) {
       return (
         <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
@@ -2542,7 +2562,6 @@
           .finally(() => setUploading(false));
       };
 
-      // تحقّق حي من كلمة المرور الحالية أثناء الكتابة (تأخير بسيط لتفادي كثرة الطلبات)
       useEffect(() => {
         if (!oldPass.trim()) { setOldPassValid(null); return; }
         setOldPassChecking(true);
@@ -2570,8 +2589,6 @@
         if (newTrim === oldTrim) { setPassMsg({ text: 'كلمة المرور الجديدة يجب أن تختلف عن الحالية.', ok: false }); return; }
         setChangingPass(true);
         try {
-          // إعادة قراءة كلمة المرور الحالية من قاعدة البيانات مباشرة لحظة الإرسال (وليس الاعتماد فقط على
-          // نتيجة التحقق الحي) لضمان أن العملية حقيقية وتعكس آخر حالة مخزّنة فعليًا في الحساب.
           const snap = await db.ref(`users/${currentUser.id}/password`).once('value');
           const storedPass = snap.val();
           if (storedPass == null) { setPassMsg({ text: 'تعذر العثور على الحساب، حاول تسجيل الدخول من جديد.', ok: false }); setChangingPass(false); return; }
@@ -2715,7 +2732,7 @@
             .then(snap => {
               if (!active) return;
               const data = snap.val() || {};
-              const list = Object.keys(data).map(k => ({ id: k, ...data[k] })).filter(u => !u.banned);
+              const list = Object.keys(data).map(k => ({ id: k, ...data[k] })).filter(u => !u.banned && !u.deleted);
               list.sort((a, b) => (a.username || '').localeCompare(b.username || ''));
               setResults(list);
             })
@@ -2831,7 +2848,6 @@
         });
       }, []);
 
-      // مزامنة مباشرة مع القائمة بقاعدة البيانات: أي حذف/إضافة ينعكس فورًا وبحركة سلسة
       useEffect(() => {
         const ref = db.ref(`lists/${listOwnerKey}/${list.id}`);
         const cb = snap => {
@@ -3032,8 +3048,6 @@
 
       useEffect(() => {
         if (!key) return;
-        // ما نعرض هيكل التحميل إلا إذا البيانات تأخّرت فعليًا (250ms+)،
-        // حتى لا يظهر "فلاش" سريع بين الهيكل وحالة الفراغ عندما تكون الاستجابة فورية
         let done = false;
         const skeletonTimer = setTimeout(() => { if (!done) setShowSkeleton(true); }, 250);
         const ref = db.ref(`lists/${key}`);
@@ -4123,6 +4137,67 @@
       );
     }
 
+    function AdminAppeals({ currentUser }) {
+      const [list, setList] = useState([]);
+      const [busyId, setBusyId] = useState(null);
+
+      useEffect(() => {
+        const ref = db.ref('appeals');
+        const cb = snap => {
+          const data = snap.val();
+          const arr = data ? Object.keys(data).map(k => ({ id: k, ...data[k] })) : [];
+          arr.sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0));
+          setList(arr);
+        };
+        ref.on('value', cb);
+        return () => ref.off('value', cb);
+      }, []);
+
+      const decide = async (appeal, approve) => {
+        setBusyId(appeal.id);
+        try {
+          if (approve) {
+            const snap = await db.ref('users').orderByChild('username').equalTo(appeal.username).once('value');
+            const data = snap.val() || {};
+            const key = Object.keys(data)[0];
+            if (key) {
+              if (appeal.type === 'deleted') await db.ref(`users/${key}`).update({ deleted: false, deletedAt: null });
+              else await db.ref(`users/${key}`).update({ banned: false, banReason: null, banUntil: null });
+            }
+          }
+          await db.ref(`appeals/${appeal.id}`).update({ status: approve ? 'approved' : 'rejected', respondedAt: Date.now() });
+          logAuditAction(currentUser, approve ? 'الموافقة على طعن' : 'رفض طعن', `@${appeal.username}`);
+        } finally { setBusyId(null); }
+      };
+
+      if (!list.length) return <p className="text-sm text-slate-500 font-medium">لا توجد طعون حاليًا.</p>;
+
+      return (
+        <div className="space-y-3">
+          {list.map(a => (
+            <div key={a.id} className="glass-card rounded-2xl p-4 border border-white/10">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-xs text-accent-cyan font-bold mb-1.5">طعن على حساب @{a.username} · {a.type === 'deleted' ? 'حساب محذوف' : 'حساب محظور'}</p>
+                  <p className="text-sm text-slate-200 leading-relaxed">{a.reason}</p>
+                  <p className="text-[10px] text-slate-500 font-mono mt-2">قُدّم بتاريخ {fmtDateTime(a.submittedAt)}{a.respondedAt ? ` · تم الرد بتاريخ ${fmtDateTime(a.respondedAt)}` : ''}</p>
+                </div>
+                <span className={`text-[11px] px-3 py-1 rounded-full font-bold shrink-0 ${a.status === 'approved' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : a.status === 'rejected' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>
+                  {a.status === 'approved' ? 'تمت الموافقة' : a.status === 'rejected' ? 'مرفوض' : 'قيد المراجعة'}
+                </span>
+              </div>
+              {a.status === 'pending' && (
+                <div className="flex gap-2.5 mt-3">
+                  <button onClick={() => decide(a, true)} disabled={busyId === a.id} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold transition disabled:opacity-50"><Icon name="check" className="w-3.5 h-3.5" />قبول الطعن واستعادة الحساب</button>
+                  <button onClick={() => decide(a, false)} disabled={busyId === a.id} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 text-xs font-bold transition disabled:opacity-50"><Icon name="x" className="w-3.5 h-3.5" />رفض الطعن</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
     function BanDialog({ user, onCancel, onConfirm }) {
       const [reason, setReason] = useState('');
       const [kind, setKind] = useState('permanent');
@@ -4161,6 +4236,72 @@
               <button onClick={requestClose} className="flex-1 py-2.5 rounded-xl glass-card border border-white/10 text-sm font-bold text-slate-300 hover:bg-white/5 transition">إلغاء</button>
               <button onClick={confirm} className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-sm font-bold text-white transition">تأكيد الحظر</button>
             </div>
+          </div>
+        </div>
+      );
+    }
+
+    function AppealModal({ username, type, message, outcomeOnly, initialStage, onClose }) {
+      const [closing, requestClose] = useClosable(onClose, 260);
+      const [stage, setStage] = useState(initialStage || 'notice');
+      const [reason, setReason] = useState('');
+      const [submitting, setSubmitting] = useState(false);
+      const [error, setError] = useState('');
+
+      const send = async () => {
+        if (!reason.trim()) { setError('الرجاء كتابة سبب توضيحي للطعن.'); return; }
+        setSubmitting(true); setError('');
+        try {
+          const res = await submitAppeal(username, type, reason.trim());
+          setStage(res.alreadyPending ? 'pending' : 'submitted');
+        } catch (e) { setError('حدث خطأ، حاول مرة أخرى.'); }
+        setSubmitting(false);
+      };
+
+      return (
+        <div className={`${closing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4`} onClick={stage === 'form' ? undefined : requestClose}>
+          <div onClick={e => e.stopPropagation()} className={`${closing ? 'modal-panel-out' : 'modal-panel'} glass-panel border border-white/10 rounded-3xl max-w-sm w-full p-6 shadow-2xl`}>
+            {stage === 'notice' && (
+              <>
+                <h3 className="font-black text-lg text-white mb-2">إشعار بخصوص حسابك</h3>
+                <p className="text-sm text-slate-300 leading-relaxed mb-5">{message}</p>
+                {outcomeOnly ? (
+                  <button onClick={requestClose} className="w-full py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-sm font-bold hover:brightness-110 transition">حسنًا</button>
+                ) : (
+                  <div className="flex gap-3">
+                    <button onClick={() => setStage('form')} className="flex-1 py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-sm font-bold hover:brightness-110 transition">تقديم طعن</button>
+                    <button onClick={requestClose} className="flex-1 py-2.5 rounded-xl glass-card border border-white/10 text-sm font-bold text-slate-300 hover:bg-white/5 transition">إغلاق</button>
+                  </div>
+                )}
+              </>
+            )}
+            {stage === 'form' && (
+              <>
+                <h3 className="font-black text-lg text-white mb-2">تقديم طعن</h3>
+                <p className="text-xs text-slate-400 mb-3">اكتب سببًا توضيحيًا يوضح لماذا تعتقد أن هذا الإجراء غير صحيح. سيتم الرد على طعنك خلال يومين كحد أقصى.</p>
+                <textarea value={reason} onChange={e => setReason(e.target.value)} rows={4} placeholder="سبب الطعن..."
+                  className="w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition shadow-inner mb-3"></textarea>
+                {error && <p className="text-rose-400 text-xs font-bold mb-3 bg-rose-500/10 p-2.5 rounded-xl border border-rose-500/20">{error}</p>}
+                <div className="flex gap-3">
+                  <button onClick={send} disabled={submitting} className="flex-1 py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-sm font-bold hover:brightness-110 transition disabled:opacity-50">{submitting ? '...' : 'إرسال الطعن'}</button>
+                  <button onClick={requestClose} className="flex-1 py-2.5 rounded-xl glass-card border border-white/10 text-sm font-bold text-slate-300 hover:bg-white/5 transition">إلغاء</button>
+                </div>
+              </>
+            )}
+            {stage === 'submitted' && (
+              <>
+                <h3 className="font-black text-lg text-white mb-2">تم إرسال طعنك</h3>
+                <p className="text-sm text-slate-300 leading-relaxed mb-5">سيتم مراجعة طعنك والرد عليه خلال يومين كحد أقصى.</p>
+                <button onClick={requestClose} className="w-full py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-sm font-bold hover:brightness-110 transition">حسنًا</button>
+              </>
+            )}
+            {stage === 'pending' && (
+              <>
+                <h3 className="font-black text-lg text-white mb-2">لديك طعن قيد المراجعة</h3>
+                <p className="text-sm text-slate-300 leading-relaxed mb-5">طعنك السابق لا يزال قيد المراجعة من قِبل الإدارة، وسيتم الرد عليه خلال يومين كحد أقصى.</p>
+                <button onClick={requestClose} className="w-full py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-sm font-bold hover:brightness-110 transition">حسنًا</button>
+              </>
+            )}
           </div>
         </div>
       );
@@ -4213,11 +4354,18 @@
       };
 
       const removeUser = async (u) => {
-        await db.ref(`users/${u.id}`).remove();
+        await db.ref(`users/${u.id}`).update({ deleted: true, deletedAt: Date.now() });
         if (u.isModerator) await db.ref(`moderators/${sanitizeKey(u.username)}`).remove();
-        await db.ref(`deletedUsernames/${sanitizeKey(u.username)}`).set(true);
         logAuditAction(currentUser, 'حذف حساب مستخدم', `@${u.username}`);
         setDeleteTarget(null);
+      };
+
+      const restoreUser = async (u) => {
+        setBusyId(u.id);
+        try {
+          await db.ref(`users/${u.id}`).update({ deleted: false, deletedAt: null });
+          logAuditAction(currentUser, 'استعادة حساب مستخدم', `@${u.username}`);
+        } finally { setBusyId(null); }
       };
 
       const filtered = query.trim()
@@ -4244,6 +4392,7 @@
                       {u.username === 'mavilovelife' && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold">مدير النظام</span>}
                       {u.isModerator && <span className="text-[10px] px-2 py-0.5 rounded-full bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/30 font-bold">مشرف النظام</span>}
                       {u.banned && <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 font-bold">محظور{u.banUntil ? ' مؤقتًا' : ''}</span>}
+                      {u.deleted && <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-500/20 text-slate-300 border border-slate-500/30 font-bold">محذوف</span>}
                     </p>
                     <p className="text-xs text-slate-400">@{u.username}</p>
                     {u.banned && u.banReason && <p className="text-[11px] text-rose-300 mt-1">السبب: {u.banReason}{u.banUntil ? ` · إلى ${fmtDateTime(u.banUntil)}` : ''}</p>}
@@ -4258,8 +4407,13 @@
                         className={`text-xs px-4 py-2 rounded-xl font-bold transition disabled:opacity-50 ${u.banned ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20'}`}>
                         {u.banned ? 'إلغاء الحظر' : 'حظر الحساب'}
                       </button>
-                      <button onClick={() => setDeleteTarget(u)} title="حذف الحساب"
-                        className="w-9 h-9 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 flex items-center justify-center text-rose-400 transition shrink-0"><Icon name="trash-2" className="w-4 h-4" /></button>
+                      {u.deleted ? (
+                        <button onClick={() => restoreUser(u)} disabled={busyId === u.id}
+                          className="text-xs px-4 py-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold transition disabled:opacity-50">استعادة الحساب</button>
+                      ) : (
+                        <button onClick={() => setDeleteTarget(u)} title="حذف الحساب"
+                          className="w-9 h-9 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 flex items-center justify-center text-rose-400 transition shrink-0"><Icon name="trash-2" className="w-4 h-4" /></button>
+                      )}
                     </>
                   )}
                 </div>
@@ -4341,6 +4495,7 @@
             items={[
               { key: 'content', label: 'المحتوى (رفع )' },
               { key: 'complaints', label: 'الشكاوى والطلبات' },
+              ...(isFullAdmin ? [{ key: 'appeals', label: 'الطعون' }] : []),
               ...(isFullAdmin ? [{ key: 'users', label: 'المستخدمون' }] : []),
               ...(isFullAdmin ? [{ key: 'audit', label: 'سجل النشاط' }] : []),
             ]}
@@ -4394,6 +4549,7 @@
           )}
 
           {tab === 'complaints' && <AdminComplaints currentUser={currentUser} />}
+          {tab === 'appeals' && isFullAdmin && <AdminAppeals currentUser={currentUser} />}
           {tab === 'users' && isFullAdmin && <AdminUsers currentUser={currentUser} />}
           {tab === 'audit' && isFullAdmin && <AdminAuditLog />}
 
@@ -4484,9 +4640,10 @@
         const ref = db.ref(`users/${currentUser.id}`);
         const cb = snap => {
           const u = snap.val();
-          if (!u) {
+          if (!u || u.deleted) {
             setCurrentUser(null); localStorage.removeItem('cv_user');
-            setAccountNotice('عذرًا، تم حذف حسابك من قِبل الإدارة.');
+            localStorage.setItem('cv_watch_username', currentUser.username);
+            setAccountNotice({ username: currentUser.username, type: 'deleted', message: 'عذرًا، تم حذف حسابك من قِبل الإدارة.' });
             return;
           }
           if (u.banned) {
@@ -4495,7 +4652,8 @@
             } else {
               const untilTxt = u.banUntil ? ` إلى غاية ${fmtDateTime(u.banUntil)}` : '';
               setCurrentUser(null); localStorage.removeItem('cv_user');
-              setAccountNotice(`حسابك محظور من قِبل الإدارة${untilTxt}.${u.banReason ? ' السبب: ' + u.banReason : ''}`);
+              localStorage.setItem('cv_watch_username', currentUser.username);
+              setAccountNotice({ username: currentUser.username, type: 'banned', message: `حسابك محظور من قِبل الإدارة${untilTxt}.${u.banReason ? ' السبب: ' + u.banReason : ''}` });
               return;
             }
           }
@@ -4508,6 +4666,18 @@
         ref.on('value', cb);
         return () => ref.off('value', cb);
       }, [currentUser && currentUser.id]);
+
+      useEffect(() => {
+        if (currentUser) return;
+        const watchUsername = localStorage.getItem('cv_watch_username');
+        if (!watchUsername) return;
+        checkAppealNotice(watchUsername).then(res => {
+          if (res) {
+            setAccountNotice({ username: watchUsername, type: null, message: res.message, outcomeOnly: true });
+            localStorage.removeItem('cv_watch_username');
+          }
+        });
+      }, []);
 
       const setView = (v) => {
         if (v === 'admin') {
@@ -4655,8 +4825,8 @@
           )}
 
           {accountNotice && (
-            <ConfirmDialog title="إشعار بخصوص حسابك" body={accountNotice} confirmLabel="حسنًا" cancelLabel="إغلاق"
-              onCancel={() => setAccountNotice(null)} onConfirm={() => setAccountNotice(null)} />
+            <AppealModal username={accountNotice.username} type={accountNotice.type} message={accountNotice.message}
+              outcomeOnly={accountNotice.outcomeOnly} onClose={() => setAccountNotice(null)} />
           )}
         </div>
       );
