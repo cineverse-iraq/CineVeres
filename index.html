@@ -393,29 +393,42 @@
       return /\.(mp4|webm|ogg|mov|m3u8)(\?.*)?$/i.test(url || '');
     }
 
-    function buildVidApiUrl(kind, rawId, season, episode) {
+    // يبني رابط VidAPI مع تفعيل الترجمة العربية تلقائيًا (lang=ar)، ويدعم إرفاق ملف ترجمة مخصص (sub_url) لحل مشكلة عدم التزامن
+    function buildVidApiUrl(kind, rawId, season, episode, subUrl) {
       const id = (rawId || '').trim();
       if (!id) return '';
-      if (kind === 'movie') return `https://vaplayer.ru/embed/movie/${id}`;
-      const s = Number(season) || 1, e = Number(episode) || 1;
-      return `https://vaplayer.ru/embed/tv/${id}/${s}/${e}`;
+      const base = kind === 'movie'
+        ? `https://vaplayer.ru/embed/movie/${id}`
+        : `https://vaplayer.ru/embed/tv/${id}/${Number(season) || 1}/${Number(episode) || 1}`;
+      const params = new URLSearchParams();
+      params.set('lang', 'ar'); // يخلي النظام يبحث ويفعّل ترجمة عربية تلقائيًا من OpenSubtitles
+      if (subUrl && subUrl.trim()) {
+        params.set('sub_url', subUrl.trim());
+        params.set('sub_lang', 'ar');
+        params.set('sub_label', 'العربية');
+        params.set('sub_default', 'true');
+      }
+      return `${base}?${params.toString()}`;
     }
 
     function VidApiHelper({ kind, season, episode, onGenerate }) {
       const [id, setId] = useState('');
+      const [subUrl, setSubUrl] = useState('');
       const generate = () => {
-        const url = buildVidApiUrl(kind, id, season, episode);
+        const url = buildVidApiUrl(kind, id, season, episode, subUrl);
         if (url) onGenerate(url);
       };
       return (
         <div className="glass-card rounded-2xl p-3.5 border border-accent-cyan/20 mt-3.5">
-          <p className="text-[11px] font-bold text-accent-cyan mb-2 flex items-center gap-1.5"><Icon name="sparkles" className="w-3.5 h-3.5" />توليد رابط تلقائي عبر VidAPI (بدون رفع أي ملف)</p>
-          <div className="flex items-center gap-2">
+          <p className="text-[11px] font-bold text-accent-cyan mb-2 flex items-center gap-1.5"><Icon name="sparkles" className="w-3.5 h-3.5" />توليد رابط تلقائي عبر VidAPI (بدون رفع فيديو) — ترجمة عربية مفعّلة تلقائيًا</p>
+          <div className="flex items-center gap-2 mb-2.5">
             <input value={id} onChange={ev => setId(ev.target.value)} onKeyDown={ev => ev.key === 'Enter' && generate()}
               placeholder="معرف IMDB (مثال: tt1517268) أو TMDB (مثال: 385687)"
               className="flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" />
             <button type="button" onClick={generate} disabled={!id.trim()} className="shrink-0 px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 text-xs font-bold hover:brightness-110 transition disabled:opacity-40">توليد الرابط</button>
           </div>
+          <p className="text-[10px] font-bold text-slate-400 mb-1.5">ملف ترجمة عربية مخصص (اختياري — يحل مشكلة تأخر التوقيت)</p>
+          <FileUploadField compact value={subUrl} onChange={setSubUrl} folder="subtitles" accept=".srt,.vtt" />
           {kind === 'tv' && <p className="text-[10px] text-slate-500 mt-1.5">راح يبني الرابط لهذي الحلقة تحديدًا: الموسم {Number(season) || 1} · الحلقة {Number(episode) || 1}</p>}
         </div>
       );
