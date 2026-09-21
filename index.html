@@ -343,7 +343,7 @@
       if (n < 20) return ORDINAL_TEENS_F[n - 10];
       if (n < 100) {
         const tens = Math.floor(n / 10), ones = n % 10;
-        return ones === 0 ? ORDINAL_TENS_F[tens] : `${ORDINAL_ONES_F[ones]} و${ORDINAL_TENS_F[tens]}`;
+        return ones === 0 ? ORDINAL_TENS_F[tens] : `${ones === 1 ? 'الحادية' : ORDINAL_ONES_F[ones]} و${ORDINAL_TENS_F[tens]}`;
       }
       if (n === 100) return 'المئة';
       return `رقم ${n}`;
@@ -354,6 +354,31 @@
       if (ep && ep.finality === 'season') return `الحلقة ${ord} والأخيرة من الموسم`;
       if (ep && ep.finality === 'series') return `الحلقة ${ord} والأخيرة`;
       return `الحلقة ${ord}`;
+    }
+
+    // ===== اتجاه النص: يمنع انعكاس علامات الترقيم (. ! : ( ) ...) في أسماء الحلقات =====
+    // كل جزء نص ياخذ اتجاهه الخاص: إذا فيه حروف عربية → RTL، غير هيچ → LTR
+    function hasArabicChars(str) {
+      return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(str || '');
+    }
+    function BidiText({ children }) {
+      const str = children == null ? '' : String(children);
+      return <bdi dir={hasArabicChars(str) ? 'rtl' : 'ltr'}>{str}</bdi>;
+    }
+    // يعرض تسمية مركّبة مثل "اسم العمل · اسم الحلقة" وكل جزء باتجاهه الصحيح
+    function BidiJoined({ text, sep }) {
+      const sp = sep || ' · ';
+      const parts = String(text == null ? '' : text).split(sp);
+      return (
+        <>
+          {parts.map((part, i) => (
+            <React.Fragment key={i}>
+              {i > 0 && <bdi dir="rtl">{sp}</bdi>}
+              <BidiText>{part}</BidiText>
+            </React.Fragment>
+          ))}
+        </>
+      );
     }
 
     function fmtDateTime(ts) {
@@ -695,10 +720,32 @@
             episodes: episodes,
           });
         }
+        autoAssignEpisodeFinality(seasons, list.map(x => Number(x.season_number)), data);
         patch.seasons = seasons;
       }
 
       return { patch: patch, sourceId: sourceId, media: media, tmdbId: tmdbId, imdbId: imdbId, bannerData: bannerData, notes: notes };
+    }
+
+    // ===== ذكاء التعبئة التلقائية: تحديد "حالة الحلقة" لآخر حلقة بكل موسم =====
+    // - إذا اكو موسم بعد هذا الموسم  → آخر حلقة بالموسم
+    // - إذا ماكو موسم بعده (آخر موسم) والمسلسل منتهي → آخر حلقة (نهاية العمل)
+    // - إذا المسلسل ما زال مستمر: آخر موسم يُعلَّم "آخر حلقة بالموسم" فقط إذا الموسم مكتمل (ماكو حلقة قادمة بيه)
+    function autoAssignEpisodeFinality(seasons, allSeasonNumbers, showInfo) {
+      const maxSeason = Math.max.apply(null, (allSeasonNumbers || []).concat(seasons.map(s => s.number)));
+      const status = (showInfo && showInfo.status) || '';
+      const ongoing = ['Returning Series', 'In Production', 'Planned', 'Pilot'].indexOf(status) !== -1;
+      const nextEp = showInfo && showInfo.next_episode_to_air;
+      seasons.forEach(s => {
+        const eps = s.episodes || [];
+        if (!eps.length) return;
+        eps.forEach(e => { e.finality = 'none'; });
+        const last = eps.reduce((m, e) => (Number(e.number) > Number(m.number) ? e : m), eps[0]);
+        if (maxSeason > s.number) last.finality = 'season';
+        else if (!ongoing) last.finality = 'series';
+        else if (!(nextEp && Number(nextEp.season_number) === Number(s.number))) last.finality = 'season';
+      });
+      return seasons;
     }
 
     function TmdbImportPanel({ type, onApply }) {
@@ -758,7 +805,7 @@
           {status && <p className="text-[11px] text-accent-cyan font-bold mt-2">{status}</p>}
           {err && <p className="text-[11px] text-rose-400 font-bold mt-2">{err}</p>}
           {note && <p className="text-[11px] text-amber-400 font-bold mt-2">{note}</p>}
-          <p className="text-[10px] text-slate-500 mt-2">ينعبّى: الاسم · السنة · التصنيفات · الوصف · البوستر · البنر · المخرج · الكاتب · التقييم · رابط التشغيل. (تقييم العمل والحلقات من IMDb الحقيقي عبر OMDb.)</p>
+          <p className="text-[10px] text-slate-500 mt-2">ينعبّى: الاسم · السنة · التصنيفات · الوصف · البوستر · البنر · المخرج · الكاتب · التقييم · رابط التشغيل · حالة الحلقة (آخر حلقة بكل موسم / نهاية العمل تلقائيًا). (تقييم العمل والحلقات من IMDb الحقيقي عبر OMDb.)</p>
         </div>
       );
     }
@@ -998,7 +1045,7 @@
         <Wrap {...wrapProps}>
           {hasImdb && (
             <span className={`inline-flex items-center gap-1 ${small ? 'text-[10px] px-2 py-0.5' : 'text-xs px-2.5 py-1'} rounded-md bg-black/60 backdrop-blur-md text-amber-400 font-bold border border-amber-400/20 shadow-sm`}>
-              <Icon name="star" className={small ? 'w-2.5 h-2.5' : 'w-3 h-3'} />IMDb {imdb}
+              <Icon name="star" className={small ? 'w-2.5 h-2.5' : 'w-3 h-3'} />TMDB {imdb}
             </span>
           )}
           {hasRt && (
@@ -1183,7 +1230,7 @@
 
     const SORT_OPTIONS = [
       ['newest', 'الأحدث إضافةً'],
-      ['imdb', 'الأعلى تقييم IMDb'],
+      ['imdb', 'الأعلى تقييم TMDB'],
       ['year', 'سنة الإصدار'],
       ['name', 'الاسم (أ-ي)'],
       ['popular', 'الأكثر مشاهدة'],
@@ -1960,7 +2007,7 @@
 
           {episodeLabel && (
             <div className={`absolute inset-x-0 top-0 z-20 p-3 md:p-4 bg-gradient-to-b from-black/80 to-transparent transition-opacity duration-300 ${barVisible ? 'opacity-100' : 'opacity-0'}`}>
-              <p className="text-white text-sm md:text-base font-bold truncate drop-shadow"><bdi>{episodeLabel}</bdi></p>
+              <p className="text-white text-sm md:text-base font-bold truncate drop-shadow"><BidiJoined text={episodeLabel} /></p>
             </div>
           )}
 
@@ -2390,7 +2437,7 @@
               </div>
               <h2 className="text-2xl md:text-3xl font-black mb-1 text-white"><bdi>{title.name}</bdi></h2>
               {playingLabel && playingLabel !== title.name && (
-                <p className="text-sm text-accent-cyan font-bold mb-3 flex items-center gap-1.5"><Icon name="play" className="w-3.5 h-3.5 fill-current" /><bdi>{playingLabel.split(' · ').slice(1).join(' · ')}</bdi></p>
+                <p className="text-sm text-accent-cyan font-bold mb-3 flex items-center gap-1.5"><Icon name="play" className="w-3.5 h-3.5 fill-current" /><BidiJoined text={playingLabel.split(' · ').slice(1).join(' · ')} /></p>
               )}
               {title.genres && title.genres.length > 0 && (
                 <div className="flex gap-2 flex-wrap mb-4 mt-2">
@@ -2475,7 +2522,7 @@
                               <p className="text-[10px] font-bold text-accent-cyan mb-0.5">الموسم {ep.seasonNumber} · الحلقة {ep.number}</p>
                               <p className={`text-sm font-bold truncate ${isCurrent ? 'text-accent-cyan' : 'text-slate-100'}`}>
                                 {ep.title ? (
-                                  <><bdi>{ep.title}</bdi> <span className="font-normal opacity-60">({episodeAutoLabel(ep)})</span></>
+                                  <><BidiText>{ep.title}</BidiText> <span className="font-normal opacity-60"><bdi dir="rtl">({episodeAutoLabel(ep)})</bdi></span></>
                                 ) : episodeAutoLabel(ep)}
                               </p>
                             </div>
@@ -2547,7 +2594,7 @@
                             <div className="flex-1 min-w-0">
                               <p className={`text-sm font-bold truncate mb-1 ${isCurrent ? 'text-accent-cyan' : 'text-slate-100'}`}>
                                 {ep.title ? (
-                                  <><bdi>{ep.title}</bdi> <span className="font-normal opacity-60">({episodeAutoLabel(ep)})</span></>
+                                  <><BidiText>{ep.title}</BidiText> <span className="font-normal opacity-60"><bdi dir="rtl">({episodeAutoLabel(ep)})</bdi></span></>
                                 ) : episodeAutoLabel(ep)}
                               </p>
                               <RatingBadges imdb={ep.imdb} rt={ep.rt} size="xs" />
@@ -4123,7 +4170,7 @@
             </button>
             <div className="min-w-0">
               <p className="text-[11px] text-slate-400 font-bold">الموسم {seasonNumber} · تعديل حلقة</p>
-              <h5 className="font-black text-white text-base truncate"><bdi>{e.title || `الحلقة ${e.number}`}</bdi></h5>
+              <h5 className="font-black text-white text-base truncate"><BidiText>{e.title || `الحلقة ${e.number}`}</BidiText></h5>
             </div>
             <button type="button" onClick={onDelete} title="حذف الحلقة"
               className="mr-auto w-9 h-9 shrink-0 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 flex items-center justify-center text-rose-400 transition">
@@ -4532,7 +4579,7 @@
                                   <span className="w-8 h-8 shrink-0 rounded-lg bg-glass-700 flex items-center justify-center text-xs font-black text-accent-cyan">{e.number}</span>
                                 )}
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-bold text-slate-100 truncate"><bdi>{e.title || `الحلقة ${e.number}`}</bdi></p>
+                                  <p className="text-sm font-bold text-slate-100 truncate"><BidiText>{e.title || `الحلقة ${e.number}`}</BidiText></p>
                                   <p className="text-[11px] text-slate-500">{e.videoUrl ? 'يوجد ملف فيديو' : 'لم يُرفع فيديو بعد'}{e.finality === 'season' ? ' · آخر حلقة بالموسم' : e.finality === 'series' ? ' · آخر حلقة بالمسلسل' : ''}</p>
                                 </div>
                                 <button onClick={() => moveEpisode(activeSeasonIdx, ei, -1)} disabled={ei === 0} title="نقل للأعلى" className="w-8 h-8 shrink-0 rounded-lg glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-300 disabled:opacity-30 transition"><Icon name="arrowUp" className="w-3.5 h-3.5" /></button>
