@@ -472,10 +472,22 @@
       return res.json();
     }
 
+    // يجيب تقييم IMDB الحقيقي (مو TMDB) لأي عمل عنده IMDB ID، مباشرة من OMDb
+    async function fetchImdbRating(imdbId) {
+      if (!imdbId) return '';
+      try {
+        const od = await omdbFetch({ i: imdbId });
+        if (od && od.Response === 'True' && od.imdbRating && od.imdbRating !== 'N/A') return od.imdbRating;
+      } catch (e) {}
+      return '';
+    }
+
     // Fanart.tv: بنرات رسمية لكل موسم (صور عريضة 16:9 مثل بنر House الأزرق/البرتقالي).
     // مفتاح مجاني: سجّل بموقع fanart.tv ← Your Profile ← Personal API Key، وحطه بين علامتي التنصيص. إذا تركته فاضي، ما راح ينجلب بنر رسمي ويرجع للصورة من الحلقات.
     const FANART_API_KEY = '4c496b546faecfec345fe324b30456c6';
-    // يجيب من Fanart: TV Thumbs (بنرات المسلسل العريضة) + بنرات المواسم، مرتبة بالأكثر إعجابًا (الإنكليزي/بدون لغة أولًا)
+    // يجيب من Fanart بنرات بجودة أعلى وأنسب لواجهة عريضة (Hero):
+    // showbackground (خلفية سينمائية عريضة 1920x1080، أفضل شي لبنر المسلسل) ← احتياط tvbanner ← احتياط tvthumb
+    // seasonbanner (بنر الموسم الرسمي العريض) ← احتياط seasonthumb ← تتوزع عليه صور showbackground نفسها
     async function fetchFanartData(tvdbId) {
       const out = { tv: [], seasons: {} };
       if (!FANART_API_KEY || !tvdbId) return out;
@@ -485,14 +497,23 @@
         const d = await res.json();
         const score = (img) => (parseInt(img.likes, 10) || 0) + ((img.lang === 'en' || img.lang === '' || img.lang === '00') ? 1000 : 0);
         const rank = (arr) => (arr || []).filter(i => i && i.url).sort((x, y) => score(y) - score(x));
-        out.tv = rank(d.tvthumb).map(i => i.url);
-        const bySeason = {};
+        // نرتّب حسب الأفضل بصريًا كبنر مسلسل: خلفية سينمائية أولًا، بعدين بنر تقليدي، وبالأخير الثَمب الصغير
+        out.tv = [...rank(d.showbackground), ...rank(d.tvbanner), ...rank(d.tvthumb)].map(i => i.url);
+        const bySeasonBanner = {}, bySeasonThumb = {};
+        (d.seasonbanner || []).forEach(img => {
+          const n = String(img.season);
+          if (!/^\d+$/.test(n) || !img.url) return;
+          (bySeasonBanner[n] = bySeasonBanner[n] || []).push(img);
+        });
         (d.seasonthumb || []).forEach(img => {
           const n = String(img.season);
           if (!/^\d+$/.test(n) || !img.url) return;
-          (bySeason[n] = bySeason[n] || []).push(img);
+          (bySeasonThumb[n] = bySeasonThumb[n] || []).push(img);
         });
-        Object.keys(bySeason).forEach(n => { out.seasons[n] = rank(bySeason[n]).map(i => i.url); });
+        const seasonNums = new Set([...Object.keys(bySeasonBanner), ...Object.keys(bySeasonThumb)]);
+        seasonNums.forEach(n => {
+          out.seasons[n] = [...rank(bySeasonBanner[n]), ...rank(bySeasonThumb[n])].map(i => i.url);
+        });
       } catch (e) {}
       return out;
     }
@@ -593,6 +614,9 @@
 
       const parsedYear = dateStr ? parseInt(dateStr.slice(0, 4), 10) : NaN;
 
+      // تقييم IMDB الحقيقي من OMDb (مو تقييم TMDB) — إذا ما اكو IMDB ID أو ما رجّع OMDb شي، نرجع لتقييم TMDB كحل احتياطي بس
+      const realImdbRating = await fetchImdbRating(imdbId);
+
       const patch = {
         name: name,
         year: Number.isFinite(parsedYear) ? parsedYear : new Date().getFullYear(),
@@ -602,7 +626,7 @@
         description: overview,
         director: director,
         writer: writer,
-        imdbRating: data.vote_average ? Number(data.vote_average).toFixed(1) : '',
+        imdbRating: realImdbRating || (data.vote_average ? Number(data.vote_average).toFixed(1) : ''),
       };
 
       // نوع العمل: نبدّل فيلم/مسلسل فقط، ونترك "أنمي" كما هو
@@ -629,10 +653,9 @@
           try { sd = await tmdbFetch(`tv/${tmdbId}/season/${s.season_number}`, { language: 'en-US' }); }
           catch (e) { continue; }
 
-          // احتياط: إذا TMDB ما عنده اسم حلقة، نجيب اسمها من OMDb (قاعدة بيانات IMDB) بطلب واحد لكل موسم
+          // نجيب حلقات الموسم من OMDb (قاعدة بيانات IMDB) بطلب واحد لكل موسم: نستخدمها لاسم الحلقة إذا كان ناقص من TMDB، وأيضًا لتقييم IMDB الحقيقي لكل حلقة
           let omdbEpisodes = null;
-          const missingSome = (sd.episodes || []).some(ep => !(ep.name || '').trim());
-          if (missingSome && imdbId) {
+          if (imdbId) {
             try {
               const od = await omdbFetch({ i: imdbId, Season: s.season_number });
               if (od && od.Response === 'True' && Array.isArray(od.Episodes)) omdbEpisodes = od.Episodes;
@@ -650,14 +673,17 @@
           for (let j = 0; j < episodesRaw.length; j++) {
             const ep = episodesRaw[j];
             let epTitle = (ep.name || '').trim();
-            if (!epTitle && omdbEpisodes) {
-              const match = omdbEpisodes.find(oe => Number(oe.Episode) === Number(ep.episode_number));
-              if (match && match.Title && match.Title !== 'N/A') epTitle = match.Title.trim();
-            }
+            let epImdbMatch = null;
+            if (omdbEpisodes) epImdbMatch = omdbEpisodes.find(oe => Number(oe.Episode) === Number(ep.episode_number));
+            if (!epTitle && epImdbMatch && epImdbMatch.Title && epImdbMatch.Title !== 'N/A') epTitle = epImdbMatch.Title.trim();
+            // تقييم IMDB الحقيقي للحلقة من OMDb، واحتياط تقييم TMDB إذا ما اكو
+            const epImdbRating = (epImdbMatch && epImdbMatch.imdbRating && epImdbMatch.imdbRating !== 'N/A')
+              ? epImdbMatch.imdbRating
+              : (ep.vote_average ? Number(ep.vote_average).toFixed(1) : '');
             episodes.push(Object.assign(emptyEpisode(Number(ep.episode_number) || 1), {
               number: Number(ep.episode_number) || 1,
               title: epTitle,
-              imdb: ep.vote_average ? Number(ep.vote_average).toFixed(1) : '',
+              imdb: epImdbRating,
               videoUrl: buildVidApiUrl('tv', sourceId, s.season_number, ep.episode_number),
             }));
           }
@@ -2361,7 +2387,7 @@
               </div>
               <h2 className="text-2xl md:text-3xl font-black mb-1 text-white">{title.name}</h2>
               {playingLabel && playingLabel !== title.name && (
-                <p className="text-sm text-accent-cyan font-bold mb-3 flex items-center gap-1.5"><Icon name="play" className="w-3.5 h-3.5 fill-current" />{playingLabel.split(' · ').slice(1).join(' · ')}</p>
+                <p className="text-sm text-accent-cyan font-bold mb-3 flex items-center gap-1.5"><Icon name="play" className="w-3.5 h-3.5 fill-current" /><bdi>{playingLabel.split(' · ').slice(1).join(' · ')}</bdi></p>
               )}
               {title.genres && title.genres.length > 0 && (
                 <div className="flex gap-2 flex-wrap mb-4 mt-2">
@@ -2446,7 +2472,7 @@
                               <p className="text-[10px] font-bold text-accent-cyan mb-0.5">الموسم {ep.seasonNumber} · الحلقة {ep.number}</p>
                               <p className={`text-sm font-bold truncate ${isCurrent ? 'text-accent-cyan' : 'text-slate-100'}`}>
                                 {ep.title ? (
-                                  <>{ep.title} <span className="font-normal opacity-60">({episodeAutoLabel(ep)})</span></>
+                                  <><bdi>{ep.title}</bdi> <span className="font-normal opacity-60">({episodeAutoLabel(ep)})</span></>
                                 ) : episodeAutoLabel(ep)}
                               </p>
                             </div>
@@ -2518,7 +2544,7 @@
                             <div className="flex-1 min-w-0">
                               <p className={`text-sm font-bold truncate mb-1 ${isCurrent ? 'text-accent-cyan' : 'text-slate-100'}`}>
                                 {ep.title ? (
-                                  <>{ep.title} <span className="font-normal opacity-60">({episodeAutoLabel(ep)})</span></>
+                                  <><bdi>{ep.title}</bdi> <span className="font-normal opacity-60">({episodeAutoLabel(ep)})</span></>
                                 ) : episodeAutoLabel(ep)}
                               </p>
                               <RatingBadges imdb={ep.imdb} rt={ep.rt} size="xs" />
