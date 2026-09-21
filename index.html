@@ -492,11 +492,11 @@
         media = parsed.media || (currentType === 'movie' ? 'movie' : 'tv');
       }
 
-      const data = await tmdbFetch(`${media}/${tmdbId}`, { language: 'ar', append_to_response: 'credits,external_ids' });
+      const data = await tmdbFetch(`${media}/${tmdbId}`, { language: 'ar', append_to_response: 'external_ids' });
 
-      // نجيب النسخة الإنكليزية دايمًا حتى يكون اسم العمل بالإنكليزي كما هو مكتوب أصلًا بـ TMDB
+      // نجيب النسخة الإنكليزية دايمًا: للاسم، ولأسماء المخرج/الكاتب (حتى تصير موحّدة بالإنكليزي دائمًا وما تصير مرة عربي ومرة انكليزي)
       let en = null;
-      try { en = await tmdbFetch(`${media}/${tmdbId}`, { language: 'en-US' }); } catch (e) {}
+      try { en = await tmdbFetch(`${media}/${tmdbId}`, { language: 'en-US', append_to_response: 'credits' }); } catch (e) {}
 
       let name = (en && (en.title || en.name)) || data.original_title || data.original_name || data.title || data.name || '';
       let overview = (data.overview || '').trim();
@@ -506,11 +506,12 @@
 
       if (!imdbId) imdbId = (data.external_ids && data.external_ids.imdb_id) || '';
 
-      const crew = (data.credits && data.credits.crew) || [];
+      // المخرج والكاتب دايمًا بالإنكليزي (أسماء الأشخاص بـTMDB أحيانًا تنترجم عربي وأحيانًا لا، فيصير تشتت لو اعتمدنا النسخة العربية)
+      const crew = (en && en.credits && en.credits.crew) || [];
       let director = tmdbNames(crew.filter(c => c.job === 'Director'));
       let writer = tmdbNames(crew.filter(c => ['Writer', 'Screenplay', 'Story', 'Novel', 'Teleplay'].includes(c.job)));
       if (media === 'tv') {
-        const creators = tmdbNames(data.created_by);
+        const creators = tmdbNames((en && en.created_by) || data.created_by);
         if (!director) director = creators;
         if (!writer) writer = creators;
       }
@@ -547,13 +548,15 @@
           const s = list[i];
           if (options.onProgress) options.onProgress(`جاري جلب الموسم ${s.season_number} (${i + 1}/${list.length})...`);
           let sd;
-          try { sd = await tmdbFetch(`tv/${tmdbId}/season/${s.season_number}`, { language: 'ar' }); }
+          // نجيب الحلقات بالإنكليزي دائمًا: ترجمة أسماء الحلقات عربي بـTMDB غالبًا غير دقيقة/ناقصة
+          try { sd = await tmdbFetch(`tv/${tmdbId}/season/${s.season_number}`, { language: 'en-US' }); }
           catch (e) { continue; }
+          const seasonPoster = s.poster_path ? TMDB_IMG + 'w500' + s.poster_path : '';
           seasons.push({
             number: Number(s.season_number),
             year: (s.air_date || '').slice(0, 4) || '',
-            poster: s.poster_path ? TMDB_IMG + 'w500' + s.poster_path : '',
-            episodeThumbnail: '',
+            poster: seasonPoster,
+            episodeThumbnail: seasonPoster,
             episodes: (sd.episodes || []).map(ep => Object.assign(emptyEpisode(Number(ep.episode_number) || 1), {
               number: Number(ep.episode_number) || 1,
               title: ep.name || '',
