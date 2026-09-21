@@ -476,22 +476,26 @@
     // مفتاح مجاني: سجّل بموقع fanart.tv ← Your Profile ← Personal API Key، وحطه بين علامتي التنصيص. إذا تركته فاضي، ما راح ينجلب بنر رسمي ويرجع للصورة من الحلقات.
     const FANART_API_KEY = '4c496b546faecfec345fe324b30456c6';
     async function fetchFanartSeasonBanners(tvdbId) {
-      const out = {};
-      if (!FANART_API_KEY || !tvdbId) return out;
+      const result = { best: {}, all: {} };
+      if (!FANART_API_KEY || !tvdbId) return result;
       try {
         const res = await fetch(`https://webservice.fanart.tv/v3/tv/${tvdbId}?api_key=${FANART_API_KEY}`);
-        if (!res.ok) return out;
+        if (!res.ok) return result;
         const d = await res.json();
+        const bySeason = {};
         (d.seasonthumb || []).forEach(img => {
           const n = String(img.season);
           if (!/^\d+$/.test(n) || !img.url) return;
-          const cur = out[n];
           const score = (parseInt(img.likes, 10) || 0) + (img.lang === 'en' || img.lang === '' ? 1000 : 0);
-          if (!cur || score > cur.score) out[n] = { url: img.url, score };
+          (bySeason[n] = bySeason[n] || []).push({ url: img.url, score });
+        });
+        Object.keys(bySeason).forEach(n => {
+          const sorted = bySeason[n].sort((x, y) => y.score - x.score).map(x => x.url).slice(0, 12);
+          result.all[n] = sorted;
+          result.best[n] = sorted[0];
         });
       } catch (e) {}
-      Object.keys(out).forEach(k => { out[k] = out[k].url; });
-      return out;
+      return result;
     }
 
     // يقبل: tt1517268 · 385687 · رابط IMDB · رابط TMDB
@@ -577,12 +581,15 @@
         patch.videoUrl = buildVidApiUrl('movie', sourceId);
       }
 
+      let bannerOptions = {};
       if (media === 'tv' && options.withEpisodes) {
         const list = (data.seasons || []).filter(s => Number(s.season_number) > 0);
         const showBanner = data.backdrop_path ? TMDB_IMG + 'original' + data.backdrop_path : '';
         const seasons = [];
         if (options.onProgress) options.onProgress('جاري جلب بنرات المواسم...');
-        const fanartBanners = await fetchFanartSeasonBanners(data.external_ids && data.external_ids.tvdb_id);
+        const fanart = await fetchFanartSeasonBanners(data.external_ids && data.external_ids.tvdb_id);
+        const fanartBanners = fanart.best;
+        bannerOptions = fanart.all;
         for (let i = 0; i < list.length; i++) {
           const s = list[i];
           if (options.onProgress) options.onProgress(`جاري جلب الموسم ${s.season_number} (${i + 1}/${list.length})...`);
@@ -632,7 +639,7 @@
         patch.seasons = seasons;
       }
 
-      return { patch: patch, sourceId: sourceId, media: media, tmdbId: tmdbId, imdbId: imdbId };
+      return { patch: patch, sourceId: sourceId, media: media, tmdbId: tmdbId, imdbId: imdbId, bannerOptions: bannerOptions };
     }
 
     function TmdbImportPanel({ type, onApply }) {
@@ -2932,7 +2939,7 @@
             </button>
           </div>
 
-          <p className="text-center text-[10px] leading-relaxed text-slate-600 mt-8">تصميم وبرمجة: <span className="text-slate-500 font-bold">محمود احمد</span> &nbsp;|&nbsp; للتواصل(تليكرام فقط): <a href="uesr:mah15ahmed" className="font-mono text-slate-500 font-bold hover:text-accent-cyan transition">mah15ahmed</a></p>
+          <p className="text-center text-[10px] leading-relaxed text-slate-600 mt-8">تصميم وبرمجة: <span className="text-slate-500 font-bold">محمود احمد</span> &nbsp;|&nbsp; للتواصل(تليكرام فقط): <a href="https://t.me/mah15ahmed" target="_blank" rel="noopener noreferrer" className="font-mono text-slate-500 font-bold hover:text-accent-cyan transition">mah15ahmed</a></p>
         </div>
       );
     }
@@ -4050,11 +4057,13 @@
       const [activeSeasonIdx, setActiveSeasonIdx] = useState(0);
       const [editingEpisodeIdx, setEditingEpisodeIdx] = useState(null);
       const [sourceId, setSourceId] = useState('');
+      const [bannerOptions, setBannerOptions] = useState({});
 
       const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
       const applyTmdb = (result) => {
         setSourceId(result.sourceId || '');
+        setBannerOptions(result.bannerOptions || {});
         setForm(prev => ({ ...prev, ...result.patch }));
         setActiveSeasonIdx(0);
         setEditingEpisodeIdx(null);
@@ -4280,6 +4289,19 @@
                               </div>
                               <FileUploadField compact label="صورة بوستر الموسم (اختياري)" value={activeSeason.poster || ''} onChange={v => updateSeasonField(activeSeasonIdx, 'poster', v)} folder="season-posters" accept="image/*" />
                               <FileUploadField compact label="الصورة المصغّرة لحلقات هذا الموسم (تُطبَّق تلقائيًا على كل حلقات الموسم)" value={activeSeason.episodeThumbnail || ''} onChange={v => updateSeasonField(activeSeasonIdx, 'episodeThumbnail', v)} folder="season-episode-thumbs" accept="image/*" />
+                              {(bannerOptions[String(activeSeason.number)] || []).length > 1 && (
+                                <div>
+                                  <p className="text-[11px] font-bold text-slate-400 mb-1.5">بدائل بنر هذا الموسم من Fanart — اضغط على البنر اللي يعجبك:</p>
+                                  <div className="flex gap-2 overflow-x-auto pb-1.5 scrollbar-hide">
+                                    {bannerOptions[String(activeSeason.number)].map(url => (
+                                      <button type="button" key={url} onClick={() => updateSeasonField(activeSeasonIdx, 'episodeThumbnail', url)}
+                                        className={`shrink-0 w-36 aspect-video rounded-lg overflow-hidden border-2 transition ${activeSeason.episodeThumbnail === url ? 'border-accent-cyan shadow-[0_0_10px_rgba(0,240,255,0.5)]' : 'border-white/10 hover:border-white/30'}`}>
+                                        <img src={url} alt="" loading="lazy" className="w-full h-full object-cover" />
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
 
