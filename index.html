@@ -480,12 +480,12 @@
       const parsed = parseMediaInput(rawInput);
       if (!parsed) throw new Error('صيغة غير معروفة — أدخل معرف IMDB مثل tt1517268 أو معرف TMDB رقمي');
 
-      let media, tmdbId, imdbId = '';
+      let media, tmdbId, imdbId = '', foundDate = '';
       if (parsed.kind === 'imdb') {
         imdbId = parsed.id;
         const found = await tmdbFetch(`find/${parsed.id}`, { external_source: 'imdb_id', language: 'ar' });
-        if ((found.movie_results || []).length) { media = 'movie'; tmdbId = found.movie_results[0].id; }
-        else if ((found.tv_results || []).length) { media = 'tv'; tmdbId = found.tv_results[0].id; }
+        if ((found.movie_results || []).length) { media = 'movie'; tmdbId = found.movie_results[0].id; foundDate = found.movie_results[0].release_date || ''; }
+        else if ((found.tv_results || []).length) { media = 'tv'; tmdbId = found.tv_results[0].id; foundDate = found.tv_results[0].first_air_date || ''; }
         else throw new Error('لم يُعثر على هذا المعرف في TMDB');
       } else {
         tmdbId = parsed.id;
@@ -494,17 +494,16 @@
 
       const data = await tmdbFetch(`${media}/${tmdbId}`, { language: 'ar', append_to_response: 'credits,external_ids' });
 
-      let name = data.title || data.name || '';
+      // نجيب النسخة الإنكليزية دايمًا حتى يكون اسم العمل بالإنكليزي كما هو مكتوب أصلًا بـ TMDB
+      let en = null;
+      try { en = await tmdbFetch(`${media}/${tmdbId}`, { language: 'en-US' }); } catch (e) {}
+
+      let name = (en && (en.title || en.name)) || data.original_title || data.original_name || data.title || data.name || '';
       let overview = (data.overview || '').trim();
+      if (!overview && en) overview = (en.overview || '').trim();
       let genres = (data.genres || []).map(g => g.name).filter(Boolean);
-      if (!overview || !name) {
-        try {
-          const en = await tmdbFetch(`${media}/${tmdbId}`, { language: 'en-US' });
-          if (!overview) overview = (en.overview || '').trim();
-          if (!name) name = en.title || en.name || '';
-          if (!genres.length) genres = (en.genres || []).map(g => g.name);
-        } catch (e) {}
-      }
+      if (!genres.length && en) genres = (en.genres || []).map(g => g.name).filter(Boolean);
+
       if (!imdbId) imdbId = (data.external_ids && data.external_ids.imdb_id) || '';
 
       const crew = (data.credits && data.credits.crew) || [];
@@ -516,12 +515,14 @@
         if (!writer) writer = creators;
       }
 
-      const dateStr = data.release_date || data.first_air_date || '';
+      const dateStr = data.release_date || data.first_air_date || (en && (en.release_date || en.first_air_date)) || foundDate || '';
       const sourceId = imdbId || String(tmdbId);
+
+      const parsedYear = dateStr ? parseInt(dateStr.slice(0, 4), 10) : NaN;
 
       const patch = {
         name: name,
-        year: dateStr ? Number(dateStr.slice(0, 4)) : new Date().getFullYear(),
+        year: Number.isFinite(parsedYear) ? parsedYear : new Date().getFullYear(),
         genresText: genres.join(', '),
         poster: data.poster_path ? TMDB_IMG + 'w500' + data.poster_path : '',
         backdrop: data.backdrop_path ? TMDB_IMG + 'original' + data.backdrop_path : '',
