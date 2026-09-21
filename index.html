@@ -458,62 +458,60 @@
       return res.json();
     }
 
-    // OMDb (يسحب من قاعدة بيانات IMDB مباشرة) — نستخدمه احتياط بس إذا TMDB ما عنده اسم الحلقة
+    // OMDb (يسحب من قاعدة بيانات IMDB مباشرة) — مصدر تقييم IMDb الوحيد (ما نستخدم تقييم TMDB أبدًا لأنه مختلف)
     const OMDB_API_KEY = '52191abb';
+    // آخر خطأ رجّعه OMDb (مثلاً: Request limit reached!) — حتى نعرضه للمستخدم بدل ما نحط تقييم غلط بصمت
+    let omdbLastError = '';
     async function omdbFetch(params) {
       const usp = new URLSearchParams(Object.assign({ apikey: OMDB_API_KEY }, params || {}));
-      let res;
-      try {
-        res = await fetch(`https://www.omdbapi.com/?${usp.toString()}`);
-      } catch (e) {
-        throw new Error('تعذر الاتصال بـ OMDb');
+      let res = null;
+      // محاولتين: أحيانًا الطلب الأول يفشل بسبب انقطاع لحظي
+      for (let attempt = 0; attempt < 2 && !res; attempt++) {
+        try {
+          res = await fetch(`https://www.omdbapi.com/?${usp.toString()}`);
+        } catch (e) {
+          if (attempt === 0) await new Promise(r => setTimeout(r, 600));
+        }
       }
-      if (!res.ok) throw new Error('خطأ من OMDb (رمز ' + res.status + ')');
-      return res.json();
+      if (!res) { omdbLastError = 'تعذر الاتصال بـ OMDb'; throw new Error('تعذر الاتصال بـ OMDb'); }
+      if (!res.ok) { omdbLastError = 'خطأ من OMDb (رمز ' + res.status + ')'; throw new Error(omdbLastError); }
+      const data = await res.json();
+      if (data && data.Response === 'False' && data.Error) omdbLastError = data.Error;
+      return data;
     }
 
-    // يجيب تقييم IMDB الحقيقي (مو TMDB) لأي عمل عنده IMDB ID، مباشرة من OMDb
+    // تقييم IMDb يجي بصيغة "8.4" — أي شي ثاني (N/A أو فاضي) نتجاهله
+    function cleanImdbRating(v) {
+      const t = String(v == null ? '' : v).trim();
+      return /^(10(\.0)?|\d(\.\d)?)$/.test(t) ? t : '';
+    }
+
+    // يجيب تقييم IMDB الحقيقي لأي عمل عنده IMDB ID، مباشرة من OMDb.
+    // نتأكد إن الـ imdbID الراجع نفس المطلوب، وإذا ما لقينا تقييم نرجّع فاضي (ما نحط تقييم TMDB بدله).
     async function fetchImdbRating(imdbId) {
       if (!imdbId) return '';
       try {
         const od = await omdbFetch({ i: imdbId });
-        if (od && od.Response === 'True' && od.imdbRating && od.imdbRating !== 'N/A') return od.imdbRating;
+        if (od && od.Response === 'True' && String(od.imdbID || '').toLowerCase() === String(imdbId).toLowerCase()) {
+          return cleanImdbRating(od.imdbRating);
+        }
       } catch (e) {}
       return '';
     }
 
-    // Fanart.tv: بنرات رسمية لكل موسم (صور عريضة 16:9 مثل بنر House الأزرق/البرتقالي).
-    // مفتاح مجاني: سجّل بموقع fanart.tv ← Your Profile ← Personal API Key، وحطه بين علامتي التنصيص. إذا تركته فاضي، ما راح ينجلب بنر رسمي ويرجع للصورة من الحلقات.
+    // Fanart.tv: نستخدم فقط صور TV Thumbs (tvthumb) كبنرات مقترحة — لا showbackground ولا tvbanner ولا seasonbanner ولا seasonthumb.
+    // مفتاح مجاني: سجّل بموقع fanart.tv ← Your Profile ← Personal API Key، وحطه بين علامتي التنصيص.
     const FANART_API_KEY = '4c496b546faecfec345fe324b30456c6';
-    // يجيب من Fanart بنرات بجودة أعلى وأنسب لواجهة عريضة (Hero):
-    // showbackground (خلفية سينمائية عريضة 1920x1080، أفضل شي لبنر المسلسل) ← احتياط tvbanner ← احتياط tvthumb
-    // seasonbanner (بنر الموسم الرسمي العريض) ← احتياط seasonthumb ← تتوزع عليه صور showbackground نفسها
     async function fetchFanartData(tvdbId) {
-      const out = { tv: [], seasons: {} };
+      const out = { tv: [] };
       if (!FANART_API_KEY || !tvdbId) return out;
       try {
         const res = await fetch(`https://webservice.fanart.tv/v3/tv/${tvdbId}?api_key=${FANART_API_KEY}`);
         if (!res.ok) return out;
         const d = await res.json();
+        // الأفضلية: الإنكليزي/بدون لغة أولًا، وبعدها الأكثر إعجابًا
         const score = (img) => (parseInt(img.likes, 10) || 0) + ((img.lang === 'en' || img.lang === '' || img.lang === '00') ? 1000 : 0);
-        const rank = (arr) => (arr || []).filter(i => i && i.url).sort((x, y) => score(y) - score(x));
-        // نرتّب حسب الأفضل بصريًا كبنر مسلسل: خلفية سينمائية أولًا، بعدين بنر تقليدي، وبالأخير الثَمب الصغير
-        out.tv = [...rank(d.showbackground), ...rank(d.tvbanner), ...rank(d.tvthumb)].map(i => i.url);
-        const bySeasonBanner = {}, bySeasonThumb = {};
-        (d.seasonbanner || []).forEach(img => {
-          const n = String(img.season);
-          if (!/^\d+$/.test(n) || !img.url) return;
-          (bySeasonBanner[n] = bySeasonBanner[n] || []).push(img);
-        });
-        (d.seasonthumb || []).forEach(img => {
-          const n = String(img.season);
-          if (!/^\d+$/.test(n) || !img.url) return;
-          (bySeasonThumb[n] = bySeasonThumb[n] || []).push(img);
-        });
-        const seasonNums = new Set([...Object.keys(bySeasonBanner), ...Object.keys(bySeasonThumb)]);
-        seasonNums.forEach(n => {
-          out.seasons[n] = [...rank(bySeasonBanner[n]), ...rank(bySeasonThumb[n])].map(i => i.url);
-        });
+        out.tv = (d.tvthumb || []).filter(i => i && i.url).sort((x, y) => score(y) - score(x)).map(i => i.url);
       } catch (e) {}
       return out;
     }
@@ -529,7 +527,7 @@
       return '';
     }
 
-    // يجهّز كل بيانات البنرات للمسلسل بطلب واحد (ويتخزن): TV Thumbs + بنرات المواسم + احتياط من TMDB
+    // يجهّز بنرات المسلسل بطلب واحد: TV Thumbs فقط من Fanart.tv
     async function loadTvBannerData(sourceId) {
       const id = (sourceId || '').trim();
       if (!id) throw new Error('ما لكيت معرف المسلسل. سوّي تعبئة تلقائية أو تأكد إن روابط الحلقات مولّدة من VidAPI.');
@@ -541,14 +539,7 @@
       }
       const info = await tmdbFetch(`tv/${tmdbId}`, { append_to_response: 'external_ids' });
       const fan = await fetchFanartData(info.external_ids && info.external_ids.tvdb_id);
-      let fallback = [];
-      if (!fan.tv.length) {
-        try {
-          const im = await tmdbFetch(`tv/${tmdbId}/images`, { include_image_language: 'en,null' });
-          fallback = (im.backdrops || []).slice(0, 12).map(b => TMDB_IMG + 'w780' + b.file_path);
-        } catch (e) {}
-      }
-      return { tv: fan.tv, seasons: fan.seasons, fallback: fallback };
+      return { tv: fan.tv };
     }
 
     // يقبل: tt1517268 · 385687 · رابط IMDB · رابط TMDB
@@ -573,6 +564,8 @@
       const parsed = parseMediaInput(rawInput);
       if (!parsed) throw new Error('صيغة غير معروفة — أدخل معرف IMDB مثل tt1517268 أو معرف TMDB رقمي');
 
+      const warnings = [];
+      omdbLastError = '';
       let media, tmdbId, imdbId = '', foundDate = '';
       if (parsed.kind === 'imdb') {
         imdbId = parsed.id;
@@ -614,8 +607,13 @@
 
       const parsedYear = dateStr ? parseInt(dateStr.slice(0, 4), 10) : NaN;
 
-      // تقييم IMDB الحقيقي من OMDb (مو تقييم TMDB) — إذا ما اكو IMDB ID أو ما رجّع OMDb شي، نرجع لتقييم TMDB كحل احتياطي بس
+      // تقييم IMDB الحقيقي من OMDb فقط. إذا ما اكو IMDB ID أو ما رجّع OMDb تقييم، نخليه فاضي (أفضل من تقييم TMDB المختلف) ونطلع تنبيه
       const realImdbRating = await fetchImdbRating(imdbId);
+      if (!realImdbRating) {
+        warnings.push(!imdbId
+          ? 'ما لكيت معرف IMDb لهذا العمل، فتقييم IMDb بقي فاضي — اكتبه يدويًا.'
+          : 'تعذر جلب تقييم IMDb' + (omdbLastError ? ' (' + omdbLastError + ')' : '') + ' — اكتبه يدويًا أو جرّب لاحقًا.');
+      }
 
       const patch = {
         name: name,
@@ -626,7 +624,7 @@
         description: overview,
         director: director,
         writer: writer,
-        imdbRating: realImdbRating || (data.vote_average ? Number(data.vote_average).toFixed(1) : ''),
+        imdbRating: realImdbRating,
       };
 
       // نوع العمل: نبدّل فيلم/مسلسل فقط، ونترك "أنمي" كما هو
@@ -642,9 +640,10 @@
         const list = (data.seasons || []).filter(s => Number(s.season_number) > 0);
         const showBanner = data.backdrop_path ? TMDB_IMG + 'original' + data.backdrop_path : '';
         const seasons = [];
-        if (options.onProgress) options.onProgress('جاري جلب البنرات من Fanart...');
+        if (options.onProgress) options.onProgress('جاري جلب TV Thumbs من Fanart...');
         const fanart = await fetchFanartData(data.external_ids && data.external_ids.tvdb_id);
-        bannerData = { tv: fanart.tv, seasons: fanart.seasons, fallback: [] };
+        bannerData = { tv: fanart.tv };
+        let epRatingMissing = 0;
         for (let i = 0; i < list.length; i++) {
           const s = list[i];
           if (options.onProgress) options.onProgress(`جاري جلب الموسم ${s.season_number} (${i + 1}/${list.length})...`);
@@ -658,16 +657,18 @@
           if (imdbId) {
             try {
               const od = await omdbFetch({ i: imdbId, Season: s.season_number });
-              if (od && od.Response === 'True' && Array.isArray(od.Episodes)) omdbEpisodes = od.Episodes;
+              // نتأكد إن OMDb رجّع نفس المسلسل ونفس رقم الموسم قبل ما نعتمد تقييمات حلقاته
+              if (od && od.Response === 'True' && Array.isArray(od.Episodes)
+                  && String(od.imdbID || '').toLowerCase() === imdbId.toLowerCase()
+                  && Number(od.Season) === Number(s.season_number)) omdbEpisodes = od.Episodes;
             } catch (e) {}
           }
 
           const seasonPoster = s.poster_path ? TMDB_IMG + 'w500' + s.poster_path : '';
           const episodesRaw = sd.episodes || [];
-          // بنر الموسم: من TV Thumbs (كل موسم ياخذ بنر مختلف بالترتيب)، وإذا ما اكو، بنر الموسم من Fanart، وإذا ما اكو، لقطة من الموسم
+          // بنر الموسم: من TV Thumbs (كل موسم ياخذ بنر مختلف بالترتيب)، وإذا المسلسل ما عنده TV Thumbs بس نستخدم لقطة من الموسم كي لا يبقى الحقل فاضي
           const stillEp = episodesRaw.find(ep => ep.still_path);
           const seasonBanner = (fanart.tv.length ? fanart.tv[i % fanart.tv.length] : '') ||
-            ((fanart.seasons[String(s.season_number)] || [])[0]) ||
             (stillEp ? TMDB_IMG + 'w780' + stillEp.still_path : '');
           const episodes = [];
           for (let j = 0; j < episodesRaw.length; j++) {
@@ -676,10 +677,9 @@
             let epImdbMatch = null;
             if (omdbEpisodes) epImdbMatch = omdbEpisodes.find(oe => Number(oe.Episode) === Number(ep.episode_number));
             if (!epTitle && epImdbMatch && epImdbMatch.Title && epImdbMatch.Title !== 'N/A') epTitle = epImdbMatch.Title.trim();
-            // تقييم IMDB الحقيقي للحلقة من OMDb، واحتياط تقييم TMDB إذا ما اكو
-            const epImdbRating = (epImdbMatch && epImdbMatch.imdbRating && epImdbMatch.imdbRating !== 'N/A')
-              ? epImdbMatch.imdbRating
-              : (ep.vote_average ? Number(ep.vote_average).toFixed(1) : '');
+            // تقييم IMDB الحقيقي للحلقة من OMDb فقط (بدون احتياط من TMDB حتى ما ينحط تقييم غير دقيق)
+            const epImdbRating = epImdbMatch ? cleanImdbRating(epImdbMatch.imdbRating) : '';
+            if (!epImdbRating && ep.air_date && new Date(ep.air_date) <= new Date()) epRatingMissing++;
             episodes.push(Object.assign(emptyEpisode(Number(ep.episode_number) || 1), {
               number: Number(ep.episode_number) || 1,
               title: epTitle,
@@ -696,9 +696,10 @@
           });
         }
         patch.seasons = seasons;
+        if (epRatingMissing) warnings.push('تقييم IMDb غير متوفر لـ ' + epRatingMissing + ' حلقة' + (omdbLastError ? ' (' + omdbLastError + ')' : '') + ' — تُركت فاضية.');
       }
 
-      return { patch: patch, sourceId: sourceId, media: media, tmdbId: tmdbId, imdbId: imdbId, bannerData: bannerData };
+      return { patch: patch, sourceId: sourceId, media: media, tmdbId: tmdbId, imdbId: imdbId, bannerData: bannerData, warnings: warnings };
     }
 
     function TmdbImportPanel({ type, onApply }) {
@@ -707,9 +708,10 @@
       const [loading, setLoading] = useState(false);
       const [status, setStatus] = useState('');
       const [err, setErr] = useState('');
+      const [warn, setWarn] = useState('');
 
       const run = async () => {
-        setErr(''); setStatus('');
+        setErr(''); setStatus(''); setWarn('');
         setLoading(true);
         try {
           setStatus('جاري جلب البيانات من TMDB...');
@@ -718,6 +720,7 @@
             onProgress: (m) => setStatus(m),
           });
           onApply(result);
+          setWarn((result.warnings || []).join(' · '));
           const epCount = (result.patch.seasons || []).reduce((n, s) => n + (s.episodes || []).length, 0);
           setStatus('');
           showToast(epCount ? `تمت التعبئة + استيراد ${epCount} حلقة` : 'تمت تعبئة البيانات بنجاح');
@@ -755,7 +758,8 @@
 
           {status && <p className="text-[11px] text-accent-cyan font-bold mt-2">{status}</p>}
           {err && <p className="text-[11px] text-rose-400 font-bold mt-2">{err}</p>}
-          <p className="text-[10px] text-slate-500 mt-2">ينعبّى: الاسم · السنة · التصنيفات · الوصف · البوستر · البنر · المخرج · الكاتب · التقييم · رابط التشغيل. (التقييم من TMDB وقريب جدًا من IMDb — عدّله يدويًا إذا تحب.)</p>
+          {warn && <p className="text-[11px] text-amber-400 font-bold mt-2">{warn}</p>}
+          <p className="text-[10px] text-slate-500 mt-2">ينعبّى: الاسم · السنة · التصنيفات · الوصف · البوستر · البنر · المخرج · الكاتب · التقييم · رابط التشغيل. (تقييم IMDb يُسحب مباشرة من IMDb عبر OMDb، وإذا ما توفر يبقى فاضي ولا يُستبدل بتقييم TMDB.)</p>
         </div>
       );
     }
@@ -4206,9 +4210,8 @@
         if (!bannerData) return [];
         const seen = new Set(), out = [];
         const add = (url, kind) => { if (url && !seen.has(url)) { seen.add(url); out.push({ url, kind }); } };
-        (bannerData.tv || []).forEach(u => add(u, 'tv'));
-        ((bannerData.seasons || {})[String(seasonNumber)] || []).forEach(u => add(u, 'season'));
-        if (!out.length) (bannerData.fallback || []).forEach(u => add(u, 'show'));
+        // فقط TV Thumbs من Fanart.tv
+        (bannerData.tv || []).forEach(u => add(u, 'tvthumb'));
         return out;
       };
 
@@ -4463,7 +4466,11 @@
                                 )}
                                 {(() => {
                                   const opts = bannerOptionsFor(activeSeason.number);
-                                  if (!opts.length) return null;
+                                  if (!opts.length) {
+                                    return (bannerData && !bannerLoading && !bannerError)
+                                      ? <p className="text-[11px] font-bold text-slate-500">لا توجد صور TV Thumbs لهذا المسلسل في Fanart.tv.</p>
+                                      : null;
+                                  }
                                   const visible = showAllBanners ? opts : opts.slice(0, 8);
                                   return (
                                     <div>
@@ -4472,7 +4479,6 @@
                                           <button type="button" key={o.url} onClick={() => pickBanner(o.url)}
                                             className={`relative aspect-video rounded-lg overflow-hidden border-2 transition ${activeSeason.episodeThumbnail === o.url ? 'border-accent-cyan shadow-[0_0_10px_rgba(0,240,255,0.5)]' : 'border-white/10 hover:border-white/30'}`}>
                                             <img src={o.url} alt="" loading="lazy" className="w-full h-full object-cover" />
-                                            {o.kind === 'season' && <span className="absolute bottom-1 right-1 text-[9px] px-1.5 py-0.5 rounded bg-black/70 text-white font-bold">لهذا الموسم</span>}
                                           </button>
                                         ))}
                                       </div>
