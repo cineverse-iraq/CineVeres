@@ -1102,23 +1102,7 @@
       );
     }
 
-    function ContinueWatchingRow({ items, onOpen }) {
-      if (!items.length) return null;
-      return (
-        <section className="mb-10">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg md:text-xl font-black text-slate-100 flex items-center gap-2.5">
-              <span className="w-1.5 h-5 bg-accent-cyan rounded-full shadow-[0_0_12px_rgba(0,240,255,0.6)]"></span>أكمل المشاهدة
-            </h2>
-          </div>
-          <div className="flex gap-4 overflow-x-auto pb-3 pt-1 snap-x scrollbar-hide">
-            {items.map(it => <PosterCard key={it.id} title={it} onOpen={onOpen} compact />)}
-          </div>
-        </section>
-      );
-    }
-
-    function HomeView({ items, onOpen, continueItems, watchedMap }) {
+    function HomeView({ items, onOpen, watchedMap }) {
       if (!items.length) return <EmptyState text="لا توجد أعمال منشورة بعد. تابعنا قريبًا!" />;
       const featured = items.filter(t => t.featured === true);
       const latest = [...items].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 12);
@@ -1128,7 +1112,6 @@
       return (
         <div>
           {featured.length > 0 && <Hero items={featured} onOpen={onOpen} />}
-          <ContinueWatchingRow items={continueItems} onOpen={onOpen} />
           <Row label="أُضيف حديثًا" items={latest} onOpen={onOpen} watchedMap={watchedMap} />
           <Row label="أفلام" items={items.filter(t => t.type === 'movie').slice(0, 12)} onOpen={onOpen} watchedMap={watchedMap} />
           <Row label="مسلسلات" items={items.filter(t => t.type === 'series').slice(0, 12)} onOpen={onOpen} watchedMap={watchedMap} />
@@ -2062,13 +2045,6 @@
         return () => ref.off('value', cb);
       }, [title.id, currentUser && currentUser.id]);
 
-      useEffect(() => {
-        try {
-          const raw = JSON.parse(localStorage.getItem('cv_continue') || '[]');
-          const next = [title.id, ...raw.filter(id => id !== title.id)].slice(0, 12);
-          localStorage.setItem('cv_continue', JSON.stringify(next));
-        } catch (e) {}
-      }, [title.id]);
 
       const ratingList = Object.keys(ratings).map(uid => ({ uid, ...ratings[uid] })).sort((a, b) => (b.date || 0) - (a.date || 0));
       const followersRatings = ratingList.filter(r => myFollowingSet[sanitizeKey(r.username)]);
@@ -5039,10 +5015,6 @@
 
       const published = titles.filter(t => t.status === 'published');
 
-      const continueWatchingIds = React.useMemo(() => {
-        try { return JSON.parse(localStorage.getItem('cv_continue') || '[]'); } catch (e) { return []; }
-      }, [titles, activeTitle]);
-      const continueItems = continueWatchingIds.map(id => published.find(t => t.id === id)).filter(Boolean).slice(0, 10);
 
       const toggleLike = (title) => {
         const isLiked = likedIds.includes(title.id);
@@ -5093,7 +5065,7 @@
               {searching ? (
                 <TypeGrid title={`نتائج البحث عن "${search}"`} items={mainList} onOpen={setActiveTitle} emptyText="لا توجد نتائج مطابقة." watchedMap={watched} />
               ) : view === 'home' ? (
-                <HomeView items={published} onOpen={setActiveTitle} continueItems={continueItems} watchedMap={watched} />
+                <HomeView items={published} onOpen={setActiveTitle} watchedMap={watched} />
               ) : (view === 'movie' || view === 'series' || view === 'anime') ? (
                 <TypeGrid title={TYPE_PLURAL[view]} items={published.filter(t => t.type === view)} onOpen={setActiveTitle} showGenreFilter emptyText="لا توجد أعمال في هذا القسم بعد." watchedMap={watched} />
               ) : view === 'lists' ? (
