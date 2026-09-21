@@ -411,8 +411,9 @@
       return `${base}?${params.toString()}`;
     }
 
-    function VidApiHelper({ kind, season, episode, onGenerate }) {
-      const [id, setId] = useState('');
+    function VidApiHelper({ kind, season, episode, onGenerate, defaultId }) {
+      const [id, setId] = useState(defaultId || '');
+      useEffect(() => { if (defaultId) setId(defaultId); }, [defaultId]);
       const [subUrl, setSubUrl] = useState('');
       const generate = () => {
         const url = buildVidApiUrl(kind, id, season, episode, subUrl);
@@ -430,6 +431,221 @@
           <p className="text-[10px] font-bold text-slate-400 mb-1.5">ملف ترجمة عربية مخصص (اختياري — يحل مشكلة تأخر التوقيت)</p>
           <FileUploadField compact value={subUrl} onChange={setSubUrl} folder="subtitles" accept=".srt,.vtt" />
           {kind === 'tv' && <p className="text-[10px] text-slate-500 mt-1.5">راح يبني الرابط لهذي الحلقة تحديدًا: الموسم {Number(season) || 1} · الحلقة {Number(episode) || 1}</p>}
+        </div>
+      );
+    }
+
+
+    // ===== TMDB: تعبئة تلقائية لبيانات العمل من معرف IMDB/TMDB =====
+    const TMDB_IMG = 'https://image.tmdb.org/t/p/';
+
+    function getTmdbKey() {
+      try { return localStorage.getItem('cv_tmdb_key') || ''; } catch (e) { return ''; }
+    }
+    function setTmdbKey(k) {
+      try { localStorage.setItem('cv_tmdb_key', (k || '').trim()); } catch (e) {}
+    }
+
+    async function tmdbFetch(path, params) {
+      const key = getTmdbKey();
+      if (!key) throw new Error('الرجاء إدخال مفتاح TMDB أولًا');
+      const usp = new URLSearchParams(Object.assign({ api_key: key }, params || {}));
+      let res;
+      try {
+        res = await fetch(`https://api.themoviedb.org/3/${path}?${usp.toString()}`);
+      } catch (e) {
+        throw new Error('تعذر الاتصال بـ TMDB — تحقق من الإنترنت');
+      }
+      if (res.status === 401) throw new Error('مفتاح TMDB غير صحيح');
+      if (res.status === 404) throw new Error('لم يتم العثور على هذا المعرف في TMDB');
+      if (!res.ok) throw new Error('خطأ من TMDB (رمز ' + res.status + ')');
+      return res.json();
+    }
+
+    // يقبل: tt1517268 · 385687 · رابط IMDB · رابط TMDB
+    function parseMediaInput(raw) {
+      const s = (raw || '').trim();
+      if (!s) return null;
+      const imdb = s.match(/tt\d{6,}/i);
+      if (imdb) return { kind: 'imdb', id: imdb[0].toLowerCase() };
+      const url = s.match(/themoviedb\.org\/(movie|tv)\/(\d+)/i);
+      if (url) return { kind: 'tmdb', media: url[1].toLowerCase(), id: url[2] };
+      if (/^\d+$/.test(s)) return { kind: 'tmdb', id: s };
+      return null;
+    }
+
+    function tmdbNames(list, limit) {
+      return (list || []).slice(0, limit || 3).map(p => p.name).filter(Boolean).join('، ');
+    }
+
+    // يرجّع: { patch, sourceId, media }
+    async function importFromTmdb(rawInput, currentType, opts) {
+      const options = opts || {};
+      const parsed = parseMediaInput(rawInput);
+      if (!parsed) throw new Error('صيغة غير معروفة — أدخل معرف IMDB مثل tt1517268 أو معرف TMDB رقمي');
+
+      let media, tmdbId, imdbId = '';
+      if (parsed.kind === 'imdb') {
+        imdbId = parsed.id;
+        const found = await tmdbFetch(`find/${parsed.id}`, { external_source: 'imdb_id', language: 'ar' });
+        if ((found.movie_results || []).length) { media = 'movie'; tmdbId = found.movie_results[0].id; }
+        else if ((found.tv_results || []).length) { media = 'tv'; tmdbId = found.tv_results[0].id; }
+        else throw new Error('لم يُعثر على هذا المعرف في TMDB');
+      } else {
+        tmdbId = parsed.id;
+        media = parsed.media || (currentType === 'movie' ? 'movie' : 'tv');
+      }
+
+      const data = await tmdbFetch(`${media}/${tmdbId}`, { language: 'ar', append_to_response: 'credits,external_ids' });
+
+      let name = data.title || data.name || '';
+      let overview = (data.overview || '').trim();
+      let genres = (data.genres || []).map(g => g.name).filter(Boolean);
+      if (!overview || !name) {
+        try {
+          const en = await tmdbFetch(`${media}/${tmdbId}`, { language: 'en-US' });
+          if (!overview) overview = (en.overview || '').trim();
+          if (!name) name = en.title || en.name || '';
+          if (!genres.length) genres = (en.genres || []).map(g => g.name);
+        } catch (e) {}
+      }
+      if (!imdbId) imdbId = (data.external_ids && data.external_ids.imdb_id) || '';
+
+      const crew = (data.credits && data.credits.crew) || [];
+      let director = tmdbNames(crew.filter(c => c.job === 'Director'));
+      let writer = tmdbNames(crew.filter(c => ['Writer', 'Screenplay', 'Story', 'Novel', 'Teleplay'].includes(c.job)));
+      if (media === 'tv') {
+        const creators = tmdbNames(data.created_by);
+        if (!director) director = creators;
+        if (!writer) writer = creators;
+      }
+
+      const dateStr = data.release_date || data.first_air_date || '';
+      const sourceId = imdbId || String(tmdbId);
+
+      const patch = {
+        name: name,
+        year: dateStr ? Number(dateStr.slice(0, 4)) : new Date().getFullYear(),
+        genresText: genres.join(', '),
+        poster: data.poster_path ? TMDB_IMG + 'w500' + data.poster_path : '',
+        backdrop: data.backdrop_path ? TMDB_IMG + 'original' + data.backdrop_path : '',
+        description: overview,
+        director: director,
+        writer: writer,
+        imdbRating: data.vote_average ? Number(data.vote_average).toFixed(1) : '',
+      };
+
+      // نوع العمل: نبدّل فيلم/مسلسل فقط، ونترك "أنمي" كما هو
+      if (media === 'tv' && currentType === 'movie') patch.type = 'series';
+      if (media === 'movie' && currentType !== 'movie') patch.type = 'movie';
+
+      if (media === 'movie') {
+        patch.videoUrl = buildVidApiUrl('movie', sourceId);
+      }
+
+      if (media === 'tv' && options.withEpisodes) {
+        const list = (data.seasons || []).filter(s => Number(s.season_number) > 0);
+        const seasons = [];
+        for (let i = 0; i < list.length; i++) {
+          const s = list[i];
+          if (options.onProgress) options.onProgress(`جاري جلب الموسم ${s.season_number} (${i + 1}/${list.length})...`);
+          let sd;
+          try { sd = await tmdbFetch(`tv/${tmdbId}/season/${s.season_number}`, { language: 'ar' }); }
+          catch (e) { continue; }
+          seasons.push({
+            number: Number(s.season_number),
+            year: (s.air_date || '').slice(0, 4) || '',
+            poster: s.poster_path ? TMDB_IMG + 'w500' + s.poster_path : '',
+            episodeThumbnail: '',
+            episodes: (sd.episodes || []).map(ep => Object.assign(emptyEpisode(Number(ep.episode_number) || 1), {
+              number: Number(ep.episode_number) || 1,
+              title: ep.name || '',
+              imdb: ep.vote_average ? Number(ep.vote_average).toFixed(1) : '',
+              videoUrl: buildVidApiUrl('tv', sourceId, s.season_number, ep.episode_number),
+            })),
+          });
+        }
+        patch.seasons = seasons;
+      }
+
+      return { patch: patch, sourceId: sourceId, media: media, tmdbId: tmdbId, imdbId: imdbId };
+    }
+
+    function TmdbImportPanel({ type, onApply }) {
+      const [apiKey, setApiKey] = useState(getTmdbKey);
+      const [showKey, setShowKey] = useState(() => !getTmdbKey());
+      const [input, setInput] = useState('');
+      const [withEpisodes, setWithEpisodes] = useState(true);
+      const [loading, setLoading] = useState(false);
+      const [status, setStatus] = useState('');
+      const [err, setErr] = useState('');
+
+      const saveKey = (v) => { setApiKey(v); setTmdbKey(v); };
+
+      const run = async () => {
+        setErr(''); setStatus('');
+        if (!getTmdbKey()) { setErr('الرجاء إدخال مفتاح TMDB أولًا'); setShowKey(true); return; }
+        setLoading(true);
+        try {
+          setStatus('جاري جلب البيانات من TMDB...');
+          const result = await importFromTmdb(input, type, {
+            withEpisodes: type !== 'movie' && withEpisodes,
+            onProgress: (m) => setStatus(m),
+          });
+          onApply(result);
+          const epCount = (result.patch.seasons || []).reduce((n, s) => n + (s.episodes || []).length, 0);
+          setStatus('');
+          showToast(epCount ? `تمت التعبئة + استيراد ${epCount} حلقة` : 'تمت تعبئة البيانات بنجاح');
+        } catch (e) {
+          setErr(e.message || 'حدث خطأ غير متوقع');
+          setStatus('');
+        }
+        setLoading(false);
+      };
+
+      return (
+        <div className="glass-card rounded-2xl p-4 border border-accent-cyan/25 mb-5">
+          <div className="flex items-center justify-between gap-2 mb-2.5 flex-wrap">
+            <p className="text-[12px] font-bold text-accent-cyan flex items-center gap-1.5">
+              <Icon name="sparkles" className="w-4 h-4" />
+              تعبئة تلقائية من معرف IMDB / TMDB
+            </p>
+            <button type="button" onClick={() => setShowKey(v => !v)}
+              className="text-[10px] font-bold text-slate-400 hover:text-accent-cyan transition flex items-center gap-1">
+              <Icon name="settings" className="w-3 h-3" />مفتاح TMDB {getTmdbKey() ? '✅' : '⚠️'}
+            </button>
+          </div>
+
+          {showKey && (
+            <div className="mb-2.5">
+              <input type="password" value={apiKey} onChange={e => saveKey(e.target.value)}
+                placeholder="الصق هنا API Key من themoviedb.org (Settings → API)"
+                className="w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" />
+              <p className="text-[10px] text-slate-500 mt-1">المفتاح ينحفظ بهذا المتصفح فقط ولا يُرفع للموقع أو قاعدة البيانات.</p>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 mb-2">
+            <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && !loading && run()}
+              placeholder="مثال: tt1517268 أو 385687 أو رابط TMDB"
+              className="flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" />
+            <button type="button" onClick={run} disabled={loading || !input.trim()}
+              className="shrink-0 px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 text-xs font-bold hover:brightness-110 transition disabled:opacity-40">
+              {loading ? 'جاري الجلب...' : 'تعبئة تلقائية'}
+            </button>
+          </div>
+
+          {type !== 'movie' && (
+            <label className="flex items-center gap-2 text-[11px] font-bold text-slate-300 cursor-pointer select-none">
+              <input type="checkbox" checked={withEpisodes} onChange={e => setWithEpisodes(e.target.checked)}
+                className="accent-accent-cyan w-3.5 h-3.5" />
+              استيراد المواسم والحلقات تلقائيًا (مع توليد روابط التشغيل لكل حلقة)
+            </label>
+          )}
+
+          {status && <p className="text-[11px] text-accent-cyan font-bold mt-2">{status}</p>}
+          {err && <p className="text-[11px] text-rose-400 font-bold mt-2">{err}</p>}
+          <p className="text-[10px] text-slate-500 mt-2">ينعبّى: الاسم · السنة · التصنيفات · الوصف · البوستر · البنر · المخرج · الكاتب · التقييم · رابط التشغيل. (التقييم من TMDB وقريب جدًا من IMDb — عدّله يدويًا إذا تحب.)</p>
         </div>
       );
     }
@@ -3726,7 +3942,7 @@
       return { number: num, title: '', videoUrl: '', downloadUrl: '', imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
     }
 
-    function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete }) {
+    function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sourceId }) {
       const e = episode;
       const set = (k, val) => onChange({ ...e, [k]: val });
       return (
@@ -3771,7 +3987,7 @@
             <FileUploadField label="ملف الحلقة (فيديو مباشر أو رابط/iframe)" value={e.videoUrl} onChange={v => set('videoUrl', v)} folder="episodes" accept="video/*" />
             <FileUploadField label="ملف التحميل (اختياري)" value={e.downloadUrl} onChange={v => set('downloadUrl', v)} folder="episodes" accept="video/*" />
           </div>
-          <VidApiHelper kind="tv" season={seasonNumber} episode={e.number} onGenerate={url => set('videoUrl', url)} />
+          <VidApiHelper kind="tv" season={seasonNumber} episode={e.number} defaultId={sourceId} onGenerate={url => set('videoUrl', url)} />
           <div className="grid grid-cols-2 gap-3.5 mt-3.5">
             <div>
               <label className="text-xs font-bold text-slate-300 mb-1.5 block">تقييم IMDb</label>
@@ -3796,8 +4012,17 @@
       const [error, setError] = useState('');
       const [activeSeasonIdx, setActiveSeasonIdx] = useState(0);
       const [editingEpisodeIdx, setEditingEpisodeIdx] = useState(null);
+      const [sourceId, setSourceId] = useState('');
 
       const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
+
+      const applyTmdb = (result) => {
+        setSourceId(result.sourceId || '');
+        setForm(prev => ({ ...prev, ...result.patch }));
+        setActiveSeasonIdx(0);
+        setEditingEpisodeIdx(null);
+        setError('');
+      };
 
       const addSeason = () => setForm(prev => {
         const seasons = [...prev.seasons, { number: prev.seasons.length + 1, year: '', poster: '', episodeThumbnail: '', episodes: [] }];
@@ -3912,6 +4137,7 @@
 
       return (
         <div className="glass-panel rounded-3xl p-5 md:p-7 border border-white/10 shadow-2xl">
+          <TmdbImportPanel type={form.type} onApply={applyTmdb} />
           <div className="grid md:grid-cols-2 gap-5">
             <div>
               <label className={labelCls}>اسم العمل *</label>
@@ -3968,7 +4194,7 @@
                 <FileUploadField label="ملف الفيلم (فيديو مباشر أو رابط/iframe)" value={form.videoUrl} onChange={v => set('videoUrl', v)} folder="videos" accept="video/*" />
                 <FileUploadField label="ملف التحميل" value={form.downloadUrl} onChange={v => set('downloadUrl', v)} folder="downloads" accept="video/*" />
               </div>
-              <VidApiHelper kind="movie" onGenerate={url => set('videoUrl', url)} />
+              <VidApiHelper kind="movie" defaultId={sourceId} onGenerate={url => set('videoUrl', url)} />
               <VideoDisplaySettings value={form} onChange={patch => setForm(prev => ({ ...prev, ...patch }))} />
             </div>
           ) : (
@@ -4050,6 +4276,7 @@
                         <EpisodeEditor
                           episode={activeSeason.episodes[editingEpisodeIdx]}
                           seasonNumber={activeSeason.number}
+                          sourceId={sourceId}
                           onChange={(newEp) => replaceEpisode(activeSeasonIdx, editingEpisodeIdx, newEp)}
                           onBack={() => setEditingEpisodeIdx(null)}
                           onDelete={() => { removeEpisode(activeSeasonIdx, editingEpisodeIdx); setEditingEpisodeIdx(null); }}
