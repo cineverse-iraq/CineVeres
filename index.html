@@ -909,17 +909,15 @@
       );
     }
 
-    function RatingBadges({ imdb, rt, size, flat }) {
+    function RatingBadges({ imdb, rt, size }) {
       const hasImdb = imdb !== undefined && imdb !== null && imdb !== '';
       const hasRt = rt !== undefined && rt !== null && rt !== '';
       if (!hasImdb && !hasRt) return null;
       const small = size === 'xs';
       const rtNum = hasRt ? parseInt(String(rt).replace('%', '')) : null;
       const rtGood = rtNum !== null && !isNaN(rtNum) && rtNum >= 60;
-      const Wrap = flat ? React.Fragment : 'div';
-      const wrapProps = flat ? {} : { className: 'flex items-center gap-1.5 flex-wrap' };
       return (
-        <Wrap {...wrapProps}>
+        <div className="flex items-center gap-1.5 flex-wrap">
           {hasImdb && (
             <span className={`inline-flex items-center gap-1 ${small ? 'text-[10px] px-2 py-0.5' : 'text-xs px-2.5 py-1'} rounded-md bg-black/60 backdrop-blur-md text-amber-400 font-bold border border-amber-400/20 shadow-sm`}>
               <Icon name="star" className={small ? 'w-2.5 h-2.5' : 'w-3 h-3'} />IMDb {imdb}
@@ -930,7 +928,7 @@
               RT {String(rt).includes('%') ? rt : rt + '%'}
             </span>
           )}
-        </Wrap>
+        </div>
       );
     }
 
@@ -983,9 +981,9 @@
             ) : (
               <div className="w-full h-full flex items-center justify-center text-slate-600"><Icon name="film" className="w-8 h-8" /></div>
             )}
-            <div className="absolute top-2 right-2 left-2 flex items-center gap-1 flex-wrap">
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-accent-cyan font-bold border border-accent-cyan/20 whitespace-nowrap">{TYPE_LABELS[title.type]}</span>
-              <RatingBadges imdb={title.imdbRating} rt={title.rtRating} size="xs" flat />
+            <div className="absolute inset-x-0 top-2 px-2 flex items-center justify-between gap-2">
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-accent-cyan font-bold border border-accent-cyan/20 shrink-0">{TYPE_LABELS[title.type]}</span>
+              <RatingBadges imdb={title.imdbRating} rt={title.rtRating} size="xs" />
             </div>
             {watched && (
               <span title="تمت المشاهدة" className="absolute bottom-2 left-2 w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shadow-[0_0_10px_rgba(16,185,129,0.6)]">
@@ -1106,14 +1104,14 @@
 
     function HomeView({ items, onOpen, continueItems, watchedMap }) {
       if (!items.length) return <EmptyState text="لا توجد أعمال منشورة بعد. تابعنا قريبًا!" />;
-      const featured = items.filter(t => t.featured === true);
+      const featured = items.filter(t => t.featured);
       const latest = [...items].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 12);
       const genreCounts = {};
       items.forEach(t => (t.genres || []).forEach(g => genreCounts[g] = (genreCounts[g] || 0) + 1));
       const topGenres = Object.keys(genreCounts).sort((a, b) => genreCounts[b] - genreCounts[a]).slice(0, 6);
       return (
         <div>
-          {featured.length > 0 && <Hero items={featured} onOpen={onOpen} />}
+          <Hero items={featured} onOpen={onOpen} />
           <ContinueWatchingRow items={continueItems} onOpen={onOpen} />
           <Row label="أُضيف حديثًا" items={latest} onOpen={onOpen} watchedMap={watchedMap} />
           <Row label="أفلام" items={items.filter(t => t.type === 'movie').slice(0, 12)} onOpen={onOpen} watchedMap={watchedMap} />
@@ -2925,7 +2923,7 @@
             </button>
           </div>
 
-          <p className="text-center text-[10px] leading-relaxed text-slate-600 mt-8">تصميم وبرمجة: <span className="text-slate-500 font-bold">محمود احمد</span> &nbsp;|&nbsp; للتواصل (تليكرام فقط): <a href="user:@mah15ahmed" className="font-mono text-slate-500 font-bold hover:text-accent-cyan transition">@mah15ahmed</a></p>
+          <p className="text-center text-[10px] leading-relaxed text-slate-600 mt-8">تصميم وبرمجة: <span className="text-slate-500 font-bold">محمود احمد</span> &nbsp;|&nbsp; للتواصل: <a href="tel:07734894407" className="font-mono text-slate-500 font-bold hover:text-accent-cyan transition">07734894407</a></p>
         </div>
       );
     }
@@ -3122,7 +3120,7 @@
       }, [listOwnerKey, list.id]);
 
       const itemIds = Object.keys(liveItems || {});
-      const items = titlesMap ? itemIds.map(id => titlesMap[id]).filter(t => t && t.status === 'published') : [];
+      const items = titlesMap ? itemIds.map(id => titlesMap[id]).filter(Boolean) : [];
       const allTitlesList = titlesMap ? Object.values(titlesMap).filter(t => t.status === 'published') : [];
       const addResults = addQuery.trim()
         ? allTitlesList.filter(t => !itemIds.includes(t.id) && (t.name || '').toLowerCase().includes(addQuery.trim().toLowerCase())).slice(0, 20)
@@ -4124,8 +4122,8 @@
           writer: form.writer.trim(),
           imdbRating: form.imdbRating.trim(),
           rtRating: form.rtRating.trim(),
-          featured: form.featured === true,
-          status: form.status === 'published' ? 'published' : 'draft',
+          featured: !!form.featured,
+          status: form.status,
           createdAt: initial ? (initial.createdAt || Date.now()) : Date.now(),
           likes: initial ? (initial.likes || 0) : 0,
           views: initial ? (initial.views || 0) : 0,
@@ -4321,10 +4319,6 @@
             <label className="flex items-center gap-2.5 text-sm font-bold text-slate-200 cursor-pointer"><input type="checkbox" checked={form.featured} onChange={e => set('featured', e.target.checked)} className="w-4 h-4 rounded accent-accent-cyan" />إظهار في العرض الرئيسي (Hero)</label>
             <label className="flex items-center gap-2.5 text-sm font-bold text-slate-200 cursor-pointer"><input type="checkbox" checked={form.status === 'published'} onChange={e => set('status', e.target.checked ? 'published' : 'draft')} className="w-4 h-4 rounded accent-accent-cyan" />نشر العمل للزوار مباشرة</label>
           </div>
-
-          {form.featured && form.status !== 'published' && (
-            <p className="text-amber-400 text-xs font-bold mt-3">تنبيه: العمل لن يظهر في العرض الرئيسي (Hero) إلا إذا كان منشورًا أيضًا.</p>
-          )}
 
           {error && <p className="text-rose-400 text-xs font-bold mt-4 bg-rose-500/10 p-3 rounded-xl border border-rose-500/20">{error}</p>}
 
@@ -4757,11 +4751,6 @@
         logAuditAction(currentUser, t.status === 'published' ? 'تحويل عمل لمسودة' : 'نشر عمل', t.name);
         showToast(t.status === 'published' ? 'تم تحويل العمل لمسودة' : 'تم نشر العمل');
       };
-      const toggleFeatured = (t) => {
-        db.ref(`titles/${t.id}/featured`).set(t.featured !== true);
-        logAuditAction(currentUser, t.featured === true ? 'إزالة عمل من العرض الرئيسي' : 'إضافة عمل للعرض الرئيسي', t.name);
-        showToast(t.featured === true ? 'تمت إزالة العمل من العرض الرئيسي' : 'تمت إضافة العمل للعرض الرئيسي');
-      };
       const filteredTitles = titles.filter(t => t.type === contentType && (!query.trim() || (t.name || '').toLowerCase().includes(query.trim().toLowerCase())));
 
       return (
@@ -4815,8 +4804,6 @@
                         <p className="text-xs text-slate-400 font-medium">{TYPE_LABELS[t.type]} · {t.year || ''}{t.type !== 'movie' ? ` · ${(t.seasons || []).length} موسم` : ''}</p>
                       </div>
                       <span className={`text-[11px] px-3 py-1 rounded-full font-bold shrink-0 ${t.status === 'published' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-glass-800 text-slate-400 border border-white/5'}`}>{t.status === 'published' ? 'منشور' : 'مسودة'}</span>
-                      {t.featured === true && <span className="text-[11px] px-3 py-1 rounded-full font-bold shrink-0 bg-amber-500/20 text-amber-400 border border-amber-500/30">Hero</span>}
-                      <button onClick={() => toggleFeatured(t)} title={t.featured === true ? 'إزالة من العرض الرئيسي (Hero)' : 'إظهار في العرض الرئيسي (Hero)'} className={`w-9 h-9 rounded-xl glass-card border flex items-center justify-center transition shrink-0 ${t.featured === true ? 'border-amber-400 text-amber-400' : 'border-white/10 hover:border-accent-cyan text-slate-200'}`}><Icon name="star" className={`w-4 h-4 ${t.featured === true ? 'fill-current' : ''}`} /></button>
                       <button onClick={() => togglePublish(t)} title="تبديل حالة النشر" className="w-9 h-9 rounded-xl glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-200 transition shrink-0"><Icon name="eye" className="w-4 h-4" /></button>
                       <button onClick={() => setEditing(t)} title="تعديل" className="w-9 h-9 rounded-xl glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-200 transition shrink-0"><Icon name="pencil" className="w-4 h-4" /></button>
                       <button onClick={() => setDeleteTarget(t.id)} title="حذف" className="w-9 h-9 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 flex items-center justify-center text-rose-400 transition shrink-0"><Icon name="trash-2" className="w-4 h-4" /></button>
@@ -4860,13 +4847,13 @@
 
     function App() {
       const [titles, setTitles] = useState([]);
-      const [currentUser, setCurrentUser] = useState(() => { try { return JSON.parse(localStorage.getItem('cv_user') || 'null'); } catch (e) { return null; } });
+      const [currentUser, setCurrentUser] = useState(() => JSON.parse(localStorage.getItem('cv_user') || 'null'));
       const [view, setViewRaw] = useState('home');
       const [search, setSearch] = useState('');
       const [activeTitle, setActiveTitle] = useState(null);
       const [authModal, setAuthModal] = useState(null);
       const [accountSheet, setAccountSheet] = useState(false);
-      const [likedIds, setLikedIds] = useState(() => { try { const v = JSON.parse(localStorage.getItem('cv_likes') || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } });
+      const [likedIds, setLikedIds] = useState(() => JSON.parse(localStorage.getItem('cv_likes') || '[]'));
       const [moderators, setModerators] = useState({});
       const [profileTarget, setProfileTarget] = useState(null);
       const [watched, setWatched] = useState(() => loadWatched());
@@ -5003,7 +4990,7 @@
       useEffect(() => {
         if (!booted || !titles.length) return;
         const t = new URLSearchParams(location.search).get('t');
-        if (t) { const found = titles.find(x => x.id === t && x.status === 'published'); if (found) setActiveTitle(found); }
+        if (t) { const found = titles.find(x => x.id === t); if (found) setActiveTitle(found); }
         const u = new URLSearchParams(location.search).get('u');
         if (u) openProfile(u);
       }, [booted, titles]);
@@ -5057,7 +5044,7 @@
 
       return (
         <div className="min-h-screen flex flex-col mobile-safe-bottom md:pb-0">
-          <Header currentUser={currentUser} view={view} setView={setView} search={search} setSearch={setSearch} onOpenAccount={() => setAccountSheet(true)} onOpenProfile={openProfile} onOpenTitleFromNotif={(id) => { const t = titles.find(x => x.id === id && x.status === 'published'); if (t) setActiveTitle(t); }} />
+          <Header currentUser={currentUser} view={view} setView={setView} search={search} setSearch={setSearch} onOpenAccount={() => setAccountSheet(true)} onOpenProfile={openProfile} onOpenTitleFromNotif={(id) => { const t = titles.find(x => x.id === id); if (t) setActiveTitle(t); }} />
 
           <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 md:py-8">
             <div key={searching ? 'search' : view} className="page-fade-in">
@@ -5068,7 +5055,7 @@
               ) : (view === 'movie' || view === 'series' || view === 'anime') ? (
                 <TypeGrid title={TYPE_PLURAL[view]} items={published.filter(t => t.type === view)} onOpen={setActiveTitle} showGenreFilter emptyText="لا توجد أعمال في هذا القسم بعد." watchedMap={watched} />
               ) : view === 'lists' ? (
-                <ListsView currentUser={currentUser} titles={published} onOpen={setActiveTitle} onOpenAuth={setAuthModal} />
+                <ListsView currentUser={currentUser} titles={titles} onOpen={setActiveTitle} onOpenAuth={setAuthModal} />
               ) : view === 'requests' ? (
                 <RequestsView currentUser={currentUser} onOpenAuth={setAuthModal} />
               ) : view === 'settings' ? (
