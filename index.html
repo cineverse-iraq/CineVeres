@@ -472,6 +472,28 @@
       return res.json();
     }
 
+    // Fanart.tv: بنرات رسمية لكل موسم (صور عريضة 16:9 مثل بنر House الأزرق/البرتقالي).
+    // مفتاح مجاني: سجّل بموقع fanart.tv ← Your Profile ← Personal API Key، وحطه بين علامتي التنصيص. إذا تركته فاضي، ما راح ينجلب بنر رسمي ويرجع للصورة من الحلقات.
+    const FANART_API_KEY = '4c496b546faecfec345fe324b30456c6';
+    async function fetchFanartSeasonBanners(tvdbId) {
+      const out = {};
+      if (!FANART_API_KEY || !tvdbId) return out;
+      try {
+        const res = await fetch(`https://webservice.fanart.tv/v3/tv/${tvdbId}?api_key=${FANART_API_KEY}`);
+        if (!res.ok) return out;
+        const d = await res.json();
+        (d.seasonthumb || []).forEach(img => {
+          const n = String(img.season);
+          if (!/^\d+$/.test(n) || !img.url) return;
+          const cur = out[n];
+          const score = (parseInt(img.likes, 10) || 0) + (img.lang === 'en' || img.lang === '' ? 1000 : 0);
+          if (!cur || score > cur.score) out[n] = { url: img.url, score };
+        });
+      } catch (e) {}
+      Object.keys(out).forEach(k => { out[k] = out[k].url; });
+      return out;
+    }
+
     // يقبل: tt1517268 · 385687 · رابط IMDB · رابط TMDB
     function parseMediaInput(raw) {
       const s = (raw || '').trim();
@@ -559,6 +581,8 @@
         const list = (data.seasons || []).filter(s => Number(s.season_number) > 0);
         const showBanner = data.backdrop_path ? TMDB_IMG + 'original' + data.backdrop_path : '';
         const seasons = [];
+        if (options.onProgress) options.onProgress('جاري جلب بنرات المواسم...');
+        const fanartBanners = await fetchFanartSeasonBanners(data.external_ids && data.external_ids.tvdb_id);
         for (let i = 0; i < list.length; i++) {
           const s = list[i];
           if (options.onProgress) options.onProgress(`جاري جلب الموسم ${s.season_number} (${i + 1}/${list.length})...`);
@@ -581,7 +605,7 @@
           const episodesRaw = sd.episodes || [];
           // بنر الموسم: صورة حقيقية من حلقات نفس الموسم (أول حلقة عندها صورة)، وإذا ما اكو نرجع لبنر المسلسل
           const stillEp = episodesRaw.find(ep => ep.still_path);
-          const seasonBanner = stillEp ? TMDB_IMG + 'w780' + stillEp.still_path : '';
+          const seasonBanner = fanartBanners[String(s.season_number)] || (stillEp ? TMDB_IMG + 'w780' + stillEp.still_path : '');
           const episodes = [];
           for (let j = 0; j < episodesRaw.length; j++) {
             const ep = episodesRaw[j];
@@ -2908,7 +2932,7 @@
             </button>
           </div>
 
-          <p className="text-center text-[10px] leading-relaxed text-slate-600 mt-8">تصميم وبرمجة: <span className="text-slate-500 font-bold">محمود احمد</span> &nbsp;|&nbsp; للتواصل: <a href="tel:07734894407" className="font-mono text-slate-500 font-bold hover:text-accent-cyan transition">07734894407</a></p>
+          <p className="text-center text-[10px] leading-relaxed text-slate-600 mt-8">تصميم وبرمجة: <span className="text-slate-500 font-bold">محمود احمد</span> &nbsp;|&nbsp; للتواصل(تليكرام فقط): <a href="uesr:mah15ahmed" className="font-mono text-slate-500 font-bold hover:text-accent-cyan transition">mah15ahmed</a></p>
         </div>
       );
     }
