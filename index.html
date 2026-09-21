@@ -475,27 +475,26 @@
     // Fanart.tv: بنرات رسمية لكل موسم (صور عريضة 16:9 مثل بنر House الأزرق/البرتقالي).
     // مفتاح مجاني: سجّل بموقع fanart.tv ← Your Profile ← Personal API Key، وحطه بين علامتي التنصيص. إذا تركته فاضي، ما راح ينجلب بنر رسمي ويرجع للصورة من الحلقات.
     const FANART_API_KEY = '4c496b546faecfec345fe324b30456c6';
-    async function fetchFanartSeasonBanners(tvdbId) {
-      const result = { best: {}, all: {} };
-      if (!FANART_API_KEY || !tvdbId) return result;
+    // يجيب من Fanart: TV Thumbs (بنرات المسلسل العريضة) + بنرات المواسم، مرتبة بالأكثر إعجابًا (الإنكليزي/بدون لغة أولًا)
+    async function fetchFanartData(tvdbId) {
+      const out = { tv: [], seasons: {} };
+      if (!FANART_API_KEY || !tvdbId) return out;
       try {
         const res = await fetch(`https://webservice.fanart.tv/v3/tv/${tvdbId}?api_key=${FANART_API_KEY}`);
-        if (!res.ok) return result;
+        if (!res.ok) return out;
         const d = await res.json();
+        const score = (img) => (parseInt(img.likes, 10) || 0) + ((img.lang === 'en' || img.lang === '' || img.lang === '00') ? 1000 : 0);
+        const rank = (arr) => (arr || []).filter(i => i && i.url).sort((x, y) => score(y) - score(x));
+        out.tv = rank(d.tvthumb).map(i => i.url);
         const bySeason = {};
         (d.seasonthumb || []).forEach(img => {
           const n = String(img.season);
           if (!/^\d+$/.test(n) || !img.url) return;
-          const score = (parseInt(img.likes, 10) || 0) + (img.lang === 'en' || img.lang === '' ? 1000 : 0);
-          (bySeason[n] = bySeason[n] || []).push({ url: img.url, score });
+          (bySeason[n] = bySeason[n] || []).push(img);
         });
-        Object.keys(bySeason).forEach(n => {
-          const sorted = bySeason[n].sort((x, y) => y.score - x.score).map(x => x.url).slice(0, 12);
-          result.all[n] = sorted;
-          result.best[n] = sorted[0];
-        });
+        Object.keys(bySeason).forEach(n => { out.seasons[n] = rank(bySeason[n]).map(i => i.url); });
       } catch (e) {}
-      return result;
+      return out;
     }
 
     // يلقى معرف المسلسل (IMDB) من روابط الحلقات المولّدة، حتى نشتغل على أعمال محفوظة من قبل
@@ -509,8 +508,8 @@
       return '';
     }
 
-    // يجيب كل البنرات المتاحة لموسم معيّن: رسمية من Fanart + لقطات من حلقات الموسم + بنرات المسلسل
-    async function fetchSeasonBannerOptions(sourceId, seasonNumber) {
+    // يجهّز كل بيانات البنرات للمسلسل بطلب واحد (ويتخزن): TV Thumbs + بنرات المواسم + احتياط من TMDB
+    async function loadTvBannerData(sourceId) {
       const id = (sourceId || '').trim();
       if (!id) throw new Error('ما لكيت معرف المسلسل. سوّي تعبئة تلقائية أو تأكد إن روابط الحلقات مولّدة من VidAPI.');
       let tmdbId = id;
@@ -520,22 +519,15 @@
         tmdbId = found.tv_results[0].id;
       }
       const info = await tmdbFetch(`tv/${tmdbId}`, { append_to_response: 'external_ids' });
-      const tvdbId = info.external_ids && info.external_ids.tvdb_id;
-      const options = [];
-      const seen = new Set();
-      const add = (url, kind) => { if (url && !seen.has(url)) { seen.add(url); options.push({ url, kind }); } };
-
-      const fan = await fetchFanartSeasonBanners(tvdbId);
-      (fan.all[String(seasonNumber)] || []).forEach(u => add(u, 'official'));
-      try {
-        const sd = await tmdbFetch(`tv/${tmdbId}/season/${seasonNumber}`, { language: 'en-US' });
-        (sd.episodes || []).filter(ep => ep.still_path).slice(0, 10).forEach(ep => add(TMDB_IMG + 'w780' + ep.still_path, 'still'));
-      } catch (e) {}
-      try {
-        const im = await tmdbFetch(`tv/${tmdbId}/images`, { include_image_language: 'en,null' });
-        (im.backdrops || []).slice(0, 8).forEach(b => add(TMDB_IMG + 'w780' + b.file_path, 'show'));
-      } catch (e) {}
-      return options;
+      const fan = await fetchFanartData(info.external_ids && info.external_ids.tvdb_id);
+      let fallback = [];
+      if (!fan.tv.length) {
+        try {
+          const im = await tmdbFetch(`tv/${tmdbId}/images`, { include_image_language: 'en,null' });
+          fallback = (im.backdrops || []).slice(0, 12).map(b => TMDB_IMG + 'w780' + b.file_path);
+        } catch (e) {}
+      }
+      return { tv: fan.tv, seasons: fan.seasons, fallback: fallback };
     }
 
     // يقبل: tt1517268 · 385687 · رابط IMDB · رابط TMDB
@@ -621,15 +613,14 @@
         patch.videoUrl = buildVidApiUrl('movie', sourceId);
       }
 
-      let bannerOptions = {};
+      let bannerData = null;
       if (media === 'tv' && options.withEpisodes) {
         const list = (data.seasons || []).filter(s => Number(s.season_number) > 0);
         const showBanner = data.backdrop_path ? TMDB_IMG + 'original' + data.backdrop_path : '';
         const seasons = [];
-        if (options.onProgress) options.onProgress('جاري جلب بنرات المواسم...');
-        const fanart = await fetchFanartSeasonBanners(data.external_ids && data.external_ids.tvdb_id);
-        const fanartBanners = fanart.best;
-        Object.keys(fanart.all).forEach(k => { bannerOptions[k] = fanart.all[k].map(u => ({ url: u, kind: 'official' })); });
+        if (options.onProgress) options.onProgress('جاري جلب البنرات من Fanart...');
+        const fanart = await fetchFanartData(data.external_ids && data.external_ids.tvdb_id);
+        bannerData = { tv: fanart.tv, seasons: fanart.seasons, fallback: [] };
         for (let i = 0; i < list.length; i++) {
           const s = list[i];
           if (options.onProgress) options.onProgress(`جاري جلب الموسم ${s.season_number} (${i + 1}/${list.length})...`);
@@ -650,9 +641,11 @@
 
           const seasonPoster = s.poster_path ? TMDB_IMG + 'w500' + s.poster_path : '';
           const episodesRaw = sd.episodes || [];
-          // بنر الموسم: صورة حقيقية من حلقات نفس الموسم (أول حلقة عندها صورة)، وإذا ما اكو نرجع لبنر المسلسل
+          // بنر الموسم: من TV Thumbs (كل موسم ياخذ بنر مختلف بالترتيب)، وإذا ما اكو، بنر الموسم من Fanart، وإذا ما اكو، لقطة من الموسم
           const stillEp = episodesRaw.find(ep => ep.still_path);
-          const seasonBanner = fanartBanners[String(s.season_number)] || (stillEp ? TMDB_IMG + 'w780' + stillEp.still_path : '');
+          const seasonBanner = (fanart.tv.length ? fanart.tv[i % fanart.tv.length] : '') ||
+            ((fanart.seasons[String(s.season_number)] || [])[0]) ||
+            (stillEp ? TMDB_IMG + 'w780' + stillEp.still_path : '');
           const episodes = [];
           for (let j = 0; j < episodesRaw.length; j++) {
             const ep = episodesRaw[j];
@@ -679,7 +672,7 @@
         patch.seasons = seasons;
       }
 
-      return { patch: patch, sourceId: sourceId, media: media, tmdbId: tmdbId, imdbId: imdbId, bannerOptions: bannerOptions };
+      return { patch: patch, sourceId: sourceId, media: media, tmdbId: tmdbId, imdbId: imdbId, bannerData: bannerData };
     }
 
     function TmdbImportPanel({ type, onApply }) {
@@ -1300,7 +1293,7 @@
             <div className="flex items-center gap-6 min-w-0">
               <button onClick={() => setView('home')} className="flex items-center gap-2 font-black text-lg md:text-xl text-white group shrink-0">
                 <span className="w-9 h-9 shrink-0 rounded-xl overflow-hidden group-hover:scale-105 transition"><CinadamLogo className="w-full h-full" /></span>
-                <span className="tracking-wide hidden xs:inline">Cin<span className="text-accent-cyan">adam</span></span>
+                <span className="tracking-wide hidden xs:inline">Cina<span className="text-accent-cyan">dam</span></span>
               </button>
 
               <nav className="hidden md:block">
@@ -4073,25 +4066,49 @@
       const [activeSeasonIdx, setActiveSeasonIdx] = useState(0);
       const [editingEpisodeIdx, setEditingEpisodeIdx] = useState(null);
       const [sourceId, setSourceId] = useState('');
-      const [bannerOptions, setBannerOptions] = useState({});
+      const [bannerData, setBannerData] = useState(null);
       const [bannerLoading, setBannerLoading] = useState(false);
       const [bannerError, setBannerError] = useState('');
+      const [applyAllBanners, setApplyAllBanners] = useState(false);
+      const [showAllBanners, setShowAllBanners] = useState(false);
 
       const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
-      const loadBanners = async (seasonNumber) => {
+      // يجلب بيانات البنرات تلقائيًا أول ما تفتح مسلسل عنده مواسم (بطلب واحد، بدون ضغط زر)
+      const fetchBanners = () => {
+        const src = sourceId || guessTvSourceId(form.seasons);
+        if (!src) return;
         setBannerLoading(true); setBannerError('');
-        try {
-          const opts = await fetchSeasonBannerOptions(sourceId || guessTvSourceId(form.seasons), seasonNumber);
-          if (!opts.length) setBannerError('ما لكيت بنرات لهذا الموسم.');
-          setBannerOptions(prev => ({ ...prev, [String(seasonNumber)]: opts }));
-        } catch (e) { setBannerError(e.message || 'تعذّر جلب البنرات.'); }
-        setBannerLoading(false);
+        loadTvBannerData(src)
+          .then(d => setBannerData(d))
+          .catch(e => setBannerError(e.message || 'تعذّر جلب البنرات.'))
+          .finally(() => setBannerLoading(false));
+      };
+      useEffect(() => {
+        if (form.type === 'movie' || !form.seasons.length || bannerData) return;
+        fetchBanners();
+        // eslint-disable-next-line
+      }, [form.seasons.length > 0, sourceId, form.type]);
+
+      const bannerOptionsFor = (seasonNumber) => {
+        if (!bannerData) return [];
+        const seen = new Set(), out = [];
+        const add = (url, kind) => { if (url && !seen.has(url)) { seen.add(url); out.push({ url, kind }); } };
+        (bannerData.tv || []).forEach(u => add(u, 'tv'));
+        ((bannerData.seasons || {})[String(seasonNumber)] || []).forEach(u => add(u, 'season'));
+        if (!out.length) (bannerData.fallback || []).forEach(u => add(u, 'show'));
+        return out;
+      };
+
+      const pickBanner = (url) => {
+        if (applyAllBanners) setForm(prev => ({ ...prev, seasons: prev.seasons.map(se => ({ ...se, episodeThumbnail: url })) }));
+        else updateSeasonField(activeSeasonIdx, 'episodeThumbnail', url);
       };
 
       const applyTmdb = (result) => {
         setSourceId(result.sourceId || '');
-        setBannerOptions(result.bannerOptions || {});
+        setBannerData(result.bannerData || null);
+        setShowAllBanners(false);
         setForm(prev => ({ ...prev, ...result.patch }));
         setActiveSeasonIdx(0);
         setEditingEpisodeIdx(null);
@@ -4318,25 +4335,43 @@
                               <FileUploadField compact label="صورة بوستر الموسم (اختياري)" value={activeSeason.poster || ''} onChange={v => updateSeasonField(activeSeasonIdx, 'poster', v)} folder="season-posters" accept="image/*" />
                               <FileUploadField compact label="الصورة المصغّرة لحلقات هذا الموسم (تُطبَّق تلقائيًا على كل حلقات الموسم)" value={activeSeason.episodeThumbnail || ''} onChange={v => updateSeasonField(activeSeasonIdx, 'episodeThumbnail', v)} folder="season-episode-thumbs" accept="image/*" />
                               <div>
-                                <button type="button" onClick={() => loadBanners(activeSeason.number)} disabled={bannerLoading}
-                                  className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl glass-card border border-accent-cyan/30 hover:border-accent-cyan text-accent-cyan font-bold transition disabled:opacity-50">
-                                  <Icon name="sparkles" className="w-3.5 h-3.5" />{bannerLoading ? 'جاري جلب البنرات...' : 'اختيار بنر للموسم (جلب البدائل)'}
-                                </button>
-                                {bannerError && <p className="text-rose-400 text-[11px] font-bold mt-1.5">{bannerError}</p>}
-                                {(bannerOptions[String(activeSeason.number)] || []).length > 0 && (
-                                  <div className="mt-2.5">
-                                    <p className="text-[11px] font-bold text-slate-400 mb-1.5">اضغط على البنر اللي يعجبك، يتطبق على كل حلقات الموسم (بعدها احفظ العمل):</p>
-                                    <div className="flex gap-2 overflow-x-auto pb-1.5 scrollbar-hide">
-                                      {bannerOptions[String(activeSeason.number)].map(o => (
-                                        <button type="button" key={o.url} onClick={() => updateSeasonField(activeSeasonIdx, 'episodeThumbnail', o.url)}
-                                          className={`relative shrink-0 w-36 aspect-video rounded-lg overflow-hidden border-2 transition ${activeSeason.episodeThumbnail === o.url ? 'border-accent-cyan shadow-[0_0_10px_rgba(0,240,255,0.5)]' : 'border-white/10 hover:border-white/30'}`}>
-                                          <img src={o.url} alt="" loading="lazy" className="w-full h-full object-cover" />
-                                          <span className="absolute bottom-1 right-1 text-[9px] px-1.5 py-0.5 rounded bg-black/70 text-white font-bold">{o.kind === 'official' ? 'رسمي' : o.kind === 'still' ? 'لقطة من الموسم' : 'بنر المسلسل'}</span>
-                                        </button>
-                                      ))}
-                                    </div>
+                                <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                                  <p className="text-[11px] font-bold text-slate-400">اختر بنر الموسم (TV Thumbs من Fanart) — اضغط على الصورة:</p>
+                                  <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-300 cursor-pointer select-none">
+                                    <input type="checkbox" checked={applyAllBanners} onChange={e => setApplyAllBanners(e.target.checked)} className="accent-accent-cyan w-3.5 h-3.5" />
+                                    تطبيق على كل المواسم
+                                  </label>
+                                </div>
+                                {bannerLoading && <p className="text-[11px] font-bold text-accent-cyan">جاري جلب البنرات...</p>}
+                                {bannerError && (
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className="text-rose-400 text-[11px] font-bold">{bannerError}</p>
+                                    <button type="button" onClick={fetchBanners} className="text-[11px] font-bold text-accent-cyan hover:underline">إعادة المحاولة</button>
                                   </div>
                                 )}
+                                {(() => {
+                                  const opts = bannerOptionsFor(activeSeason.number);
+                                  if (!opts.length) return null;
+                                  const visible = showAllBanners ? opts : opts.slice(0, 8);
+                                  return (
+                                    <div>
+                                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                        {visible.map(o => (
+                                          <button type="button" key={o.url} onClick={() => pickBanner(o.url)}
+                                            className={`relative aspect-video rounded-lg overflow-hidden border-2 transition ${activeSeason.episodeThumbnail === o.url ? 'border-accent-cyan shadow-[0_0_10px_rgba(0,240,255,0.5)]' : 'border-white/10 hover:border-white/30'}`}>
+                                            <img src={o.url} alt="" loading="lazy" className="w-full h-full object-cover" />
+                                            {o.kind === 'season' && <span className="absolute bottom-1 right-1 text-[9px] px-1.5 py-0.5 rounded bg-black/70 text-white font-bold">لهذا الموسم</span>}
+                                          </button>
+                                        ))}
+                                      </div>
+                                      {opts.length > 8 && (
+                                        <button type="button" onClick={() => setShowAllBanners(v => !v)} className="mt-2 text-[11px] font-bold text-accent-cyan hover:underline">
+                                          {showAllBanners ? 'عرض أقل' : `عرض الكل (${opts.length})`}
+                                        </button>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             </div>
                           </div>
