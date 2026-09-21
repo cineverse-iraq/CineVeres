@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>CineVerse - أفلام ومسلسلات وأنمي</title>
+  <title>Cinadam - أفلام ومسلسلات وأنمي</title>
 
   <!-- تحميل خط الموقع أول شي بالصفحة (قبل أي سكربت) حتى ما تطلع شاشة التحميل بخط افتراضي ثم تتبدل -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -215,7 +215,7 @@
       <circle cx="660" cy="345" r="95" fill="url(#bootReelFill)" stroke="url(#bootGlassStroke)" stroke-width="5"/>
     </svg>
     <div class="spin"></div>
-    <p>جاري تحميل <b>CineVerse</b>...</p>
+    <p>جاري تحميل <b>Cinadam</b>...</p>
   </div>
 
   <script>
@@ -439,12 +439,8 @@
     // ===== TMDB: تعبئة تلقائية لبيانات العمل من معرف IMDB/TMDB =====
     const TMDB_IMG = 'https://image.tmdb.org/t/p/';
 
-    function getTmdbKey() {
-      try { return localStorage.getItem('cv_tmdb_key') || ''; } catch (e) { return ''; }
-    }
-    function setTmdbKey(k) {
-      try { localStorage.setItem('cv_tmdb_key', (k || '').trim()); } catch (e) {}
-    }
+    const TMDB_API_KEY = 'a1ab2b7d22e16c6c20e9e419b8f1c098';
+    function getTmdbKey() { return TMDB_API_KEY; }
 
     async function tmdbFetch(path, params) {
       const key = getTmdbKey();
@@ -572,19 +568,14 @@
     }
 
     function TmdbImportPanel({ type, onApply }) {
-      const [apiKey, setApiKey] = useState(getTmdbKey);
-      const [showKey, setShowKey] = useState(() => !getTmdbKey());
       const [input, setInput] = useState('');
       const [withEpisodes, setWithEpisodes] = useState(true);
       const [loading, setLoading] = useState(false);
       const [status, setStatus] = useState('');
       const [err, setErr] = useState('');
 
-      const saveKey = (v) => { setApiKey(v); setTmdbKey(v); };
-
       const run = async () => {
         setErr(''); setStatus('');
-        if (!getTmdbKey()) { setErr('الرجاء إدخال مفتاح TMDB أولًا'); setShowKey(true); return; }
         setLoading(true);
         try {
           setStatus('جاري جلب البيانات من TMDB...');
@@ -605,25 +596,10 @@
 
       return (
         <div className="glass-card rounded-2xl p-4 border border-accent-cyan/25 mb-5">
-          <div className="flex items-center justify-between gap-2 mb-2.5 flex-wrap">
-            <p className="text-[12px] font-bold text-accent-cyan flex items-center gap-1.5">
-              <Icon name="sparkles" className="w-4 h-4" />
-              تعبئة تلقائية من معرف IMDB / TMDB
-            </p>
-            <button type="button" onClick={() => setShowKey(v => !v)}
-              className="text-[10px] font-bold text-slate-400 hover:text-accent-cyan transition flex items-center gap-1">
-              <Icon name="settings" className="w-3 h-3" />مفتاح TMDB {getTmdbKey() ? '✅' : '⚠️'}
-            </button>
-          </div>
-
-          {showKey && (
-            <div className="mb-2.5">
-              <input type="password" value={apiKey} onChange={e => saveKey(e.target.value)}
-                placeholder="الصق هنا API Key من themoviedb.org (Settings → API)"
-                className="w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" />
-              <p className="text-[10px] text-slate-500 mt-1">المفتاح ينحفظ بهذا المتصفح فقط ولا يُرفع للموقع أو قاعدة البيانات.</p>
-            </div>
-          )}
+          <p className="text-[12px] font-bold text-accent-cyan flex items-center gap-1.5 mb-2.5">
+            <Icon name="sparkles" className="w-4 h-4" />
+            تعبئة تلقائية من معرف IMDB / TMDB
+          </p>
 
           <div className="flex items-center gap-2 mb-2">
             <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && !loading && run()}
@@ -780,7 +756,7 @@
       );
     }
 
-    function CineVerseLogo({ className = "w-8 h-8" }) {
+    function CinadamLogo({ className = "w-8 h-8" }) {
       const uid = useRef('lg' + Math.random().toString(36).slice(2)).current;
       return (
         <svg viewBox="0 0 1080 1080" className={className} xmlns="http://www.w3.org/2000/svg">
@@ -1223,7 +1199,7 @@
           <div className="max-w-7xl mx-auto px-3 md:px-4 py-2.5 md:py-3 flex items-center justify-between gap-3">
             <div className="flex items-center gap-6 min-w-0">
               <button onClick={() => setView('home')} className="flex items-center gap-2 font-black text-lg md:text-xl text-white group shrink-0">
-                <span className="w-9 h-9 shrink-0 rounded-xl overflow-hidden group-hover:scale-105 transition"><CineVerseLogo className="w-full h-full" /></span>
+                <span className="w-9 h-9 shrink-0 rounded-xl overflow-hidden group-hover:scale-105 transition"><CinadamLogo className="w-full h-full" /></span>
                 <span className="tracking-wide hidden xs:inline">Cine<span className="text-accent-cyan">Verse</span></span>
               </button>
 
@@ -1443,7 +1419,7 @@
             ) : (
               <div className="space-y-3">
                 <div className="text-center mb-5">
-                  <h3 className="font-black text-xl text-white mb-1">مرحباً بك في CineVerse</h3>
+                  <h3 className="font-black text-xl text-white mb-1">مرحباً بك في Cinadam</h3>
                   <p className="text-slate-400 text-xs">سجّل دخولك لمتابعة أعمالك المفضلة والتفاعل</p>
                 </div>
                 <button onClick={() => { setTimeout(onLogin, 0); requestClose(); }} className="w-full py-3.5 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition">تسجيل الدخول</button>
@@ -2237,11 +2213,6 @@
                     <Icon name="skipForward" className="w-4 h-4" />الحلقة التالية
                   </button>
                 )}
-                {title.type === 'movie' && title.downloadUrl && (
-                  <a href={title.downloadUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 px-6 py-3 rounded-2xl glass-card border border-white/10 hover:border-accent-cyan text-sm font-bold text-slate-200 transition">
-                    <Icon name="download" className="w-4 h-4 text-accent-cyan" />تحميل
-                  </a>
-                )}
                 <button onClick={onLike} className={`flex items-center gap-2.5 px-5 py-3 rounded-2xl text-sm font-bold border transition ${liked ? 'bg-rose-500 text-white border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.4)]' : 'glass-card border-white/10 text-slate-200 hover:border-white/20'}`}>
                   <Icon name="heart" className="w-4 h-4" />{title.likes || 0}
                 </button>
@@ -2383,9 +2354,6 @@
                             {done && <Icon name="check" className="w-4 h-4 text-emerald-400 shrink-0 hidden xs:block" />}
                             {isCurrent && <span className="text-[10px] px-2 py-1 rounded-lg bg-accent-cyan/15 text-accent-cyan font-bold shrink-0">قيد التشغيل</span>}
                             <button onClick={() => playEpisode(ep, seasons[activeSeason].number)} className="w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition"><Icon name="play" className="w-4 h-4 text-white fill-current translate-x-0.5" /></button>
-                            {ep.downloadUrl && (
-                              <a href={ep.downloadUrl} target="_blank" rel="noopener noreferrer" className="w-9 h-9 rounded-xl glass-card hover:bg-white/10 border border-white/10 flex items-center justify-center shrink-0 transition"><Icon name="download" className="w-4 h-4 text-accent-cyan" /></a>
-                            )}
                           </div>
                           );
                         })}
@@ -3935,11 +3903,11 @@
     }
 
     function emptyForm(type) {
-      return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', rtRating: '', featured: false, status: 'draft', videoUrl: '', downloadUrl: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
+      return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', rtRating: '', featured: false, status: 'draft', videoUrl: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
     }
 
     function emptyEpisode(num) {
-      return { number: num, title: '', videoUrl: '', downloadUrl: '', imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
+      return { number: num, title: '', videoUrl: '', imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
     }
 
     function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sourceId }) {
@@ -3983,9 +3951,8 @@
             </select>
             <p className="text-[11px] text-slate-500 mt-1.5">ستظهر للمستخدم تلقائيًا كـ: «{episodeAutoLabel(e)}»</p>
           </div>
-          <div className="grid sm:grid-cols-2 gap-3.5 mt-3.5">
+          <div className="mt-3.5">
             <FileUploadField label="ملف الحلقة (فيديو مباشر أو رابط/iframe)" value={e.videoUrl} onChange={v => set('videoUrl', v)} folder="episodes" accept="video/*" />
-            <FileUploadField label="ملف التحميل (اختياري)" value={e.downloadUrl} onChange={v => set('downloadUrl', v)} folder="episodes" accept="video/*" />
           </div>
           <VidApiHelper kind="tv" season={seasonNumber} episode={e.number} defaultId={sourceId} onGenerate={url => set('videoUrl', url)} />
           <div className="grid grid-cols-2 gap-3.5 mt-3.5">
@@ -4102,7 +4069,6 @@
         };
         if (form.type === 'movie') {
           payload.videoUrl = form.videoUrl.trim();
-          payload.downloadUrl = form.downloadUrl.trim();
           payload.trimStart = Number(form.trimStart) || 0;
           payload.trimEnd = Number(form.trimEnd) || 0;
           payload.fitMobile = form.fitMobile || 'contain';
@@ -4116,11 +4082,11 @@
             poster: (s.poster || '').trim(),
             episodeThumbnail: (s.episodeThumbnail || '').trim(),
             episodes: (s.episodes || []).map(e => ({
-              number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: (e.videoUrl || '').trim(), downloadUrl: (e.downloadUrl || '').trim(), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
+              number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: (e.videoUrl || '').trim(), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
               trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
             }))
           }));
-          payload.videoUrl = ''; payload.downloadUrl = '';
+          payload.videoUrl = '';
         }
         try {
           if (initial && initial.id) await db.ref(`titles/${initial.id}`).set(payload);
@@ -4190,9 +4156,8 @@
 
           {form.type === 'movie' ? (
             <div>
-              <div className="grid md:grid-cols-2 gap-5 mt-5">
+              <div className="mt-5">
                 <FileUploadField label="ملف الفيلم (فيديو مباشر أو رابط/iframe)" value={form.videoUrl} onChange={v => set('videoUrl', v)} folder="videos" accept="video/*" />
-                <FileUploadField label="ملف التحميل" value={form.downloadUrl} onChange={v => set('downloadUrl', v)} folder="downloads" accept="video/*" />
               </div>
               <VidApiHelper kind="movie" defaultId={sourceId} onGenerate={url => set('videoUrl', url)} />
               <VideoDisplaySettings value={form} onChange={patch => setForm(prev => ({ ...prev, ...patch }))} />
