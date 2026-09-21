@@ -458,6 +458,20 @@
       return res.json();
     }
 
+    // OMDb (يسحب من قاعدة بيانات IMDB مباشرة) — نستخدمه احتياط بس إذا TMDB ما عنده اسم الحلقة
+    const OMDB_API_KEY = '52191abb';
+    async function omdbFetch(params) {
+      const usp = new URLSearchParams(Object.assign({ apikey: OMDB_API_KEY }, params || {}));
+      let res;
+      try {
+        res = await fetch(`https://www.omdbapi.com/?${usp.toString()}`);
+      } catch (e) {
+        throw new Error('تعذر الاتصال بـ OMDb');
+      }
+      if (!res.ok) throw new Error('خطأ من OMDb (رمز ' + res.status + ')');
+      return res.json();
+    }
+
     // يقبل: tt1517268 · 385687 · رابط IMDB · رابط TMDB
     function parseMediaInput(raw) {
       const s = (raw || '').trim();
@@ -551,18 +565,36 @@
           // نجيب الحلقات بالإنكليزي دائمًا: ترجمة أسماء الحلقات عربي بـTMDB غالبًا غير دقيقة/ناقصة
           try { sd = await tmdbFetch(`tv/${tmdbId}/season/${s.season_number}`, { language: 'en-US' }); }
           catch (e) { continue; }
+
+          // احتياط: إذا TMDB ما عنده اسم حلقة، نجيب اسمها من OMDb (قاعدة بيانات IMDB) بطلب واحد لكل موسم
+          let omdbEpisodes = null;
+          const missingSome = (sd.episodes || []).some(ep => !(ep.name || '').trim());
+          if (missingSome && imdbId) {
+            try {
+              const od = await omdbFetch({ i: imdbId, Season: s.season_number });
+              if (od && od.Response === 'True' && Array.isArray(od.Episodes)) omdbEpisodes = od.Episodes;
+            } catch (e) {}
+          }
+
           const seasonPoster = s.poster_path ? TMDB_IMG + 'w500' + s.poster_path : '';
           seasons.push({
             number: Number(s.season_number),
             year: (s.air_date || '').slice(0, 4) || '',
             poster: seasonPoster,
             episodeThumbnail: seasonPoster,
-            episodes: (sd.episodes || []).map(ep => Object.assign(emptyEpisode(Number(ep.episode_number) || 1), {
-              number: Number(ep.episode_number) || 1,
-              title: ep.name || '',
-              imdb: ep.vote_average ? Number(ep.vote_average).toFixed(1) : '',
-              videoUrl: buildVidApiUrl('tv', sourceId, s.season_number, ep.episode_number),
-            })),
+            episodes: (sd.episodes || []).map(ep => {
+              let epTitle = (ep.name || '').trim();
+              if (!epTitle && omdbEpisodes) {
+                const match = omdbEpisodes.find(oe => Number(oe.Episode) === Number(ep.episode_number));
+                if (match && match.Title && match.Title !== 'N/A') epTitle = match.Title.trim();
+              }
+              return Object.assign(emptyEpisode(Number(ep.episode_number) || 1), {
+                number: Number(ep.episode_number) || 1,
+                title: epTitle,
+                imdb: ep.vote_average ? Number(ep.vote_average).toFixed(1) : '',
+                videoUrl: buildVidApiUrl('tv', sourceId, s.season_number, ep.episode_number),
+              });
+            }),
           });
         }
         patch.seasons = seasons;
