@@ -425,6 +425,9 @@
     // مفتاح Wyzie Subs (sub.wyzie.io) لجلب أفضل ترجمة عربية تلقائياً من عدة مصادر
     const WYZIE_API_KEY = 'wyzie-txtzsufq1cmy7sg4bvasc9mi6zg1si0k';
 
+    // نفضل هذي المصادر لأنها تعطي رابط ملف مباشر وثابتة (subdl, subf2m, podnapisi)
+    const PREFERRED_SUB_SOURCES = ['subdl', 'subf2m', 'podnapisi'];
+
     async function fetchAutoSubtitle(id, season, episode) {
       if (!id) return '';
       try {
@@ -432,6 +435,7 @@
         params.set('id', id);
         params.set('language', 'ar');
         params.set('key', WYZIE_API_KEY);
+        params.set('source', 'all');
         if (season && episode) {
           params.set('season', String(season));
           params.set('episode', String(episode));
@@ -439,8 +443,11 @@
         const res = await fetch(`https://sub.wyzie.io/search?${params.toString()}`);
         if (!res.ok) return '';
         const list = await res.json();
-        if (Array.isArray(list) && list.length && list[0] && list[0].url) return list[0].url;
-      } catch (e) { /* إذا فشل الجلب التلقائي الفيديو يشتغل بدون ترجمة من Wyzie */ }
+        if (!Array.isArray(list) || !list.length) return '';
+        const preferred = list.find(s => s && s.url && PREFERRED_SUB_SOURCES.includes(s.source));
+        const fallback = list.find(s => s && s.url);
+        return preferred ? preferred.url : (fallback ? fallback.url : '');
+      } catch (e) { /* فشل الطلب، الفيديو يشتغل بدون ترجمة تلقائية */ }
       return '';
     }
 
