@@ -422,16 +422,42 @@
     // يبني رابط VidAPI مع تفعيل الترجمة العربية تلقائيًا (lang=ar)، ويدعم إرفاق ملف ترجمة مخصص (sub_url) لحل مشكلة عدم التزامن
     const VIDAPI_EMBED_HOST = 'https://player.cinadam.xyz';
 
-    function buildVidApiUrl(kind, rawId, season, episode, subUrl) {
+    // مفتاح Wyzie Subs (sub.wyzie.io) لجلب أفضل ترجمة عربية تلقائياً من عدة مصادر
+    const WYZIE_API_KEY = 'wyzie-txtzsufq1cmy7sg4bvasc9mi6zg1si0k';
+
+    async function fetchAutoSubtitle(id, season, episode) {
+      if (!id) return '';
+      try {
+        const params = new URLSearchParams();
+        params.set('id', id);
+        params.set('language', 'ar');
+        params.set('key', WYZIE_API_KEY);
+        if (season && episode) {
+          params.set('season', String(season));
+          params.set('episode', String(episode));
+        }
+        const res = await fetch(`https://sub.wyzie.io/search?${params.toString()}`);
+        if (!res.ok) return '';
+        const list = await res.json();
+        if (Array.isArray(list) && list.length && list[0] && list[0].url) return list[0].url;
+      } catch (e) { /* إذا فشل الجلب التلقائي الفيديو يشتغل بدون ترجمة من Wyzie */ }
+      return '';
+    }
+
+    async function buildVidApiUrl(kind, rawId, season, episode, subUrl) {
       const id = (rawId || '').trim();
       if (!id) return '';
       const base = kind === 'movie'
         ? `${VIDAPI_EMBED_HOST}/embed/movie/${id}`
         : `${VIDAPI_EMBED_HOST}/embed/tv/${id}/${Number(season) || 1}/${Number(episode) || 1}`;
       const params = new URLSearchParams();
-      params.set('lang', 'ar'); // يخلي النظام يبحث ويفعّل ترجمة عربية تلقائيًا من OpenSubtitles
-      if (subUrl && subUrl.trim()) {
-        params.set('sub_url', subUrl.trim());
+      params.set('lang', 'ar');
+      let finalSubUrl = subUrl && subUrl.trim() ? subUrl.trim() : '';
+      if (!finalSubUrl) {
+        finalSubUrl = await fetchAutoSubtitle(id, kind === 'tv' ? (Number(season) || 1) : null, kind === 'tv' ? (Number(episode) || 1) : null);
+      }
+      if (finalSubUrl) {
+        params.set('sub_url', finalSubUrl);
         params.set('sub_lang', 'ar');
         params.set('sub_label', 'العربية');
         params.set('sub_default', 'true');
@@ -443,9 +469,13 @@
       const [id, setId] = useState(defaultId || '');
       useEffect(() => { if (defaultId) setId(defaultId); }, [defaultId]);
       const [subUrl, setSubUrl] = useState('');
-      const generate = () => {
-        const url = buildVidApiUrl(kind, id, season, episode, subUrl);
-        if (url) onGenerate(url);
+      const [generating, setGenerating] = useState(false);
+      const generate = async () => {
+        setGenerating(true);
+        try {
+          const url = await buildVidApiUrl(kind, id, season, episode, subUrl);
+          if (url) onGenerate(url);
+        } finally { setGenerating(false); }
       };
       return (
         <div className="glass-card rounded-2xl p-3.5 border border-accent-cyan/20 mt-3.5">
@@ -778,7 +808,7 @@
       if (media === 'movie' && currentType !== 'movie') patch.type = 'movie';
 
       if (media === 'movie') {
-        patch.videoUrl = buildVidApiUrl('movie', sourceId);
+        patch.videoUrl = await buildVidApiUrl('movie', sourceId);
       }
 
       let bannerData = null;
@@ -823,11 +853,12 @@
             const match = omdbEpisodes ? omdbEpisodes.find(oe => Number(oe.Episode) === Number(ep.episode_number)) : null;
             if (!epTitle && match && match.Title && match.Title !== 'N/A') epTitle = match.Title.trim();
             const epImdb = match && match.imdbRating && match.imdbRating !== 'N/A' ? match.imdbRating : '';
+            const epVideoUrl = await buildVidApiUrl('tv', sourceId, s.season_number, ep.episode_number);
             episodes.push(Object.assign(emptyEpisode(Number(ep.episode_number) || 1), {
               number: Number(ep.episode_number) || 1,
               title: epTitle,
               imdb: epImdb,
-              videoUrl: buildVidApiUrl('tv', sourceId, s.season_number, ep.episode_number),
+              videoUrl: epVideoUrl,
             }));
           }
           seasons.push({
