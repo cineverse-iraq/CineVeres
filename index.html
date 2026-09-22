@@ -318,7 +318,8 @@
 
     function normalizeVideoUrl(url) {
       if (!url) return url;
-      const clean = url.trim();
+      let clean = url.trim();
+      clean = clean.replace(/^https?:\/\/(?:www\.)?(?:vaplayer\.ru|vidapi\.ru)(?=\/embed\/)/i, VIDAPI_EMBED_HOST);
       const drive = clean.match(/drive\.google\.com\/file\/d\/([^/]+)/);
       if (drive) return `https://drive.google.com/file/d/${drive[1]}/preview`;
       const driveOpen = clean.match(/drive\.google\.com\/open\?id=([^&]+)/);
@@ -419,12 +420,14 @@
     }
 
     // يبني رابط VidAPI مع تفعيل الترجمة العربية تلقائيًا (lang=ar)، ويدعم إرفاق ملف ترجمة مخصص (sub_url) لحل مشكلة عدم التزامن
+    const VIDAPI_EMBED_HOST = 'https://player.cinadam.xyz';
+
     function buildVidApiUrl(kind, rawId, season, episode, subUrl) {
       const id = (rawId || '').trim();
       if (!id) return '';
       const base = kind === 'movie'
-        ? `https://vaplayer.ru/embed/movie/${id}`
-        : `https://vaplayer.ru/embed/tv/${id}/${Number(season) || 1}/${Number(episode) || 1}`;
+        ? `${VIDAPI_EMBED_HOST}/embed/movie/${id}`
+        : `${VIDAPI_EMBED_HOST}/embed/tv/${id}/${Number(season) || 1}/${Number(episode) || 1}`;
       const params = new URLSearchParams();
       params.set('lang', 'ar'); // يخلي النظام يبحث ويفعّل ترجمة عربية تلقائيًا من OpenSubtitles
       if (subUrl && subUrl.trim()) {
