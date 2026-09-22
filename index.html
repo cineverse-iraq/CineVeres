@@ -445,8 +445,7 @@
         const list = await res.json();
         if (!Array.isArray(list) || !list.length) return '';
         const preferred = list.find(s => s && s.url && PREFERRED_SUB_SOURCES.includes(s.source));
-        const fallback = list.find(s => s && s.url);
-        return preferred ? preferred.url : (fallback ? fallback.url : '');
+        return preferred ? preferred.url : ''; // إذا ما لقينا مصدر موثوقببس نرجع فاضي مو رابط opensubtitles المكسور
       } catch (e) { /* فشل الطلب، الفيديو يشتغل بدون ترجمة تلقائية */ }
       return '';
     }
