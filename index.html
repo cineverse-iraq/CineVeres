@@ -441,14 +441,16 @@
     async function fetchSubtitleAsVtt(url) {
       const rawUrl = normalizeSubtitleUrl(url);
       if (!rawUrl) throw new Error('رابط الترجمة فارغ');
-      // ترجمة Firebase المحفوظة تُقرأ مباشرة، حتى يبقى تشغيلها متاحًا بعد إيقاف server.js.
+      // الترجمة المحفوظة في server.js تُقرأ من رابط /subtitles مباشرة.
       // روابط Cinemana/OpenSubtitles الخارجية تمر عبر البروكسي لتجاوز CORS ثم تُحوّل من SRT إلى VTT.
       let fetchUrl = rawUrl;
       try {
         const parsed = new URL(rawUrl, window.location.href);
-        if (!parsed.protocol.startsWith('blob') && parsed.origin !== window.location.origin) {
-          // كل ترجمة خارجية تمر عبر البروكسي ثم تتحول إلى Blob/VTT؛ هذا يمنع CORS من تعطيل <track>،
-          // بما فيها ملفات Firebase Storage المحفوظة.
+        const proxyBase = String(CINEMANA_PROXY || '').replace(/\/$/, '');
+        const isServerSubtitle = proxyBase && parsed.href.startsWith(proxyBase + '/subtitles/');
+        if (!parsed.protocol.startsWith('blob') && parsed.origin !== window.location.origin && !isServerSubtitle) {
+          // الروابط الخارجية فقط تمر عبر بروكسي التحويل. ملفات /subtitles التي يحفظها server.js
+          // تُقرأ مباشرة من server.js؛ لا يوجد endpoint /subtitle في السيرفر.
           fetchUrl = `${CINEMANA_PROXY}/subtitle?url=${encodeURIComponent(rawUrl)}`;
         }
       } catch (e) {}
@@ -3152,30 +3154,7 @@
       const playingQualities = normalizeVideoSources(playingMeta && playingMeta.videoSources ? playingMeta.videoSources : (title.type === 'movie' ? title.videoSources : []));
       const activeSubtitleUrl = (playingMeta && playingMeta.subtitleUrl) || (playingQualities[0] && playingQualities[0].subtitleUrl) || (title.type === 'movie' ? title.subtitleUrl : '');
 
-      // تحميل الترجمة العربية تلقائيًا من SubDL عند بدء المشاهدة إذا لم تكن محفوظة.
-      // هذا تعديل واجهة فقط ولا يحتاج أي تعديل على server.js.
-      useEffect(() => {
-        if (!playingUrl || activeSubtitleUrl || !isDirectVideo(playingUrl)) return;
-        let cancelled = false;
-        let objectUrl = '';
-        (async () => {
-          try {
-            const vtt = await fetchSubdlPlaybackVtt({
-              title: title.name,
-              season: playingSeasonNumber,
-              episode: playingMeta && playingMeta.number,
-              type: title.type
-            });
-            if (cancelled || !vtt) return;
-            objectUrl = URL.createObjectURL(new Blob([vtt], { type: 'text/vtt;charset=utf-8' }));
-            if (!cancelled) setPlayingMeta(prev => ({ ...prev, subtitleUrl: objectUrl }));
-          } catch (e) {}
-        })();
-        return () => {
-          cancelled = true;
-          if (objectUrl) URL.revokeObjectURL(objectUrl);
-        };
-      }, [playingUrl, title.id, playingSeasonNumber, playingMeta && playingMeta.number]);
+      // الترجمة تُجهّز وقت النشر فقط؛ لا نبحث في SubDL أثناء المشاهدة.
       const handleQualityChange = (url, at, quality) => {
         if (!url || url === playingUrl) return;
         setVideoError(false);
@@ -5031,7 +5010,7 @@
           const url = await findAndStoreSubdlSubtitle({ sourceId, title, type, season, episode, folder, onProgress: setMsg });
           if (!url) throw new Error('SubDL لم يُرجع رابط ترجمة.');
           onChange(url);
-          setMsg('تم حفظ الترجمة العربية من SubDL في Firebase.');
+          setMsg('تم حفظ الترجمة العربية في مجلد subtitles على السيرفر.');
         } catch (e) {
           setMsg(e.message || 'تعذر جلب الترجمة.');
         } finally {
