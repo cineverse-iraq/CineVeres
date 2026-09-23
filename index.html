@@ -771,7 +771,7 @@
     const CINEMANA_PROXY = (() => {
       const configured = (typeof window !== 'undefined' && (window.CINEMANA_PROXY_URL || window.CINEMANA_PROXY)) ||
         (typeof localStorage !== 'undefined' ? localStorage.getItem('cinemana_proxy_url') : '') ||
-        'https://cinemana-proxy.onrender.com';
+        'http://localhost:8787';
       return String(configured || '').trim().replace(/\/+$/, '');
     })();
     const SUBTITLE_PUBLIC_BASE = (() => {
@@ -5420,7 +5420,6 @@
       const [bannerData, setBannerData] = useState(null);
       const [bannerLoading, setBannerLoading] = useState(false);
       const [bannerError, setBannerError] = useState('');
-      const [applyAllBanners, setApplyAllBanners] = useState(false);
       const [showAllBanners, setShowAllBanners] = useState(false);
       const [bannerSource, setBannerSource] = useState('tmdb');
       const [seasonStills, setSeasonStills] = useState({});
@@ -5473,8 +5472,8 @@
       };
 
       const pickBanner = (url) => {
-        if (applyAllBanners) setForm(prev => ({ ...prev, seasons: prev.seasons.map(se => ({ ...se, episodeThumbnail: url })) }));
-        else updateSeasonField(activeSeasonIdx, 'episodeThumbnail', url);
+        // البنر المختار يطبّق على الموسم الحالي فقط
+        updateSeasonField(activeSeasonIdx, 'episodeThumbnail', url);
       };
 
       const applyTmdb = (result) => {
@@ -5745,10 +5744,7 @@
                               <div>
                                 <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
                                   <p className="text-[11px] font-bold text-slate-400">اختر بنر الموسم — اضغط على الصورة:</p>
-                                  <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-300 cursor-pointer select-none">
-                                    <input type="checkbox" checked={applyAllBanners} onChange={e => setApplyAllBanners(e.target.checked)} className="accent-accent-cyan w-3.5 h-3.5" />
-                                    تطبيق على كل المواسم
-                                  </label>
+                                  <span className="text-[10px] font-bold text-slate-500">يُطبّق على هذا الموسم فقط</span>
                                 </div>
                                 <div className="flex gap-1.5 mb-2 flex-wrap">
                                   {[['tmdb', 'خلفيات TMDB'], ['stills', 'لقطات من الموسم'], ['fanart', 'Fanart.tv']].map(([k, l]) => (
