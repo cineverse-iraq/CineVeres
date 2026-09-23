@@ -265,12 +265,46 @@
         const safeName = (file.name || `upload_${Date.now()}.jpg`).replace(/[^a-zA-Z0-9.\-_]/g, '_');
         const path = `${folder}/${Date.now()}_${safeName}`;
         const ref = storage.ref().child(path);
-        const task = ref.put(file);
-        task.on('state_changed',
-          snap => onProgress && onProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
-          err => reject(err),
-          () => ref.getDownloadURL().then(resolve).catch(reject)
-        );
+        let finished = false;
+        let uploadTimer = setTimeout(() => {
+          if (finished) return;
+          try { task && task.cancel(); } catch (_) {}
+          reject(new Error(`Firebase Storage لم يكمل الرفع خلال 35 ثانية. bucket=${storage.app.options.storageBucket || 'غير محدد'}`));
+        }, 35000);
+        let task;
+        try {
+          task = ref.put(file);
+          task.on('state_changed',
+            snap => {
+              if (snap && snap.totalBytes) onProgress && onProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100));
+            },
+            err => {
+              if (finished) return;
+              finished = true; clearTimeout(uploadTimer);
+              const code = err && err.code ? ` [${err.code}]` : '';
+              reject(new Error(`Firebase Storage رفض رفع الملف${code}: ${err && err.message ? err.message : 'خطأ غير معروف'}`));
+            },
+            async () => {
+              if (finished) return;
+              clearTimeout(uploadTimer);
+              try {
+                const url = await Promise.race([
+                  ref.getDownloadURL(),
+                  new Promise((_, r) => setTimeout(() => r(new Error('تم الرفع، لكن Firebase لم يُرجع رابط التحميل خلال 15 ثانية.')), 15000))
+                ]);
+                finished = true;
+                resolve(url);
+              } catch (err) {
+                finished = true;
+                const code = err && err.code ? ` [${err.code}]` : '';
+                reject(new Error(`تم رفع الملف لكن تعذر الحصول على رابط Firebase${code}: ${err && err.message ? err.message : 'خطأ غير معروف'}`));
+              }
+            }
+          );
+        } catch (err) {
+          finished = true; clearTimeout(uploadTimer);
+          reject(new Error(`تعذر بدء رفع Firebase: ${err && err.message ? err.message : err}`));
+        }
       });
     }
 
@@ -935,11 +969,7 @@
       );
       const upload = new File([vtt], `subdl_${Date.now()}.vtt`, { type: 'text/vtt' });
       if (onProgress) onProgress('تم تحويل الترجمة، جاري رفعها إلى Firebase...');
-      return await withTimeout(
-        uploadFile(upload, folder, null),
-        45000,
-        'انتهت مهلة رفع الترجمة إلى Firebase. تحقق من Firebase Storage وتسجيل الدخول.'
-      );
+      return await uploadFile(upload, folder, null);
     }
 
     async function prepareSubtitlesForPublish(payload, sourceId, onProgress) {
