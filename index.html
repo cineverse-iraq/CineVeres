@@ -555,7 +555,7 @@
     }
 
     // بطاقة اختيار العمل من سينمانا: بحث ← اختيار عنوان (وحلقة إذا مسلسل) ← اختيار جودة ← تعبئة رابط الفيديو المباشر
-    function CinemanaHelper({ kind, season, episode, defaultTitle, onGenerate }) {
+    function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGenerate, onGenerateQualities }) {
       const [query, setQuery] = useState(defaultTitle || '');
       useEffect(() => { if (defaultTitle) setQuery(defaultTitle); }, [defaultTitle]);
       const [loading, setLoading] = useState(false);
@@ -563,16 +563,33 @@
       const [results, setResults] = useState(null);
       const [videos, setVideos] = useState(null);
       const [picked, setPicked] = useState(null);
+      const autoRanFor = useRef('');
 
-      const search = async () => {
+      const search = async (auto) => {
         if (!query.trim()) return;
         setLoading(true); setError(''); setResults(null); setVideos(null); setPicked(null);
         try {
           const data = await cinemanaSearch(query.trim(), kind);
           setResults(data);
+          // تعبئة تلقائية: إذا اكو نتيجة وحدة أو نتيجة تطابق السنة، نختارها مباشرة بدون تدخل يدوي
+          if (auto && data && data.length) {
+            const byYear = defaultYear ? data.find(r => String(r.year) === String(defaultYear)) : null;
+            const autoPick = byYear || (data.length === 1 ? data[0] : null);
+            if (autoPick) pickTitle(autoPick);
+          }
         } catch (e) { setError(e.message || 'فشل البحث'); }
         setLoading(false);
       };
+
+      // تشغيل البحث تلقائياً أول ما يوصل اسم العمل من التعبئة التلقائية لـTMDB (مرة وحدة لكل اسم)
+      useEffect(() => {
+        if (defaultTitle && defaultTitle.trim() && autoRanFor.current !== defaultTitle) {
+          autoRanFor.current = defaultTitle;
+          setQuery(defaultTitle);
+          setTimeout(() => search(true), 0);
+        }
+        // eslint-disable-next-line
+      }, [defaultTitle, defaultYear]);
 
       const pickTitle = async (item) => {
         setPicked(item); setVideos(null); setError(''); setLoading(true);
@@ -2590,10 +2607,10 @@
                   </div>
                 </div>
               )}
-              <button onClick={requestClose} className="absolute top-4 left-4 w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black transition">
+              <button onClick={requestClose} className="absolute top-4 left-4 z-30 w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black transition">
                 <Icon name="x" className="w-5 h-5" />
               </button>
-              <button onClick={shareLink} title="نسخ رابط المشاركة" className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black transition">
+              <button onClick={shareLink} title="نسخ رابط المشاركة" className="absolute top-4 right-4 z-30 w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black transition">
                 <Icon name={copied ? 'check' : 'link'} className={`w-4 h-4 ${copied ? 'text-emerald-400' : ''}`} />
               </button>
             </div>
