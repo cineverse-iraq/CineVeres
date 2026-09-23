@@ -8,7 +8,7 @@
   <!-- تحميل خط الموقع أول شي بالصفحة (قبل أي سكربت) حتى ما تطلع شاشة التحميل بخط افتراضي ثم تتبدل -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Tajawal:wght@400;500;700;800;900&family=Almarai:wght@400;700;800&family=Changa:wght@400;500;600;700;800&family=Noto+Kufi+Arabic:wght@400;500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap">
 
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -605,7 +605,7 @@
     }
 
     // إعدادات المشاهد (محفوظة على جهازه) + تصحيح توقيت لكل ترجمة
-    const SUB_PREF_DEFAULTS = { size: 100, color: '#ffffff', bg: 'outline', pos: 6, weight: 700 };
+    const SUB_PREF_DEFAULTS = { size: 100, color: '#ffffff', bg: 'outline', pos: 6, weight: 700, font: 'Cairo' };
     function readSubPrefs() {
       try { return { ...SUB_PREF_DEFAULTS, ...(JSON.parse(localStorage.getItem('cinadam_sub_prefs') || '{}')) }; }
       catch (e) { return { ...SUB_PREF_DEFAULTS }; }
@@ -2643,12 +2643,20 @@
       const bgStyle = prefs.bg === 'box' ? { background: 'rgba(0,0,0,0.65)', padding: '0.05em 0.5em', borderRadius: '0.3em' }
         : prefs.bg === 'solid' ? { background: '#000', padding: '0.05em 0.5em', borderRadius: '0.2em' } : {};
       const shadow = prefs.bg === 'outline' ? '0 0 3px #000, 0 0 3px #000, 1px 1px 2px #000, -1px -1px 2px #000, 0 2px 6px rgba(0,0,0,.95)' : 'none';
+      const subtitleFont = {
+        Cairo: "'Cairo', sans-serif",
+        Tajawal: "'Tajawal', sans-serif",
+        Almarai: "'Almarai', sans-serif",
+        Changa: "'Changa', sans-serif",
+        'Noto Kufi Arabic': "'Noto Kufi Arabic', sans-serif",
+        'IBM Plex Sans Arabic': "'IBM Plex Sans Arabic', sans-serif"
+      }[prefs.font] || "'Cairo', sans-serif";
       return (
         <div ref={rootRef} className="absolute inset-0 pointer-events-none" style={{ zIndex: 15 }}>
           {text && (
             <div style={{ position: 'absolute', left: 0, right: 0, bottom: `calc(${Number(prefs.pos) || 0}% + ${lifted ? 46 : 0}px)`, transition: 'bottom .2s', textAlign: 'center', padding: '0 4%' }}>
               {text.split('\n').map((line, i) => (
-                <div key={i}><span dir="auto" style={{ ...bgStyle, display: 'inline-block', color: prefs.color, fontSize: fontPx + 'px', fontWeight: prefs.weight, lineHeight: 1.5, textShadow: shadow, fontFamily: "'Cairo', sans-serif" }}>{line}</span></div>
+                <div key={i}><span dir="auto" style={{ ...bgStyle, display: 'inline-block', color: prefs.color, fontSize: fontPx + 'px', fontWeight: prefs.weight, lineHeight: 1.5, textShadow: shadow, fontFamily: subtitleFont }}>{line}</span></div>
               ))}
             </div>
           )}
@@ -2931,7 +2939,7 @@
         clickState.current.count += 1;
         if (clickState.current.timer) clearTimeout(clickState.current.timer);
         clickState.current.timer = setTimeout(() => {
-          if (clickState.current.count === 1) { setBarVisible(v => !v); if (!barVisible) showBarTemporarily(); }
+          if (clickState.current.count === 1) { togglePlay(); showBarTemporarily(); }
           clickState.current.count = 0;
         }, 260);
         if (clickState.current.count === 2) {
@@ -3076,6 +3084,16 @@
                         {[[100, '+0.1'], [500, '+0.5']].map(([d, l]) => <button key={d} type="button" onClick={() => changeSubAdj(v => v + d)} className="px-1 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10" dir="ltr">{l}</button>)}
                       </div>
                       <p className="text-[9px] text-slate-500 mt-1 mb-2">الترجمة تظهر قبل الصوت ← اضغط +، وإذا تتأخر ← اضغط −. يُحفظ التصحيح لهذا العمل.{!localSub && adminShiftMs ? ` (تصحيح الإدارة: ${(adminShiftMs / 1000).toFixed(1)}ث)` : ''}</p>
+
+                      <span className="text-[10px] text-slate-300 font-bold block mb-1">خط الترجمة</span>
+                      <select value={subPrefs.font || 'Cairo'} onChange={e => updSubPrefs({ font: e.target.value })} className="w-full mb-2 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[10px] font-bold text-white outline-none focus:border-accent-cyan">
+                        <option value="Cairo" style={{ fontFamily: "'Cairo', sans-serif" }}>Cairo</option>
+                        <option value="Tajawal" style={{ fontFamily: "'Tajawal', sans-serif" }}>Tajawal</option>
+                        <option value="Almarai" style={{ fontFamily: "'Almarai', sans-serif" }}>Almarai</option>
+                        <option value="Changa" style={{ fontFamily: "'Changa', sans-serif" }}>Changa</option>
+                        <option value="Noto Kufi Arabic" style={{ fontFamily: "'Noto Kufi Arabic', sans-serif" }}>Noto Kufi Arabic</option>
+                        <option value="IBM Plex Sans Arabic" style={{ fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}>IBM Plex Sans Arabic</option>
+                      </select>
 
                       <div className="flex items-center justify-between mb-0.5"><span className="text-[10px] text-slate-300 font-bold">حجم الخط</span><span className="text-[10px] text-accent-cyan font-mono">{subPrefs.size}%</span></div>
                       <input type="range" min="60" max="220" step="10" value={subPrefs.size} onChange={e => updSubPrefs({ size: Number(e.target.value) })} className="w-full mb-2" style={{ accentColor: '#00F0FF' }} />
@@ -5460,15 +5478,9 @@
       const bannerOptionsFor = (seasonNumber) => {
         if (!bannerData) return [];
         const seen = new Set(), out = [];
-        const add = (url, kind) => { if (url && !seen.has(url)) { seen.add(url); out.push({ url, kind }); } };
-        if (bannerSource === 'fanart') {
-          ((bannerData.seasons || {})[String(seasonNumber)] || []).forEach(u => add(u, 'season'));
-          (bannerData.tv || []).forEach(u => add(u, 'tv'));
-        } else if (bannerSource === 'stills') {
-          (seasonStills[String(seasonNumber)] || []).forEach(u => add(u, 'still'));
-        } else {
-          (bannerData.tmdb || []).forEach(u => add(u, 'tmdb'));
-        }
+        const add = (url) => { if (url && !seen.has(url)) { seen.add(url); out.push({ url, kind: 'tv' }); } };
+        // بنرات حلقات الموسم: TV Thumbs فقط من Fanart.tv.
+        (bannerData.tv || []).forEach(add);
         return out;
       };
 
@@ -5751,10 +5763,7 @@
                                   </label>
                                 </div>
                                 <div className="flex gap-1.5 mb-2 flex-wrap">
-                                  {[['tmdb', 'خلفيات TMDB'], ['stills', 'لقطات من الموسم'], ['fanart', 'Fanart.tv']].map(([k, l]) => (
-                                    <button type="button" key={k} onClick={() => { setBannerSource(k); setShowAllBanners(false); }}
-                                      className={`text-[11px] px-3 py-1.5 rounded-lg font-bold border transition ${bannerSource === k ? 'bg-accent-cyan text-glass-950 border-accent-cyan' : 'glass-card border-white/10 text-slate-300 hover:border-accent-cyan/50'}`}>{l}</button>
-                                  ))}
+                                  <span className="text-[11px] px-3 py-1.5 rounded-lg font-bold border bg-accent-cyan text-glass-950 border-accent-cyan">Fanart.tv — TV Thumbs فقط</span>
                                 </div>
                                 {bannerLoading && <p className="text-[11px] font-bold text-accent-cyan">جاري جلب البنرات...</p>}
                                 {bannerError && (
