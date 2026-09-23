@@ -253,8 +253,8 @@
     const { useState, useEffect, useRef, useLayoutEffect } = React;
 
     const firebaseConfig = {
-      databaseURL: "https://mnste-36ca4-default-rtdb.firebaseio.com",
-      storageBucket: "mnste-36ca4.firebasestorage.app"
+      databaseURL: "https://mnste-78361-default-rtdb.firebaseio.com",
+      storageBucket: "mnste-78361.firebasestorage.app"
     };
     if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
@@ -316,6 +316,7 @@
       db.ref(`notifications/${sanitizeKey(toUsername)}`).push({ ...data, date: Date.now(), read: false });
     }
 
+    // لا يوجد أي <track> للترجمة في مشغل الموقع، ويتم أيضًا تنظيف معاملات الترجمة القديمة من الروابط.
     // إزالة أي معاملات ترجمة قديمة من روابط المشغل المحفوظة في Firebase.
     // هذا مهم حتى الروابط القديمة التي كانت تحتوي sub_url / lang لا تعيد تشغيل الترجمة.
     function stripSubtitleParams(url) {
@@ -356,10 +357,70 @@
         .map((x, i) => {
           const url = normalizeVideoUrl(x && (x.url || x.videoUrl || x.src || ''));
           const label = String((x && (x.label || x.resolution || x.quality)) || (i + 1) + 'p').trim();
-          return url ? { label, resolution: label, url } : null;
+          const subtitleUrl = normalizeSubtitleUrl(x && (x.subtitleUrl || x.subtitle_url || x.subtitle || x.subUrl || ''));
+          return url ? { label, resolution: label, url, subtitleUrl } : null;
         })
         .filter(Boolean)
         .filter((x, i, a) => a.findIndex(y => y.url === x.url) === i);
+    }
+
+    function normalizeTitlePlaybackData(title) {
+      if (!title || typeof title !== 'object') return title;
+      const clean = { ...title };
+      clean.videoUrl = normalizeVideoUrl(clean.videoUrl || '');
+      clean.videoSources = normalizeVideoSources(clean.videoSources);
+      clean.subtitleUrl = normalizeSubtitleUrl(clean.subtitleUrl || clean.subtitleURL || '');
+      clean.seasons = Array.isArray(clean.seasons) ? clean.seasons.map(season => ({
+        ...season,
+        episodes: Array.isArray(season.episodes) ? season.episodes.map(ep => ({
+          ...ep,
+          videoUrl: normalizeVideoUrl(ep.videoUrl || ''),
+          videoSources: normalizeVideoSources(ep.videoSources),
+          subtitleUrl: normalizeSubtitleUrl(ep.subtitleUrl || ep.subtitleURL || '')
+        })) : []
+      })) : [];
+      return clean;
+    }
+
+    function normalizeSubtitleUrl(url) {
+      if (!url) return '';
+      const value = String(url).trim();
+      if (!value) return '';
+      // نرفض معاملات/روابط الترجمة القديمة المرسلة داخل رابط فيديو؛ ملف الترجمة يُخزن كرابط مستقل.
+      return value;
+    }
+
+    function srtToVtt(text) {
+      let v = String(text || '').replace(/^\uFEFF/, '').replace(/\r/g, '').trim();
+      if (/^WEBVTT(?:\s|$)/i.test(v)) return v;
+      v = v.replace(/^(?:\d+\s*\n)?(?=\d{2}:\d{2}:\d{2}[,.]\d{3}\s+-->)/, '');
+      v = v.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
+      return 'WEBVTT\n\n' + v + '\n';
+    }
+
+    async function fetchSubtitleAsVtt(url) {
+      const rawUrl = normalizeSubtitleUrl(url);
+      if (!rawUrl) throw new Error('رابط الترجمة فارغ');
+      // نستخدم بروكسي الجهاز لملفات سينمانا/OpenSubtitles حتى نتجاوز CORS، ثم نحوّل SRT إلى VTT عند الحاجة.
+      let fetchUrl = rawUrl;
+      try {
+        const parsed = new URL(rawUrl, window.location.href);
+        if (!parsed.protocol.startsWith('blob') && parsed.origin !== window.location.origin) {
+          fetchUrl = `${CINEMANA_PROXY}/subtitle?url=${encodeURIComponent(rawUrl)}`;
+        }
+      } catch (e) {}
+      const res = await fetch(fetchUrl, { headers: { Accept: 'text/plain,text/vtt,*/*' } });
+      if (!res.ok) throw new Error('تعذر جلب ملف الترجمة (رمز ' + res.status + ')');
+      return srtToVtt(await res.text());
+    }
+
+    async function persistSubtitleToFirebase(url, folder = 'subtitles') {
+      const rawUrl = normalizeSubtitleUrl(url);
+      if (!rawUrl) return '';
+      if (/^https?:\/\/firebasestorage\.googleapis\.com\//i.test(rawUrl) || /\.firebasestorage\.app\//i.test(rawUrl)) return rawUrl;
+      const vtt = await fetchSubtitleAsVtt(rawUrl);
+      const file = new File([vtt], `subtitle_${Date.now()}.vtt`, { type: 'text/vtt' });
+      return uploadFile(file, folder, null);
     }
 
     const TYPE_LABELS = { movie: 'فيلم', series: 'مسلسل', anime: 'أنمي' };
@@ -493,13 +554,17 @@
       );
     }
 
-    // ===== سينمانا (شبكتي): جلب روابط الفيديو عبر بروكسي =====
-    // في الإنتاج استخدم نفس الدومين عبر /api/cinemana أو عيّن window.CINEMANA_PROXY_URL.
-    // يمكن أيضًا حفظ رابط الـWorker في localStorage تحت cinemana_proxy_url.
+    // ===== سينمانا (شبكتي): جلب روابط الفيديو عبر بروكسي Node.js المحلي =====
+    // هذا يطابق server.js الذي يعمل على جهازك:
+    // http://localhost:8787/search
+    // http://localhost:8787/info/:id
+    // http://localhost:8787/episodes/:id
+    // http://localhost:8787/videos/:id
+    // يمكن تغييره اختياريًا عبر window.CINEMANA_PROXY_URL أو localStorage.
     const CINEMANA_PROXY = (() => {
       const configured = (typeof window !== 'undefined' && (window.CINEMANA_PROXY_URL || window.CINEMANA_PROXY)) ||
         (typeof localStorage !== 'undefined' ? localStorage.getItem('cinemana_proxy_url') : '') ||
-        (typeof location !== 'undefined' && location.hostname === 'localhost' ? 'http://localhost:8787' : '/api/cinemana');
+        'http://localhost:8787';
       return String(configured || '').trim().replace(/\/+$/, '');
     })();
 
@@ -520,44 +585,52 @@
       return 'movie';
     }
 
+    function cinemanaArray(data, keys = ['results', 'items', 'data', 'list']) {
+      if (Array.isArray(data)) return data;
+      if (data && typeof data === 'object') {
+        for (const key of keys) if (Array.isArray(data[key])) return data[key];
+      }
+      return [];
+    }
+
     async function cinemanaSearch(title, type) {
       const primary = cinemanaApiType(type);
       const types = type === 'anime' ? ['anime', 'series', 'movie'] : [primary];
       const out = [];
       const seen = new Set();
+      let firstHardError = null;
       for (const apiType of types) {
         try {
           const usp = new URLSearchParams({ videoTitle: title, type: apiType });
           const data = await cinemanaFetch(`/search?${usp.toString()}`);
-          if (Array.isArray(data)) {
-            data.forEach(r => {
-              const k = String(r && (r.nb || r.id || r._id) || '');
-              if (!k || seen.has(k)) return;
-              seen.add(k); out.push({ ...r, _cinemanaType: apiType });
-            });
-          }
+          cinemanaArray(data).forEach(r => {
+            const k = String(r && (r.nb || r.id || r._id) || '');
+            if (!k || seen.has(k)) return;
+            seen.add(k); out.push({ ...r, _cinemanaType: apiType });
+          });
         } catch (e) {
-          if (apiType === primary && type !== 'anime') throw e;
+          if (!firstHardError) firstHardError = e;
         }
-        if (out.length && type === 'anime') break;
       }
+      if (!out.length && firstHardError && type !== 'anime') throw firstHardError;
       return out;
     }
 
     async function cinemanaEpisodes(id) {
       const data = await cinemanaFetch(`/episodes/${encodeURIComponent(id)}`);
-      return Array.isArray(data) ? data : [];
+      return cinemanaArray(data, ['episodes', 'results', 'items', 'data', 'list']);
     }
 
     async function cinemanaVideos(id) {
       const data = await cinemanaFetch(`/videos/${encodeURIComponent(id)}`);
-      return Array.isArray(data) ? data : [];
+      return cinemanaArray(data, ['videos', 'files', 'results', 'items', 'data', 'list']);
     }
 
     function cinemanaVideoSources(videos) {
       const out = normalizeVideoSources((videos || []).map(v => ({
         url: v && (v.videoUrl || v.url || v.src),
-        label: v && (v.resolution || v.quality || v.label)
+        label: v && (v.resolution || v.quality || v.label),
+        subtitleUrl: v && (v.subtitleUrl || v.subtitle_url || v.subtitle || v.subUrl)
       })));
       out.sort((a, b) => {
         const an = parseInt(String(a.label).match(/\d{3,4}/)?.[0] || '0', 10);
@@ -584,7 +657,7 @@
 
     // بطاقة اختيار العمل من سينمانا: بحث ← اختيار عنوان ← جودات متعددة.
     // عند توفر onImportTmdb يتم أيضًا جلب بيانات TMDB تلقائيًا من اسم العمل وسنته.
-    function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGenerate, onGenerateQualities, onImportTmdb }) {
+    function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGenerate, onGenerateQualities, onGenerateSubtitle, onImportTmdb }) {
       const [query, setQuery] = useState(defaultTitle || '');
       useEffect(() => { if (defaultTitle) setQuery(defaultTitle); }, [defaultTitle]);
       const [loading, setLoading] = useState(false);
@@ -648,7 +721,8 @@
 
       return (
         <div className="glass-card rounded-2xl p-3.5 border border-accent-purple/20 mt-3.5">
-          <p className="text-[11px] font-bold text-accent-purple mb-2 flex items-center gap-1.5"><Icon name="search" className="w-3.5 h-3.5" />استيراد التشغيل من سينمانا + تعبئة TMDB تلقائيًا</p>
+          <p className="text-[11px] font-bold text-accent-purple mb-2 flex items-center gap-1.5"><Icon name="search" className="w-3.5 h-3.5" />سينمانا للتشغيل + TMDB للتعبئة التلقائية</p>
+          <p className="text-[10px] text-slate-500 mb-2">التشغيل يُحفظ كرابط سينمانا، والجودات المتاحة تُحفظ مع العمل. لا يتم إنشاء رابط VidAPI هنا.</p>
           <div className="flex items-center gap-2 mb-2.5">
             <input value={query} onChange={ev => setQuery(ev.target.value)} onKeyDown={ev => ev.key === 'Enter' && search()}
               placeholder={kind === 'anime' ? 'اسم الأنمي' : 'اسم العمل بالإنجليزي أو العربي'}
@@ -681,7 +755,19 @@
               <div className="flex flex-wrap gap-2">
                 {videos.length === 0 && <p className="text-[11px] text-slate-500">لا توجد روابط فيديو متاحة لهذا العنوان</p>}
                 {cinemanaVideoSources(videos).map((v, i) => (
-                  <button key={i} type="button" onClick={() => { onGenerate && onGenerate(v.url, v, cinemanaVideoSources(videos)); onGenerateQualities && onGenerateQualities(cinemanaVideoSources(videos)); }}
+                  <button key={i} type="button" onClick={async () => {
+                    const allSources = cinemanaVideoSources(videos);
+                    onGenerate && onGenerate(v.url, v, allSources);
+                    onGenerateQualities && onGenerateQualities(allSources);
+                    if (v.subtitleUrl && onGenerateSubtitle) {
+                      try {
+                        const storedSub = await persistSubtitleToFirebase(v.subtitleUrl, 'subtitles');
+                        if (storedSub) onGenerateSubtitle(storedSub);
+                      } catch (e) {
+                        showToast('تم حفظ الفيديو، لكن تعذر حفظ ترجمة سينمانا تلقائيًا', 'error');
+                      }
+                    }
+                  }}
                     className="px-3 py-1.5 rounded-lg bg-accent-purple/15 border border-accent-purple/30 hover:bg-accent-purple/25 text-accent-purple text-[11px] font-bold transition">
                     {v.label}
                   </button>
@@ -758,10 +844,55 @@
           if (!ep || !r.sources.length) return;
           ep.videoSources = r.sources;
           ep.videoUrl = r.sources[0].url;
+          ep.subtitleUrl = r.sources[0].subtitleUrl || ep.subtitleUrl || '';
         });
         if (onProgress) onProgress(`تم ربط ${Math.min(i + chunk.length, tasks.length)} من ${tasks.length} حلقة من سينمانا...`);
       }
       return out;
+    }
+
+    async function openSubtitlesSearch(params) {
+      const usp = new URLSearchParams(params || {});
+      const res = await fetch(`${CINEMANA_PROXY}/opensubtitles/search?${usp.toString()}`, { headers: { Accept: 'application/json' } });
+      if (!res.ok) throw new Error('تعذر البحث في OpenSubtitles (رمز ' + res.status + ')');
+      const data = await res.json();
+      return Array.isArray(data && data.data) ? data.data : [];
+    }
+
+    async function openSubtitlesDownload(fileId) {
+      const res = await fetch(`${CINEMANA_PROXY}/opensubtitles/download`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ file_id: Number(fileId) })
+      });
+      if (!res.ok) throw new Error('تعذر تنزيل الترجمة من OpenSubtitles (رمز ' + res.status + ')');
+      const data = await res.json();
+      return data && data.link ? data.link : '';
+    }
+
+    async function findAndStoreOpenSubtitle({ sourceId, title, season, episode, type, folder = 'subtitles' }) {
+      const isTv = type !== 'movie';
+      const params = { languages: 'ar', order_by: 'download_count', order_direction: 'desc' };
+      if (sourceId && /^tt\d+$/i.test(String(sourceId))) {
+        if (isTv) { params.parent_imdb_id = String(sourceId).replace(/^tt/i, ''); }
+        else params.imdb_id = String(sourceId).replace(/^tt/i, '');
+      } else if (sourceId && /^\d+$/.test(String(sourceId))) {
+        if (isTv) { params.parent_tmdb_id = String(sourceId); }
+        else params.tmdb_id = String(sourceId);
+      } else if (title) {
+        params.query = String(title);
+      }
+      if (isTv) {
+        params.season_number = String(Number(season) || 1);
+        params.episode_number = String(Number(episode) || 1);
+      }
+      const results = await openSubtitlesSearch(params);
+      const best = results.find(r => r && r.attributes && Array.isArray(r.attributes.files) && r.attributes.files.length);
+      const file = best && best.attributes.files[0];
+      if (!file || file.file_id == null) throw new Error('لم يتم العثور على ترجمة عربية مناسبة');
+      const link = await openSubtitlesDownload(file.file_id);
+      if (!link) throw new Error('OpenSubtitles لم يعُد رابط تنزيل صالحًا');
+      return persistSubtitleToFirebase(link, folder);
     }
 
     // استيراد مسلسل/أنمي كامل من سينمانا مع TMDB:
@@ -1247,6 +1378,7 @@
         tv: <><rect x="2" y="7" width="20" height="15" rx="2" ry="2"/><polyline points="17 2 12 7 7 2"/></>,
         sparkles: <path d="m12 3-1.9 5.8a2 2 0 0 1-1.287 1.288L3 12l5.8 1.9a2 2 0 0 1 1.288 1.287L12 21l1.9-5.8a2 2 0 0 1 1.287-1.288L21 12l-5.8-1.9a2 2 0 0 1-1.288-1.287Z" />,
         search: <path d="m21 21-4.3-4.3M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z" />,
+        captions: <><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 11h5M7 14h3M15 11h2M15 14h3"/></>,
         home: <><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><polyline points="9 22 9 12 15 12 15 22"/></>,
         menu: <path d="M4 12h16M4 6h16M4 18h16" />,
         clock: <path d="M12 6v6l4 2M22 12A10 10 0 1 1 12 2a10 10 0 0 1 10 10z" />,
@@ -2107,12 +2239,15 @@
       );
     }
 
-    function VideoPlayer({ src, onError, trimStart, trimEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, qualities, onQualityChange, startAt }) {
+    function VideoPlayer({ src, subtitleUrl, onError, trimStart, trimEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, qualities, onQualityChange, startAt }) {
       const videoRef = useRef(null);
       const wrapRef = useRef(null);
       const hideTimerRef = useRef(null);
       const completedRef = useRef(false);
       const [loading, setLoading] = useState(true);
+      const [subtitleSrc, setSubtitleSrc] = useState('');
+      const [subtitleLoading, setSubtitleLoading] = useState(false);
+      const [subtitleOn, setSubtitleOn] = useState(true);
       const [natural, setNatural] = useState({ w: 0, h: 0 });
       const [stage, setStage] = useState({ w: 0, h: 0 });
       const isMobile = useIsMobile();
@@ -2121,6 +2256,24 @@
       const cropReady = fit === 'crop' && c.active && c.width > 0 && c.height > 0 && stage.w > 0 && stage.h > 0 && natural.w > 0 && natural.h > 0;
 
       useEffect(() => { completedRef.current = false; }, [src]);
+
+      useEffect(() => {
+        let cancelled = false;
+        setSubtitleSrc('');
+        setSubtitleOn(true);
+        if (!subtitleUrl) { setSubtitleLoading(false); return () => { cancelled = true; }; }
+        setSubtitleLoading(true);
+        fetchSubtitleAsVtt(subtitleUrl)
+          .then(vtt => {
+            if (cancelled) return;
+            const blob = new Blob([vtt], { type: 'text/vtt;charset=utf-8' });
+            const objectUrl = URL.createObjectURL(blob);
+            setSubtitleSrc(objectUrl);
+            setSubtitleLoading(false);
+          })
+          .catch(() => { if (!cancelled) { setSubtitleSrc(''); setSubtitleLoading(false); } });
+        return () => { cancelled = true; };
+      }, [subtitleUrl, src]);
       const fireComplete = () => {
         if (completedRef.current) return;
         completedRef.current = true;
@@ -2376,7 +2529,9 @@
           <video ref={videoRef} controls={false} autoPlay muted playsInline webkit-playsinline="true" x5-playsinline="true" preload="auto"
             onCanPlay={() => setLoading(false)} onPlaying={() => setLoading(false)} onLoadedData={() => setLoading(false)}
             onError={() => { setLoading(false); onError && onError(); }}
-            style={videoStyle} />
+            style={videoStyle}>
+            {subtitleSrc && <track kind="subtitles" src={subtitleSrc} srcLang="ar" label="العربية" default ref={node => { if (node && node.track) node.track.mode = subtitleOn ? 'showing' : 'hidden'; }} />}
+          </video>
 
           {episodeLabel && (
             <div className={`absolute inset-x-0 top-0 z-20 p-3 md:p-4 bg-gradient-to-b from-black/80 to-transparent transition-opacity duration-300 ${barVisible ? 'opacity-100' : 'opacity-0'}`}>
@@ -2433,6 +2588,12 @@
                 <span className="text-[10px] font-mono text-white/90 shrink-0 mr-0.5">{formatClock(ctrl.current)} / {formatClock(ctrl.duration)}</span>
 
                 <span className="flex-1"></span>
+
+                {subtitleUrl && (
+                  <button type="button" onClick={() => setSubtitleOn(v => !v)} className={`yt-btn h-7 px-2 gap-1 text-[11px] font-bold ${subtitleOn ? 'text-accent-cyan' : 'text-white/50'}`} title={subtitleOn ? 'إخفاء الترجمة' : 'إظهار الترجمة'}>
+                    <Icon name="captions" className="w-3.5 h-3.5" /><span className="hidden xs:inline">{subtitleLoading ? '...' : 'ترجمة'}</span>
+                  </button>
+                )}
 
                 {qualityOptions.length > 1 && (
                   <div className="relative shrink-0">
@@ -2683,19 +2844,19 @@
 
       const handlePlay = () => {
         setVideoError(false); setResumeAt(0);
-        if (title.type === 'movie') { setPlayingUrl(title.videoUrl || null); setPlayingMeta(title); setPlayingLabel(title.name); }
+        if (title.type === 'movie') { setPlayingUrl(title.videoUrl || null); setPlayingMeta({ ...title, subtitleUrl: title.subtitleUrl || ((title.videoSources || [])[0] || {}).subtitleUrl || '' }); setPlayingLabel(title.name); }
         else {
           const found = firstEpisode();
           const ep = found ? found.ep : null;
-          setPlayingUrl(ep ? ep.videoUrl : null); setPlayingMeta(ep || {}); setPlayingSeasonNumber(found ? found.seasonNumber : null);
+          setPlayingUrl(ep ? (ep.videoUrl || ((ep.videoSources || [])[0] || {}).url || null) : null); setPlayingMeta(ep ? { ...ep, subtitleUrl: ep.subtitleUrl || ((ep.videoSources || [])[0] || {}).subtitleUrl || '' } : {}); setPlayingSeasonNumber(found ? found.seasonNumber : null);
           setPlayingLabel(ep ? `${title.name} · ${ep.title || `الحلقة ${ep.number || 1}`}` : title.name);
         }
       };
 
       const playEpisode = (ep, seasonNumber) => {
         setVideoError(false); setResumeAt(0);
-        setPlayingUrl(ep.videoUrl);
-        setPlayingMeta(ep);
+        setPlayingUrl(ep.videoUrl || ((ep.videoSources || [])[0] || {}).url || null);
+        setPlayingMeta({ ...ep, subtitleUrl: ep.subtitleUrl || ((ep.videoSources || [])[0] || {}).subtitleUrl || '' });
         setPlayingSeasonNumber(seasonNumber != null ? seasonNumber : null);
         setPlayingLabel(`${title.name} · ${ep.title || `الحلقة ${ep.number != null ? ep.number : ''}`}`);
       };
@@ -2710,11 +2871,12 @@
       };
 
       const playingQualities = normalizeVideoSources(playingMeta && playingMeta.videoSources ? playingMeta.videoSources : (title.type === 'movie' ? title.videoSources : []));
-      const handleQualityChange = (url, at) => {
+      const activeSubtitleUrl = (playingMeta && playingMeta.subtitleUrl) || (playingQualities[0] && playingQualities[0].subtitleUrl) || (title.type === 'movie' ? title.subtitleUrl : '');
+      const handleQualityChange = (url, at, quality) => {
         if (!url || url === playingUrl) return;
         setVideoError(false);
         setResumeAt(Number(at) || 0);
-        setPlayingMeta(prev => ({ ...prev, videoUrl: url }));
+        setPlayingMeta(prev => ({ ...prev, videoUrl: url, subtitleUrl: normalizeSubtitleUrl((quality && quality.subtitleUrl) || prev.subtitleUrl || '') }));
         setPlayingUrl(normalizeVideoUrl(url));
       };
 
@@ -2780,7 +2942,7 @@
               {playingUrl ? (
                 <div className="relative">
                   {isDirectVideo(playingUrl) ? (
-                    <VideoPlayer key={playingUrl} src={normalizeVideoUrl(playingUrl)} onError={() => setVideoError(true)}
+                    <VideoPlayer key={playingUrl + '|' + (playingMeta.subtitleUrl || '')} src={normalizeVideoUrl(playingUrl)} subtitleUrl={activeSubtitleUrl || ''} onError={() => setVideoError(true)}
                       trimStart={playingMeta.trimStart} trimEnd={playingMeta.trimEnd}
                       fitMobile={playingMeta.fitMobile} fitDesktop={playingMeta.fitDesktop} crop={playingMeta.crop}
                       episodeLabel={playingLabel} qualities={playingQualities} startAt={resumeAt} onQualityChange={handleQualityChange}
@@ -4549,11 +4711,38 @@
     }
 
     function emptyForm(type) {
-      return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
+      return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], subtitleUrl: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
     }
 
     function emptyEpisode(num) {
-      return { number: num, title: '', videoUrl: '', videoSources: [], imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
+      return { number: num, title: '', videoUrl: '', videoSources: [], subtitleUrl: '', imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
+    }
+
+    function SubtitleHelper({ value, onChange, sourceId, title, type, season, episode, folder = 'subtitles' }) {
+      const [loading, setLoading] = useState(false);
+      const [msg, setMsg] = useState('');
+      const get = async () => {
+        setLoading(true); setMsg('');
+        try {
+          const url = await findAndStoreOpenSubtitle({ sourceId, title, type, season, episode, folder });
+          onChange(url);
+          setMsg('تم حفظ ترجمة OpenSubtitles في Firebase.');
+        } catch (e) { setMsg(e.message || 'تعذر جلب الترجمة.'); }
+        setLoading(false);
+      };
+      return (
+        <div className="mt-3.5 glass-card rounded-2xl p-3.5 border border-accent-cyan/20">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <p className="text-[11px] font-bold text-accent-cyan">الترجمة العربية</p>
+            <button type="button" onClick={get} disabled={loading} className="px-3 py-1.5 rounded-lg bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan text-[11px] font-bold disabled:opacity-40">{loading ? 'جاري البحث...' : 'جلب من OpenSubtitles'}</button>
+          </div>
+          <div className="mt-2.5">
+            <FileUploadField compact value={value || ''} onChange={onChange} folder={folder} accept=".srt,.vtt,.txt" />
+          </div>
+          {msg && <p className="text-[10px] font-bold text-slate-400 mt-2">{msg}</p>}
+          <p className="text-[10px] text-slate-500 mt-1.5">يتم تحويل SRT إلى WebVTT أثناء الحفظ حتى يظهر داخل مشغل الموقع.</p>
+        </div>
+      );
     }
 
     function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sourceId, seriesName }) {
@@ -4600,8 +4789,8 @@
           <div className="mt-3.5">
             <FileUploadField label="ملف الحلقة (فيديو مباشر أو رابط/iframe)" value={e.videoUrl} onChange={v => set('videoUrl', v)} folder="episodes" accept="video/*" />
           </div>
-          <VidApiHelper kind="tv" season={seasonNumber} episode={e.number} defaultId={sourceId} onGenerate={url => { set('videoUrl', url); set('videoSources', [{ label: 'VidAPI', resolution: 'VidAPI', url }]); }} />
-          <CinemanaHelper kind="tv" season={seasonNumber} episode={e.number} defaultTitle={seriesName} onGenerate={(url) => set('videoUrl', url)} onGenerateQualities={sources => set('videoSources', sources)} />
+          <CinemanaHelper kind="tv" season={seasonNumber} episode={e.number} defaultTitle={seriesName} onGenerate={(url) => set('videoUrl', url)} onGenerateQualities={sources => set('videoSources', sources)} onGenerateSubtitle={url => set('subtitleUrl', url)} />
+          <SubtitleHelper value={e.subtitleUrl || ''} onChange={v => set('subtitleUrl', v)} sourceId={sourceId} title={seriesName} type="series" season={seasonNumber} episode={e.number} folder="subtitles" />
           <div className="grid grid-cols-2 gap-3.5 mt-3.5">
             <div>
               <label className="text-xs font-bold text-slate-300 mb-1.5 block">تقييم IMDb</label>
@@ -4620,7 +4809,8 @@
     function AdminContentForm({ initial, defaultType, onDone }) {
       const [form, setForm] = useState(() => {
         if (!initial) return emptyForm(defaultType);
-        return { ...emptyForm(defaultType), ...initial, genresText: (initial.genres || []).join(', '), seasons: initial.seasons ? JSON.parse(JSON.stringify(initial.seasons)) : [] };
+        const cleanedInitial = normalizeTitlePlaybackData(initial);
+        return { ...emptyForm(defaultType), ...cleanedInitial, genresText: (cleanedInitial.genres || []).join(', '), seasons: cleanedInitial.seasons ? JSON.parse(JSON.stringify(cleanedInitial.seasons)) : [] };
       });
       const [saving, setSaving] = useState(false);
       const [error, setError] = useState('');
@@ -4776,6 +4966,7 @@
         if (form.type === 'movie') {
           payload.videoUrl = normalizeVideoUrl(form.videoUrl.trim());
           payload.videoSources = normalizeVideoSources(form.videoSources);
+          payload.subtitleUrl = normalizeSubtitleUrl(form.subtitleUrl || '');
           payload.trimStart = Number(form.trimStart) || 0;
           payload.trimEnd = Number(form.trimEnd) || 0;
           payload.fitMobile = form.fitMobile || 'contain';
@@ -4789,7 +4980,7 @@
             poster: (s.poster || '').trim(),
             episodeThumbnail: (s.episodeThumbnail || '').trim(),
             episodes: (s.episodes || []).map(e => ({
-              number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
+              number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
               trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
             }))
           }));
@@ -4866,11 +5057,12 @@
               <div className="mt-5">
                 <FileUploadField label="ملف الفيلم (فيديو مباشر أو رابط/iframe)" value={form.videoUrl} onChange={v => set('videoUrl', v)} folder="videos" accept="video/*" />
               </div>
-              <VidApiHelper kind="movie" defaultId={sourceId} onGenerate={url => { set('videoUrl', url); set('videoSources', [{ label: 'VidAPI', resolution: 'VidAPI', url }]); }} />
-              <CinemanaHelper kind={form.type === 'anime' ? 'anime' : 'movie'} defaultTitle={form.name} defaultYear={form.year} onGenerate={(url) => set('videoUrl', url)} onGenerateQualities={sources => set('videoSources', sources)} onImportTmdb={async (item) => { const r = await importFromTmdbTitle(cinemanaTitle(item), form.type, cinemanaYear(item) || form.year, { withEpisodes: false }); setSourceId(r.sourceId || ''); setForm(prev => ({ ...prev, ...r.patch, videoUrl: prev.videoUrl, videoSources: prev.videoSources })); setBannerData(r.bannerData || null); return r; }} />
+              <CinemanaHelper kind={form.type === 'anime' ? 'anime' : 'movie'} defaultTitle={form.name} defaultYear={form.year} onGenerate={(url) => set('videoUrl', url)} onGenerateQualities={sources => set('videoSources', sources)} onGenerateSubtitle={url => set('subtitleUrl', url)} onImportTmdb={async (item) => { const r = await importFromTmdbTitle(cinemanaTitle(item), form.type, cinemanaYear(item) || form.year, { withEpisodes: false }); setSourceId(r.sourceId || ''); setForm(prev => ({ ...prev, ...r.patch, videoUrl: prev.videoUrl, videoSources: prev.videoSources })); setBannerData(r.bannerData || null); return r; }} />
+              <SubtitleHelper value={form.subtitleUrl || ''} onChange={v => set('subtitleUrl', v)} sourceId={sourceId} title={form.name} type="movie" folder="subtitles" />
               <VideoDisplaySettings value={form} onChange={patch => setForm(prev => ({ ...prev, ...patch }))} />
             </div>
           ) : (
+            <>
             <div>
               <CinemanaSeriesImportPanel
                 type={form.type === 'anime' ? 'anime' : 'tv'}
@@ -5028,6 +5220,7 @@
                 </div>
               )}
             </div>
+            </>
           )}
 
           <div className="flex items-center gap-6 mt-6 flex-wrap">
@@ -5689,7 +5882,7 @@
         const ref = db.ref('titles');
         const cb = snap => {
           const data = snap.val();
-          const list = data ? Object.keys(data).map(k => ({ id: k, ...data[k] })) : [];
+          const list = data ? Object.keys(data).map(k => normalizeTitlePlaybackData({ id: k, ...data[k] })) : [];
           list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
           setTitles(list);
           setActiveTitle(prev => {
