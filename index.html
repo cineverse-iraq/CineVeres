@@ -457,26 +457,169 @@
         || /^https:\/\/[^/]+\.firebasestorage\.app\//i.test(s);
     }
 
-    async function fetchSubtitleAsVtt(url) {
-      const rawUrl = normalizeSubtitleUrl(url);
-      if (!rawUrl) throw new Error('رابط الترجمة فارغ');
-      // الترجمة المحفوظة في server.js تُقرأ من رابط /subtitles مباشرة.
-      // روابط Cinemana/OpenSubtitles الخارجية تمر عبر البروكسي لتجاوز CORS ثم تُحوّل من SRT إلى VTT.
-      let fetchUrl = rawUrl;
-      try {
-        const parsed = new URL(rawUrl, window.location.href);
-        const proxyBase = String(CINEMANA_PROXY || '').replace(/\/$/, '');
-        const isServerSubtitle = (proxyBase && parsed.href.startsWith(proxyBase + '/subtitles/')) || (SUBTITLE_PUBLIC_BASE && parsed.href.startsWith(SUBTITLE_PUBLIC_BASE + '/'));
-        if (!parsed.protocol.startsWith('blob') && parsed.origin !== window.location.origin && !isServerSubtitle) {
-          // الروابط الخارجية فقط تمر عبر بروكسي التحويل. ملفات /subtitles التي يحفظها server.js
-          // تُقرأ مباشرة من server.js؛ لا يوجد endpoint /subtitle في السيرفر.
-          fetchUrl = `${CINEMANA_PROXY}/subtitle?url=${encodeURIComponent(rawUrl)}`;
-        }
-      } catch (e) {}
-      const res = await fetch(fetchUrl, { headers: { Accept: 'text/plain,text/vtt,*/*' } });
-      if (!res.ok) throw new Error('تعذر جلب ملف الترجمة (رمز ' + res.status + ')');
-      return srtToVtt(await res.text());
+    // ==== SUBTITLE ENGINE START ====
+    // محرك الترجمة: قراءة SRT/VTT، تخزين في Firebase Realtime Database (بدون Storage وبدون قرص)،
+    // وإعدادات المشاهد. الروابط الجديدة بصيغة  fbsub:<key>  والقديمة (http) تبقى شغالة.
+    const SUB_AD_RE = /opensubtitles|subscene|addic7ed|podnapisi|subdl|yts\.|yify|www\.|https?:\/\/|\.com\b|\.org\b|\.net\b|ترجمة\s*:|ترجمة وتعديل|تعديل التوقيت|اشترك|قناتنا|تليجرام|telegram/i;
+    const SUB_TS_RE = /(?:(\d{1,2}):)?(\d{1,2}):(\d{2})[.,](\d{1,3})\s*-->\s*(?:(\d{1,2}):)?(\d{1,2}):(\d{2})[.,](\d{1,3})/;
+
+    function decodeSubBuffer(buf) {
+      const u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+      if (u8.length >= 2 && u8[0] === 0xff && u8[1] === 0xfe) return new TextDecoder('utf-16le').decode(u8.subarray(2));
+      if (u8.length >= 2 && u8[0] === 0xfe && u8[1] === 0xff) return new TextDecoder('utf-16be').decode(u8.subarray(2));
+      try { return new TextDecoder('utf-8', { fatal: true }).decode(u8).replace(/^\uFEFF/, ''); } catch (e) {}
+      try { return new TextDecoder('windows-1256').decode(u8); } catch (e) {}
+      return new TextDecoder('utf-8').decode(u8);
     }
+
+    function parseSubtitleCues(input) {
+      const s = String(input || '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+      const cues = [];
+      const ms = (h, m, sec, f) => ((Number(h) || 0) * 3600 + Number(m) * 60 + Number(sec)) * 1000 + Number(String(f).padEnd(3, '0').slice(0, 3));
+      for (const block of s.split(/\n{2,}/)) {
+        const lines = block.split('\n');
+        const i = lines.findIndex(l => SUB_TS_RE.test(l));
+        if (i < 0) continue;
+        const m = lines[i].match(SUB_TS_RE);
+        const start = ms(m[1], m[2], m[3], m[4]);
+        let end = ms(m[5], m[6], m[7], m[8]);
+        const text = lines.slice(i + 1).join('\n')
+          .replace(/\{\\[^}]*\}/g, '').replace(/<[^>]+>/g, '')
+          .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&')
+          .split('\n').map(l => l.replace(/[\u200e\u200f\u202a-\u202e]/g, '').trim()).filter(Boolean).join('\n');
+        if (!text) continue;
+        if (end <= start) end = start + 1500;
+        cues.push({ s: start, e: end, text });
+      }
+      cues.sort((a, b) => a.s - b.s);
+      const isAd = c => SUB_AD_RE.test(c.text);
+      for (let k = 0; k < 2 && cues.length > 1 && isAd(cues[0]); k++) cues.shift();
+      for (let k = 0; k < 2 && cues.length > 1 && isAd(cues[cues.length - 1]); k++) cues.pop();
+      return cues;
+    }
+
+    function subArabicRatio(cues) {
+      let letters = 0, arabic = 0;
+      for (const c of cues) for (const ch of c.text) {
+        if (/[A-Za-z\u0600-\u06ff]/.test(ch)) { letters++; if (/[\u0600-\u06ff]/.test(ch)) arabic++; }
+      }
+      return letters ? arabic / letters : 0;
+    }
+
+    function cuesToVttText(cues, shiftMs) {
+      const off = Number(shiftMs) || 0;
+      const p = (n, l = 2) => String(n).padStart(l, '0');
+      const fmt = t => { t = Math.max(0, Math.round(t)); const h = Math.floor(t / 3600000); t %= 3600000; const m = Math.floor(t / 60000); t %= 60000; return `${p(h)}:${p(m)}:${p(Math.floor(t / 1000))}.${p(t % 1000, 3)}`; };
+      return 'WEBVTT\n\n' + cues.map(c => `${fmt(c.s + off)} --> ${fmt(c.e + off)}\n${c.text}`).join('\n\n') + '\n';
+    }
+
+    // أي cue نشط الآن (بحث ثنائي) — t بالملي ثانية بعد طرح التصحيح
+    function activeCueText(cues, tMs) {
+      let lo = 0, hi = cues.length - 1, idx = -1;
+      while (lo <= hi) { const mid = (lo + hi) >> 1; if (cues[mid].s <= tMs) { idx = mid; lo = mid + 1; } else hi = mid - 1; }
+      if (idx < 0) return '';
+      const lines = [];
+      for (let i = idx; i >= 0 && i > idx - 6; i--) if (cues[i].e > tMs) lines.unshift(cues[i].text);
+      return lines.join('\n');
+    }
+
+    function subHash(str) { // cyrb53
+      let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+      for (let i = 0; i < str.length; i++) { const ch = str.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); }
+      h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+      h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+      return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+    }
+
+    function subStoreKey(meta) {
+      const nb = String((meta && meta.cinemanaId) || '').replace(/[^A-Za-z0-9_-]/g, '');
+      if (nb) return 'c' + nb;
+      const m = meta || {};
+      return 't' + subHash([m.title || '', m.type || '', m.season || '', m.episode || ''].join('|').toLowerCase()) + (m.title ? '' : Date.now().toString(36));
+    }
+
+    const _subCache = new Map();
+
+    async function subSave(meta, vtt, info = {}) {
+      const key = subStoreKey(meta);
+      await db.ref('subtitleFiles/' + key).set({
+        vtt, source: info.source || 'manual', label: String(info.label || '').slice(0, 120), cues: info.cues || 0,
+        bytes: vtt.length, title: String((meta && meta.title) || '').slice(0, 120), updated: Date.now()
+      });
+      _subCache.delete('fbsub:' + key);
+      return 'fbsub:' + key;
+    }
+
+    async function subFetchWithTimeout(url, ms) {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), ms);
+      try { return await fetch(url, { headers: { Accept: 'text/vtt,text/plain,*/*' }, signal: ctl.signal }); }
+      finally { clearTimeout(t); }
+    }
+
+    async function fetchSubtitleRaw(url) {
+      const u = normalizeSubtitleUrl(url);
+      if (!u) throw new Error('رابط الترجمة فارغ');
+      if (/^fbsub:/i.test(u)) {
+        const key = u.slice(6);
+        let lastErr = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const snap = await withTimeout(db.ref('subtitleFiles/' + key + '/vtt').once('value'), 15000, 'انتهت مهلة تحميل الترجمة');
+            const v = snap.val();
+            if (typeof v === 'string' && v.length) return v;
+            throw new Error('الترجمة غير موجودة في قاعدة البيانات');
+          } catch (e) { lastErr = e; await new Promise(r => setTimeout(r, 500 * (attempt + 1))); }
+        }
+        throw lastErr || new Error('تعذر تحميل الترجمة');
+      }
+      // روابط قديمة: مباشرة أولًا، ثم عبر البروكسي (تجاوز CORS)
+      const routes = [u];
+      try {
+        const parsed = new URL(u, window.location.href);
+        if (parsed.origin !== window.location.origin) routes.push(`${CINEMANA_PROXY}/sub/fetch?url=${encodeURIComponent(u)}`);
+      } catch (e) {}
+      let lastErr = null;
+      for (const r of routes) {
+        try {
+          const res = await subFetchWithTimeout(r, 20000);
+          if (!res.ok) throw new Error('تعذر جلب ملف الترجمة (رمز ' + res.status + ')');
+          return decodeSubBuffer(await res.arrayBuffer());
+        } catch (e) { lastErr = e; }
+      }
+      throw lastErr || new Error('تعذر جلب ملف الترجمة');
+    }
+
+    async function loadSubtitleCues(url) {
+      const u = normalizeSubtitleUrl(url);
+      if (_subCache.has(u)) return _subCache.get(u);
+      const cues = parseSubtitleCues(await fetchSubtitleRaw(u));
+      if (!cues.length) throw new Error('ملف الترجمة فارغ أو غير صالح');
+      if (_subCache.size > 20) _subCache.delete(_subCache.keys().next().value);
+      _subCache.set(u, cues);
+      return cues;
+    }
+
+    async function fetchSubtitleAsVtt(url) { // متوافق مع الاستدعاءات القديمة
+      return cuesToVttText(await loadSubtitleCues(url), 0);
+    }
+
+    // إعدادات المشاهد (محفوظة على جهازه) + تصحيح توقيت لكل ترجمة
+    const SUB_PREF_DEFAULTS = { size: 100, color: '#ffffff', bg: 'outline', pos: 6, weight: 700 };
+    function readSubPrefs() {
+      try { return { ...SUB_PREF_DEFAULTS, ...(JSON.parse(localStorage.getItem('cinadam_sub_prefs') || '{}')) }; }
+      catch (e) { return { ...SUB_PREF_DEFAULTS }; }
+    }
+    function readSubAdj(key) {
+      try { return Number(localStorage.getItem('cinadam_subadj_' + subHash(String(key || '')))) || 0; } catch (e) { return 0; }
+    }
+    function writeSubAdj(key, ms) {
+      try {
+        const k = 'cinadam_subadj_' + subHash(String(key || ''));
+        if (ms) localStorage.setItem(k, String(ms)); else localStorage.removeItem(k);
+      } catch (e) {}
+    }
+    // ==== SUBTITLE ENGINE END ====
 
     async function persistSubtitleToFirebase(url, folder = 'subtitles') {
       const rawUrl = normalizeSubtitleUrl(url);
@@ -726,7 +869,7 @@
 
     // بطاقة اختيار العمل من سينمانا: بحث ← اختيار عنوان ← جودات متعددة.
     // عند توفر onImportTmdb يتم أيضًا جلب بيانات TMDB تلقائيًا من اسم العمل وسنته.
-    function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGenerate, onGenerateQualities, onGenerateSubtitle, onImportTmdb }) {
+    function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGenerate, onGenerateQualities, onGenerateSubtitle, onPickedNb, onImportTmdb }) {
       const [query, setQuery] = useState(defaultTitle || '');
       useEffect(() => { if (defaultTitle) setQuery(defaultTitle); }, [defaultTitle]);
       const [loading, setLoading] = useState(false);
@@ -736,6 +879,21 @@
       const [videos, setVideos] = useState(null);
       const [picked, setPicked] = useState(null);
       const autoRanFor = useRef('');
+      const [subMsg, setSubMsg] = useState('');
+
+      // بعد تحديد فيديو سينمانا: نجلب ترجمته العربية تلقائيًا (ترجمة سينمانا نفسها ثم SubDL)
+      const autoSubtitle = async (nb, item) => {
+        if (!onGenerateSubtitle) return;
+        setSubMsg('جاري البحث عن الترجمة العربية...');
+        try {
+          const r = await findAndStoreSubtitle({
+            cinemanaId: nb, title: defaultTitle || cinemanaTitle(item), year: defaultYear || cinemanaYear(item),
+            type: kind === 'tv' ? 'series' : 'movie', season, episode, onProgress: setSubMsg
+          });
+          onGenerateSubtitle(r.url);
+          setSubMsg(`✓ ترجمة عربية من ${r.sourceLabel} — ${r.cues} سطر`);
+        } catch (e) { setSubMsg('تعذرت الترجمة التلقائية: ' + (e && e.message ? e.message : '')); }
+      };
 
       const search = async (auto) => {
         if (!query.trim()) return;
@@ -770,12 +928,20 @@
             setMetaLoading(false);
           }
           if (kind === 'movie' || kind === 'anime') {
-            setVideos(await cinemanaVideos(String(item.nb)));
+            const nb = String(item.nb);
+            setVideos(await cinemanaVideos(nb));
+            if (onPickedNb) onPickedNb(nb);
+            autoSubtitle(nb, item);
           } else {
             const eps = await cinemanaEpisodes(String(item.nb));
             const match = eps.find(e => cinemanaEpisodeSeason(e) === (Number(season) || 1) && cinemanaEpisodeNumber(e) === (Number(episode) || 1));
             if (!match) setError(`لم يُعثر تلقائيًا على الموسم ${Number(season) || 1} الحلقة ${Number(episode) || 1} بهذا العنوان على سينمانا`);
-            else setVideos(await cinemanaVideos(String(match.nb)));
+            else {
+              const nb = String(match.nb);
+              setVideos(await cinemanaVideos(nb));
+              if (onPickedNb) onPickedNb(nb);
+              autoSubtitle(nb, item);
+            }
           }
         } catch (e) { setError(e.message || 'فشل جلب الفيديو'); }
         setLoading(false);
@@ -801,6 +967,7 @@
           {metaLoading && <p className="text-[10px] text-accent-cyan font-bold mb-1.5">جاري تعبئة البيانات من TMDB...</p>}
           {kind !== 'movie' && <p className="text-[10px] text-slate-500 mb-1.5">الموسم {Number(season) || 1} · الحلقة {Number(episode) || 1}</p>}
           {error && <p className="text-[11px] font-bold text-rose-400 mb-2">{error}</p>}
+          {subMsg && <p className="text-[10px] font-bold text-accent-cyan mb-2">{subMsg}</p>}
 
           {results && !videos && (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-64 overflow-y-auto">
@@ -828,14 +995,6 @@
                     const allSources = cinemanaVideoSources(videos);
                     onGenerate && onGenerate(v.url, v, allSources);
                     onGenerateQualities && onGenerateQualities(allSources);
-                    if (v.subtitleUrl && onGenerateSubtitle) {
-                      try {
-                        const storedSub = await persistSubtitleToFirebase(v.subtitleUrl, 'subtitles');
-                        if (storedSub) onGenerateSubtitle(storedSub);
-                      } catch (e) {
-                        showToast('تم حفظ الفيديو، لكن تعذر حفظ ترجمة سينمانا تلقائيًا', 'error');
-                      }
-                    }
                   }}
                     className="px-3 py-1.5 rounded-lg bg-accent-purple/15 border border-accent-purple/30 hover:bg-accent-purple/25 text-accent-purple text-[11px] font-bold transition">
                     {v.label}
@@ -910,6 +1069,7 @@
         }));
         results.forEach(r => {
           const ep = out[r.si] && out[r.si].episodes && out[r.si].episodes[r.ei];
+          if (ep) ep.cinemanaId = String(r.id);
           if (!ep || !r.sources.length) return;
           ep.videoSources = r.sources;
           ep.videoUrl = r.sources[0].url;
@@ -926,7 +1086,7 @@
       try {
         return await fetch(url, { ...options, signal: controller.signal });
       } catch (e) {
-        if (e && e.name === 'AbortError') throw new Error('انتهت مهلة الاتصال بـ SubDL بعد 20 ثانية. تأكد أن server.js يعمل على المنفذ 8787.');
+        if (e && e.name === 'AbortError') throw new Error('انتهت مهلة الاتصال بالسيرفر. تأكد أن server.js يعمل وأن رابط البروكسي صحيح.');
         throw e;
       } finally {
         clearTimeout(timer);
@@ -966,70 +1126,43 @@
       }
     }
 
-    async function publishVttToServer(vttText, meta = {}) {
-      // لا نستخدم Firebase Storage للترجمات. server.js يحفظ VTT محليًا داخل مجلد subtitles.
-      const usp = new URLSearchParams();
-      usp.set('url', meta.sourceUrl || '');
-      usp.set('sourceId', meta.sourceId || '');
-      usp.set('title', meta.title || '');
-      usp.set('type', meta.type || 'movie');
-      if (meta.season != null) usp.set('season', String(meta.season));
-      if (meta.episode != null) usp.set('episode', String(meta.episode));
-      usp.set('baseUrl', String(CINEMANA_PROXY || '').replace(/\/$/, ''));
-      const res = await fetchWithTimeout(`${CINEMANA_PROXY}/subdl/publish?${usp.toString()}`, { headers: { Accept: 'application/json' } }, 45000);
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.ok || !data.url) throw new Error(data.error || 'تعذر حفظ الترجمة على server.js');
-      return data.url;
-    }
-
-    async function uploadSubtitleToServer(file, meta = {}) {
+    async function subFindFile(file, meta) {
       if (!file) throw new Error('لم يتم اختيار ملف ترجمة.');
-      const raw = await file.text();
-      const usp = new URLSearchParams();
-      usp.set('sourceId', meta.sourceId || '');
-      usp.set('title', meta.title || '');
-      usp.set('type', meta.type || 'movie');
-      if (meta.season != null) usp.set('season', String(meta.season));
-      if (meta.episode != null) usp.set('episode', String(meta.episode));
-      usp.set('baseUrl', String(CINEMANA_PROXY || '').replace(/\/$/, ''));
-      const res = await fetchWithTimeout(`${CINEMANA_PROXY}/subtitles/upload?${usp.toString()}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain; charset=utf-8', Accept: 'application/json' },
-        body: raw
-      }, 30000);
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.ok || !data.url) throw new Error(data.error || `فشل رفع ملف الترجمة (رمز ${res.status})`);
-      return data.url;
+      const cues = parseSubtitleCues(decodeSubBuffer(await file.arrayBuffer()));
+      if (!cues.length) throw new Error('الملف ليس SRT أو WebVTT صالحًا.');
+      if (subArabicRatio(cues) < 0.3) throw new Error('الملف لا يبدو عربيًا — تأكد أنه ملف الترجمة العربية.');
+      const url = await subSave(meta, cuesToVttText(cues, 0), { source: 'manual', label: file.name, cues: cues.length });
+      return { url, cues: cues.length };
     }
 
-    async function findAndStoreSubdlSubtitle({ sourceId, altSourceIds = [], title, year, season, episode, type, folder = 'subtitles', onProgress }) {
-      const isTv = type !== 'movie';
-      const ids = [sourceId, ...(Array.isArray(altSourceIds) ? altSourceIds : [])]
-        .map(x => String(x || '').trim()).filter(Boolean);
-      const imdbId = ids.find(x => /^tt\d+$/i.test(x)) || '';
-      const tmdbId = ids.find(x => /^\d+$/.test(x)) || '';
-      const params = new URLSearchParams();
-      if (imdbId) params.set('imdb_id', imdbId);
-      if (tmdbId) params.set('tmdb_id', tmdbId);
-      if (title) params.set('film_name', String(title).trim());
-      if (year) params.set('year', String(year));
-      params.set('type', isTv ? 'tv' : 'movie');
-      if (isTv) {
-        params.set('season_number', String(Number(season) || 1));
-        params.set('episode_number', String(Number(episode) || 1));
+    // المحرك الذكي: السيرفر يجرب ترجمة سينمانا نفسها ثم SubDL ويفحص الجودة، والموقع يحفظ النتيجة في Firebase.
+    async function findAndStoreSubtitle({ cinemanaId, sourceId, altSourceIds = [], title, year, season, episode, type, onProgress }) {
+      const ids = [sourceId, ...(Array.isArray(altSourceIds) ? altSourceIds : [])].map(x => String(x || '').trim()).filter(Boolean);
+      const imdb = ids.find(x => /^tt\d+$/i.test(x)) || '';
+      const tmdb = ids.find(x => /^\d+$/.test(x)) || '';
+      const isMovie = type === 'movie';
+      const usp = new URLSearchParams();
+      if (cinemanaId) usp.set('nb', String(cinemanaId));
+      if (title) usp.set('title', String(title));
+      if (year) usp.set('year', String(year));
+      usp.set('type', isMovie ? 'movie' : 'series');
+      if (!isMovie) { usp.set('season', String(Number(season) || 1)); usp.set('episode', String(Number(episode) || 1)); }
+      if (imdb) usp.set('imdb', imdb);
+      if (tmdb) usp.set('tmdb', tmdb);
+      if (!cinemanaId && !title && !imdb && !tmdb) throw new Error('لا يوجد عنوان أو معرّف للبحث عن الترجمة.');
+      if (onProgress) onProgress('جاري البحث الذكي (سينمانا ثم SubDL)...');
+      const res = await fetchWithTimeout(`${CINEMANA_PROXY}/sub/resolve?${usp.toString()}`, { headers: { Accept: 'application/json' } }, 120000);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        const why = (data.tried || []).slice(-3).map(t => `${t.source === 'cinemana' ? 'سينمانا' : 'SubDL'}${t.attempt ? ' (' + t.attempt + ')' : ''}: ${t.reason || ''}`).join(' | ');
+        throw new Error((data.error || `فشل البحث (رمز ${res.status})`) + (why ? ' — ' + why : ''));
       }
-      if (onProgress) onProgress(`جاري البحث الذكي في SubDL${isTv ? ` عن S${String(Number(season)||1).padStart(2,'0')}E${String(Number(episode)||1).padStart(2,'0')}` : ''}...`);
-      const findRes = await fetchWithTimeout(`${CINEMANA_PROXY}/subdl/find?${params.toString()}`, { headers: { Accept: 'application/json' } }, 45000);
-      const findData = await findRes.json().catch(() => ({}));
-      if (!findRes.ok || !findData.ok || !findData.url) {
-        const tried = Array.isArray(findData.tried) ? findData.tried.map(x => `${x.label}:${x.count ?? x.status ?? x.error ?? ''}`).join('، ') : '';
-        throw new Error(`${findData.error || 'SubDL لم يجد ترجمة مناسبة'}${tried ? ` [${tried}]` : ''}`);
-      }
-      if (onProgress) onProgress(`تم العثور على ${findData.name || 'ترجمة عربية'}، جاري تنزيلها وتحويلها...`);
-      const vtt = await withTimeout(subdlDownload(findData.url), 35000, 'انتهت مهلة تنزيل الترجمة من SubDL.');
-      if (onProgress) onProgress('تم تحويل الترجمة، جاري حفظ VTT على server.js...');
-      return await publishVttToServer(vtt, { sourceUrl: findData.url, sourceId: ids[0] || '', title, season, episode, type });
+      const sourceLabel = data.source === 'cinemana' ? 'سينمانا' : 'SubDL';
+      if (onProgress) onProgress(`وُجدت ترجمة من ${sourceLabel} (${data.cues} سطر) — جاري الحفظ...`);
+      const url = await subSave({ cinemanaId, title, type: isMovie ? 'movie' : 'series', season, episode }, data.vtt, { source: data.source, label: data.label, cues: data.cues });
+      return { url, source: data.source, sourceLabel, cues: data.cues, lastEndSec: data.lastEndSec, durationSec: data.durationSec, label: data.label };
     }
+    async function findAndStoreSubdlSubtitle(args) { return (await findAndStoreSubtitle(args)).url; } // اسم قديم
 
     async function prepareSubtitlesForPublish(payload, sourceId, onProgress, altSourceIds = []) {
       const out = JSON.parse(JSON.stringify(payload || {}));
@@ -1038,61 +1171,35 @@
       const ids = [sid, ...(Array.isArray(altSourceIds) ? altSourceIds : []), out.imdbId, out.tmdbId].filter(Boolean);
       let added = 0, skipped = 0, failed = 0;
       const failedItems = [];
-
+      const jobs = [];
       if (type === 'movie') {
-        if (out.subtitleUrl) {
-          skipped = 1;
-        } else {
-          try {
-            if (onProgress) onProgress('جاري جلب الترجمة العربية للفلم من SubDL...');
-            out.subtitleUrl = await findAndStoreSubdlSubtitle({ sourceId: sid, altSourceIds: ids, title: out.name, year: out.year, type: 'movie', folder: 'subtitles', onProgress });
-            if (out.subtitleUrl) added = 1;
-          } catch (e) {
-            failed = 1;
-            failedItems.push(`${out.name || 'الفيلم'}: ${e.message || 'فشل'}`);
-          }
-        }
+        if (out.subtitleUrl) skipped = 1;
+        else jobs.push({ label: out.name || 'الفيلم', target: out, args: { cinemanaId: out.cinemanaId, title: out.name, year: out.year, type: 'movie' } });
       } else {
-        const seasons = Array.isArray(out.seasons) ? out.seasons : [];
-        const tasks = [];
-        seasons.forEach((se, si) => (se.episodes || []).forEach((ep, ei) => tasks.push({ se, ep, si, ei })));
-        const total = tasks.length;
-        let done = 0;
-        for (const task of tasks) {
-          const se = task.se;
-          const ep = task.ep;
-          const sNum = Number(se.number) || 1;
-          const eNum = Number(ep.number) || 1;
-          if (ep.subtitleUrl) {
-            skipped++;
-            done++;
-            if (onProgress) onProgress(`الترجمات: ${done}/${total} — الموسم ${sNum} الحلقة ${eNum}: موجودة مسبقًا`);
-            continue;
-          }
+        (Array.isArray(out.seasons) ? out.seasons : []).forEach(se => (se.episodes || []).forEach(ep => {
+          const sNum = Number(se.number) || 1, eNum = Number(ep.number) || 1;
+          if (ep.subtitleUrl) { skipped++; return; }
+          jobs.push({ label: `S${String(sNum).padStart(2, '0')}E${String(eNum).padStart(2, '0')}`, target: ep, args: { cinemanaId: ep.cinemanaId, title: out.name, year: out.year, season: sNum, episode: eNum, type } });
+        }));
+      }
+      const total = jobs.length;
+      let done = 0;
+      const worker = async () => {
+        while (jobs.length) {
+          const job = jobs.shift();
           try {
-            if (onProgress) onProgress(`الترجمات: ${done + 1}/${total} — البحث عن S${String(sNum).padStart(2,'0')}E${String(eNum).padStart(2,'0')}...`);
-            // مهم: ep.imdb هنا هو تقييم IMDb وليس IMDb ID، لذلك لا نستخدمه كمُعرّف للبحث.
-            const url = await findAndStoreSubdlSubtitle({
-              sourceId: sid,
-              altSourceIds: ids,
-              title: out.name,
-              year: out.year,
-              season: sNum,
-              episode: eNum,
-              type,
-              folder: 'subtitles',
-              onProgress
-            });
-            if (url) { ep.subtitleUrl = url; added++; }
+            const r = await findAndStoreSubtitle({ sourceId: sid, altSourceIds: ids, ...job.args });
+            job.target.subtitleUrl = r.url;
+            added++;
           } catch (e) {
             failed++;
-            failedItems.push(`S${String(sNum).padStart(2,'0')}E${String(eNum).padStart(2,'0')}: ${e.message || 'لم يتم العثور على ترجمة'}`);
+            failedItems.push(`${job.label}: ${e.message || 'لم يتم العثور على ترجمة'}`);
           }
           done++;
-          if (onProgress) onProgress(`اكتملت ${done}/${total} حلقة — نجح ${added}، فشل ${failed}`);
+          if (onProgress) onProgress(`الترجمات ${done}/${total} — نجح ${added}، فشل ${failed}`);
         }
-      }
-
+      };
+      await Promise.all([worker(), worker(), worker()]);
       if (onProgress) onProgress(`اكتملت تهيئة الترجمة: تمت إضافة ${added}، موجودة ${skipped}، تعذر ${failed}.`);
       return { payload: out, added, skipped, failed, failedItems };
     }
@@ -2500,17 +2607,99 @@
       );
     }
 
+    // طبقة عرض الترجمة (تُرسم فوق الفيديو، ومتزامنة مع currentTime بدقة الإطار)
+    function SubtitleOverlay({ videoRef, cues, shiftMs, prefs, lifted }) {
+      const [text, setText] = useState('');
+      const [boxH, setBoxH] = useState(360);
+      const rootRef = useRef(null);
+      useEffect(() => {
+        let raf = 0, lastT = -1, lastText = '';
+        setText('');
+        const tick = () => {
+          const v = videoRef.current;
+          if (v) {
+            const t = v.currentTime;
+            if (t !== lastT) {
+              lastT = t;
+              const next = activeCueText(cues, t * 1000 - shiftMs);
+              if (next !== lastText) { lastText = next; setText(next); }
+            }
+          }
+          raf = requestAnimationFrame(tick);
+        };
+        raf = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(raf);
+      }, [cues, shiftMs]);
+      useEffect(() => {
+        const el = rootRef.current;
+        if (!el) return;
+        setBoxH(el.clientHeight || 360);
+        if (!window.ResizeObserver) return;
+        const ro = new ResizeObserver(() => setBoxH(el.clientHeight || 360));
+        ro.observe(el);
+        return () => ro.disconnect();
+      }, []);
+      const fontPx = Math.max(12, Math.min(72, boxH * 0.046 * ((Number(prefs.size) || 100) / 100)));
+      const bgStyle = prefs.bg === 'box' ? { background: 'rgba(0,0,0,0.65)', padding: '0.05em 0.5em', borderRadius: '0.3em' }
+        : prefs.bg === 'solid' ? { background: '#000', padding: '0.05em 0.5em', borderRadius: '0.2em' } : {};
+      const shadow = prefs.bg === 'outline' ? '0 0 3px #000, 0 0 3px #000, 1px 1px 2px #000, -1px -1px 2px #000, 0 2px 6px rgba(0,0,0,.95)' : 'none';
+      return (
+        <div ref={rootRef} className="absolute inset-0 pointer-events-none" style={{ zIndex: 15 }}>
+          {text && (
+            <div style={{ position: 'absolute', left: 0, right: 0, bottom: `calc(${Number(prefs.pos) || 0}% + ${lifted ? 46 : 0}px)`, transition: 'bottom .2s', textAlign: 'center', padding: '0 4%' }}>
+              {text.split('\n').map((line, i) => (
+                <div key={i}><span dir="auto" style={{ ...bgStyle, display: 'inline-block', color: prefs.color, fontSize: fontPx + 'px', fontWeight: prefs.weight, lineHeight: 1.5, textShadow: shadow, fontFamily: "'Cairo', sans-serif" }}>{line}</span></div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
     function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart, trimEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, qualities, onQualityChange, startAt }) {
       const videoRef = useRef(null);
       const wrapRef = useRef(null);
       const hideTimerRef = useRef(null);
       const completedRef = useRef(false);
       const [loading, setLoading] = useState(true);
-      const [subtitleSrc, setSubtitleSrc] = useState('');
+      const [subtitleSrc, setSubtitleSrc] = useState(''); // لمسار iOS الأصلي فقط
       const [subtitleLoading, setSubtitleLoading] = useState(false);
       const [subtitleOn, setSubtitleOn] = useState(true);
-      const [subtitleShift, setSubtitleShift] = useState(Number(subtitleOffset) || 0);
+      const [subCues, setSubCues] = useState([]);
+      const [subError, setSubError] = useState('');
+      const [subRetry, setSubRetry] = useState(0);
+      const [localSub, setLocalSub] = useState(null); // ملف ترجمة اختاره المشاهد من جهازه (في الذاكرة فقط)
+      const [subAdj, setSubAdj] = useState(0);        // تصحيح المشاهد بالملي ثانية (موجب = تأخير الترجمة)
+      const [subPrefs, setSubPrefs] = useState(readSubPrefs);
       const [showSubtitleMenu, setShowSubtitleMenu] = useState(false);
+      const localFileRef = useRef(null);
+      const activeCues = localSub ? localSub.cues : subCues;
+      const adminShiftMs = localSub ? 0 : Math.round((Number(subtitleOffset) || 0) * 1000); // subtitleOffset بالثواني
+      const subtitleShift = adminShiftMs + subAdj;
+      const adjKey = localSub ? 'local:' + localSub.name : subtitleUrl;
+      const changeSubAdj = (fn) => setSubAdj(prev => {
+        const n = Math.max(-120000, Math.min(120000, Math.round(fn(prev))));
+        writeSubAdj(adjKey, n);
+        return n;
+      });
+      const updSubPrefs = (patch) => setSubPrefs(prev => {
+        const n = { ...prev, ...patch };
+        try { localStorage.setItem('cinadam_sub_prefs', JSON.stringify(n)); } catch (e) {}
+        return n;
+      });
+      const onLocalSub = async (e) => {
+        const f = e.target.files && e.target.files[0];
+        e.target.value = '';
+        if (!f) return;
+        try {
+          const cues = parseSubtitleCues(decodeSubBuffer(await f.arrayBuffer()));
+          if (!cues.length) throw new Error('الملف ليس SRT أو VTT صالحًا');
+          setLocalSub({ name: f.name, cues });
+          setSubAdj(readSubAdj('local:' + f.name));
+          setSubtitleOn(true);
+          showToast('تم تحميل الترجمة من جهازك');
+        } catch (err) { showToast(err && err.message ? err.message : 'تعذر قراءة الملف', 'error'); }
+      };
       const [natural, setNatural] = useState({ w: 0, h: 0 });
       const [stage, setStage] = useState({ w: 0, h: 0 });
       const isMobile = useIsMobile();
@@ -2522,40 +2711,24 @@
 
       useEffect(() => {
         let cancelled = false;
-        setSubtitleSrc('');
-        setSubtitleOn(true);
-        setSubtitleShift(Number(subtitleOffset) || 0);
-        setShowSubtitleMenu(false);
+        setSubError(''); setSubCues([]);
+        setSubAdj(subtitleUrl ? readSubAdj(subtitleUrl) : 0);
         if (!subtitleUrl) { setSubtitleLoading(false); return () => { cancelled = true; }; }
         setSubtitleLoading(true);
-        // إذا كانت الترجمة محفوظة في Firebase وكانت بالفعل VTT، دع عنصر <track> يقرأها مباشرة.
-        if (isFirebaseStorageUrl(subtitleUrl)) {
-          setSubtitleSrc(subtitleUrl);
-          setSubtitleLoading(false);
-          return () => { cancelled = true; };
-        }
-        let objectUrl = '';
-        fetchSubtitleAsVtt(subtitleUrl)
-          .then(vtt => {
-            if (cancelled) return;
-            const shifted = shiftVttTimings(vtt, Number(subtitleShift) || 0);
-            const blob = new Blob([shifted], { type: 'text/vtt;charset=utf-8' });
-            objectUrl = URL.createObjectURL(blob);
-            setSubtitleSrc(objectUrl);
-            setSubtitleLoading(false);
-          })
-          .catch(err => {
-            if (!cancelled) {
-              setSubtitleSrc('');
-              setSubtitleLoading(false);
-              showToast(err && err.message ? err.message : 'تعذر تحميل الترجمة', 'error');
-            }
-          });
-        return () => {
-          cancelled = true;
-          if (objectUrl) URL.revokeObjectURL(objectUrl);
-        };
-      }, [subtitleUrl, src, subtitleShift]);
+        loadSubtitleCues(subtitleUrl)
+          .then(cues => { if (!cancelled) { setSubCues(cues); setSubtitleLoading(false); } })
+          .catch(err => { if (!cancelled) { setSubError(err && err.message ? err.message : 'تعذر تحميل الترجمة'); setSubtitleLoading(false); } });
+        return () => { cancelled = true; };
+      }, [subtitleUrl, subRetry]);
+
+      // iOS يعرض الفيديو بمشغله الأصلي في ملء الشاشة، لذلك نستخدم <track> أصلي هناك فقط
+      useEffect(() => {
+        if (!isIOS) return;
+        if (!activeCues.length) { setSubtitleSrc(''); return; }
+        const blobUrl = URL.createObjectURL(new Blob([cuesToVttText(activeCues, subtitleShift)], { type: 'text/vtt;charset=utf-8' }));
+        setSubtitleSrc(blobUrl);
+        return () => URL.revokeObjectURL(blobUrl);
+      }, [activeCues, subtitleShift]);
       const fireComplete = () => {
         if (completedRef.current) return;
         completedRef.current = true;
@@ -2816,8 +2989,10 @@
             onCanPlay={() => setLoading(false)} onPlaying={() => setLoading(false)} onLoadedData={() => setLoading(false)}
             onError={() => { setLoading(false); onError && onError(); }}
             style={videoStyle}>
-            {subtitleSrc && <track kind="subtitles" src={subtitleSrc} srcLang="ar" label="العربية" default ref={node => { if (node && node.track) node.track.mode = subtitleOn ? 'showing' : 'hidden'; }} />}
+            {subtitleSrc && <track key={subtitleSrc} kind="subtitles" src={subtitleSrc} srcLang="ar" label="العربية" default ref={node => { if (node && node.track) node.track.mode = subtitleOn ? 'showing' : 'hidden'; }} />}
           </video>
+
+          {!isIOS && subtitleOn && activeCues.length > 0 && <SubtitleOverlay videoRef={videoRef} cues={activeCues} shiftMs={subtitleShift} prefs={subPrefs} lifted={barVisible} />}
 
           {episodeLabel && (
             <div className={`absolute inset-x-0 top-0 z-20 p-3 md:p-4 bg-gradient-to-b from-black/80 to-transparent transition-opacity duration-300 ${barVisible ? 'opacity-100' : 'opacity-0'}`}>
@@ -2875,27 +3050,62 @@
 
                 <span className="flex-1"></span>
 
-                {subtitleUrl && (
-                  <div className="relative shrink-0">
-                    <button type="button" onClick={() => setShowSubtitleMenu(v => !v)} className={`yt-btn h-7 px-2 gap-1 text-[11px] font-bold ${subtitleOn ? 'text-accent-cyan' : 'text-white/50'}`} title="إعدادات الترجمة">
-                      <Icon name="captions" className="w-3.5 h-3.5" /><span className="hidden xs:inline">{subtitleLoading ? '...' : 'ترجمة'}</span>
-                    </button>
-                    {showSubtitleMenu && (
-                      <div className="absolute bottom-10 left-0 bg-black/95 backdrop-blur-md rounded-xl border border-white/10 p-2 shadow-2xl min-w-[180px] z-30">
-                        <div className="flex items-center justify-between gap-2 mb-2">
-                          <span className="text-[10px] text-slate-300 font-bold">توقيت الترجمة</span>
-                          <span className="text-[10px] text-accent-cyan font-mono">{subtitleShift > 0 ? '+' : ''}{(subtitleShift/1000).toFixed(1)}ث</span>
-                        </div>
-                        <div className="grid grid-cols-3 gap-1">
-                          <button type="button" onClick={() => setSubtitleShift(v => v - 500)} className="px-2 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10">−0.5ث</button>
-                          <button type="button" onClick={() => setSubtitleShift(0)} className="px-2 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10">تصفير</button>
-                          <button type="button" onClick={() => setSubtitleShift(v => v + 500)} className="px-2 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10">+0.5ث</button>
-                        </div>
-                        <button type="button" onClick={() => setSubtitleOn(v => !v)} className="w-full mt-1.5 px-2 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10">{subtitleOn ? 'إخفاء الترجمة' : 'إظهار الترجمة'}</button>
+                <div className="relative shrink-0">
+                  <button type="button" onClick={() => { setShowSubtitleMenu(v => !v); setShowQualityMenu(false); setShowSpeedMenu(false); }} className={`yt-btn h-7 px-2 gap-1 text-[11px] font-bold ${subtitleOn && activeCues.length ? 'text-accent-cyan' : 'text-white/60'}`} title="إعدادات الترجمة">
+                    <Icon name="captions" className="w-3.5 h-3.5" /><span className="hidden xs:inline">{subtitleLoading ? '...' : 'ترجمة'}</span>
+                  </button>
+                  {showSubtitleMenu && (
+                    <div className="absolute bottom-10 left-0 bg-black/95 backdrop-blur-md rounded-xl border border-white/10 p-2.5 shadow-2xl w-64 max-w-[78vw] max-h-[60vh] overflow-y-auto z-30 text-right" onClick={e => e.stopPropagation()}>
+                      <p className="text-[10px] font-bold text-slate-300 mb-1.5">
+                        {activeCues.length ? (localSub ? `ملف من جهازك: ${localSub.name}` : 'الترجمة العربية جاهزة') : subtitleLoading ? 'جاري تحميل الترجمة...' : (subError || 'لا توجد ترجمة لهذا العمل')}
+                      </p>
+                      {subError && !localSub && (
+                        <button type="button" onClick={() => setSubRetry(n => n + 1)} className="w-full mb-1.5 px-2 py-1.5 rounded-lg bg-accent-cyan/20 text-accent-cyan text-[10px] font-bold">إعادة المحاولة</button>
+                      )}
+                      {activeCues.length > 0 && (
+                        <button type="button" onClick={() => setSubtitleOn(v => !v)} className="w-full mb-2 px-2 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10">{subtitleOn ? 'إخفاء الترجمة' : 'إظهار الترجمة'}</button>
+                      )}
+
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="text-[10px] text-slate-300 font-bold">توقيت الترجمة</span>
+                        <span className="text-[10px] text-accent-cyan font-mono" dir="ltr">{subAdj > 0 ? '+' : ''}{(subAdj / 1000).toFixed(1)}s</span>
                       </div>
-                    )}
-                  </div>
-                )}
+                      <div className="grid grid-cols-5 gap-1">
+                        {[[-500, '−0.5'], [-100, '−0.1']].map(([d, l]) => <button key={d} type="button" onClick={() => changeSubAdj(v => v + d)} className="px-1 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10" dir="ltr">{l}</button>)}
+                        <button type="button" onClick={() => changeSubAdj(() => 0)} className="px-1 py-1.5 rounded-lg bg-white/10 text-white text-[10px] font-bold hover:bg-white/20">صفر</button>
+                        {[[100, '+0.1'], [500, '+0.5']].map(([d, l]) => <button key={d} type="button" onClick={() => changeSubAdj(v => v + d)} className="px-1 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10" dir="ltr">{l}</button>)}
+                      </div>
+                      <p className="text-[9px] text-slate-500 mt-1 mb-2">الترجمة تظهر قبل الصوت ← اضغط +، وإذا تتأخر ← اضغط −. يُحفظ التصحيح لهذا العمل.{!localSub && adminShiftMs ? ` (تصحيح الإدارة: ${(adminShiftMs / 1000).toFixed(1)}ث)` : ''}</p>
+
+                      <div className="flex items-center justify-between mb-0.5"><span className="text-[10px] text-slate-300 font-bold">حجم الخط</span><span className="text-[10px] text-accent-cyan font-mono">{subPrefs.size}%</span></div>
+                      <input type="range" min="60" max="220" step="10" value={subPrefs.size} onChange={e => updSubPrefs({ size: Number(e.target.value) })} className="w-full mb-2" style={{ accentColor: '#00F0FF' }} />
+
+                      <span className="text-[10px] text-slate-300 font-bold block mb-1">لون الخط</span>
+                      <div className="flex gap-1.5 mb-2">
+                        {['#ffffff', '#ffe14d', '#00f0ff', '#7cff7c'].map(c => (
+                          <button key={c} type="button" onClick={() => updSubPrefs({ color: c })} className="w-6 h-6 rounded-full border-2" style={{ background: c, borderColor: subPrefs.color === c ? '#00F0FF' : 'rgba(255,255,255,0.25)' }} />
+                        ))}
+                      </div>
+
+                      <span className="text-[10px] text-slate-300 font-bold block mb-1">الخلفية</span>
+                      <div className="grid grid-cols-3 gap-1 mb-2">
+                        {[['outline', 'حدود'], ['box', 'شفافة'], ['solid', 'سوداء']].map(([k, l]) => (
+                          <button key={k} type="button" onClick={() => updSubPrefs({ bg: k })} className={`px-1 py-1.5 rounded-lg text-[10px] font-bold ${subPrefs.bg === k ? 'bg-accent-cyan text-glass-950' : 'bg-white/5 text-white hover:bg-white/10'}`}>{l}</button>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center justify-between mb-0.5"><span className="text-[10px] text-slate-300 font-bold">ارتفاع الترجمة</span><span className="text-[10px] text-accent-cyan font-mono">{subPrefs.pos}%</span></div>
+                      <input type="range" min="2" max="40" step="1" value={subPrefs.pos} onChange={e => updSubPrefs({ pos: Number(e.target.value) })} className="w-full mb-2" style={{ accentColor: '#00F0FF' }} />
+
+                      <div className="grid grid-cols-2 gap-1">
+                        <button type="button" onClick={() => localFileRef.current && localFileRef.current.click()} className="px-2 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10">ترجمة من جهازك</button>
+                        <button type="button" onClick={() => { setSubPrefs({ ...SUB_PREF_DEFAULTS }); try { localStorage.removeItem('cinadam_sub_prefs'); } catch (e) {} }} className="px-2 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10">الإعدادات الافتراضية</button>
+                      </div>
+                      {localSub && <button type="button" onClick={() => { setLocalSub(null); setSubAdj(subtitleUrl ? readSubAdj(subtitleUrl) : 0); }} className="w-full mt-1 px-2 py-1.5 rounded-lg bg-rose-500/20 text-rose-300 text-[10px] font-bold">إزالة ملف جهازك</button>}
+                      <input ref={localFileRef} type="file" accept=".srt,.vtt,text/vtt,application/x-subrip" onChange={onLocalSub} className="hidden" />
+                    </div>
+                  )}
+                </div>
 
                 {qualityOptions.length > 1 && (
                   <div className="relative shrink-0">
@@ -5075,17 +5285,24 @@
       return { number: num, title: '', videoUrl: '', videoSources: [], subtitleUrl: '', subtitleOffset: 0, imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
     }
 
-    function SubtitleHelper({ value, onChange, sourceId, title, type, season, episode, year, folder = 'subtitles', offset = 0, onOffsetChange }) {
+    function SubtitleHelper({ value, onChange, sourceId, title, type, season, episode, year, cinemanaId, offset = 0, onOffsetChange }) {
       const [loading, setLoading] = useState(false);
       const [msg, setMsg] = useState('');
+      const [warn, setWarn] = useState('');
       const inputRef = useRef(null);
+      const showCoverage = (r) => {
+        if (r && r.durationSec && r.lastEndSec) {
+          const pct = Math.round((r.lastEndSec / r.durationSec) * 100);
+          setWarn(pct < 60 || pct > 102 ? `تنبيه: آخر سطر يغطي ${pct}% من مدة الفيديو — قد تكون نسخة مختلفة، راجع التوقيت.` : '');
+        } else setWarn('');
+      };
       const get = async () => {
-        setLoading(true); setMsg('جاري البحث في SubDL...');
+        setLoading(true); setWarn(''); setMsg('جاري البحث الذكي (سينمانا ثم SubDL)...');
         try {
-          const url = await findAndStoreSubdlSubtitle({ sourceId, title, year, type, season, episode, folder, onProgress: setMsg });
-          if (!url) throw new Error('SubDL لم يُرجع رابط ترجمة.');
-          onChange(url);
-          setMsg('تم حفظ الترجمة العربية على server.js.');
+          const r = await findAndStoreSubtitle({ cinemanaId, sourceId, title, year, type, season, episode, onProgress: setMsg });
+          onChange(r.url);
+          setMsg(`تم الحفظ — المصدر: ${r.sourceLabel} · ${r.cues} سطر`);
+          showCoverage(r);
         } catch (e) { setMsg(e.message || 'تعذر جلب الترجمة.'); }
         finally { setLoading(false); }
       };
@@ -5093,34 +5310,36 @@
         const file = e.target.files && e.target.files[0];
         e.target.value = '';
         if (!file) return;
-        setLoading(true); setMsg('جاري رفع ملف الترجمة إلى server.js...');
+        setLoading(true); setWarn(''); setMsg('جاري قراءة الملف وحفظه...');
         try {
-          const url = await uploadSubtitleToServer(file, { sourceId, title, type, season, episode });
-          onChange(url);
-          setMsg('تم حفظ ملف الترجمة اليدوي.');
-        } catch (err) { setMsg(err.message || 'تعذر رفع ملف الترجمة.'); }
+          const r = await subFindFile(file, { cinemanaId, title, type, season, episode });
+          onChange(r.url);
+          setMsg(`تم حفظ ملف الترجمة اليدوي — ${r.cues} سطر`);
+        } catch (err) { setMsg(err.message || 'تعذر حفظ ملف الترجمة.'); }
         finally { setLoading(false); }
       };
       return (
         <div className="mt-3.5 glass-card rounded-2xl p-3.5 border border-accent-cyan/20">
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <p className="text-[11px] font-bold text-accent-cyan">الترجمة العربية</p>
+            <p className="text-[11px] font-bold text-accent-cyan">الترجمة العربية {value ? '✓' : ''}</p>
             <div className="flex gap-1.5">
-              <button type="button" onClick={get} disabled={loading} className="px-3 py-1.5 rounded-lg bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan text-[11px] font-bold disabled:opacity-40">{loading ? 'جاري...' : 'جلب من SubDL'}</button>
+              <button type="button" onClick={get} disabled={loading} className="px-3 py-1.5 rounded-lg bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan text-[11px] font-bold disabled:opacity-40">{loading ? 'جاري...' : 'جلب ذكي'}</button>
               <button type="button" onClick={() => inputRef.current && inputRef.current.click()} disabled={loading} className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-200 text-[11px] font-bold disabled:opacity-40">اختيار ملف SRT/VTT</button>
+              {value && <button type="button" onClick={() => { onChange(''); setMsg('تم مسح رابط الترجمة (سيُعاد البحث عند النشر).'); setWarn(''); }} className="px-2 py-1.5 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 text-[11px] font-bold">مسح</button>}
               <input ref={inputRef} type="file" accept=".srt,.vtt,text/vtt,application/x-subrip" onChange={chooseFile} className="hidden" />
             </div>
           </div>
           <div className="mt-2.5 flex items-center gap-2">
-            <input value={value || ''} onChange={e => onChange(e.target.value)} placeholder="رابط ترجمة اختياري" className="flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" />
+            <input value={value || ''} onChange={e => onChange(e.target.value)} placeholder="رابط الترجمة (يُملأ تلقائيًا)" className="flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" dir="ltr" />
           </div>
-          <div className="mt-2.5 flex items-center gap-2">
-            <label className="text-[10px] text-slate-400 font-bold">تصحيح توقيت الترجمة (ثانية)</label>
+          <div className="mt-2.5 flex items-center gap-2 flex-wrap">
+            <label className="text-[10px] text-slate-400 font-bold">تصحيح توقيت الترجمة لكل المشاهدين (ثانية)</label>
             <input type="number" step="0.5" value={Number(offset) || 0} onChange={e => onOffsetChange && onOffsetChange(Number(e.target.value) || 0)} className="w-24 bg-glass-900 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent-cyan" />
             <span className="text-[9px] text-slate-500">موجب = الترجمة تتأخر، سالب = تتقدم</span>
           </div>
           {msg && <p className="text-[10px] font-bold text-slate-400 mt-2">{msg}</p>}
-          <p className="text-[10px] text-slate-500 mt-1.5">إذا فشل SubDL، اختر ملف SRT/VTT من جهازك وسيُحفظ على server.js بدون Firebase Storage.</p>
+          {warn && <p className="text-[10px] font-bold text-amber-400 mt-1">{warn}</p>}
+          <p className="text-[10px] text-slate-500 mt-1.5">يبحث أولًا في ترجمة سينمانا نفسها (نفس نسخة الفيديو = أدق توقيت) ثم SubDL. تُحفظ في Firebase ولا تستهلك أي مساحة من جهازك.</p>
         </div>
       );
     }
@@ -5169,8 +5388,8 @@
           <div className="mt-3.5">
             <FileUploadField label="ملف الحلقة (فيديو مباشر أو رابط/iframe)" value={e.videoUrl} onChange={v => set('videoUrl', v)} folder="episodes" accept="video/*" />
           </div>
-          <CinemanaHelper kind="tv" season={seasonNumber} episode={e.number} defaultTitle={seriesName} onGenerate={(url) => set('videoUrl', url)} onGenerateQualities={sources => set('videoSources', sources)} onGenerateSubtitle={url => set('subtitleUrl', url)} />
-          <SubtitleHelper value={e.subtitleUrl || ''} onChange={v => set('subtitleUrl', v)} sourceId={sourceId} title={seriesName} year={new Date().getFullYear()} type="series" season={seasonNumber} episode={e.number} folder="subtitles" offset={e.subtitleOffset || 0} onOffsetChange={v => set('subtitleOffset', v)} />
+          <CinemanaHelper kind="tv" season={seasonNumber} episode={e.number} defaultTitle={seriesName} onGenerate={(url) => set('videoUrl', url)} onGenerateQualities={sources => set('videoSources', sources)} onGenerateSubtitle={url => set('subtitleUrl', url)} onPickedNb={nb => set('cinemanaId', nb)} />
+          <SubtitleHelper cinemanaId={e.cinemanaId} value={e.subtitleUrl || ''} onChange={v => set('subtitleUrl', v)} sourceId={sourceId} title={seriesName} year={new Date().getFullYear()} type="series" season={seasonNumber} episode={e.number} folder="subtitles" offset={e.subtitleOffset || 0} onOffsetChange={v => set('subtitleOffset', v)} />
           <div className="grid grid-cols-2 gap-3.5 mt-3.5">
             <div>
               <label className="text-xs font-bold text-slate-300 mb-1.5 block">تقييم IMDb</label>
@@ -5351,6 +5570,7 @@
           payload.videoSources = normalizeVideoSources(form.videoSources);
           payload.subtitleUrl = normalizeSubtitleUrl(form.subtitleUrl || '');
           payload.subtitleOffset = Number(form.subtitleOffset) || 0;
+          payload.cinemanaId = String(form.cinemanaId || '');
           payload.trimStart = Number(form.trimStart) || 0;
           payload.trimEnd = Number(form.trimEnd) || 0;
           payload.fitMobile = form.fitMobile || 'contain';
@@ -5364,7 +5584,7 @@
             poster: (s.poster || '').trim(),
             episodeThumbnail: (s.episodeThumbnail || '').trim(),
             episodes: (s.episodes || []).map(e => ({
-              number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitleOffset: Number(e.subtitleOffset) || 0, imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
+              number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || ''), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
               trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
             }))
           }));
@@ -5450,8 +5670,8 @@
               <div className="mt-5">
                 <FileUploadField label="ملف الفيلم (فيديو مباشر أو رابط/iframe)" value={form.videoUrl} onChange={v => set('videoUrl', v)} folder="videos" accept="video/*" />
               </div>
-              <CinemanaHelper kind={form.type === 'anime' ? 'anime' : 'movie'} defaultTitle={form.name} defaultYear={form.year} onGenerate={(url) => set('videoUrl', url)} onGenerateQualities={sources => set('videoSources', sources)} onGenerateSubtitle={url => set('subtitleUrl', url)} onImportTmdb={async (item) => { const r = await importFromTmdbTitle(cinemanaTitle(item), form.type, cinemanaYear(item) || form.year, { withEpisodes: false }); setSourceId(r.sourceId || ''); setSubtitleSourceIds([r.imdbId, r.tmdbId].filter(Boolean)); setForm(prev => ({ ...prev, ...r.patch, videoUrl: prev.videoUrl, videoSources: prev.videoSources })); setBannerData(r.bannerData || null); return r; }} />
-              <SubtitleHelper value={form.subtitleUrl || ''} onChange={v => set('subtitleUrl', v)} sourceId={sourceId} title={form.name} year={form.year} type="movie" folder="subtitles" offset={form.subtitleOffset || 0} onOffsetChange={v => set('subtitleOffset', v)} />
+              <CinemanaHelper kind={form.type === 'anime' ? 'anime' : 'movie'} defaultTitle={form.name} defaultYear={form.year} onGenerate={(url) => set('videoUrl', url)} onGenerateQualities={sources => set('videoSources', sources)} onGenerateSubtitle={url => set('subtitleUrl', url)} onPickedNb={nb => set('cinemanaId', nb)} onImportTmdb={async (item) => { const r = await importFromTmdbTitle(cinemanaTitle(item), form.type, cinemanaYear(item) || form.year, { withEpisodes: false }); setSourceId(r.sourceId || ''); setSubtitleSourceIds([r.imdbId, r.tmdbId].filter(Boolean)); setForm(prev => ({ ...prev, ...r.patch, videoUrl: prev.videoUrl, videoSources: prev.videoSources })); setBannerData(r.bannerData || null); return r; }} />
+              <SubtitleHelper cinemanaId={form.cinemanaId} value={form.subtitleUrl || ''} onChange={v => set('subtitleUrl', v)} sourceId={sourceId} title={form.name} year={form.year} type="movie" folder="subtitles" offset={form.subtitleOffset || 0} onOffsetChange={v => set('subtitleOffset', v)} />
               <VideoDisplaySettings value={form} onChange={patch => setForm(prev => ({ ...prev, ...patch }))} />
             </div>
           ) : (
