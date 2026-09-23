@@ -940,50 +940,20 @@
       }
     }
 
-    function uploadVttTextToFirebase(vttText, folder = 'subtitles') {
-      return new Promise((resolve, reject) => {
-        const safeName = `subdl_${Date.now()}.vtt`;
-        const path = `${folder}/${Date.now()}_${safeName}`;
-        const ref = storage.ref().child(path);
-        let done = false;
-        const timer = setTimeout(() => {
-          if (done) return;
-          try { task && task.cancel(); } catch (_) {}
-          reject(new Error(`Firebase Storage لم يكمل رفع نص الترجمة. bucket=${storage.app.options.storageBucket || 'غير محدد'}`));
-        }, 35000);
-        let task;
-        try {
-          // لا نرفع File/Blob هنا؛ نرفع نص الـVTT مباشرة لتفادي مشاكل المتصفح مع ملفات النص.
-          task = ref.putString(String(vttText || ''), 'raw', { contentType: 'text/vtt; charset=utf-8' });
-          task.on('state_changed',
-            () => {},
-            err => {
-              if (done) return;
-              done = true; clearTimeout(timer);
-              const code = err && err.code ? ` [${err.code}]` : '';
-              reject(new Error(`Firebase Storage رفض رفع الترجمة${code}: ${err && err.message ? err.message : 'خطأ غير معروف'}`));
-            },
-            async () => {
-              if (done) return;
-              try {
-                const url = await Promise.race([
-                  ref.getDownloadURL(),
-                  new Promise((_, r) => setTimeout(() => r(new Error('تم رفع الترجمة لكن Firebase لم يُرجع الرابط خلال 15 ثانية.')), 15000))
-                ]);
-                done = true; clearTimeout(timer);
-                resolve(url);
-              } catch (err) {
-                done = true; clearTimeout(timer);
-                const code = err && err.code ? ` [${err.code}]` : '';
-                reject(new Error(`تم رفع الترجمة لكن تعذر الحصول على رابط Firebase${code}: ${err && err.message ? err.message : 'خطأ غير معروف'}`));
-              }
-            }
-          );
-        } catch (err) {
-          done = true; clearTimeout(timer);
-          reject(err);
-        }
-      });
+    async function publishVttToServer(vttText, meta = {}) {
+      // لا نستخدم Firebase Storage للترجمات. server.js يحفظ VTT محليًا داخل مجلد subtitles.
+      const usp = new URLSearchParams();
+      usp.set('url', meta.sourceUrl || '');
+      usp.set('sourceId', meta.sourceId || '');
+      usp.set('title', meta.title || '');
+      usp.set('type', meta.type || 'movie');
+      if (meta.season != null) usp.set('season', String(meta.season));
+      if (meta.episode != null) usp.set('episode', String(meta.episode));
+      usp.set('baseUrl', String(CINEMANA_PROXY || '').replace(/\/$/, ''));
+      const res = await fetchWithTimeout(`${CINEMANA_PROXY}/subdl/publish?${usp.toString()}`, { headers: { Accept: 'application/json' } }, 45000);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok || !data.url) throw new Error(data.error || 'تعذر حفظ الترجمة على server.js');
+      return data.url;
     }
 
     async function findAndStoreSubdlSubtitle({ sourceId, title, season, episode, type, folder = 'subtitles', onProgress }) {
@@ -1013,8 +983,8 @@
         35000,
         'انتهت مهلة تنزيل الترجمة من SubDL.'
       );
-      if (onProgress) onProgress('تم تحويل الترجمة، جاري رفع نص VTT إلى Firebase...');
-      return await uploadVttTextToFirebase(vtt, folder);
+      if (onProgress) onProgress('تم تحويل الترجمة، جاري حفظ VTT على server.js...');
+      return await publishVttToServer(vtt, { sourceUrl: link, sourceId, title, season, episode, type });
     }
 
     async function prepareSubtitlesForPublish(payload, sourceId, onProgress) {
