@@ -422,30 +422,54 @@
     // يبني رابط VidAPI مع تفعيل الترجمة العربية تلقائيًا (lang=ar)، ويدعم إرفاق ملف ترجمة مخصص (sub_url) لحل مشكلة عدم التزامن
     const VIDAPI_EMBED_HOST = 'https://player.cinadam.xyz';
 
-    // مفتاح Wyzie Subs (sub.wyzie.io) لجلب أفضل ترجمة عربية تلقائياً من عدة مصادر
-    const WYZIE_API_KEY = 'wyzie-txtzsufq1cmy7sg4bvasc9mi6zg1si0k';
-
-    // نفضل هذي المصادر لأنها تعطي رابط ملف مباشر وثابتة (subdl, subf2m, podnapisi)
-    const PREFERRED_SUB_SOURCES = ['subdl', 'subf2m', 'podnapisi'];
+    // مفتاح OpenSubtitles لجلب أفضل ترجمة عربية تلقائياً (api.opensubtitles.com)
+    const OPENSUBTITLES_API_KEY = 'xXuzDxp7XPVirTXQisVczln8SDTmvfw5';
+    const OPENSUBTITLES_BASE = 'https://api.opensubtitles.com/api/v1';
+    const OPENSUBTITLES_HEADERS = {
+      'Api-Key': OPENSUBTITLES_API_KEY,
+      'User-Agent': 'Cinadam v1.0',
+      'Accept': 'application/json'
+    };
 
     async function fetchAutoSubtitle(id, season, episode) {
       if (!id) return '';
       try {
         const params = new URLSearchParams();
-        params.set('id', id);
-        params.set('language', 'ar');
-        params.set('key', WYZIE_API_KEY);
-        params.set('source', 'all');
+        params.set('languages', 'ar');
+        params.set('order_by', 'download_count');
+        params.set('order_direction', 'desc');
         if (season && episode) {
-          params.set('season', String(season));
-          params.set('episode', String(episode));
+          // مسلسل: نبحث بمعرف TMDB الخاص بالعمل الأب (الحلقة) + رقم الموسم والحلقة
+          params.set('parent_tmdb_id', id);
+          params.set('season_number', String(season));
+          params.set('episode_number', String(episode));
+        } else {
+          // فلم
+          params.set('tmdb_id', id);
         }
-        const res = await fetch(`https://sub.wyzie.io/search?${params.toString()}`);
-        if (!res.ok) return '';
-        const list = await res.json();
-        if (!Array.isArray(list) || !list.length) return '';
-        const preferred = list.find(s => s && s.url && PREFERRED_SUB_SOURCES.includes(s.source));
-        return preferred ? preferred.url : ''; // إذا ما لقينا مصدر موثوقببس نرجع فاضي مو رابط opensubtitles المكسور
+
+        const searchRes = await fetch(`${OPENSUBTITLES_BASE}/subtitles?${params.toString()}`, {
+          headers: OPENSUBTITLES_HEADERS
+        });
+        if (!searchRes.ok) return '';
+        const searchData = await searchRes.json();
+        const results = Array.isArray(searchData.data) ? searchData.data : [];
+        if (!results.length) return '';
+
+        // ناخذ أفضل نتيجة (أعلى تنزيلات) وأول ملف داخلها
+        const best = results.find(r => r && r.attributes && Array.isArray(r.attributes.files) && r.attributes.files.length);
+        const fileId = best ? best.attributes.files[0].file_id : null;
+        if (!fileId) return '';
+
+        // نطلب رابط التنزيل الفعلي للملف (endpoint منفصل، ويستهلك من كوتا التنزيل اليومية)
+        const downloadRes = await fetch(`${OPENSUBTITLES_BASE}/download`, {
+          method: 'POST',
+          headers: { ...OPENSUBTITLES_HEADERS, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file_id: fileId })
+        });
+        if (!downloadRes.ok) return '';
+        const downloadData = await downloadRes.json();
+        return downloadData && downloadData.link ? downloadData.link : '';
       } catch (e) { /* فشل الطلب، الفيديو يشتغل بدون ترجمة تلقائية */ }
       return '';
     }
