@@ -860,12 +860,26 @@
       return out;
     }
 
+    async function fetchWithTimeout(url, options = {}, timeoutMs = 20000) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, { ...options, signal: controller.signal });
+      } catch (e) {
+        if (e && e.name === 'AbortError') throw new Error('انتهت مهلة الاتصال بـ SubDL بعد 20 ثانية. تأكد أن server.js يعمل على المنفذ 8787.');
+        throw e;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
     async function subdlSearch(params) {
       const usp = new URLSearchParams(params || {});
       usp.set('languages', 'AR');
       usp.set('unpack', '1');
       usp.set('subs_per_page', '30');
-      const res = await fetch(`${CINEMANA_PROXY}/subdl/search?${usp.toString()}`, { headers: { Accept: 'application/json' } });
+      const url = `${CINEMANA_PROXY}/subdl/search?${usp.toString()}`;
+      const res = await fetchWithTimeout(url, { headers: { Accept: 'application/json' } }, 20000);
       if (!res.ok) throw new Error('تعذر البحث في SubDL (رمز ' + res.status + ')');
       const data = await res.json();
       return Array.isArray(data && data.subtitles) ? data.subtitles : [];
@@ -873,7 +887,7 @@
 
     async function subdlDownload(url) {
       if (!url) return '';
-      const res = await fetch(`${CINEMANA_PROXY}/subdl/file?url=${encodeURIComponent(url)}`, { headers: { Accept: 'text/vtt,text/plain,*/*' } });
+      const res = await fetchWithTimeout(`${CINEMANA_PROXY}/subdl/file?url=${encodeURIComponent(url)}`, { headers: { Accept: 'text/vtt,text/plain,*/*' } }, 30000);
       if (!res.ok) throw new Error('تعذر تنزيل الترجمة من SubDL (رمز ' + res.status + ')');
       const text = await res.text();
       if (!text || !/WEBVTT/i.test(text)) throw new Error('ملف الترجمة من SubDL غير صالح');
@@ -4939,13 +4953,17 @@
       const [loading, setLoading] = useState(false);
       const [msg, setMsg] = useState('');
       const get = async () => {
-        setLoading(true); setMsg('');
+        setLoading(true); setMsg('جاري البحث في SubDL...');
         try {
           const url = await findAndStoreSubdlSubtitle({ sourceId, title, type, season, episode, folder });
+          if (!url) throw new Error('SubDL لم يُرجع رابط ترجمة.');
           onChange(url);
           setMsg('تم حفظ الترجمة العربية من SubDL في Firebase.');
-        } catch (e) { setMsg(e.message || 'تعذر جلب الترجمة.'); }
-        setLoading(false);
+        } catch (e) {
+          setMsg(e.message || 'تعذر جلب الترجمة.');
+        } finally {
+          setLoading(false);
+        }
       };
       return (
         <div className="mt-3.5 glass-card rounded-2xl p-3.5 border border-accent-cyan/20">
