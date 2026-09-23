@@ -605,6 +605,14 @@
     }
 
     // إعدادات المشاهد (محفوظة على جهازه) + تصحيح توقيت لكل ترجمة
+    const SUB_FONT_OPTIONS = [
+      { id: 'Cairo', label: 'Cairo — كايرو', family: "'Cairo', sans-serif" },
+      { id: 'Tajawal', label: 'Tajawal — تجوّل', family: "'Tajawal', sans-serif" },
+      { id: 'Almarai', label: 'Almarai — المراعي', family: "'Almarai', sans-serif" },
+      { id: 'Changa', label: 'Changa — شنغا', family: "'Changa', sans-serif" },
+      { id: 'Noto Kufi Arabic', label: 'Noto Kufi Arabic — نوتو كوفي', family: "'Noto Kufi Arabic', sans-serif" },
+      { id: 'IBM Plex Sans Arabic', label: 'IBM Plex Sans Arabic — آي بي إم', family: "'IBM Plex Sans Arabic', sans-serif" },
+    ];
     const SUB_PREF_DEFAULTS = { size: 100, color: '#ffffff', bg: 'outline', pos: 6, weight: 700, font: 'Cairo' };
     function readSubPrefs() {
       try { return { ...SUB_PREF_DEFAULTS, ...(JSON.parse(localStorage.getItem('cinadam_sub_prefs') || '{}')) }; }
@@ -1552,12 +1560,10 @@
 
           const seasonPoster = s.poster_path ? TMDB_IMG + 'w500' + s.poster_path : '';
           const episodesRaw = sd.episodes || [];
-          // بنر الموسم الافتراضي: خلفية TMDB (كل موسم ياخذ وحدة مختلفة بالترتيب)، وإذا ما اكو، Fanart، وإذا ما اكو، لقطة من الموسم. تقدر تبدّله من المنتقي.
-          const stillEp = episodesRaw.find(ep => ep.still_path);
-          const seasonBanner = (tmdbBackdrops.length ? tmdbBackdrops[i % tmdbBackdrops.length] : '') ||
-            (fanart.tv.length ? fanart.tv[i % fanart.tv.length] : '') ||
-            ((fanart.seasons[String(s.season_number)] || [])[0]) ||
-            (stillEp ? TMDB_IMG + 'w780' + stillEp.still_path : '');
+          // بنر الموسم الافتراضي: Fanart.tv → TV Thumbs فقط.
+          // لا نستخدم خلفيات TMDB أو Season Thumbs أو لقطات الحلقات كبنرات للموسم.
+          const seasonSpecificBanners = (fanart.seasons && fanart.seasons[String(s.season_number)]) || [];
+          const seasonBanner = seasonSpecificBanners[0] || (fanart.tv.length ? fanart.tv[i % fanart.tv.length] : '');
           const episodes = [];
           for (let j = 0; j < episodesRaw.length; j++) {
             const ep = episodesRaw[j];
@@ -2643,20 +2649,12 @@
       const bgStyle = prefs.bg === 'box' ? { background: 'rgba(0,0,0,0.65)', padding: '0.05em 0.5em', borderRadius: '0.3em' }
         : prefs.bg === 'solid' ? { background: '#000', padding: '0.05em 0.5em', borderRadius: '0.2em' } : {};
       const shadow = prefs.bg === 'outline' ? '0 0 3px #000, 0 0 3px #000, 1px 1px 2px #000, -1px -1px 2px #000, 0 2px 6px rgba(0,0,0,.95)' : 'none';
-      const subtitleFont = {
-        Cairo: "'Cairo', sans-serif",
-        Tajawal: "'Tajawal', sans-serif",
-        Almarai: "'Almarai', sans-serif",
-        Changa: "'Changa', sans-serif",
-        'Noto Kufi Arabic': "'Noto Kufi Arabic', sans-serif",
-        'IBM Plex Sans Arabic': "'IBM Plex Sans Arabic', sans-serif"
-      }[prefs.font] || "'Cairo', sans-serif";
       return (
         <div ref={rootRef} className="absolute inset-0 pointer-events-none" style={{ zIndex: 15 }}>
           {text && (
             <div style={{ position: 'absolute', left: 0, right: 0, bottom: `calc(${Number(prefs.pos) || 0}% + ${lifted ? 46 : 0}px)`, transition: 'bottom .2s', textAlign: 'center', padding: '0 4%' }}>
               {text.split('\n').map((line, i) => (
-                <div key={i}><span dir="auto" style={{ ...bgStyle, display: 'inline-block', color: prefs.color, fontSize: fontPx + 'px', fontWeight: prefs.weight, lineHeight: 1.5, textShadow: shadow, fontFamily: subtitleFont }}>{line}</span></div>
+                <div key={i}><span dir="auto" style={{ ...bgStyle, display: 'inline-block', color: prefs.color, fontSize: fontPx + 'px', fontWeight: prefs.weight, lineHeight: 1.5, textShadow: shadow, fontFamily: ((SUB_FONT_OPTIONS.find(f => f.id === prefs.font) || SUB_FONT_OPTIONS[0]).family) }}>{line}</span></div>
               ))}
             </div>
           )}
@@ -2939,7 +2937,7 @@
         clickState.current.count += 1;
         if (clickState.current.timer) clearTimeout(clickState.current.timer);
         clickState.current.timer = setTimeout(() => {
-          if (clickState.current.count === 1) { togglePlay(); showBarTemporarily(); }
+          if (clickState.current.count === 1) { setBarVisible(v => !v); if (!barVisible) showBarTemporarily(); }
           clickState.current.count = 0;
         }, 260);
         if (clickState.current.count === 2) {
@@ -2987,7 +2985,7 @@
       const RATE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
       return (
-        <div ref={wrapRef} className={`video-crop-wrap ${fakeFullscreen ? 'ios-fake-fullscreen' : 'aspect-video'}`} onMouseMove={showBarTemporarily} onClick={onStageClick}>
+        <div ref={wrapRef} className={`video-crop-wrap ${fakeFullscreen ? 'ios-fake-fullscreen' : 'aspect-video'}`} onMouseMove={showBarTemporarily} onClick={onStageClick} onContextMenu={e => e.preventDefault()}>
           {loading && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none z-10">
               <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan yt-spinner"></div>
@@ -3085,16 +3083,6 @@
                       </div>
                       <p className="text-[9px] text-slate-500 mt-1 mb-2">الترجمة تظهر قبل الصوت ← اضغط +، وإذا تتأخر ← اضغط −. يُحفظ التصحيح لهذا العمل.{!localSub && adminShiftMs ? ` (تصحيح الإدارة: ${(adminShiftMs / 1000).toFixed(1)}ث)` : ''}</p>
 
-                      <span className="text-[10px] text-slate-300 font-bold block mb-1">خط الترجمة</span>
-                      <select value={subPrefs.font || 'Cairo'} onChange={e => updSubPrefs({ font: e.target.value })} className="w-full mb-2 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[10px] font-bold text-white outline-none focus:border-accent-cyan">
-                        <option value="Cairo" style={{ fontFamily: "'Cairo', sans-serif" }}>Cairo</option>
-                        <option value="Tajawal" style={{ fontFamily: "'Tajawal', sans-serif" }}>Tajawal</option>
-                        <option value="Almarai" style={{ fontFamily: "'Almarai', sans-serif" }}>Almarai</option>
-                        <option value="Changa" style={{ fontFamily: "'Changa', sans-serif" }}>Changa</option>
-                        <option value="Noto Kufi Arabic" style={{ fontFamily: "'Noto Kufi Arabic', sans-serif" }}>Noto Kufi Arabic</option>
-                        <option value="IBM Plex Sans Arabic" style={{ fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}>IBM Plex Sans Arabic</option>
-                      </select>
-
                       <div className="flex items-center justify-between mb-0.5"><span className="text-[10px] text-slate-300 font-bold">حجم الخط</span><span className="text-[10px] text-accent-cyan font-mono">{subPrefs.size}%</span></div>
                       <input type="range" min="60" max="220" step="10" value={subPrefs.size} onChange={e => updSubPrefs({ size: Number(e.target.value) })} className="w-full mb-2" style={{ accentColor: '#00F0FF' }} />
 
@@ -3102,6 +3090,18 @@
                       <div className="flex gap-1.5 mb-2">
                         {['#ffffff', '#ffe14d', '#00f0ff', '#7cff7c'].map(c => (
                           <button key={c} type="button" onClick={() => updSubPrefs({ color: c })} className="w-6 h-6 rounded-full border-2" style={{ background: c, borderColor: subPrefs.color === c ? '#00F0FF' : 'rgba(255,255,255,0.25)' }} />
+                        ))}
+                      </div>
+
+                      <span className="text-[10px] text-slate-300 font-bold block mb-1">خط الترجمة</span>
+                      <div className="grid grid-cols-1 gap-1 mb-2">
+                        {SUB_FONT_OPTIONS.map(f => (
+                          <button key={f.id} type="button" onClick={() => updSubPrefs({ font: f.id })}
+                            className={`w-full px-2.5 py-2 rounded-lg text-right border transition ${subPrefs.font === f.id ? 'bg-accent-cyan/15 border-accent-cyan/60 text-accent-cyan' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`}
+                            style={{ fontFamily: f.family }}>
+                            <span className="block text-[11px] font-bold">{f.label}</span>
+                            <span className="block text-[10px] opacity-70 mt-0.5">أبجد هوز — Arabic Subtitle</span>
+                          </button>
                         ))}
                       </div>
 
@@ -3643,7 +3643,7 @@
                         const isCurrent = playingMeta && playingMeta.videoUrl === ep.videoUrl && playingMeta.number === ep.number && playingSeasonNumber === ep.seasonNumber;
                         const done = isEpisodeWatched && isEpisodeWatched(title.id, ep.seasonNumber, ep.number);
                         return (
-                          <div key={`${ep.seasonNumber}-${ep.number}-${idx}`} className={`flex items-center gap-2.5 md:gap-3 glass-card rounded-2xl p-2.5 md:p-3.5 border transition ${isCurrent ? 'border-accent-cyan/50 shadow-[0_0_15px_rgba(0,240,255,0.15)]' : 'border-white/5 hover:border-white/10'}`}>
+                          <div key={`${ep.seasonNumber}-${ep.number}-${idx}`} onContextMenu={e => e.preventDefault()} className={`flex items-center gap-2.5 md:gap-3 glass-card rounded-2xl p-2.5 md:p-3.5 border transition ${isCurrent ? 'border-accent-cyan/50 shadow-[0_0_15px_rgba(0,240,255,0.15)]' : 'border-white/5 hover:border-white/10'}`}>
                             {ep.episodeThumbnail ? (
                               <div className="relative w-14 h-9 sm:w-20 sm:h-12 shrink-0 rounded-lg overflow-hidden bg-glass-950">
                                 <img src={ep.episodeThumbnail} alt="" className="w-full h-full object-cover" />
@@ -3715,7 +3715,7 @@
                           const epThumb = (seasons[activeSeason] && seasons[activeSeason].episodeThumbnail) || ep.thumbnail;
                           const done = isEpisodeWatched && isEpisodeWatched(title.id, seasons[activeSeason].number, ep.number);
                           return (
-                          <div key={ei} className={`flex items-center gap-3 glass-card rounded-2xl p-3.5 border transition ${isCurrent ? 'border-accent-cyan/50 shadow-[0_0_15px_rgba(0,240,255,0.15)]' : 'border-white/5 hover:border-white/10'}`}>
+                          <div key={ei} onContextMenu={e => e.preventDefault()} className={`flex items-center gap-3 glass-card rounded-2xl p-3.5 border transition ${isCurrent ? 'border-accent-cyan/50 shadow-[0_0_15px_rgba(0,240,255,0.15)]' : 'border-white/5 hover:border-white/10'}`}>
                             {epThumb ? (
                               <div className="relative w-16 h-11 sm:w-20 sm:h-12 shrink-0 rounded-lg overflow-hidden bg-glass-950">
                                 <img src={epThumb} alt="" className="w-full h-full object-cover" />
@@ -5440,7 +5440,7 @@
       const [bannerError, setBannerError] = useState('');
       const [applyAllBanners, setApplyAllBanners] = useState(false);
       const [showAllBanners, setShowAllBanners] = useState(false);
-      const [bannerSource, setBannerSource] = useState('tmdb');
+      const [bannerSource, setBannerSource] = useState('fanart');
       const [seasonStills, setSeasonStills] = useState({});
 
       const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
@@ -5478,9 +5478,13 @@
       const bannerOptionsFor = (seasonNumber) => {
         if (!bannerData) return [];
         const seen = new Set(), out = [];
-        const add = (url) => { if (url && !seen.has(url)) { seen.add(url); out.push({ url, kind: 'tv' }); } };
-        // بنرات حلقات الموسم: TV Thumbs فقط من Fanart.tv.
-        (bannerData.tv || []).forEach(add);
+        const add = (url, kind) => { if (url && !seen.has(url)) { seen.add(url); out.push({ url, kind }); } };
+        // بنرات الحلقات/الموسم من Fanart.tv: نعرض TV Thumbs العامة + الصور المخصصة لهذا الموسم فقط.
+        // لا نعرض Poster / Background / ClearART / TMDB / Stills أو أي قسم آخر.
+        if (bannerSource === 'fanart') {
+          (bannerData.seasons && bannerData.seasons[String(seasonNumber)] || []).forEach(u => add(u, 'season'));
+          (bannerData.tv || []).forEach(u => add(u, 'tv'));
+        }
         return out;
       };
 
@@ -5763,7 +5767,10 @@
                                   </label>
                                 </div>
                                 <div className="flex gap-1.5 mb-2 flex-wrap">
-                                  <span className="text-[11px] px-3 py-1.5 rounded-lg font-bold border bg-accent-cyan text-glass-950 border-accent-cyan">Fanart.tv — TV Thumbs فقط</span>
+                                  {[['fanart', 'Fanart.tv — TV Thumbs']].map(([k, l]) => (
+                                    <button type="button" key={k} onClick={() => { setBannerSource(k); setShowAllBanners(false); }}
+                                      className={`text-[11px] px-3 py-1.5 rounded-lg font-bold border transition ${bannerSource === k ? 'bg-accent-cyan text-glass-950 border-accent-cyan' : 'glass-card border-white/10 text-slate-300 hover:border-accent-cyan/50'}`}>{l}</button>
+                                  ))}
                                 </div>
                                 {bannerLoading && <p className="text-[11px] font-bold text-accent-cyan">جاري جلب البنرات...</p>}
                                 {bannerError && (
