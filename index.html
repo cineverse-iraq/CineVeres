@@ -894,7 +894,19 @@
       return text;
     }
 
-    async function findAndStoreSubdlSubtitle({ sourceId, title, season, episode, type, folder = 'subtitles' }) {
+    async function withTimeout(promise, timeoutMs, message) {
+      let timer;
+      try {
+        return await Promise.race([
+          promise,
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), timeoutMs); })
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    async function findAndStoreSubdlSubtitle({ sourceId, title, season, episode, type, folder = 'subtitles', onProgress }) {
       const params = {};
       const sid = String(sourceId || '').trim();
       if (/^tt\d+$/i.test(sid)) params.imdb_id = sid;
@@ -904,15 +916,30 @@
         params.season_number = String(Number(season) || 1);
         params.episode_number = String(Number(episode) || 1);
       }
-      const results = await subdlSearch(params);
+      if (onProgress) onProgress('جاري البحث في SubDL...');
+      const results = await withTimeout(
+        subdlSearch(params),
+        25000,
+        'انتهت مهلة البحث في SubDL. تأكد أن server.js يعمل على المنفذ 8787.'
+      );
       const best = results.find(r => r && (r.url || (Array.isArray(r.unpack_files) && r.unpack_files.some(f => f && f.url))));
       if (!best) throw new Error('لم يتم العثور على ترجمة عربية مناسبة في SubDL');
       const unpack = Array.isArray(best.unpack_files) ? best.unpack_files.find(f => f && f.url) : null;
       const link = (unpack && unpack.url) || best.url || '';
       if (!link) throw new Error('SubDL لم يُرجع رابط ترجمة صالحًا');
-      const vtt = await subdlDownload(link);
+      if (onProgress) onProgress('تم العثور على الترجمة، جاري تحويلها إلى VTT...');
+      const vtt = await withTimeout(
+        subdlDownload(link),
+        35000,
+        'انتهت مهلة تنزيل الترجمة من SubDL.'
+      );
       const upload = new File([vtt], `subdl_${Date.now()}.vtt`, { type: 'text/vtt' });
-      return uploadFile(upload, folder, null);
+      if (onProgress) onProgress('تم تحويل الترجمة، جاري رفعها إلى Firebase...');
+      return await withTimeout(
+        uploadFile(upload, folder, null),
+        45000,
+        'انتهت مهلة رفع الترجمة إلى Firebase. تحقق من Firebase Storage وتسجيل الدخول.'
+      );
     }
 
     async function prepareSubtitlesForPublish(payload, sourceId, onProgress) {
@@ -956,7 +983,8 @@
               season: se.number,
               episode: ep.number,
               type,
-              folder: 'subtitles'
+              folder: 'subtitles',
+              onProgress
             });
             if (url) { ep.subtitleUrl = url; added++; }
           } catch (e) {
@@ -4955,7 +4983,7 @@
       const get = async () => {
         setLoading(true); setMsg('جاري البحث في SubDL...');
         try {
-          const url = await findAndStoreSubdlSubtitle({ sourceId, title, type, season, episode, folder });
+          const url = await findAndStoreSubdlSubtitle({ sourceId, title, type, season, episode, folder, onProgress: setMsg });
           if (!url) throw new Error('SubDL لم يُرجع رابط ترجمة.');
           onChange(url);
           setMsg('تم حفظ الترجمة العربية من SubDL في Firebase.');
