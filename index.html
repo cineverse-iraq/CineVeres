@@ -398,14 +398,22 @@
       return 'WEBVTT\n\n' + v + '\n';
     }
 
+    function isFirebaseStorageUrl(url) {
+      const s = String(url || '').trim();
+      return /^https:\/\/(?:firebasestorage\.googleapis\.com|storage\.googleapis\.com)\//i.test(s)
+        || /^https:\/\/[^/]+\.firebasestorage\.app\//i.test(s);
+    }
+
     async function fetchSubtitleAsVtt(url) {
       const rawUrl = normalizeSubtitleUrl(url);
       if (!rawUrl) throw new Error('رابط الترجمة فارغ');
-      // نستخدم بروكسي الجهاز لملفات سينمانا/OpenSubtitles حتى نتجاوز CORS، ثم نحوّل SRT إلى VTT عند الحاجة.
+      // ترجمة Firebase المحفوظة تُقرأ مباشرة، حتى يبقى تشغيلها متاحًا بعد إيقاف server.js.
+      // روابط Cinemana/OpenSubtitles الخارجية تمر عبر البروكسي لتجاوز CORS ثم تُحوّل من SRT إلى VTT.
       let fetchUrl = rawUrl;
       try {
         const parsed = new URL(rawUrl, window.location.href);
-        if (!parsed.protocol.startsWith('blob') && parsed.origin !== window.location.origin) {
+        const isFirebase = isFirebaseStorageUrl(rawUrl);
+        if (!parsed.protocol.startsWith('blob') && parsed.origin !== window.location.origin && !isFirebase) {
           fetchUrl = `${CINEMANA_PROXY}/subtitle?url=${encodeURIComponent(rawUrl)}`;
         }
       } catch (e) {}
@@ -2263,6 +2271,12 @@
         setSubtitleOn(true);
         if (!subtitleUrl) { setSubtitleLoading(false); return () => { cancelled = true; }; }
         setSubtitleLoading(true);
+        // إذا كانت الترجمة محفوظة في Firebase وكانت بالفعل VTT، دع عنصر <track> يقرأها مباشرة.
+        if (isFirebaseStorageUrl(subtitleUrl)) {
+          setSubtitleSrc(subtitleUrl);
+          setSubtitleLoading(false);
+          return () => { cancelled = true; };
+        }
         fetchSubtitleAsVtt(subtitleUrl)
           .then(vtt => {
             if (cancelled) return;
@@ -2526,7 +2540,7 @@
               <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan yt-spinner"></div>
             </div>
           )}
-          <video ref={videoRef} controls={false} autoPlay muted playsInline webkit-playsinline="true" x5-playsinline="true" preload="auto"
+          <video crossOrigin="anonymous" ref={videoRef} controls={false} autoPlay muted playsInline webkit-playsinline="true" x5-playsinline="true" preload="auto"
             onCanPlay={() => setLoading(false)} onPlaying={() => setLoading(false)} onLoadedData={() => setLoading(false)}
             onError={() => { setLoading(false); onError && onError(); }}
             style={videoStyle}>
