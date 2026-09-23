@@ -316,17 +316,50 @@
       db.ref(`notifications/${sanitizeKey(toUsername)}`).push({ ...data, date: Date.now(), read: false });
     }
 
+    // إزالة أي معاملات ترجمة قديمة من روابط المشغل المحفوظة في Firebase.
+    // هذا مهم حتى الروابط القديمة التي كانت تحتوي sub_url / lang لا تعيد تشغيل الترجمة.
+    function stripSubtitleParams(url) {
+      if (!url) return url;
+      const subtitleKeys = ['sub_url', 'sub_file', 'sub_lang', 'sub_label', 'sub_default', 'ds_lang', 'lang'];
+      try {
+        const u = new URL(url, window.location.href);
+        const isVidPlayer = /(?:vaplayer\.ru|vidapi\.ru|player\.cinadam\.xyz)$/i.test(u.hostname) || /\/embed\/(?:movie|tv)\//i.test(u.pathname);
+        if (isVidPlayer) subtitleKeys.forEach(k => u.searchParams.delete(k));
+        return u.toString();
+      } catch (e) {
+        let out = String(url).trim();
+        subtitleKeys.forEach(k => {
+          out = out.replace(new RegExp('([?&])' + k + '=[^&#]*&?', 'gi'), '$1').replace(/[?&]$/, '');
+        });
+        return out;
+      }
+    }
+
     function normalizeVideoUrl(url) {
       if (!url) return url;
-      let clean = url.trim();
+      let clean = String(url).trim();
       clean = clean.replace(/^https?:\/\/(?:www\.)?(?:vaplayer\.ru|vidapi\.ru)(?=\/embed\/)/i, VIDAPI_EMBED_HOST);
       const drive = clean.match(/drive\.google\.com\/file\/d\/([^/]+)/);
       if (drive) return `https://drive.google.com/file/d/${drive[1]}/preview`;
       const driveOpen = clean.match(/drive\.google\.com\/open\?id=([^&]+)/);
       if (driveOpen) return `https://drive.google.com/file/d/${driveOpen[1]}/preview`;
       const dropbox = clean.match(/^https?:\/\/(www\.)?dropbox\.com\/(.+)$/);
-      if (dropbox && !clean.includes('raw=1')) return clean.replace('dropbox.com', 'dl.dropboxusercontent.com').split('?')[0];
-      return clean;
+      if (dropbox && !clean.includes('raw=1')) clean = clean.replace('dropbox.com', 'dl.dropboxusercontent.com').split('?')[0];
+      return stripSubtitleParams(clean);
+    }
+
+    function normalizeVideoSources(value) {
+      let arr = [];
+      if (Array.isArray(value)) arr = value;
+      else if (value && typeof value === 'object') arr = Object.keys(value).map(k => value[k]);
+      return arr
+        .map((x, i) => {
+          const url = normalizeVideoUrl(x && (x.url || x.videoUrl || x.src || ''));
+          const label = String((x && (x.label || x.resolution || x.quality)) || (i + 1) + 'p').trim();
+          return url ? { label, resolution: label, url } : null;
+        })
+        .filter(Boolean)
+        .filter((x, i, a) => a.findIndex(y => y.url === x.url) === i);
     }
 
     const TYPE_LABELS = { movie: 'فيلم', series: 'مسلسل', anime: 'أنمي' };
@@ -419,146 +452,143 @@
       return /\.(mp4|webm|ogg|mov|m3u8)(\?.*)?$/i.test(url || '');
     }
 
-    // يبني رابط VidAPI مع تفعيل الترجمة العربية تلقائيًا (lang=ar)، ويدعم إرفاق ملف ترجمة مخصص (sub_url) لحل مشكلة عدم التزامن
+    // يبني رابط VidAPI بدون أي ترجمة خارجية أو بحث تلقائي عن OpenSubtitles.
+    // بهذه الطريقة تبقى الترجمة خارج المنظومة تمامًا، ولا تُرسل أي معاملات sub_url/lang للمشغل.
     const VIDAPI_EMBED_HOST = 'https://player.cinadam.xyz';
 
-    // مفتاح OpenSubtitles لجلب أفضل ترجمة عربية تلقائياً (api.opensubtitles.com)
-    const OPENSUBTITLES_API_KEY = 'xXuzDxp7XPVirTXQisVczln8SDTmvfw5';
-    const OPENSUBTITLES_BASE = 'https://api.opensubtitles.com/api/v1';
-    const OPENSUBTITLES_HEADERS = {
-      'Api-Key': OPENSUBTITLES_API_KEY,
-      'User-Agent': 'Cinadam v1.0',
-      'Accept': 'application/json'
-    };
-
-    async function fetchAutoSubtitle(id, season, episode) {
-      if (!id) return '';
-      try {
-        const params = new URLSearchParams();
-        params.set('languages', 'ar');
-        params.set('order_by', 'download_count');
-        params.set('order_direction', 'desc');
-        if (season && episode) {
-          // مسلسل: نبحث بمعرف TMDB الخاص بالعمل الأب (الحلقة) + رقم الموسم والحلقة
-          params.set('parent_tmdb_id', id);
-          params.set('season_number', String(season));
-          params.set('episode_number', String(episode));
-        } else {
-          // فلم
-          params.set('tmdb_id', id);
-        }
-
-        const searchRes = await fetch(`${OPENSUBTITLES_BASE}/subtitles?${params.toString()}`, {
-          headers: OPENSUBTITLES_HEADERS
-        });
-        if (!searchRes.ok) return '';
-        const searchData = await searchRes.json();
-        const results = Array.isArray(searchData.data) ? searchData.data : [];
-        if (!results.length) return '';
-
-        // ناخذ أفضل نتيجة (أعلى تنزيلات) وأول ملف داخلها
-        const best = results.find(r => r && r.attributes && Array.isArray(r.attributes.files) && r.attributes.files.length);
-        const fileId = best ? best.attributes.files[0].file_id : null;
-        if (!fileId) return '';
-
-        // نطلب رابط التنزيل الفعلي للملف (endpoint منفصل، ويستهلك من كوتا التنزيل اليومية)
-        const downloadRes = await fetch(`${OPENSUBTITLES_BASE}/download`, {
-          method: 'POST',
-          headers: { ...OPENSUBTITLES_HEADERS, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ file_id: fileId })
-        });
-        if (!downloadRes.ok) return '';
-        const downloadData = await downloadRes.json();
-        return downloadData && downloadData.link ? downloadData.link : '';
-      } catch (e) { /* فشل الطلب، الفيديو يشتغل بدون ترجمة تلقائية */ }
-      return '';
-    }
-
-    async function buildVidApiUrl(kind, rawId, season, episode, subUrl) {
+    async function buildVidApiUrl(kind, rawId, season, episode) {
       const id = (rawId || '').trim();
       if (!id) return '';
       const base = kind === 'movie'
         ? `${VIDAPI_EMBED_HOST}/embed/movie/${id}`
         : `${VIDAPI_EMBED_HOST}/embed/tv/${id}/${Number(season) || 1}/${Number(episode) || 1}`;
       const params = new URLSearchParams();
-      params.set('lang', 'ar');
-      let finalSubUrl = subUrl && subUrl.trim() ? subUrl.trim() : '';
-      if (!finalSubUrl) {
-        finalSubUrl = await fetchAutoSubtitle(id, kind === 'tv' ? (Number(season) || 1) : null, kind === 'tv' ? (Number(episode) || 1) : null);
-      }
-      if (finalSubUrl) {
-        params.set('sub_url', finalSubUrl);
-        params.set('sub_lang', 'ar');
-        params.set('sub_label', 'العربية');
-        params.set('sub_default', 'true');
-      }
+      params.set('autoplay', '1');
       return `${base}?${params.toString()}`;
     }
 
     function VidApiHelper({ kind, season, episode, onGenerate, defaultId }) {
       const [id, setId] = useState(defaultId || '');
       useEffect(() => { if (defaultId) setId(defaultId); }, [defaultId]);
-      const [subUrl, setSubUrl] = useState('');
       const [generating, setGenerating] = useState(false);
       const generate = async () => {
         setGenerating(true);
         try {
-          const url = await buildVidApiUrl(kind, id, season, episode, subUrl);
-          if (url) onGenerate(url);
+          const url = await buildVidApiUrl(kind, id, season, episode);
+          if (url) onGenerate(normalizeVideoUrl(url));
         } finally { setGenerating(false); }
       };
       return (
         <div className="glass-card rounded-2xl p-3.5 border border-accent-cyan/20 mt-3.5">
-          <p className="text-[11px] font-bold text-accent-cyan mb-2 flex items-center gap-1.5"><Icon name="sparkles" className="w-3.5 h-3.5" />توليد رابط تلقائي عبر VidAPI (بدون رفع فيديو) — ترجمة عربية مفعّلة تلقائيًا</p>
-          <div className="flex items-center gap-2 mb-2.5">
+          <p className="text-[11px] font-bold text-accent-cyan mb-2 flex items-center gap-1.5"><Icon name="sparkles" className="w-3.5 h-3.5" />توليد رابط VidAPI بدون ترجمة خارجية</p>
+          <div className="flex items-center gap-2">
             <input value={id} onChange={ev => setId(ev.target.value)} onKeyDown={ev => ev.key === 'Enter' && generate()}
               placeholder="معرف IMDB (مثال: tt1517268) أو TMDB (مثال: 385687)"
               className="flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" />
-            <button type="button" onClick={generate} disabled={!id.trim()} className="shrink-0 px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 text-xs font-bold hover:brightness-110 transition disabled:opacity-40">توليد الرابط</button>
+            <button type="button" onClick={generate} disabled={!id.trim() || generating} className="shrink-0 px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 text-xs font-bold hover:brightness-110 transition disabled:opacity-40">{generating ? 'جاري...' : 'توليد الرابط'}</button>
           </div>
-          <p className="text-[10px] font-bold text-slate-400 mb-1.5">ملف ترجمة عربية مخصص (اختياري — يحل مشكلة تأخر التوقيت)</p>
-          <FileUploadField compact value={subUrl} onChange={setSubUrl} folder="subtitles" accept=".srt,.vtt" />
-          {kind === 'tv' && <p className="text-[10px] text-slate-500 mt-1.5">راح يبني الرابط لهذي الحلقة تحديدًا: الموسم {Number(season) || 1} · الحلقة {Number(episode) || 1}</p>}
+          {kind === 'tv' && <p className="text-[10px] text-slate-500 mt-1.5">الموسم {Number(season) || 1} · الحلقة {Number(episode) || 1}</p>}
+          <p className="text-[10px] text-slate-500 mt-1.5">تم تعطيل OpenSubtitles والترجمات الخارجية في هذا الرابط.</p>
         </div>
       );
     }
 
-
-    // ===== سينمانا (شبكتي): جلب روابط فيديو مباشرة عبر بروكسي Cloudflare Worker =====
-    // ضع هنا رابط الـ Worker بعد نشره على Cloudflare، مثال: https://cinemana-proxy.username.workers.dev
-    const CINEMANA_PROXY = 'http://localhost:8787';
+    // ===== سينمانا (شبكتي): جلب روابط الفيديو عبر بروكسي =====
+    // في الإنتاج استخدم نفس الدومين عبر /api/cinemana أو عيّن window.CINEMANA_PROXY_URL.
+    // يمكن أيضًا حفظ رابط الـWorker في localStorage تحت cinemana_proxy_url.
+    const CINEMANA_PROXY = (() => {
+      const configured = (typeof window !== 'undefined' && (window.CINEMANA_PROXY_URL || window.CINEMANA_PROXY)) ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem('cinemana_proxy_url') : '') ||
+        (typeof location !== 'undefined' && location.hostname === 'localhost' ? 'http://localhost:8787' : '/api/cinemana');
+      return String(configured || '').trim().replace(/\/+$/, '');
+    })();
 
     async function cinemanaFetch(path) {
-      if (!CINEMANA_PROXY) throw new Error('لم يتم ضبط رابط بروكسي سينمانا (CINEMANA_PROXY) بعد');
+      if (!CINEMANA_PROXY) throw new Error('لم يتم ضبط رابط بروكسي سينمانا. استخدم window.CINEMANA_PROXY_URL أو المسار /api/cinemana.');
       let res;
-      try {
-        res = await fetch(`${CINEMANA_PROXY}${path}`);
-      } catch (e) {
-        throw new Error('تعذر الاتصال ببروكسي سينمانا — تحقق من الإنترنت أو من رابط الـ Worker');
-      }
+      try { res = await fetch(`${CINEMANA_PROXY}${path}`, { headers: { 'Accept': 'application/json' } }); }
+      catch (e) { throw new Error('تعذر الاتصال ببروكسي سينمانا — تحقق من رابط الـWorker وCORS.'); }
       if (!res.ok) throw new Error('خطأ من بروكسي سينمانا (رمز ' + res.status + ')');
-      return res.json();
+      const text = await res.text();
+      if (!text) return [];
+      try { return JSON.parse(text); } catch (e) { throw new Error('استجابة سينمانا غير صالحة JSON'); }
+    }
+
+    function cinemanaApiType(kind) {
+      if (kind === 'tv') return 'series';
+      if (kind === 'anime') return 'anime';
+      return 'movie';
     }
 
     async function cinemanaSearch(title, type) {
-      const usp = new URLSearchParams({ videoTitle: title, type: type === 'tv' ? 'series' : 'movie' });
-      const data = await cinemanaFetch(`/search?${usp.toString()}`);
-      return Array.isArray(data) ? data : [];
+      const primary = cinemanaApiType(type);
+      const types = type === 'anime' ? ['anime', 'series', 'movie'] : [primary];
+      const out = [];
+      const seen = new Set();
+      for (const apiType of types) {
+        try {
+          const usp = new URLSearchParams({ videoTitle: title, type: apiType });
+          const data = await cinemanaFetch(`/search?${usp.toString()}`);
+          if (Array.isArray(data)) {
+            data.forEach(r => {
+              const k = String(r && (r.nb || r.id || r._id) || '');
+              if (!k || seen.has(k)) return;
+              seen.add(k); out.push({ ...r, _cinemanaType: apiType });
+            });
+          }
+        } catch (e) {
+          if (apiType === primary && type !== 'anime') throw e;
+        }
+        if (out.length && type === 'anime') break;
+      }
+      return out;
     }
+
     async function cinemanaEpisodes(id) {
       const data = await cinemanaFetch(`/episodes/${encodeURIComponent(id)}`);
       return Array.isArray(data) ? data : [];
     }
+
     async function cinemanaVideos(id) {
       const data = await cinemanaFetch(`/videos/${encodeURIComponent(id)}`);
       return Array.isArray(data) ? data : [];
     }
 
-    // بطاقة اختيار العمل من سينمانا: بحث ← اختيار عنوان (وحلقة إذا مسلسل) ← اختيار جودة ← تعبئة رابط الفيديو المباشر
-    function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGenerate, onGenerateQualities }) {
+    function cinemanaVideoSources(videos) {
+      const out = normalizeVideoSources((videos || []).map(v => ({
+        url: v && (v.videoUrl || v.url || v.src),
+        label: v && (v.resolution || v.quality || v.label)
+      })));
+      out.sort((a, b) => {
+        const an = parseInt(String(a.label).match(/\d{3,4}/)?.[0] || '0', 10);
+        const bn = parseInt(String(b.label).match(/\d{3,4}/)?.[0] || '0', 10);
+        return bn - an;
+      });
+      return out;
+    }
+
+    function cinemanaTitle(item) {
+      return String(item && (item.en_title || item.title || item.name || item.ar_title) || '').trim();
+    }
+
+    function cinemanaYear(item) {
+      return String(item && (item.year || item.releaseYear || item.release_date) || '').slice(0, 4);
+    }
+
+    function cinemanaEpisodeSeason(ep) {
+      return Number(ep && (ep.season ?? ep.seasonNumber ?? ep.season_num)) || 1;
+    }
+    function cinemanaEpisodeNumber(ep) {
+      return Number(ep && (ep.episodeNummer ?? ep.episode ?? ep.episodeNumber ?? ep.number)) || 0;
+    }
+
+    // بطاقة اختيار العمل من سينمانا: بحث ← اختيار عنوان ← جودات متعددة.
+    // عند توفر onImportTmdb يتم أيضًا جلب بيانات TMDB تلقائيًا من اسم العمل وسنته.
+    function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGenerate, onGenerateQualities, onImportTmdb }) {
       const [query, setQuery] = useState(defaultTitle || '');
       useEffect(() => { if (defaultTitle) setQuery(defaultTitle); }, [defaultTitle]);
       const [loading, setLoading] = useState(false);
+      const [metaLoading, setMetaLoading] = useState(false);
       const [error, setError] = useState('');
       const [results, setResults] = useState(null);
       const [videos, setVideos] = useState(null);
@@ -571,17 +601,15 @@
         try {
           const data = await cinemanaSearch(query.trim(), kind);
           setResults(data);
-          // تعبئة تلقائية: إذا اكو نتيجة وحدة أو نتيجة تطابق السنة، نختارها مباشرة بدون تدخل يدوي
           if (auto && data && data.length) {
-            const byYear = defaultYear ? data.find(r => String(r.year) === String(defaultYear)) : null;
+            const byYear = defaultYear ? data.find(r => String(cinemanaYear(r)) === String(defaultYear)) : null;
             const autoPick = byYear || (data.length === 1 ? data[0] : null);
-            if (autoPick) pickTitle(autoPick);
+            if (autoPick) await pickTitle(autoPick);
           }
         } catch (e) { setError(e.message || 'فشل البحث'); }
         setLoading(false);
       };
 
-      // تشغيل البحث تلقائياً أول ما يوصل اسم العمل من التعبئة التلقائية لـTMDB (مرة وحدة لكل اسم)
       useEffect(() => {
         if (defaultTitle && defaultTitle.trim() && autoRanFor.current !== defaultTitle) {
           autoRanFor.current = defaultTitle;
@@ -594,43 +622,53 @@
       const pickTitle = async (item) => {
         setPicked(item); setVideos(null); setError(''); setLoading(true);
         try {
-          if (kind === 'movie') {
+          if (onImportTmdb) {
+            setMetaLoading(true);
+            try { await onImportTmdb(item); } catch (e) { setError(e.message || 'تعذّر تعبئة بيانات TMDB تلقائيًا'); }
+            setMetaLoading(false);
+          }
+          if (kind === 'movie' || kind === 'anime') {
             setVideos(await cinemanaVideos(String(item.nb)));
           } else {
             const eps = await cinemanaEpisodes(String(item.nb));
-            const match = eps.find(e => String(e.season) === String(Number(season) || 1) && String(e.episodeNummer) === String(Number(episode) || 1));
-            if (!match) {
-              setError(`لم يُعثر تلقائيًا على الموسم ${Number(season) || 1} الحلقة ${Number(episode) || 1} بهذا العنوان على سينمانا`);
-            } else {
-              setVideos(await cinemanaVideos(String(match.nb)));
-            }
+            const match = eps.find(e => cinemanaEpisodeSeason(e) === (Number(season) || 1) && cinemanaEpisodeNumber(e) === (Number(episode) || 1));
+            if (!match) setError(`لم يُعثر تلقائيًا على الموسم ${Number(season) || 1} الحلقة ${Number(episode) || 1} بهذا العنوان على سينمانا`);
+            else setVideos(await cinemanaVideos(String(match.nb)));
           }
         } catch (e) { setError(e.message || 'فشل جلب الفيديو'); }
         setLoading(false);
       };
 
+      const applyQualities = (rawVideos) => {
+        const sources = cinemanaVideoSources(rawVideos);
+        if (onGenerateQualities) onGenerateQualities(sources);
+        const first = sources[0];
+        if (first && onGenerate) onGenerate(first.url, first, sources);
+      };
+
       return (
         <div className="glass-card rounded-2xl p-3.5 border border-accent-purple/20 mt-3.5">
-          <p className="text-[11px] font-bold text-accent-purple mb-2 flex items-center gap-1.5"><Icon name="search" className="w-3.5 h-3.5" />استيراد رابط مباشر من سينمانا (شبكتي)</p>
+          <p className="text-[11px] font-bold text-accent-purple mb-2 flex items-center gap-1.5"><Icon name="search" className="w-3.5 h-3.5" />استيراد التشغيل من سينمانا + تعبئة TMDB تلقائيًا</p>
           <div className="flex items-center gap-2 mb-2.5">
             <input value={query} onChange={ev => setQuery(ev.target.value)} onKeyDown={ev => ev.key === 'Enter' && search()}
-              placeholder="اسم العمل بالإنجليزي أو العربي"
+              placeholder={kind === 'anime' ? 'اسم الأنمي' : 'اسم العمل بالإنجليزي أو العربي'}
               className="flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-purple" />
-            <button type="button" onClick={search} disabled={!query.trim() || loading} className="shrink-0 px-4 py-2 rounded-xl bg-accent-purple text-white text-xs font-bold hover:brightness-110 transition disabled:opacity-40">{loading ? 'جاري...' : 'بحث'}</button>
+            <button type="button" onClick={() => search()} disabled={!query.trim() || loading} className="shrink-0 px-4 py-2 rounded-xl bg-accent-purple text-white text-xs font-bold hover:brightness-110 transition disabled:opacity-40">{loading ? 'جاري...' : 'بحث'}</button>
           </div>
-          {kind === 'tv' && <p className="text-[10px] text-slate-500 mb-1.5">سيتم البحث تلقائيًا عن الموسم {Number(season) || 1} · الحلقة {Number(episode) || 1} بعد اختيار المسلسل</p>}
+          {metaLoading && <p className="text-[10px] text-accent-cyan font-bold mb-1.5">جاري تعبئة البيانات من TMDB...</p>}
+          {kind !== 'movie' && <p className="text-[10px] text-slate-500 mb-1.5">الموسم {Number(season) || 1} · الحلقة {Number(episode) || 1}</p>}
           {error && <p className="text-[11px] font-bold text-rose-400 mb-2">{error}</p>}
 
           {results && !videos && (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-64 overflow-y-auto">
               {results.length === 0 && <p className="text-[11px] text-slate-500 col-span-full">لا نتائج</p>}
               {results.map(r => (
-                <button key={r.nb} type="button" onClick={() => pickTitle(r)}
+                <button key={r.nb || r.id} type="button" onClick={() => pickTitle(r)}
                   className={`text-right rounded-xl overflow-hidden border transition ${picked && picked.nb === r.nb ? 'border-accent-purple' : 'border-white/10 hover:border-accent-purple/60'}`}>
                   {r.imgThumbObjUrl && <img src={r.imgThumbObjUrl} alt="" className="w-full h-24 object-cover" />}
                   <div className="p-1.5">
-                    <p className="text-[10px] font-bold text-white truncate"><BidiText>{r.en_title}</BidiText></p>
-                    <p className="text-[9px] text-slate-400">{r.year}</p>
+                    <p className="text-[10px] font-bold text-white truncate"><BidiText>{r.en_title || r.title || r.name || ''}</BidiText></p>
+                    <p className="text-[9px] text-slate-400">{cinemanaYear(r)}</p>
                   </div>
                 </button>
               ))}
@@ -639,19 +677,146 @@
 
           {videos && (
             <div>
-              <p className="text-[11px] font-bold text-slate-300 mb-1.5">اختر الجودة:</p>
+              <p className="text-[11px] font-bold text-slate-300 mb-1.5">اختر الجودة الافتراضية التي ستُحفظ:</p>
               <div className="flex flex-wrap gap-2">
                 {videos.length === 0 && <p className="text-[11px] text-slate-500">لا توجد روابط فيديو متاحة لهذا العنوان</p>}
-                {videos.map((v, i) => (
-                  <button key={i} type="button" onClick={() => onGenerate((v.videoUrl || '').replace(/\\/g, ''))}
+                {cinemanaVideoSources(videos).map((v, i) => (
+                  <button key={i} type="button" onClick={() => { onGenerate && onGenerate(v.url, v, cinemanaVideoSources(videos)); onGenerateQualities && onGenerateQualities(cinemanaVideoSources(videos)); }}
                     className="px-3 py-1.5 rounded-lg bg-accent-purple/15 border border-accent-purple/30 hover:bg-accent-purple/25 text-accent-purple text-[11px] font-bold transition">
-                    {v.resolution}
+                    {v.label}
                   </button>
                 ))}
               </div>
               <button type="button" onClick={() => { setVideos(null); setPicked(null); }} className="mt-2 text-[10px] text-slate-500 hover:text-slate-300 underline">رجوع للنتائج</button>
             </div>
           )}
+        </div>
+      );
+    }
+
+    async function tmdbFindBestByTitle(title, currentType, year) {
+      const query = String(title || '').trim();
+      if (!query) throw new Error('اسم العمل فارغ');
+      const mediaOrder = currentType === 'movie' ? ['movie', 'tv'] : ['tv', 'movie'];
+      const all = [];
+      for (const media of mediaOrder) {
+        try {
+          const data = await tmdbFetch(`search/${media}`, { query, language: 'en-US', include_adult: 'false', page: 1 });
+          (data.results || []).slice(0, 15).forEach(r => all.push({ ...r, _media: media }));
+        } catch (e) {}
+      }
+      if (!all.length) throw new Error('لم يُعثر على العمل في TMDB بالاسم المرسل من سينمانا');
+      const qn = normName(query);
+      const y = Number(year) || 0;
+      const titleOf = r => String(r.title || r.name || r.original_title || r.original_name || '');
+      const yearOf = r => Number(String(r.release_date || r.first_air_date || '').slice(0, 4)) || 0;
+      all.sort((a, b) => {
+        const score = r => {
+          const rn = normName(titleOf(r));
+          let s = 0;
+          if (rn === qn) s += 100;
+          else if (rn.includes(qn) || qn.includes(rn)) s += 45;
+          const ry = yearOf(r);
+          if (y && ry === y) s += 25;
+          else if (y && ry) s += Math.max(0, 10 - Math.abs(ry - y));
+          s += Math.min(10, Number(r.popularity) || 0) * 0.15;
+          if ((currentType === 'movie' && r._media === 'movie') || (currentType !== 'movie' && r._media === 'tv')) s += 12;
+          return s;
+        };
+        return score(b) - score(a);
+      });
+      return all[0];
+    }
+
+    async function importFromTmdbTitle(title, currentType, year, opts) {
+      const best = await tmdbFindBestByTitle(title, currentType, year);
+      const media = best._media === 'movie' ? 'movie' : 'tv';
+      return importFromTmdb(`https://www.themoviedb.org/${media}/${best.id}`, currentType, opts);
+    }
+
+    async function enrichTmdbSeasonsWithCinemana(seasons, cinEpisodes, onProgress) {
+      const episodeMap = new Map();
+      (cinEpisodes || []).forEach(ep => {
+        const key = `${cinemanaEpisodeSeason(ep)}x${cinemanaEpisodeNumber(ep)}`;
+        if (cinemanaEpisodeNumber(ep)) episodeMap.set(key, ep);
+      });
+      const tasks = [];
+      (seasons || []).forEach((s, si) => (s.episodes || []).forEach((e, ei) => {
+        const cinEp = episodeMap.get(`${Number(s.number) || 1}x${Number(e.number) || 1}`);
+        if (cinEp && cinEp.nb != null) tasks.push({ si, ei, id: String(cinEp.nb) });
+      }));
+      const out = (seasons || []).map(s => ({ ...s, episodes: (s.episodes || []).map(e => ({ ...e, videoUrl: normalizeVideoUrl(e.videoUrl || ''), videoSources: normalizeVideoSources(e.videoSources) })) }));
+      const chunkSize = 5;
+      for (let i = 0; i < tasks.length; i += chunkSize) {
+        const chunk = tasks.slice(i, i + chunkSize);
+        const results = await Promise.all(chunk.map(async t => {
+          try { return { ...t, sources: cinemanaVideoSources(await cinemanaVideos(t.id)) }; }
+          catch (e) { return { ...t, sources: [] }; }
+        }));
+        results.forEach(r => {
+          const ep = out[r.si] && out[r.si].episodes && out[r.si].episodes[r.ei];
+          if (!ep || !r.sources.length) return;
+          ep.videoSources = r.sources;
+          ep.videoUrl = r.sources[0].url;
+        });
+        if (onProgress) onProgress(`تم ربط ${Math.min(i + chunk.length, tasks.length)} من ${tasks.length} حلقة من سينمانا...`);
+      }
+      return out;
+    }
+
+    // استيراد مسلسل/أنمي كامل من سينمانا مع TMDB:
+    // TMDB = البيانات والمواسم والحلقات، سينمانا = روابط الفيديو والجودات.
+    function CinemanaSeriesImportPanel({ type, defaultTitle, defaultYear, onImport }) {
+      const [query, setQuery] = useState(defaultTitle || '');
+      const [loading, setLoading] = useState(false);
+      const [progress, setProgress] = useState('');
+      const [error, setError] = useState('');
+      const [results, setResults] = useState(null);
+      useEffect(() => { if (defaultTitle) setQuery(defaultTitle); }, [defaultTitle]);
+
+      const search = async () => {
+        if (!query.trim()) return;
+        setLoading(true); setError(''); setResults(null); setProgress('جاري البحث في سينمانا...');
+        try { setResults(await cinemanaSearch(query.trim(), type)); setProgress(''); }
+        catch (e) { setError(e.message || 'فشل البحث'); setProgress(''); }
+        setLoading(false);
+      };
+
+      const pick = async item => {
+        setLoading(true); setError(''); setProgress('جاري تعبئة TMDB وربط حلقات سينمانا...');
+        try {
+          await onImport(item, setProgress);
+        } catch (e) { setError(e.message || 'تعذّر استيراد العمل'); }
+        setLoading(false); setProgress('');
+      };
+
+      return (
+        <div className="glass-card rounded-2xl p-4 border border-accent-purple/25 mb-5">
+          <p className="text-[12px] font-bold text-accent-purple flex items-center gap-1.5 mb-2.5"><Icon name="sparkles" className="w-4 h-4" />استيراد مسلسل/أنمي: TMDB للبيانات + سينمانا للتشغيل</p>
+          <div className="flex items-center gap-2 mb-2.5">
+            <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && !loading && search()}
+              placeholder={type === 'anime' ? 'اسم الأنمي' : 'اسم المسلسل'}
+              className="flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-purple" />
+            <button type="button" onClick={search} disabled={!query.trim() || loading} className="shrink-0 px-4 py-2 rounded-xl bg-accent-purple text-white text-xs font-bold hover:brightness-110 transition disabled:opacity-40">{loading ? 'جاري...' : 'بحث'}</button>
+          </div>
+          {progress && <p className="text-[10px] font-bold text-accent-cyan mb-2">{progress}</p>}
+          {error && <p className="text-[11px] font-bold text-rose-400 mb-2">{error}</p>}
+          {results && (
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 max-h-72 overflow-y-auto">
+              {results.length === 0 && <p className="text-[11px] text-slate-500 col-span-full">لا نتائج</p>}
+              {results.map(r => (
+                <button key={r.nb || r.id} type="button" onClick={() => pick(r)} disabled={loading}
+                  className="text-right rounded-xl overflow-hidden border border-white/10 hover:border-accent-purple/60 transition disabled:opacity-50">
+                  {r.imgThumbObjUrl && <img src={r.imgThumbObjUrl} alt="" className="w-full h-28 object-cover" />}
+                  <div className="p-1.5">
+                    <p className="text-[10px] font-bold text-white truncate"><BidiText>{r.en_title || r.title || r.name || ''}</BidiText></p>
+                    <p className="text-[9px] text-slate-400">{cinemanaYear(r)}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="text-[10px] text-slate-500 mt-2">بعد الاختيار: تُجلب بيانات TMDB أولًا، ثم تُربط كل حلقة برابط سينمانا وتُحفظ كل الجودات المتاحة.</p>
         </div>
       );
     }
@@ -855,7 +1020,8 @@
       if (media === 'movie' && currentType !== 'movie') patch.type = 'movie';
 
       if (media === 'movie') {
-        patch.videoUrl = await buildVidApiUrl('movie', sourceId);
+        patch.videoUrl = '';
+        patch.videoSources = [];
       }
 
       let bannerData = null;
@@ -900,12 +1066,12 @@
             const match = omdbEpisodes ? omdbEpisodes.find(oe => Number(oe.Episode) === Number(ep.episode_number)) : null;
             if (!epTitle && match && match.Title && match.Title !== 'N/A') epTitle = match.Title.trim();
             const epImdb = match && match.imdbRating && match.imdbRating !== 'N/A' ? match.imdbRating : '';
-            const epVideoUrl = await buildVidApiUrl('tv', sourceId, s.season_number, ep.episode_number);
             episodes.push(Object.assign(emptyEpisode(Number(ep.episode_number) || 1), {
               number: Number(ep.episode_number) || 1,
               title: epTitle,
               imdb: epImdb,
-              videoUrl: epVideoUrl,
+              videoUrl: '',
+              videoSources: [],
             }));
           }
           seasons.push({
@@ -994,14 +1160,14 @@
             <label className="flex items-center gap-2 text-[11px] font-bold text-slate-300 cursor-pointer select-none">
               <input type="checkbox" checked={withEpisodes} onChange={e => setWithEpisodes(e.target.checked)}
                 className="accent-accent-cyan w-3.5 h-3.5" />
-              استيراد المواسم والحلقات تلقائيًا (مع توليد روابط التشغيل لكل حلقة)
+              استيراد المواسم والحلقات تلقائيًا من TMDB (روابط التشغيل تُجلب من سينمانا عبر اللوحة الجديدة)
             </label>
           )}
 
           {status && <p className="text-[11px] text-accent-cyan font-bold mt-2">{status}</p>}
           {err && <p className="text-[11px] text-rose-400 font-bold mt-2">{err}</p>}
           {note && <p className="text-[11px] text-amber-400 font-bold mt-2">{note}</p>}
-          <p className="text-[10px] text-slate-500 mt-2">ينعبّى: الاسم · السنة · التصنيفات · الوصف · البوستر · البنر · المخرج · الكاتب · التقييم · رابط التشغيل · حالة الحلقة (آخر حلقة بكل موسم / نهاية العمل تلقائيًا). (تقييم العمل والحلقات من IMDb الحقيقي عبر OMDb.)</p>
+          <p className="text-[10px] text-slate-500 mt-2">ينعبّى: الاسم · السنة · التصنيفات · الوصف · البوستر · البنر · المخرج · الكاتب · التقييم · بيانات المواسم والحلقات · حالة الحلقة (آخر حلقة بكل موسم / نهاية العمل تلقائيًا). (تقييم العمل والحلقات من IMDb الحقيقي عبر OMDb.)</p>
         </div>
       );
     }
@@ -1125,6 +1291,7 @@
         rotateCcw5: <><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/></>,
         rotateCw5: <><path d="M21 3v5h-5"/><path d="M20.95 13A9 9 0 1 1 18 5.3L21 8"/></>,
         gauge: <><path d="M12 14 15 10"/><path d="M10.5 20A7.5 7.5 0 1 1 18 10.6"/></>,
+        'sliders-horizontal': <><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="18" x2="20" y2="18"/><line x1="9" y1="3" x2="9" y2="9"/><line x1="15" y1="15" x2="15" y2="21"/></>,
         list: <><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></>,
         skipForward: <><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></>,
         bell: <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0" />,
@@ -1940,7 +2107,7 @@
       );
     }
 
-    function VideoPlayer({ src, onError, trimStart, trimEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete }) {
+    function VideoPlayer({ src, onError, trimStart, trimEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, qualities, onQualityChange, startAt }) {
       const videoRef = useRef(null);
       const wrapRef = useRef(null);
       const hideTimerRef = useRef(null);
@@ -1988,7 +2155,8 @@
         const videoEl = videoRef.current;
         if (!videoEl) return;
         const onLoaded = () => {
-          if (trimStart) { try { videoEl.currentTime = trimStart; } catch (e) {} }
+          const initialTime = Math.max(Number(trimStart) || 0, Number(startAt) || 0);
+          if (initialTime > 0) { try { videoEl.currentTime = initialTime; } catch (e) {} }
           setNatural({ w: videoEl.videoWidth || 0, h: videoEl.videoHeight || 0 });
         };
         const onTime = () => {
@@ -1998,12 +2166,13 @@
         videoEl.addEventListener('loadedmetadata', onLoaded);
         videoEl.addEventListener('timeupdate', onTime);
         return () => { videoEl.removeEventListener('loadedmetadata', onLoaded); videoEl.removeEventListener('timeupdate', onTime); };
-      }, [src, trimStart, trimEnd]);
+      }, [src, trimStart, trimEnd, startAt]);
 
       const [ctrl, setCtrl] = useState({ playing: false, muted: true, volume: 1, current: 0, duration: 0, buffered: 0, rate: 1 });
       const [barVisible, setBarVisible] = useState(true);
       const [skipFlash, setSkipFlash] = useState(null);
       const [showSpeedMenu, setShowSpeedMenu] = useState(false);
+      const [showQualityMenu, setShowQualityMenu] = useState(false);
       const [fakeFullscreen, setFakeFullscreen] = useState(false);
 
       useEffect(() => {
@@ -2187,6 +2356,14 @@
         videoStyle = { objectFit: 'cover' };
       }
 
+      const qualityOptions = normalizeVideoSources(qualities);
+      const currentQuality = qualityOptions.find(q => q.url === src) || qualityOptions[0] || null;
+      const changeQuality = (q) => {
+        const at = videoRef.current ? Number(videoRef.current.currentTime) || 0 : 0;
+        setShowQualityMenu(false);
+        if (q && onQualityChange) onQualityChange(q.url, at, q);
+      };
+
       const RATE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
       return (
@@ -2257,8 +2434,23 @@
 
                 <span className="flex-1"></span>
 
+                {qualityOptions.length > 1 && (
+                  <div className="relative shrink-0">
+                    <button type="button" onClick={() => { setShowQualityMenu(v => !v); setShowSpeedMenu(false); }} className="yt-btn h-7 px-2 gap-1 text-[11px] font-bold" title="اختيار الجودة">
+                      <Icon name="sliders-horizontal" className="w-3.5 h-3.5" /><span>{currentQuality ? currentQuality.label : 'جودة'}</span>
+                    </button>
+                    {showQualityMenu && (
+                      <div className="absolute bottom-10 left-0 bg-black/95 backdrop-blur-md rounded-xl border border-white/10 p-1.5 flex flex-col gap-0.5 shadow-2xl min-w-[88px] z-30">
+                        {qualityOptions.map((q, i) => (
+                          <button key={i} type="button" onClick={() => changeQuality(q)} className={`text-[11px] font-bold px-3 py-1.5 rounded-lg text-right transition ${currentQuality && currentQuality.url === q.url ? 'bg-accent-cyan text-glass-950' : 'text-white hover:bg-white/10'}`}>{q.label}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="relative shrink-0">
-                  <button type="button" onClick={() => setShowSpeedMenu(v => !v)} className="yt-btn h-7 px-2 gap-1 text-[11px] font-bold" title="سرعة التشغيل">
+                  <button type="button" onClick={() => { setShowSpeedMenu(v => !v); setShowQualityMenu(false); }} className="yt-btn h-7 px-2 gap-1 text-[11px] font-bold" title="سرعة التشغيل">
                     <Icon name="gauge" className="w-3.5 h-3.5" /><span className="hidden xs:inline">{ctrl.rate}×</span>
                   </button>
                   {showSpeedMenu && (
@@ -2379,6 +2571,7 @@
       const [replyText, setReplyText] = useState('');
       const [videoError, setVideoError] = useState(false);
       const [copied, setCopied] = useState(false);
+      const [resumeAt, setResumeAt] = useState(0);
 
       const [ratings, setRatings] = useState({});
       const [myStars, setMyStars] = useState(0);
@@ -2401,7 +2594,7 @@
       const [deleteMyRating, setDeleteMyRating] = useState(false);
 
       useEffect(() => {
-        setPlayingUrl(null); setPlayingLabel(''); setActiveSeason(0); setSeasonView(false); setShowAllEpisodes(false); setCommentText(''); setReplyingTo(null); setVideoError(false);
+        setPlayingUrl(null); setPlayingLabel(''); setActiveSeason(0); setSeasonView(false); setShowAllEpisodes(false); setCommentText(''); setReplyingTo(null); setVideoError(false); setResumeAt(0);
         const ref = db.ref(`comments/${title.id}`);
         const cb = snap => {
           const data = snap.val();
@@ -2489,7 +2682,7 @@
       };
 
       const handlePlay = () => {
-        setVideoError(false);
+        setVideoError(false); setResumeAt(0);
         if (title.type === 'movie') { setPlayingUrl(title.videoUrl || null); setPlayingMeta(title); setPlayingLabel(title.name); }
         else {
           const found = firstEpisode();
@@ -2500,7 +2693,7 @@
       };
 
       const playEpisode = (ep, seasonNumber) => {
-        setVideoError(false);
+        setVideoError(false); setResumeAt(0);
         setPlayingUrl(ep.videoUrl);
         setPlayingMeta(ep);
         setPlayingSeasonNumber(seasonNumber != null ? seasonNumber : null);
@@ -2514,6 +2707,15 @@
         if (!season) return;
         const idx = season.episodes.findIndex(e => e.videoUrl === playingMeta.videoUrl && e.number === playingMeta.number);
         if (idx > -1 && idx < season.episodes.length - 1) playEpisode(season.episodes[idx + 1], season.number);
+      };
+
+      const playingQualities = normalizeVideoSources(playingMeta && playingMeta.videoSources ? playingMeta.videoSources : (title.type === 'movie' ? title.videoSources : []));
+      const handleQualityChange = (url, at) => {
+        if (!url || url === playingUrl) return;
+        setVideoError(false);
+        setResumeAt(Number(at) || 0);
+        setPlayingMeta(prev => ({ ...prev, videoUrl: url }));
+        setPlayingUrl(normalizeVideoUrl(url));
       };
 
       const shareLink = () => {
@@ -2581,7 +2783,7 @@
                     <VideoPlayer key={playingUrl} src={normalizeVideoUrl(playingUrl)} onError={() => setVideoError(true)}
                       trimStart={playingMeta.trimStart} trimEnd={playingMeta.trimEnd}
                       fitMobile={playingMeta.fitMobile} fitDesktop={playingMeta.fitDesktop} crop={playingMeta.crop}
-                      episodeLabel={playingLabel}
+                      episodeLabel={playingLabel} qualities={playingQualities} startAt={resumeAt} onQualityChange={handleQualityChange}
                       onComplete={title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete} />
                   ) : (
                     <iframe key={playingUrl} src={normalizeVideoUrl(playingUrl)} allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen
@@ -4347,11 +4549,11 @@
     }
 
     function emptyForm(type) {
-      return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', rtRating: '', featured: false, status: 'draft', videoUrl: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
+      return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
     }
 
     function emptyEpisode(num) {
-      return { number: num, title: '', videoUrl: '', imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
+      return { number: num, title: '', videoUrl: '', videoSources: [], imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
     }
 
     function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sourceId, seriesName }) {
@@ -4398,8 +4600,8 @@
           <div className="mt-3.5">
             <FileUploadField label="ملف الحلقة (فيديو مباشر أو رابط/iframe)" value={e.videoUrl} onChange={v => set('videoUrl', v)} folder="episodes" accept="video/*" />
           </div>
-          <VidApiHelper kind="tv" season={seasonNumber} episode={e.number} defaultId={sourceId} onGenerate={url => set('videoUrl', url)} />
-          <CinemanaHelper kind="tv" season={seasonNumber} episode={e.number} defaultTitle={seriesName} onGenerate={url => set('videoUrl', url)} />
+          <VidApiHelper kind="tv" season={seasonNumber} episode={e.number} defaultId={sourceId} onGenerate={url => { set('videoUrl', url); set('videoSources', [{ label: 'VidAPI', resolution: 'VidAPI', url }]); }} />
+          <CinemanaHelper kind="tv" season={seasonNumber} episode={e.number} defaultTitle={seriesName} onGenerate={(url) => set('videoUrl', url)} onGenerateQualities={sources => set('videoSources', sources)} />
           <div className="grid grid-cols-2 gap-3.5 mt-3.5">
             <div>
               <label className="text-xs font-bold text-slate-300 mb-1.5 block">تقييم IMDb</label>
@@ -4572,7 +4774,8 @@
           views: initial ? (initial.views || 0) : 0,
         };
         if (form.type === 'movie') {
-          payload.videoUrl = form.videoUrl.trim();
+          payload.videoUrl = normalizeVideoUrl(form.videoUrl.trim());
+          payload.videoSources = normalizeVideoSources(form.videoSources);
           payload.trimStart = Number(form.trimStart) || 0;
           payload.trimEnd = Number(form.trimEnd) || 0;
           payload.fitMobile = form.fitMobile || 'contain';
@@ -4586,7 +4789,7 @@
             poster: (s.poster || '').trim(),
             episodeThumbnail: (s.episodeThumbnail || '').trim(),
             episodes: (s.episodes || []).map(e => ({
-              number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: (e.videoUrl || '').trim(), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
+              number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
               trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
             }))
           }));
@@ -4663,11 +4866,29 @@
               <div className="mt-5">
                 <FileUploadField label="ملف الفيلم (فيديو مباشر أو رابط/iframe)" value={form.videoUrl} onChange={v => set('videoUrl', v)} folder="videos" accept="video/*" />
               </div>
-              <VidApiHelper kind="movie" defaultId={sourceId} onGenerate={url => set('videoUrl', url)} />
-              <CinemanaHelper kind="movie" defaultTitle={form.name} onGenerate={url => set('videoUrl', url)} />
+              <VidApiHelper kind="movie" defaultId={sourceId} onGenerate={url => { set('videoUrl', url); set('videoSources', [{ label: 'VidAPI', resolution: 'VidAPI', url }]); }} />
+              <CinemanaHelper kind={form.type === 'anime' ? 'anime' : 'movie'} defaultTitle={form.name} defaultYear={form.year} onGenerate={(url) => set('videoUrl', url)} onGenerateQualities={sources => set('videoSources', sources)} onImportTmdb={async (item) => { const r = await importFromTmdbTitle(cinemanaTitle(item), form.type, cinemanaYear(item) || form.year, { withEpisodes: false }); setSourceId(r.sourceId || ''); setForm(prev => ({ ...prev, ...r.patch, videoUrl: prev.videoUrl, videoSources: prev.videoSources })); setBannerData(r.bannerData || null); return r; }} />
               <VideoDisplaySettings value={form} onChange={patch => setForm(prev => ({ ...prev, ...patch }))} />
             </div>
           ) : (
+            <div>
+              <CinemanaSeriesImportPanel
+                type={form.type === 'anime' ? 'anime' : 'tv'}
+                defaultTitle={form.name}
+                defaultYear={form.year}
+                onImport={async (item, onProgress) => {
+                  const r = await importFromTmdbTitle(cinemanaTitle(item), form.type, cinemanaYear(item) || form.year, { withEpisodes: true, onProgress });
+                  const ce = await cinemanaEpisodes(String(item.nb));
+                  r.patch.seasons = await enrichTmdbSeasonsWithCinemana(r.patch.seasons || [], ce, onProgress);
+                  setSourceId(r.sourceId || '');
+                  setBannerData(r.bannerData || null);
+                  setShowAllBanners(false);
+                  setForm(prev => ({ ...prev, ...r.patch }));
+                  setActiveSeasonIdx(0);
+                  setEditingEpisodeIdx(null);
+                }}
+              />
+            </div>
             <div className="mt-6 border-t border-white/10 pt-5">
               <div className="flex items-center justify-between mb-4">
                 <h4 className="font-black text-white text-base">المواسم والحلقات</h4>
