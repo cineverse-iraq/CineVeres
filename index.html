@@ -2540,7 +2540,7 @@
               <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan yt-spinner"></div>
             </div>
           )}
-          <video crossOrigin="anonymous" ref={videoRef} controls={false} autoPlay muted playsInline webkit-playsinline="true" x5-playsinline="true" preload="auto"
+          <video ref={videoRef} controls={false} autoPlay muted playsInline webkit-playsinline="true" x5-playsinline="true" preload="auto"
             onCanPlay={() => setLoading(false)} onPlaying={() => setLoading(false)} onLoadedData={() => setLoading(false)}
             onError={() => { setLoading(false); onError && onError(); }}
             style={videoStyle}>
