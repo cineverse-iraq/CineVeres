@@ -558,7 +558,7 @@
             <button type="button" onClick={generate} disabled={!id.trim() || generating} className="shrink-0 px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 text-xs font-bold hover:brightness-110 transition disabled:opacity-40">{generating ? 'جاري...' : 'توليد الرابط'}</button>
           </div>
           {kind === 'tv' && <p className="text-[10px] text-slate-500 mt-1.5">الموسم {Number(season) || 1} · الحلقة {Number(episode) || 1}</p>}
-          <p className="text-[10px] text-slate-500 mt-1.5">تم تعطيل OpenSubtitles والترجمات الخارجية في هذا الرابط.</p>
+          <p className="text-[10px] text-slate-500 mt-1.5">تم تعطيل البحث التلقائي عن الترجمات الخارجية في رابط VidAPI.</p>
         </div>
       );
     }
@@ -860,48 +860,46 @@
       return out;
     }
 
-    async function openSubtitlesSearch(params) {
+    async function subdlSearch(params) {
       const usp = new URLSearchParams(params || {});
-      const res = await fetch(`${CINEMANA_PROXY}/opensubtitles/search?${usp.toString()}`, { headers: { Accept: 'application/json' } });
-      if (!res.ok) throw new Error('تعذر البحث في OpenSubtitles (رمز ' + res.status + ')');
+      usp.set('languages', 'AR');
+      usp.set('unpack', '1');
+      usp.set('subs_per_page', '30');
+      const res = await fetch(`${CINEMANA_PROXY}/subdl/search?${usp.toString()}`, { headers: { Accept: 'application/json' } });
+      if (!res.ok) throw new Error('تعذر البحث في SubDL (رمز ' + res.status + ')');
       const data = await res.json();
-      return Array.isArray(data && data.data) ? data.data : [];
+      return Array.isArray(data && data.subtitles) ? data.subtitles : [];
     }
 
-    async function openSubtitlesDownload(fileId) {
-      const res = await fetch(`${CINEMANA_PROXY}/opensubtitles/download`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ file_id: Number(fileId) })
-      });
-      if (!res.ok) throw new Error('تعذر تنزيل الترجمة من OpenSubtitles (رمز ' + res.status + ')');
-      const data = await res.json();
-      return data && data.link ? data.link : '';
+    async function subdlDownload(url) {
+      if (!url) return '';
+      const res = await fetch(`${CINEMANA_PROXY}/subdl/file?url=${encodeURIComponent(url)}`, { headers: { Accept: 'text/vtt,text/plain,*/*' } });
+      if (!res.ok) throw new Error('تعذر تنزيل الترجمة من SubDL (رمز ' + res.status + ')');
+      const text = await res.text();
+      if (!text || !/WEBVTT/i.test(text)) throw new Error('ملف الترجمة من SubDL غير صالح');
+      return text;
     }
 
-    async function findAndStoreOpenSubtitle({ sourceId, title, season, episode, type, folder = 'subtitles' }) {
+    async function findAndStoreSubdlSubtitle({ sourceId, title, season, episode, type, folder = 'subtitles' }) {
       const isTv = type !== 'movie';
-      const params = { languages: 'ar', order_by: 'download_count', order_direction: 'desc' };
-      if (sourceId && /^tt\d+$/i.test(String(sourceId))) {
-        if (isTv) { params.parent_imdb_id = String(sourceId).replace(/^tt/i, ''); }
-        else params.imdb_id = String(sourceId).replace(/^tt/i, '');
-      } else if (sourceId && /^\d+$/.test(String(sourceId))) {
-        if (isTv) { params.parent_tmdb_id = String(sourceId); }
-        else params.tmdb_id = String(sourceId);
-      } else if (title) {
-        params.query = String(title);
-      }
+      const params = {};
+      const sid = String(sourceId || '').trim();
+      if (/^tt\d+$/i.test(sid)) params.imdb_id = sid;
+      else if (/^\d+$/.test(sid)) params.tmdb_id = sid;
+      else if (title) params.film_name = String(title);
       if (isTv) {
         params.season_number = String(Number(season) || 1);
         params.episode_number = String(Number(episode) || 1);
       }
-      const results = await openSubtitlesSearch(params);
-      const best = results.find(r => r && r.attributes && Array.isArray(r.attributes.files) && r.attributes.files.length);
-      const file = best && best.attributes.files[0];
-      if (!file || file.file_id == null) throw new Error('لم يتم العثور على ترجمة عربية مناسبة');
-      const link = await openSubtitlesDownload(file.file_id);
-      if (!link) throw new Error('OpenSubtitles لم يعُد رابط تنزيل صالحًا');
-      return persistSubtitleToFirebase(link, folder);
+      const results = await subdlSearch(params);
+      const best = results.find(r => r && (r.url || (Array.isArray(r.unpack_files) && r.unpack_files.some(f => f && f.url))));
+      if (!best) throw new Error('لم يتم العثور على ترجمة عربية مناسبة في SubDL');
+      const file = Array.isArray(best.unpack_files) ? best.unpack_files.find(f => f && f.url) : null;
+      const link = (file && file.url) || best.url || '';
+      if (!link) throw new Error('SubDL لم يُرجع رابط تنزيل صالحًا');
+      const vtt = await subdlDownload(link);
+      const upload = new File([vtt], `subdl_${Date.now()}.vtt`, { type: 'text/vtt' });
+      return uploadFile(upload, folder, null);
     }
 
     // استيراد مسلسل/أنمي كامل من سينمانا مع TMDB:
@@ -4749,9 +4747,9 @@
       const get = async () => {
         setLoading(true); setMsg('');
         try {
-          const url = await findAndStoreOpenSubtitle({ sourceId, title, type, season, episode, folder });
+          const url = await findAndStoreSubdlSubtitle({ sourceId, title, type, season, episode, folder });
           onChange(url);
-          setMsg('تم حفظ ترجمة OpenSubtitles في Firebase.');
+          setMsg('تم حفظ ترجمة SubDL العربية في Firebase.');
         } catch (e) { setMsg(e.message || 'تعذر جلب الترجمة.'); }
         setLoading(false);
       };
@@ -4759,7 +4757,7 @@
         <div className="mt-3.5 glass-card rounded-2xl p-3.5 border border-accent-cyan/20">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <p className="text-[11px] font-bold text-accent-cyan">الترجمة العربية</p>
-            <button type="button" onClick={get} disabled={loading} className="px-3 py-1.5 rounded-lg bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan text-[11px] font-bold disabled:opacity-40">{loading ? 'جاري البحث...' : 'جلب من OpenSubtitles'}</button>
+            <button type="button" onClick={get} disabled={loading} className="px-3 py-1.5 rounded-lg bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan text-[11px] font-bold disabled:opacity-40">{loading ? 'جاري البحث...' : 'جلب من SubDL'}</button>
           </div>
           <div className="mt-2.5">
             <FileUploadField compact value={value || ''} onChange={onChange} folder={folder} accept=".srt,.vtt,.txt" />
