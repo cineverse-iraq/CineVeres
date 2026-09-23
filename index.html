@@ -404,13 +404,15 @@
       clean.videoUrl = normalizeVideoUrl(clean.videoUrl || '');
       clean.videoSources = normalizeVideoSources(clean.videoSources);
       clean.subtitleUrl = normalizeSubtitleUrl(clean.subtitleUrl || clean.subtitleURL || '');
+      clean.subtitleOffset = Number(clean.subtitleOffset) || 0;
       clean.seasons = Array.isArray(clean.seasons) ? clean.seasons.map(season => ({
         ...season,
         episodes: Array.isArray(season.episodes) ? season.episodes.map(ep => ({
           ...ep,
           videoUrl: normalizeVideoUrl(ep.videoUrl || ''),
           videoSources: normalizeVideoSources(ep.videoSources),
-          subtitleUrl: normalizeSubtitleUrl(ep.subtitleUrl || ep.subtitleURL || '')
+          subtitleUrl: normalizeSubtitleUrl(ep.subtitleUrl || ep.subtitleURL || ''),
+          subtitleOffset: Number(ep.subtitleOffset) || 0
         })) : []
       })) : [];
       return clean;
@@ -432,6 +434,23 @@
       return 'WEBVTT\n\n' + v + '\n';
     }
 
+
+    function shiftVttTimings(vtt, offsetMs) {
+      const ms = Number(offsetMs) || 0;
+      if (!ms) return String(vtt || '');
+      const clamp = n => Math.max(0, n);
+      const toMs = (h, m, sec, milli) => (((Number(h) * 60 + Number(m)) * 60 + Number(sec)) * 1000 + Number(milli));
+      const fmt = total => {
+        total = clamp(Math.round(total));
+        const h = Math.floor(total / 3600000); total %= 3600000;
+        const m = Math.floor(total / 60000); total %= 60000;
+        const sec = Math.floor(total / 1000); const milli = total % 1000;
+        return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}.${String(milli).padStart(3,'0')}`;
+      };
+      return String(vtt || '').split('\n').map(line => line.replace(/(\d{1,2}):(\d{2}):(\d{2})[.,](\d{3})\s+-->\s+(\d{1,2}):(\d{2}):(\d{2})[.,](\d{3})/, (_,h1,m1,s1,ms1,h2,m2,s2,ms2) =>
+        `${fmt(toMs(h1,m1,s1,ms1)+ms)} --> ${fmt(toMs(h2,m2,s2,ms2)+ms)}`)).join('\n');
+    }
+
     function isFirebaseStorageUrl(url) {
       const s = String(url || '').trim();
       return /^https:\/\/(?:firebasestorage\.googleapis\.com|storage\.googleapis\.com)\//i.test(s)
@@ -447,7 +466,7 @@
       try {
         const parsed = new URL(rawUrl, window.location.href);
         const proxyBase = String(CINEMANA_PROXY || '').replace(/\/$/, '');
-        const isServerSubtitle = proxyBase && parsed.href.startsWith(proxyBase + '/subtitles/');
+        const isServerSubtitle = (proxyBase && parsed.href.startsWith(proxyBase + '/subtitles/')) || (SUBTITLE_PUBLIC_BASE && parsed.href.startsWith(SUBTITLE_PUBLIC_BASE + '/'));
         if (!parsed.protocol.startsWith('blob') && parsed.origin !== window.location.origin && !isServerSubtitle) {
           // الروابط الخارجية فقط تمر عبر بروكسي التحويل. ملفات /subtitles التي يحفظها server.js
           // تُقرأ مباشرة من server.js؛ لا يوجد endpoint /subtitle في السيرفر.
@@ -610,6 +629,11 @@
       const configured = (typeof window !== 'undefined' && (window.CINEMANA_PROXY_URL || window.CINEMANA_PROXY)) ||
         (typeof localStorage !== 'undefined' ? localStorage.getItem('cinemana_proxy_url') : '') ||
         'http://localhost:8787';
+      return String(configured || '').trim().replace(/\/+$/, '');
+    })();
+    const SUBTITLE_PUBLIC_BASE = (() => {
+      const configured = (typeof window !== 'undefined' && (window.SUBTITLE_PUBLIC_BASE_URL || window.CINEMANA_SUBTITLE_PUBLIC_BASE)) ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem('subtitle_public_base_url') : '') || '';
       return String(configured || '').trim().replace(/\/+$/, '');
     })();
 
@@ -958,33 +982,68 @@
       return data.url;
     }
 
-    async function findAndStoreSubdlSubtitle({ sourceId, title, season, episode, type, folder = 'subtitles', onProgress }) {
-      const params = {};
+    async function uploadSubtitleToServer(file, meta = {}) {
+      if (!file) throw new Error('لم يتم اختيار ملف ترجمة.');
+      const raw = await file.text();
+      const usp = new URLSearchParams();
+      usp.set('sourceId', meta.sourceId || '');
+      usp.set('title', meta.title || '');
+      usp.set('type', meta.type || 'movie');
+      if (meta.season != null) usp.set('season', String(meta.season));
+      if (meta.episode != null) usp.set('episode', String(meta.episode));
+      usp.set('baseUrl', String(CINEMANA_PROXY || '').replace(/\/$/, ''));
+      const res = await fetchWithTimeout(`${CINEMANA_PROXY}/subtitles/upload?${usp.toString()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain; charset=utf-8', Accept: 'application/json' },
+        body: raw
+      }, 30000);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok || !data.url) throw new Error(data.error || `فشل رفع ملف الترجمة (رمز ${res.status})`);
+      return data.url;
+    }
+
+    async function findAndStoreSubdlSubtitle({ sourceId, title, year, season, episode, type, folder = 'subtitles', onProgress }) {
       const sid = String(sourceId || '').trim();
-      if (/^tt\d+$/i.test(sid)) params.imdb_id = sid;
-      else if (/^\d+$/.test(sid)) params.tmdb_id = sid;
-      else if (title) params.film_name = String(title);
+      const cleanTitle = String(title || '').trim();
+      const attempts = [];
+      const pushAttempt = params => {
+        const key = JSON.stringify(params);
+        if (!attempts.some(x => x.key === key)) attempts.push({ key, params });
+      };
+      const base = {};
       if (type !== 'movie') {
-        params.season_number = String(Number(season) || 1);
-        params.episode_number = String(Number(episode) || 1);
+        base.season_number = String(Number(season) || 1);
+        base.episode_number = String(Number(episode) || 1);
+        base.type = 'tv';
+      } else {
+        base.type = 'movie';
       }
-      if (onProgress) onProgress('جاري البحث في SubDL...');
-      const results = await withTimeout(
-        subdlSearch(params),
-        25000,
-        'انتهت مهلة البحث في SubDL. تأكد أن server.js يعمل على المنفذ 8787.'
-      );
+      if (/^tt\d+$/i.test(sid)) pushAttempt({ ...base, imdb_id: sid });
+      else if (/^\d+$/.test(sid)) pushAttempt({ ...base, tmdb_id: sid });
+      if (cleanTitle) {
+        pushAttempt({ ...base, film_name: cleanTitle });
+        if (year) pushAttempt({ ...base, film_name: `${cleanTitle} ${Number(year) || ''}`.trim() });
+      }
+      if (!attempts.length) throw new Error('لا يوجد عنوان أو IMDb/TMDB للبحث عن الترجمة.');
+
+      let results = [];
+      let lastError = null;
+      for (let i = 0; i < attempts.length; i++) {
+        const params = attempts[i].params;
+        if (onProgress) onProgress(`جاري البحث في SubDL (${i + 1}/${attempts.length})...`);
+        try {
+          const found = await withTimeout(subdlSearch(params), 25000, 'انتهت مهلة البحث في SubDL.');
+          results = Array.isArray(found) ? found : [];
+          if (results.some(r => r && (r.url || (Array.isArray(r.unpack_files) && r.unpack_files.some(f => f && f.url))))) break;
+        } catch (e) { lastError = e; }
+      }
       const best = results.find(r => r && (r.url || (Array.isArray(r.unpack_files) && r.unpack_files.some(f => f && f.url))));
-      if (!best) throw new Error('لم يتم العثور على ترجمة عربية مناسبة في SubDL');
+      if (!best) throw lastError || new Error('لم يتم العثور على ترجمة عربية مناسبة في SubDL. جرّب رفع ملف الترجمة يدويًا.');
       const unpack = Array.isArray(best.unpack_files) ? best.unpack_files.find(f => f && f.url) : null;
       const link = (unpack && unpack.url) || best.url || '';
       if (!link) throw new Error('SubDL لم يُرجع رابط ترجمة صالحًا');
       if (onProgress) onProgress('تم العثور على الترجمة، جاري تحويلها إلى VTT...');
-      const vtt = await withTimeout(
-        subdlDownload(link),
-        35000,
-        'انتهت مهلة تنزيل الترجمة من SubDL.'
-      );
+      const vtt = await withTimeout(subdlDownload(link), 35000, 'انتهت مهلة تنزيل الترجمة من SubDL.');
       if (onProgress) onProgress('تم تحويل الترجمة، جاري حفظ VTT على server.js...');
       return await publishVttToServer(vtt, { sourceUrl: link, sourceId, title, season, episode, type });
     }
@@ -1001,7 +1060,7 @@
         } else {
           try {
             if (onProgress) onProgress('جاري جلب الترجمة العربية للفلم من SubDL...');
-            out.subtitleUrl = await findAndStoreSubdlSubtitle({ sourceId: sid, title: out.name, type: 'movie', folder: 'subtitles' });
+            out.subtitleUrl = await findAndStoreSubdlSubtitle({ sourceId: sid, title: out.name, year: out.year, type: 'movie', folder: 'subtitles' });
             if (out.subtitleUrl) added = 1;
           } catch (e) {
             failed = 1;
@@ -1025,8 +1084,9 @@
           try {
             if (onProgress) onProgress(`جاري جلب ترجمة الموسم ${Number(se.number) || 1} الحلقة ${Number(ep.number) || 1} — ${done + 1}/${total}`);
             const url = await findAndStoreSubdlSubtitle({
-              sourceId: sid,
+              sourceId: (ep.imdb || sid),
               title: out.name,
+              year: out.year,
               season: se.number,
               episode: ep.number,
               type,
@@ -2448,7 +2508,7 @@
       );
     }
 
-    function VideoPlayer({ src, subtitleUrl, onError, trimStart, trimEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, qualities, onQualityChange, startAt }) {
+    function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart, trimEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, qualities, onQualityChange, startAt }) {
       const videoRef = useRef(null);
       const wrapRef = useRef(null);
       const hideTimerRef = useRef(null);
@@ -2457,6 +2517,8 @@
       const [subtitleSrc, setSubtitleSrc] = useState('');
       const [subtitleLoading, setSubtitleLoading] = useState(false);
       const [subtitleOn, setSubtitleOn] = useState(true);
+      const [subtitleShift, setSubtitleShift] = useState(Number(subtitleOffset) || 0);
+      const [showSubtitleMenu, setShowSubtitleMenu] = useState(false);
       const [natural, setNatural] = useState({ w: 0, h: 0 });
       const [stage, setStage] = useState({ w: 0, h: 0 });
       const isMobile = useIsMobile();
@@ -2470,6 +2532,8 @@
         let cancelled = false;
         setSubtitleSrc('');
         setSubtitleOn(true);
+        setSubtitleShift(Number(subtitleOffset) || 0);
+        setShowSubtitleMenu(false);
         if (!subtitleUrl) { setSubtitleLoading(false); return () => { cancelled = true; }; }
         setSubtitleLoading(true);
         // إذا كانت الترجمة محفوظة في Firebase وكانت بالفعل VTT، دع عنصر <track> يقرأها مباشرة.
@@ -2482,7 +2546,8 @@
         fetchSubtitleAsVtt(subtitleUrl)
           .then(vtt => {
             if (cancelled) return;
-            const blob = new Blob([vtt], { type: 'text/vtt;charset=utf-8' });
+            const shifted = shiftVttTimings(vtt, Number(subtitleShift) || 0);
+            const blob = new Blob([shifted], { type: 'text/vtt;charset=utf-8' });
             objectUrl = URL.createObjectURL(blob);
             setSubtitleSrc(objectUrl);
             setSubtitleLoading(false);
@@ -2498,7 +2563,7 @@
           cancelled = true;
           if (objectUrl) URL.revokeObjectURL(objectUrl);
         };
-      }, [subtitleUrl, src]);
+      }, [subtitleUrl, src, subtitleShift]);
       const fireComplete = () => {
         if (completedRef.current) return;
         completedRef.current = true;
@@ -2819,9 +2884,25 @@
                 <span className="flex-1"></span>
 
                 {subtitleUrl && (
-                  <button type="button" onClick={() => setSubtitleOn(v => !v)} className={`yt-btn h-7 px-2 gap-1 text-[11px] font-bold ${subtitleOn ? 'text-accent-cyan' : 'text-white/50'}`} title={subtitleOn ? 'إخفاء الترجمة' : 'إظهار الترجمة'}>
-                    <Icon name="captions" className="w-3.5 h-3.5" /><span className="hidden xs:inline">{subtitleLoading ? '...' : 'ترجمة'}</span>
-                  </button>
+                  <div className="relative shrink-0">
+                    <button type="button" onClick={() => setShowSubtitleMenu(v => !v)} className={`yt-btn h-7 px-2 gap-1 text-[11px] font-bold ${subtitleOn ? 'text-accent-cyan' : 'text-white/50'}`} title="إعدادات الترجمة">
+                      <Icon name="captions" className="w-3.5 h-3.5" /><span className="hidden xs:inline">{subtitleLoading ? '...' : 'ترجمة'}</span>
+                    </button>
+                    {showSubtitleMenu && (
+                      <div className="absolute bottom-10 left-0 bg-black/95 backdrop-blur-md rounded-xl border border-white/10 p-2 shadow-2xl min-w-[180px] z-30">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span className="text-[10px] text-slate-300 font-bold">توقيت الترجمة</span>
+                          <span className="text-[10px] text-accent-cyan font-mono">{subtitleShift > 0 ? '+' : ''}{(subtitleShift/1000).toFixed(1)}ث</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-1">
+                          <button type="button" onClick={() => setSubtitleShift(v => v - 500)} className="px-2 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10">−0.5ث</button>
+                          <button type="button" onClick={() => setSubtitleShift(0)} className="px-2 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10">تصفير</button>
+                          <button type="button" onClick={() => setSubtitleShift(v => v + 500)} className="px-2 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10">+0.5ث</button>
+                        </div>
+                        <button type="button" onClick={() => setSubtitleOn(v => !v)} className="w-full mt-1.5 px-2 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10">{subtitleOn ? 'إخفاء الترجمة' : 'إظهار الترجمة'}</button>
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {qualityOptions.length > 1 && (
@@ -3109,7 +3190,7 @@
               url = recovered.url; sources = recovered.sources;
             }
             setPlayingUrl(url);
-            setPlayingMeta({ ...title, videoUrl: url, videoSources: sources, subtitleUrl: title.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '' });
+            setPlayingMeta({ ...title, videoUrl: url, videoSources: sources, subtitleUrl: title.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
             setPlayingLabel(title.name);
           } else {
             const found = firstEpisode();
@@ -3133,7 +3214,7 @@
             url = recovered.url; sources = recovered.sources;
           }
           setPlayingUrl(url);
-          setPlayingMeta({ ...ep, videoUrl: url, videoSources: sources, subtitleUrl: ep.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '' });
+          setPlayingMeta({ ...ep, videoUrl: url, videoSources: sources, subtitleUrl: ep.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
           setPlayingSeasonNumber(seasonNumber != null ? seasonNumber : null);
           setPlayingLabel(`${title.name} · ${ep.title || `الحلقة ${ep.number != null ? ep.number : ''}`}`);
         } catch (e) {
@@ -3153,6 +3234,7 @@
 
       const playingQualities = normalizeVideoSources(playingMeta && playingMeta.videoSources ? playingMeta.videoSources : (title.type === 'movie' ? title.videoSources : []));
       const activeSubtitleUrl = (playingMeta && playingMeta.subtitleUrl) || (playingQualities[0] && playingQualities[0].subtitleUrl) || (title.type === 'movie' ? title.subtitleUrl : '');
+      const activeSubtitleOffset = Number((playingMeta && playingMeta.subtitleOffset) ?? (title.type === 'movie' ? title.subtitleOffset : 0)) || 0;
 
       // الترجمة تُجهّز وقت النشر فقط؛ لا نبحث في SubDL أثناء المشاهدة.
       const handleQualityChange = (url, at, quality) => {
@@ -3225,7 +3307,7 @@
               {playingUrl ? (
                 <div className="relative">
                   {isDirectVideo(playingUrl) ? (
-                    <VideoPlayer key={playingUrl + '|' + (playingMeta.subtitleUrl || '')} src={normalizeVideoUrl(playingUrl)} subtitleUrl={activeSubtitleUrl || ''} onError={() => setVideoError(true)}
+                    <VideoPlayer key={playingUrl + '|' + (playingMeta.subtitleUrl || '') + '|' + activeSubtitleOffset} src={normalizeVideoUrl(playingUrl)} subtitleUrl={activeSubtitleUrl || ''} subtitleOffset={activeSubtitleOffset} onError={() => setVideoError(true)}
                       trimStart={playingMeta.trimStart} trimEnd={playingMeta.trimEnd}
                       fitMobile={playingMeta.fitMobile} fitDesktop={playingMeta.fitDesktop} crop={playingMeta.crop}
                       episodeLabel={playingLabel} qualities={playingQualities} startAt={resumeAt} onQualityChange={handleQualityChange}
@@ -4994,40 +5076,59 @@
     }
 
     function emptyForm(type) {
-      return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], subtitleUrl: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
+      return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], subtitleUrl: '', subtitleOffset: 0, trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
     }
 
     function emptyEpisode(num) {
-      return { number: num, title: '', videoUrl: '', videoSources: [], subtitleUrl: '', imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
+      return { number: num, title: '', videoUrl: '', videoSources: [], subtitleUrl: '', subtitleOffset: 0, imdb: '', rt: '', trimStart: 0, trimEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
     }
 
-    function SubtitleHelper({ value, onChange, sourceId, title, type, season, episode, folder = 'subtitles' }) {
+    function SubtitleHelper({ value, onChange, sourceId, title, type, season, episode, year, folder = 'subtitles', offset = 0, onOffsetChange }) {
       const [loading, setLoading] = useState(false);
       const [msg, setMsg] = useState('');
+      const inputRef = useRef(null);
       const get = async () => {
         setLoading(true); setMsg('جاري البحث في SubDL...');
         try {
-          const url = await findAndStoreSubdlSubtitle({ sourceId, title, type, season, episode, folder, onProgress: setMsg });
+          const url = await findAndStoreSubdlSubtitle({ sourceId, title, year, type, season, episode, folder, onProgress: setMsg });
           if (!url) throw new Error('SubDL لم يُرجع رابط ترجمة.');
           onChange(url);
-          setMsg('تم حفظ الترجمة العربية في مجلد subtitles على السيرفر.');
-        } catch (e) {
-          setMsg(e.message || 'تعذر جلب الترجمة.');
-        } finally {
-          setLoading(false);
-        }
+          setMsg('تم حفظ الترجمة العربية على server.js.');
+        } catch (e) { setMsg(e.message || 'تعذر جلب الترجمة.'); }
+        finally { setLoading(false); }
+      };
+      const chooseFile = async (e) => {
+        const file = e.target.files && e.target.files[0];
+        e.target.value = '';
+        if (!file) return;
+        setLoading(true); setMsg('جاري رفع ملف الترجمة إلى server.js...');
+        try {
+          const url = await uploadSubtitleToServer(file, { sourceId, title, type, season, episode });
+          onChange(url);
+          setMsg('تم حفظ ملف الترجمة اليدوي.');
+        } catch (err) { setMsg(err.message || 'تعذر رفع ملف الترجمة.'); }
+        finally { setLoading(false); }
       };
       return (
         <div className="mt-3.5 glass-card rounded-2xl p-3.5 border border-accent-cyan/20">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <p className="text-[11px] font-bold text-accent-cyan">الترجمة العربية</p>
-            <button type="button" onClick={get} disabled={loading} className="px-3 py-1.5 rounded-lg bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan text-[11px] font-bold disabled:opacity-40">{loading ? 'جاري البحث...' : 'جلب من SubDL'}</button>
+            <div className="flex gap-1.5">
+              <button type="button" onClick={get} disabled={loading} className="px-3 py-1.5 rounded-lg bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan text-[11px] font-bold disabled:opacity-40">{loading ? 'جاري...' : 'جلب من SubDL'}</button>
+              <button type="button" onClick={() => inputRef.current && inputRef.current.click()} disabled={loading} className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-200 text-[11px] font-bold disabled:opacity-40">اختيار ملف SRT/VTT</button>
+              <input ref={inputRef} type="file" accept=".srt,.vtt,text/vtt,application/x-subrip" onChange={chooseFile} className="hidden" />
+            </div>
           </div>
-          <div className="mt-2.5">
-            <FileUploadField compact value={value || ''} onChange={onChange} folder={folder} accept=".srt,.vtt,.txt" />
+          <div className="mt-2.5 flex items-center gap-2">
+            <input value={value || ''} onChange={e => onChange(e.target.value)} placeholder="رابط ترجمة اختياري" className="flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" />
+          </div>
+          <div className="mt-2.5 flex items-center gap-2">
+            <label className="text-[10px] text-slate-400 font-bold">تصحيح توقيت الترجمة (ثانية)</label>
+            <input type="number" step="0.5" value={Number(offset) || 0} onChange={e => onOffsetChange && onOffsetChange(Number(e.target.value) || 0)} className="w-24 bg-glass-900 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-accent-cyan" />
+            <span className="text-[9px] text-slate-500">موجب = الترجمة تتأخر، سالب = تتقدم</span>
           </div>
           {msg && <p className="text-[10px] font-bold text-slate-400 mt-2">{msg}</p>}
-          <p className="text-[10px] text-slate-500 mt-1.5">يتم تحويل SRT إلى WebVTT أثناء الحفظ حتى يظهر داخل مشغل الموقع.</p>
+          <p className="text-[10px] text-slate-500 mt-1.5">إذا فشل SubDL، اختر ملف SRT/VTT من جهازك وسيُحفظ على server.js بدون Firebase Storage.</p>
         </div>
       );
     }
@@ -5077,7 +5178,7 @@
             <FileUploadField label="ملف الحلقة (فيديو مباشر أو رابط/iframe)" value={e.videoUrl} onChange={v => set('videoUrl', v)} folder="episodes" accept="video/*" />
           </div>
           <CinemanaHelper kind="tv" season={seasonNumber} episode={e.number} defaultTitle={seriesName} onGenerate={(url) => set('videoUrl', url)} onGenerateQualities={sources => set('videoSources', sources)} onGenerateSubtitle={url => set('subtitleUrl', url)} />
-          <SubtitleHelper value={e.subtitleUrl || ''} onChange={v => set('subtitleUrl', v)} sourceId={sourceId} title={seriesName} type="series" season={seasonNumber} episode={e.number} folder="subtitles" />
+          <SubtitleHelper value={e.subtitleUrl || ''} onChange={v => set('subtitleUrl', v)} sourceId={sourceId} title={seriesName} year={new Date().getFullYear()} type="series" season={seasonNumber} episode={e.number} folder="subtitles" offset={e.subtitleOffset || 0} onOffsetChange={v => set('subtitleOffset', v)} />
           <div className="grid grid-cols-2 gap-3.5 mt-3.5">
             <div>
               <label className="text-xs font-bold text-slate-300 mb-1.5 block">تقييم IMDb</label>
@@ -5254,6 +5355,7 @@
           payload.videoUrl = normalizeVideoUrl(form.videoUrl.trim());
           payload.videoSources = normalizeVideoSources(form.videoSources);
           payload.subtitleUrl = normalizeSubtitleUrl(form.subtitleUrl || '');
+          payload.subtitleOffset = Number(form.subtitleOffset) || 0;
           payload.trimStart = Number(form.trimStart) || 0;
           payload.trimEnd = Number(form.trimEnd) || 0;
           payload.fitMobile = form.fitMobile || 'contain';
@@ -5267,7 +5369,7 @@
             poster: (s.poster || '').trim(),
             episodeThumbnail: (s.episodeThumbnail || '').trim(),
             episodes: (s.episodes || []).map(e => ({
-              number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
+              number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitleOffset: Number(e.subtitleOffset) || 0, imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
               trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
             }))
           }));
@@ -5354,7 +5456,7 @@
                 <FileUploadField label="ملف الفيلم (فيديو مباشر أو رابط/iframe)" value={form.videoUrl} onChange={v => set('videoUrl', v)} folder="videos" accept="video/*" />
               </div>
               <CinemanaHelper kind={form.type === 'anime' ? 'anime' : 'movie'} defaultTitle={form.name} defaultYear={form.year} onGenerate={(url) => set('videoUrl', url)} onGenerateQualities={sources => set('videoSources', sources)} onGenerateSubtitle={url => set('subtitleUrl', url)} onImportTmdb={async (item) => { const r = await importFromTmdbTitle(cinemanaTitle(item), form.type, cinemanaYear(item) || form.year, { withEpisodes: false }); setSourceId(r.sourceId || ''); setForm(prev => ({ ...prev, ...r.patch, videoUrl: prev.videoUrl, videoSources: prev.videoSources })); setBannerData(r.bannerData || null); return r; }} />
-              <SubtitleHelper value={form.subtitleUrl || ''} onChange={v => set('subtitleUrl', v)} sourceId={sourceId} title={form.name} type="movie" folder="subtitles" />
+              <SubtitleHelper value={form.subtitleUrl || ''} onChange={v => set('subtitleUrl', v)} sourceId={sourceId} title={form.name} year={form.year} type="movie" folder="subtitles" offset={form.subtitleOffset || 0} onOffsetChange={v => set('subtitleOffset', v)} />
               <VideoDisplaySettings value={form} onChange={patch => setForm(prev => ({ ...prev, ...patch }))} />
             </div>
           ) : (
