@@ -5559,7 +5559,7 @@
           imdbRating: form.imdbRating.trim(),
           rtRating: form.rtRating.trim(),
           featured: form.featured === true,
-          status: form.status === 'published' ? 'published' : 'draft',
+          status: 'published',
           sourceId: sourceId || '',
           createdAt: initial ? (initial.createdAt || Date.now()) : Date.now(),
           likes: initial ? (initial.likes || 0) : 0,
