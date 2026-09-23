@@ -1003,82 +1003,32 @@
     }
 
     async function findAndStoreSubdlSubtitle({ sourceId, altSourceIds = [], title, year, season, episode, type, folder = 'subtitles', onProgress }) {
-      const cleanTitle = String(title || '').trim();
+      const isTv = type !== 'movie';
       const ids = [sourceId, ...(Array.isArray(altSourceIds) ? altSourceIds : [])]
         .map(x => String(x || '').trim()).filter(Boolean);
-      const attempts = [];
-      const pushAttempt = (params, label) => {
-        const key = JSON.stringify(params);
-        if (!attempts.some(x => x.key === key)) attempts.push({ key, params, label });
-      };
-      const isTv = type !== 'movie';
-      const base = isTv
-        ? { season_number: String(Number(season) || 1), episode_number: String(Number(episode) || 1), type: 'tv' }
-        : { type: 'movie' };
-      const sNum = Number(season) || 1;
-      const eNum = Number(episode) || 1;
-      const seTag = isTv ? `S${String(sNum).padStart(2,'0')}E${String(eNum).padStart(2,'0')}` : '';
-
-      // IDs first: IMDb/TMDB are the most precise SubDL search keys.
-      ids.forEach(id => {
-        if (/^tt\d+$/i.test(id)) pushAttempt({ ...base, imdb_id: id }, `IMDb ${id}`);
-        else if (/^\d+$/.test(id)) pushAttempt({ ...base, tmdb_id: id }, `TMDB ${id}`);
-      });
-
-      if (cleanTitle) {
-        pushAttempt({ ...base, film_name: cleanTitle }, `اسم العمل: ${cleanTitle}`);
-        if (isTv) {
-          // Search by common release/file naming patterns as a fallback.
-          pushAttempt({ ...base, file_name: `${cleanTitle}.${seTag}` }, `اسم الملف: ${cleanTitle}.${seTag}`);
-          pushAttempt({ type: 'tv', film_name: cleanTitle, season_number: String(sNum), full_season: '1' }, `حزمة الموسم ${sNum}`);
-        }
-        if (year) pushAttempt({ ...base, film_name: `${cleanTitle} ${Number(year) || ''}`.trim() }, `الاسم + السنة`);
-      }
-      if (!attempts.length) throw new Error('لا يوجد عنوان أو IMDb/TMDB للبحث عن الترجمة.');
-
-      let allResults = [];
-      let lastError = null;
-      for (let i = 0; i < attempts.length; i++) {
-        const { params, label } = attempts[i];
-        if (onProgress) onProgress(`جاري البحث في SubDL: ${label} (${i + 1}/${attempts.length})...`);
-        try {
-          const found = await withTimeout(subdlSearch(params), 25000, 'انتهت مهلة البحث في SubDL.');
-          const arr = Array.isArray(found) ? found : [];
-          allResults.push(...arr);
-          const usable = arr.some(r => r && (r.url || (Array.isArray(r.unpack_files) && r.unpack_files.some(f => f && f.url))));
-          const exactEpisode = isTv && arr.some(r => {
-            const rs = Number(r.season);
-            const re = Number(r.episode);
-            return rs === sNum && re === eNum && r.url;
-          });
-          if (usable && (!isTv || exactEpisode || params.full_season)) break;
-        } catch (e) { lastError = e; }
-      }
-
-      // Flattened / ranked SubDL results can contain season packs. Prefer an exact episode file.
-      const candidates = allResults.filter(Boolean);
-      let best = null;
+      const imdbId = ids.find(x => /^tt\d+$/i.test(x)) || '';
+      const tmdbId = ids.find(x => /^\d+$/.test(x)) || '';
+      const params = new URLSearchParams();
+      if (imdbId) params.set('imdb_id', imdbId);
+      if (tmdbId) params.set('tmdb_id', tmdbId);
+      if (title) params.set('film_name', String(title).trim());
+      if (year) params.set('year', String(year));
+      params.set('type', isTv ? 'tv' : 'movie');
       if (isTv) {
-        best = candidates.find(r => Number(r.season) === sNum && Number(r.episode) === eNum && r.url);
-        if (!best) best = candidates.find(r => Array.isArray(r.unpack_files) && r.unpack_files.some(f => Number(f.season) === sNum && Number(f.episode) === eNum && f.url));
-        if (!best) best = candidates.find(r => r.url || (Array.isArray(r.unpack_files) && r.unpack_files.some(f => f && f.url)));
-      } else {
-        best = candidates.find(r => r.url || (Array.isArray(r.unpack_files) && r.unpack_files.some(f => f && f.url)));
+        params.set('season_number', String(Number(season) || 1));
+        params.set('episode_number', String(Number(episode) || 1));
       }
-      if (!best) throw lastError || new Error(`لم يتم العثور على ترجمة عربية للحلقة ${isTv ? `S${String(sNum).padStart(2,'0')}E${String(eNum).padStart(2,'0')}` : ''}.`);
-
-      let unpack = null;
-      if (Array.isArray(best.unpack_files)) {
-        unpack = isTv
-          ? (best.unpack_files.find(f => f && Number(f.season) === sNum && Number(f.episode) === eNum && f.url) || best.unpack_files.find(f => f && f.url))
-          : best.unpack_files.find(f => f && f.url);
+      if (onProgress) onProgress(`جاري البحث الذكي في SubDL${isTv ? ` عن S${String(Number(season)||1).padStart(2,'0')}E${String(Number(episode)||1).padStart(2,'0')}` : ''}...`);
+      const findRes = await fetchWithTimeout(`${CINEMANA_PROXY}/subdl/find?${params.toString()}`, { headers: { Accept: 'application/json' } }, 45000);
+      const findData = await findRes.json().catch(() => ({}));
+      if (!findRes.ok || !findData.ok || !findData.url) {
+        const tried = Array.isArray(findData.tried) ? findData.tried.map(x => `${x.label}:${x.count ?? x.status ?? x.error ?? ''}`).join('، ') : '';
+        throw new Error(`${findData.error || 'SubDL لم يجد ترجمة مناسبة'}${tried ? ` [${tried}]` : ''}`);
       }
-      const link = (unpack && unpack.url) || best.url || '';
-      if (!link) throw new Error('SubDL لم يُرجع رابط ترجمة صالحًا');
-      if (onProgress) onProgress(`تم العثور على الترجمة، جاري تحويلها إلى VTT...`);
-      const vtt = await withTimeout(subdlDownload(link), 35000, 'انتهت مهلة تنزيل الترجمة من SubDL.');
+      if (onProgress) onProgress(`تم العثور على ${findData.name || 'ترجمة عربية'}، جاري تنزيلها وتحويلها...`);
+      const vtt = await withTimeout(subdlDownload(findData.url), 35000, 'انتهت مهلة تنزيل الترجمة من SubDL.');
       if (onProgress) onProgress('تم تحويل الترجمة، جاري حفظ VTT على server.js...');
-      return await publishVttToServer(vtt, { sourceUrl: link, sourceId: ids[0] || '', title, season, episode, type });
+      return await publishVttToServer(vtt, { sourceUrl: findData.url, sourceId: ids[0] || '', title, season, episode, type });
     }
 
     async function prepareSubtitlesForPublish(payload, sourceId, onProgress, altSourceIds = []) {
