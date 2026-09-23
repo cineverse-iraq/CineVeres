@@ -5,10 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Cinadam - أفلام ومسلسلات وأنمي</title>
 
-  <!-- تحميل خط الموقع أول شي بالصفحة (قبل أي سكربت) حتى ما تطلع شاشة التحميل بخط افتراضي ثم تتبدل -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Almarai:wght@400;700;800&family=Cairo:wght@400;500;600;700;800;900&family=Changa:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Noto+Kufi+Arabic:wght@400;500;600;700&family=Noto+Sans+Arabic:wght@400;500;600;700&family=Tajawal:wght@400;500;700;800&display=swap">
 
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -78,7 +77,6 @@
     .toast-item { animation: toastIn 0.32s var(--liquid); }
     .toast-item-out { animation: toastOut 0.22s var(--collapse) forwards; }
 
-    /* عنصر يُضاف/يُحذف من قائمة: دخول وخروج سلس بدل الظهور المفاجئ */
     @keyframes itemSinkIn { 0% { opacity: 0; transform: scale(0.7) translateY(-16px); } 60% { opacity: 1; transform: scale(1.04) translateY(2px); } 100% { opacity: 1; transform: scale(1) translateY(0); } }
     @keyframes itemPopOut { 0% { opacity: 1; transform: scale(1) translateY(0); } 100% { opacity: 0; transform: scale(0.6) translateY(14px); } }
     .item-sink-in { animation: itemSinkIn 0.34s var(--spring); }
@@ -88,7 +86,6 @@
     .row-sink-in { animation: rowSinkIn 0.36s var(--spring); overflow: hidden; }
     .row-pop-out { animation: rowPopOut 0.3s var(--collapse) forwards; overflow: hidden; }
 
-    /* كبسولة إشعارات بأسلوب Dynamic Island */
     @keyframes islandExpand { 0% { opacity: 0; transform: translateX(-50%) scale(0.35); } 55% { opacity: 1; transform: translateX(-50%) scale(1.04); } 100% { opacity: 1; transform: translateX(-50%) scale(1); } }
     @keyframes islandCollapse { 0% { opacity: 1; transform: translateX(-50%) scale(1); } 100% { opacity: 0; transform: translateX(-50%) scale(0.5); } }
     .island-in { animation: islandExpand 0.5s var(--spring); transform-origin: top center; }
@@ -96,7 +93,6 @@
 
     .nav-pill-active { transition: transform 0.45s var(--spring), width 0.45s var(--spring); }
 
-    /* مربع البحث بالموبايل: يتمدد من الزر بدل الظهور فجأة */
     .mobile-search-morph { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 0.3s var(--collapse), opacity 0.2s ease; }
     .mobile-search-morph.open { grid-template-rows: 1fr; opacity: 1; transition: grid-template-rows 0.3s var(--liquid), opacity 0.22s ease; }
     .mobile-search-morph > div { overflow: hidden; min-height: 0; }
@@ -106,7 +102,6 @@
     input, textarea, select { font-size: 16px !important; transition: border-color 0.25s ease, box-shadow 0.25s ease; }
     @media (min-width: 768px) { input, textarea, select { font-size: 14px !important; } }
 
-    /* زجاج سائل بأسلوب iOS 26: طبقة انعكاس علوية + بريق حي + عمق حقيقي */
     .glass-panel {
       background: linear-gradient(165deg, rgba(255,255,255,0.09), rgba(255,255,255,0) 38%), rgba(14, 19, 31, 0.72);
       backdrop-filter: blur(26px) saturate(1.7);
@@ -350,9 +345,6 @@
       db.ref(`notifications/${sanitizeKey(toUsername)}`).push({ ...data, date: Date.now(), read: false });
     }
 
-    // لا يوجد أي <track> للترجمة في مشغل الموقع، ويتم أيضًا تنظيف معاملات الترجمة القديمة من الروابط.
-    // إزالة أي معاملات ترجمة قديمة من روابط المشغل المحفوظة في Firebase.
-    // هذا مهم حتى الروابط القديمة التي كانت تحتوي sub_url / lang لا تعيد تشغيل الترجمة.
     function stripSubtitleParams(url) {
       if (!url) return url;
       const subtitleKeys = ['sub_url', 'sub_file', 'sub_lang', 'sub_label', 'sub_default', 'ds_lang', 'lang'];
@@ -422,7 +414,6 @@
       if (!url) return '';
       const value = String(url).trim();
       if (!value) return '';
-      // نرفض معاملات/روابط الترجمة القديمة المرسلة داخل رابط فيديو؛ ملف الترجمة يُخزن كرابط مستقل.
       return value;
     }
 
@@ -457,9 +448,6 @@
         || /^https:\/\/[^/]+\.firebasestorage\.app\//i.test(s);
     }
 
-    // ==== SUBTITLE ENGINE START ====
-    // محرك الترجمة: قراءة SRT/VTT، تخزين في Firebase Realtime Database (بدون Storage وبدون قرص)،
-    // وإعدادات المشاهد. الروابط الجديدة بصيغة  fbsub:<key>  والقديمة (http) تبقى شغالة.
     const SUB_AD_RE = /opensubtitles|subscene|addic7ed|podnapisi|subdl|yts\.|yify|www\.|https?:\/\/|\.com\b|\.org\b|\.net\b|ترجمة\s*:|ترجمة وتعديل|تعديل التوقيت|اشترك|قناتنا|تليجرام|telegram/i;
     const SUB_TS_RE = /(?:(\d{1,2}):)?(\d{1,2}):(\d{2})[.,](\d{1,3})\s*-->\s*(?:(\d{1,2}):)?(\d{1,2}):(\d{2})[.,](\d{1,3})/;
 
@@ -513,7 +501,6 @@
       return 'WEBVTT\n\n' + cues.map(c => `${fmt(c.s + off)} --> ${fmt(c.e + off)}\n${c.text}`).join('\n\n') + '\n';
     }
 
-    // أي cue نشط الآن (بحث ثنائي) — t بالملي ثانية بعد طرح التصحيح
     function activeCueText(cues, tMs) {
       let lo = 0, hi = cues.length - 1, idx = -1;
       while (lo <= hi) { const mid = (lo + hi) >> 1; if (cues[mid].s <= tMs) { idx = mid; lo = mid + 1; } else hi = mid - 1; }
@@ -573,7 +560,6 @@
         }
         throw lastErr || new Error('تعذر تحميل الترجمة');
       }
-      // روابط قديمة: مباشرة أولًا، ثم عبر البروكسي (تجاوز CORS)
       const routes = [u];
       try {
         const parsed = new URL(u, window.location.href);
@@ -604,8 +590,16 @@
       return cuesToVttText(await loadSubtitleCues(url), 0);
     }
 
-    // إعدادات المشاهد (محفوظة على جهازه) + تصحيح توقيت لكل ترجمة
-    const SUB_PREF_DEFAULTS = { size: 100, color: '#ffffff', bg: 'outline', pos: 6, weight: 700 };
+    const SUB_PREF_DEFAULTS = { size: 100, color: '#ffffff', bg: 'outline', pos: 6, weight: 700, fontFamily: 'Cairo' };
+    const SUB_FONT_OPTIONS = [
+      { id: 'Cairo', label: 'Cairo' },
+      { id: 'Tajawal', label: 'Tajawal' },
+      { id: 'Almarai', label: 'Almarai' },
+      { id: 'Noto Sans Arabic', label: 'Noto Sans Arabic' },
+      { id: 'Noto Kufi Arabic', label: 'Noto Kufi Arabic' },
+      { id: 'IBM Plex Sans Arabic', label: 'IBM Plex Sans Arabic' },
+      { id: 'Changa', label: 'Changa' },
+    ];
     function readSubPrefs() {
       try { return { ...SUB_PREF_DEFAULTS, ...(JSON.parse(localStorage.getItem('cinadam_sub_prefs') || '{}')) }; }
       catch (e) { return { ...SUB_PREF_DEFAULTS }; }
@@ -619,7 +613,6 @@
         if (ms) localStorage.setItem(k, String(ms)); else localStorage.removeItem(k);
       } catch (e) {}
     }
-    // ==== SUBTITLE ENGINE END ====
 
     async function persistSubtitleToFirebase(url, folder = 'subtitles') {
       const rawUrl = normalizeSubtitleUrl(url);
@@ -658,8 +651,6 @@
       return `الحلقة ${ord}`;
     }
 
-    // ===== اتجاه النص: يمنع انعكاس علامات الترقيم (. ! : ( ) ...) في أسماء الحلقات =====
-    // كل جزء نص ياخذ اتجاهه الخاص: إذا فيه حروف عربية → RTL، غير هيچ → LTR
     function hasArabicChars(str) {
       return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(str || '');
     }
@@ -667,7 +658,6 @@
       const str = children == null ? '' : String(children);
       return <bdi dir={hasArabicChars(str) ? 'rtl' : 'ltr'}>{str}</bdi>;
     }
-    // يعرض تسمية مركّبة مثل "اسم العمل · اسم الحلقة" وكل جزء باتجاهه الصحيح
     function BidiJoined({ text, sep }) {
       const sp = sep || ' · ';
       const parts = String(text == null ? '' : text).split(sp);
@@ -720,8 +710,6 @@
       return /\.(mp4|webm|ogg|mov|m3u8)(\?.*)?$/i.test(url || '');
     }
 
-    // يبني رابط VidAPI بدون أي ترجمة خارجية أو بحث تلقائي عن OpenSubtitles.
-    // بهذه الطريقة تبقى الترجمة خارج المنظومة تمامًا، ولا تُرسل أي معاملات sub_url/lang للمشغل.
     const VIDAPI_EMBED_HOST = 'https://player.cinadam.xyz';
 
     async function buildVidApiUrl(kind, rawId, season, episode) {
@@ -761,13 +749,6 @@
       );
     }
 
-    // ===== سينمانا (شبكتي): جلب روابط الفيديو عبر بروكسي Node.js المحلي =====
-    // هذا يطابق server.js الذي يعمل على جهازك:
-    // http://localhost:8787/search
-    // http://localhost:8787/info/:id
-    // http://localhost:8787/episodes/:id
-    // http://localhost:8787/videos/:id
-    // يمكن تغييره اختياريًا عبر window.CINEMANA_PROXY_URL أو localStorage.
     const CINEMANA_PROXY = (() => {
       const configured = (typeof window !== 'undefined' && (window.CINEMANA_PROXY_URL || window.CINEMANA_PROXY)) ||
         (typeof localStorage !== 'undefined' ? localStorage.getItem('cinemana_proxy_url') : '') ||
@@ -867,8 +848,6 @@
       return Number(ep && (ep.episodeNummer ?? ep.episode ?? ep.episodeNumber ?? ep.number)) || 0;
     }
 
-    // بطاقة اختيار العمل من سينمانا: بحث ← اختيار عنوان ← جودات متعددة.
-    // عند توفر onImportTmdb يتم أيضًا جلب بيانات TMDB تلقائيًا من اسم العمل وسنته.
     function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGenerate, onGenerateQualities, onGenerateSubtitle, onPickedNb, onImportTmdb }) {
       const [query, setQuery] = useState(defaultTitle || '');
       useEffect(() => { if (defaultTitle) setQuery(defaultTitle); }, [defaultTitle]);
@@ -881,7 +860,6 @@
       const autoRanFor = useRef('');
       const [subMsg, setSubMsg] = useState('');
 
-      // بعد تحديد فيديو سينمانا: نجلب ترجمته العربية تلقائيًا (ترجمة سينمانا نفسها ثم SubDL)
       const autoSubtitle = async (nb, item) => {
         if (!onGenerateSubtitle) return;
         setSubMsg('جاري البحث عن الترجمة العربية...');
@@ -916,7 +894,6 @@
           setQuery(defaultTitle);
           setTimeout(() => search(true), 0);
         }
-        // eslint-disable-next-line
       }, [defaultTitle, defaultYear]);
 
       const pickTitle = async (item) => {
@@ -1135,7 +1112,6 @@
       return { url, cues: cues.length };
     }
 
-    // المحرك الذكي: السيرفر يجرب ترجمة سينمانا نفسها ثم SubDL ويفحص الجودة، والموقع يحفظ النتيجة في Firebase.
     async function findAndStoreSubtitle({ cinemanaId, sourceId, altSourceIds = [], title, year, season, episode, type, onProgress }) {
       const ids = [sourceId, ...(Array.isArray(altSourceIds) ? altSourceIds : [])].map(x => String(x || '').trim()).filter(Boolean);
       const imdb = ids.find(x => /^tt\d+$/i.test(x)) || '';
@@ -1263,8 +1239,6 @@
       return link ? subdlDownload(link) : '';
     }
 
-    // استيراد مسلسل/أنمي كامل من سينمانا مع TMDB:
-    // TMDB = البيانات والمواسم والحلقات، سينمانا = روابط الفيديو والجودات.
     function CinemanaSeriesImportPanel({ type, defaultTitle, defaultYear, onImport }) {
       const [query, setQuery] = useState(defaultTitle || '');
       const [loading, setLoading] = useState(false);
@@ -1320,7 +1294,6 @@
       );
     }
 
-    // ===== TMDB: تعبئة تلقائية لبيانات العمل من معرف IMDB/TMDB =====
     const TMDB_IMG = 'https://image.tmdb.org/t/p/';
 
     const TMDB_API_KEY = 'a1ab2b7d22e16c6c20e9e419b8f1c098';
@@ -1342,7 +1315,6 @@
       return res.json();
     }
 
-    // OMDb (يسحب من قاعدة بيانات IMDB مباشرة) — نستخدمه احتياط بس إذا TMDB ما عنده اسم الحلقة
     const OMDB_API_KEY = '52191abb';
     async function omdbFetch(params) {
       const usp = new URLSearchParams(Object.assign({ apikey: OMDB_API_KEY }, params || {}));
@@ -1356,10 +1328,7 @@
       return res.json();
     }
 
-    // Fanart.tv: بنرات رسمية لكل موسم (صور عريضة 16:9 مثل بنر House الأزرق/البرتقالي).
-    // مفتاح مجاني: سجّل بموقع fanart.tv ← Your Profile ← Personal API Key، وحطه بين علامتي التنصيص. إذا تركته فاضي، ما راح ينجلب بنر رسمي ويرجع للصورة من الحلقات.
     const FANART_API_KEY = '4c496b546faecfec345fe324b30456c6';
-    // يجيب من Fanart: TV Thumbs (بنرات المسلسل العريضة) + بنرات المواسم، مرتبة بالأكثر إعجابًا (الإنكليزي/بدون لغة أولًا)
     async function fetchFanartData(tvdbId) {
       const out = { tv: [], seasons: {} };
       if (!FANART_API_KEY || !tvdbId) return out;
@@ -1381,7 +1350,6 @@
       return out;
     }
 
-    // يلقى معرف المسلسل (IMDB) من روابط الحلقات المولّدة، حتى نشتغل على أعمال محفوظة من قبل
     function guessTvSourceId(seasons) {
       for (const se of (seasons || [])) {
         for (const ep of (se.episodes || [])) {
@@ -1392,7 +1360,6 @@
       return '';
     }
 
-    // يجهّز كل بيانات البنرات للمسلسل بطلب واحد (ويتخزن): TV Thumbs + بنرات المواسم + احتياط من TMDB
     async function loadTvBannerData(sourceId) {
       const id = (sourceId || '').trim();
       if (!id) throw new Error('ما لكيت معرف المسلسل. سوّي تعبئة تلقائية أو تأكد إن روابط الحلقات مولّدة من VidAPI.');
@@ -1408,7 +1375,6 @@
       return { tv: fan.tv, seasons: fan.seasons, tmdb: tmdb, tmdbId: tmdbId };
     }
 
-    // خلفيات TMDB العريضة (16:9): نضيف اللي بدون لغة/نص أول، ومرتبة بالتقييم
     async function fetchTmdbBackdrops(tmdbId) {
       try {
         const im = await tmdbFetch(`tv/${tmdbId}/images`, { include_image_language: 'null,en' });
@@ -1420,7 +1386,6 @@
       } catch (e) { return []; }
     }
 
-    // يقبل: tt1517268 · 385687 · رابط IMDB · رابط TMDB
     function parseMediaInput(raw) {
       const s = (raw || '').trim();
       if (!s) return null;
@@ -1436,7 +1401,6 @@
       return (list || []).slice(0, limit || 3).map(p => p.name).filter(Boolean).join('، ');
     }
 
-    // يرجّع: { patch, sourceId, media }
     async function importFromTmdb(rawInput, currentType, opts) {
       const options = opts || {};
       const parsed = parseMediaInput(rawInput);
@@ -1456,7 +1420,6 @@
 
       const data = await tmdbFetch(`${media}/${tmdbId}`, { language: 'ar', append_to_response: 'external_ids' });
 
-      // نجيب النسخة الإنكليزية دايمًا: للاسم، ولأسماء المخرج/الكاتب (حتى تصير موحّدة بالإنكليزي دائمًا وما تصير مرة عربي ومرة انكليزي)
       let en = null;
       try { en = await tmdbFetch(`${media}/${tmdbId}`, { language: 'en-US', append_to_response: 'credits' }); } catch (e) {}
 
@@ -1468,7 +1431,6 @@
 
       if (!imdbId) imdbId = (data.external_ids && data.external_ids.imdb_id) || '';
 
-      // المخرج والكاتب دايمًا بالإنكليزي (أسماء الأشخاص بـTMDB أحيانًا تنترجم عربي وأحيانًا لا، فيصير تشتت لو اعتمدنا النسخة العربية)
       const crew = (en && en.credits && en.credits.crew) || [];
       let director = tmdbNames(crew.filter(c => c.job === 'Director'));
       let writer = tmdbNames(crew.filter(c => ['Writer', 'Screenplay', 'Story', 'Novel', 'Teleplay'].includes(c.job)));
@@ -1495,7 +1457,6 @@
         imdbRating: '',
       };
 
-      // تقييم IMDb الحقيقي عبر OMDb (مو تقييم TMDB). إذا ما انجلب، نتركه فاضي بدل ما نحط رقم غلط.
       const notes = [];
       let omdbBroken = false;
       const noteOmdb = (od) => {
@@ -1514,7 +1475,6 @@
         notes.push('ما لكيت معرف IMDb لهذا العمل، فما انجلب تقييم IMDb.');
       }
 
-      // نوع العمل: نبدّل فيلم/مسلسل فقط، ونترك "أنمي" كما هو
       if (media === 'tv' && currentType === 'movie') patch.type = 'series';
       if (media === 'movie' && currentType !== 'movie') patch.type = 'movie';
 
@@ -1536,11 +1496,9 @@
           const s = list[i];
           if (options.onProgress) options.onProgress(`جاري جلب الموسم ${s.season_number} (${i + 1}/${list.length})...`);
           let sd;
-          // نجيب الحلقات بالإنكليزي دائمًا: ترجمة أسماء الحلقات عربي بـTMDB غالبًا غير دقيقة/ناقصة
           try { sd = await tmdbFetch(`tv/${tmdbId}/season/${s.season_number}`, { language: 'en-US' }); }
           catch (e) { continue; }
 
-          // تقييمات حلقات IMDb الحقيقية (وأسماء الحلقات الناقصة) من OMDb بطلب واحد لكل موسم
           let omdbEpisodes = null;
           if (imdbId && !omdbBroken) {
             try {
@@ -1552,7 +1510,6 @@
 
           const seasonPoster = s.poster_path ? TMDB_IMG + 'w500' + s.poster_path : '';
           const episodesRaw = sd.episodes || [];
-          // بنر الموسم الافتراضي: خلفية TMDB (كل موسم ياخذ وحدة مختلفة بالترتيب)، وإذا ما اكو، Fanart، وإذا ما اكو، لقطة من الموسم. تقدر تبدّله من المنتقي.
           const stillEp = episodesRaw.find(ep => ep.still_path);
           const seasonBanner = (tmdbBackdrops.length ? tmdbBackdrops[i % tmdbBackdrops.length] : '') ||
             (fanart.tv.length ? fanart.tv[i % fanart.tv.length] : '') ||
@@ -1588,10 +1545,6 @@
       return { patch: patch, sourceId: sourceId, media: media, tmdbId: tmdbId, imdbId: imdbId, bannerData: bannerData, notes: notes };
     }
 
-    // ===== ذكاء التعبئة التلقائية: تحديد "حالة الحلقة" لآخر حلقة بكل موسم =====
-    // - إذا اكو موسم بعد هذا الموسم  → آخر حلقة بالموسم
-    // - إذا ماكو موسم بعده (آخر موسم) والمسلسل منتهي → آخر حلقة (نهاية العمل)
-    // - إذا المسلسل ما زال مستمر: آخر موسم يُعلَّم "آخر حلقة بالموسم" فقط إذا الموسم مكتمل (ماكو حلقة قادمة بيه)
     function autoAssignEpisodeFinality(seasons, allSeasonNumbers, showInfo) {
       const maxSeason = Math.max.apply(null, (allSeasonNumbers || []).concat(seasons.map(s => s.number)));
       const status = (showInfo && showInfo.status) || '';
@@ -2607,7 +2560,6 @@
       );
     }
 
-    // طبقة عرض الترجمة (تُرسم فوق الفيديو، ومتزامنة مع currentTime بدقة الإطار)
     function SubtitleOverlay({ videoRef, cues, shiftMs, prefs, lifted }) {
       const [text, setText] = useState('');
       const [boxH, setBoxH] = useState(360);
@@ -2648,7 +2600,7 @@
           {text && (
             <div style={{ position: 'absolute', left: 0, right: 0, bottom: `calc(${Number(prefs.pos) || 0}% + ${lifted ? 46 : 0}px)`, transition: 'bottom .2s', textAlign: 'center', padding: '0 4%' }}>
               {text.split('\n').map((line, i) => (
-                <div key={i}><span dir="auto" style={{ ...bgStyle, display: 'inline-block', color: prefs.color, fontSize: fontPx + 'px', fontWeight: prefs.weight, lineHeight: 1.5, textShadow: shadow, fontFamily: "'Cairo', sans-serif" }}>{line}</span></div>
+                <div key={i}><span dir="auto" style={{ ...bgStyle, display: 'inline-block', color: prefs.color, fontSize: fontPx + 'px', fontWeight: prefs.weight, lineHeight: 1.5, textShadow: shadow, fontFamily: `'${prefs.fontFamily || 'Cairo'}', sans-serif` }}>{line}</span></div>
               ))}
             </div>
           )}
@@ -2721,7 +2673,6 @@
         return () => { cancelled = true; };
       }, [subtitleUrl, subRetry]);
 
-      // iOS يعرض الفيديو بمشغله الأصلي في ملء الشاشة، لذلك نستخدم <track> أصلي هناك فقط
       useEffect(() => {
         if (!isIOS) return;
         if (!activeCues.length) { setSubtitleSrc(''); return; }
@@ -2786,6 +2737,17 @@
       const [showSpeedMenu, setShowSpeedMenu] = useState(false);
       const [showQualityMenu, setShowQualityMenu] = useState(false);
       const [fakeFullscreen, setFakeFullscreen] = useState(false);
+
+      useEffect(() => {
+        const closeMenus = (e) => {
+          if (e.target && e.target.closest && e.target.closest('[data-player-menu]')) return;
+          setShowSubtitleMenu(false);
+          setShowQualityMenu(false);
+          setShowSpeedMenu(false);
+        };
+        document.addEventListener('pointerdown', closeMenus);
+        return () => document.removeEventListener('pointerdown', closeMenus);
+      }, []);
 
       useEffect(() => {
         const videoEl = videoRef.current;
@@ -2902,7 +2864,6 @@
       useEffect(() => {
         if (!ctrl.playing) { setBarVisible(true); if (hideTimerRef.current) clearTimeout(hideTimerRef.current); }
         else showBarTemporarily();
-        // eslint-disable-next-line
       }, [ctrl.playing]);
       useEffect(() => () => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current); }, []);
 
@@ -2923,22 +2884,26 @@
         return () => window.removeEventListener('keydown', onKeyDown);
       }, [fakeFullscreen]);
 
-      const clickState = useRef({ count: 0, timer: null });
+      const clickState = useRef({ timer: null });
       const onStageClick = (e) => {
-        if (e.target.closest && e.target.closest('.yt-controls-bottom')) return;
-        const rect = wrapRef.current.getBoundingClientRect();
-        const relX = (e.clientX - rect.left) / rect.width;
-        clickState.current.count += 1;
+        if (e.target.closest && (e.target.closest('.yt-controls-bottom') || e.target.closest('[data-player-menu]'))) return;
         if (clickState.current.timer) clearTimeout(clickState.current.timer);
         clickState.current.timer = setTimeout(() => {
-          if (clickState.current.count === 1) { setBarVisible(v => !v); if (!barVisible) showBarTemporarily(); }
-          clickState.current.count = 0;
-        }, 260);
-        if (clickState.current.count === 2) {
-          clickState.current.count = 0;
-          if (clickState.current.timer) clearTimeout(clickState.current.timer);
-          if (relX < 0.35) skip(-5); else if (relX > 0.65) skip(5); else togglePlay();
-        }
+          clickState.current.timer = null;
+          togglePlay();
+          showBarTemporarily();
+        }, 220);
+      };
+      const onStageDoubleClick = (e) => {
+        if (e.target.closest && (e.target.closest('.yt-controls-bottom') || e.target.closest('[data-player-menu]'))) return;
+        if (clickState.current.timer) clearTimeout(clickState.current.timer);
+        clickState.current.timer = null;
+        const rect = wrapRef.current && wrapRef.current.getBoundingClientRect();
+        if (!rect) return;
+        const relX = (e.clientX - rect.left) / rect.width;
+        if (relX < 0.35) skip(-5);
+        else if (relX > 0.65) skip(5);
+        else { togglePlay(); showBarTemporarily(); }
       };
 
       let videoStyle = { objectFit: 'contain' };
@@ -2979,7 +2944,7 @@
       const RATE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
       return (
-        <div ref={wrapRef} className={`video-crop-wrap ${fakeFullscreen ? 'ios-fake-fullscreen' : 'aspect-video'}`} onMouseMove={showBarTemporarily} onClick={onStageClick}>
+        <div ref={wrapRef} className={`video-crop-wrap ${fakeFullscreen ? 'ios-fake-fullscreen' : 'aspect-video'}`} onMouseMove={showBarTemporarily} onClick={onStageClick} onDoubleClick={onStageDoubleClick}>
           {loading && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none z-10">
               <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan yt-spinner"></div>
@@ -3050,7 +3015,7 @@
 
                 <span className="flex-1"></span>
 
-                <div className="relative shrink-0">
+                <div className="relative shrink-0" data-player-menu>
                   <button type="button" onClick={() => { setShowSubtitleMenu(v => !v); setShowQualityMenu(false); setShowSpeedMenu(false); }} className={`yt-btn h-7 px-2 gap-1 text-[11px] font-bold ${subtitleOn && activeCues.length ? 'text-accent-cyan' : 'text-white/60'}`} title="إعدادات الترجمة">
                     <Icon name="captions" className="w-3.5 h-3.5" /><span className="hidden xs:inline">{subtitleLoading ? '...' : 'ترجمة'}</span>
                   </button>
@@ -3080,6 +3045,15 @@
                       <div className="flex items-center justify-between mb-0.5"><span className="text-[10px] text-slate-300 font-bold">حجم الخط</span><span className="text-[10px] text-accent-cyan font-mono">{subPrefs.size}%</span></div>
                       <input type="range" min="60" max="220" step="10" value={subPrefs.size} onChange={e => updSubPrefs({ size: Number(e.target.value) })} className="w-full mb-2" style={{ accentColor: '#00F0FF' }} />
 
+                      <span className="text-[10px] text-slate-300 font-bold block mb-1">خط الترجمة</span>
+                      <div className="grid grid-cols-2 gap-1 mb-2">
+                        {SUB_FONT_OPTIONS.map(f => (
+                          <button key={f.id} type="button" onClick={() => updSubPrefs({ fontFamily: f.id })}
+                            className={`px-2 py-1.5 rounded-lg text-[10px] font-bold border ${subPrefs.fontFamily === f.id ? 'bg-accent-cyan text-glass-950 border-accent-cyan' : 'bg-white/5 text-white border-white/5 hover:bg-white/10'}`}
+                            style={{ fontFamily: `'${f.id}', sans-serif` }}>{f.label}</button>
+                        ))}
+                      </div>
+
                       <span className="text-[10px] text-slate-300 font-bold block mb-1">لون الخط</span>
                       <div className="flex gap-1.5 mb-2">
                         {['#ffffff', '#ffe14d', '#00f0ff', '#7cff7c'].map(c => (
@@ -3108,7 +3082,7 @@
                 </div>
 
                 {qualityOptions.length > 1 && (
-                  <div className="relative shrink-0">
+                  <div className="relative shrink-0" data-player-menu>
                     <button type="button" onClick={() => { setShowQualityMenu(v => !v); setShowSpeedMenu(false); }} className="yt-btn h-7 px-2 gap-1 text-[11px] font-bold" title="اختيار الجودة">
                       <Icon name="sliders-horizontal" className="w-3.5 h-3.5" /><span>{currentQuality ? currentQuality.label : 'جودة'}</span>
                     </button>
@@ -3122,7 +3096,7 @@
                   </div>
                 )}
 
-                <div className="relative shrink-0">
+                <div className="relative shrink-0" data-player-menu>
                   <button type="button" onClick={() => { setShowSpeedMenu(v => !v); setShowQualityMenu(false); }} className="yt-btn h-7 px-2 gap-1 text-[11px] font-bold" title="سرعة التشغيل">
                     <Icon name="gauge" className="w-3.5 h-3.5" /><span className="hidden xs:inline">{ctrl.rate}×</span>
                   </button>
@@ -3146,7 +3120,6 @@
       );
     }
 
-    // ===== الأعمال المشابهة: ترتيب حقيقي بالنقاط (مو بس نفس التصنيف) =====
     const normName = (s) => (s || '').toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]+/g, ' ').trim();
     const RECS_CACHE = {};
 
@@ -3159,7 +3132,6 @@
       return id ? { kind: 'tv', id: id } : null;
     }
 
-    // ترشيحات TMDB الحقيقية لهذا العمل (recommendations + similar)، ترجّع قائمة أسماء مرتبة. نتيجتها تنخزن بالذاكرة.
     async function fetchTmdbRecommendedNames(title) {
       if (RECS_CACHE[title.id]) return RECS_CACHE[title.id];
       const src = guessTitleSource(title);
@@ -3356,8 +3328,6 @@
 
       const getSavedVideoUrl = (item) => normalizeVideoUrl((item && item.videoUrl) || (((item && item.videoSources) || [])[0] || {}).url || '');
 
-      // استرجاع رابط سينمانا تلقائياً إذا كان العمل محفوظاً بدون videoUrl.
-      // هذا يحمي الأعمال القديمة بعد إضافة SubDL أو بعد استيراد بيانات ناقصة.
       const recoverMovieVideo = async () => {
         const results = await cinemanaSearch(title.name, title.type === 'anime' ? 'anime' : 'movie');
         const pick = results.find(r => String(cinemanaYear(r) || '') === String(title.year || '')) || results[0];
@@ -3438,7 +3408,6 @@
       const activeSubtitleUrl = (playingMeta && playingMeta.subtitleUrl) || (playingQualities[0] && playingQualities[0].subtitleUrl) || (title.type === 'movie' ? title.subtitleUrl : '');
       const activeSubtitleOffset = Number((playingMeta && playingMeta.subtitleOffset) ?? (title.type === 'movie' ? title.subtitleOffset : 0)) || 0;
 
-      // الترجمة تُجهّز وقت النشر فقط؛ لا نبحث في SubDL أثناء المشاهدة.
       const handleQualityChange = (url, at, quality) => {
         if (!url || url === playingUrl) return;
         setVideoError(false);
@@ -5086,7 +5055,6 @@
           let y = Math.max(0, Math.min(cy - h / 2, 100 - h));
           return { x, y, w, h };
         });
-        // eslint-disable-next-line
       }, [ratioLock]);
 
       const beginDrag = (e, mode) => {
@@ -5421,12 +5389,10 @@
       const [bannerLoading, setBannerLoading] = useState(false);
       const [bannerError, setBannerError] = useState('');
       const [showAllBanners, setShowAllBanners] = useState(false);
-      const [bannerSource, setBannerSource] = useState('tmdb');
-      const [seasonStills, setSeasonStills] = useState({});
+      const [bannerSource, setBannerSource] = useState('seasonthumb');
 
       const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
-      // يجلب بيانات البنرات تلقائيًا أول ما تفتح مسلسل عنده مواسم (بدون ضغط زر)
       const fetchBanners = () => {
         const src = sourceId || guessTvSourceId(form.seasons);
         if (!src) return;
@@ -5439,40 +5405,18 @@
       useEffect(() => {
         if (form.type === 'movie' || !form.seasons.length || bannerData) return;
         fetchBanners();
-        // eslint-disable-next-line
       }, [form.seasons.length > 0, sourceId, form.type]);
-
-      // لقطات الموسم الحقيقية: تنجلب فقط لما تختار هذا المصدر
-      const stillsSeasonNumber = form.seasons[activeSeasonIdx] ? form.seasons[activeSeasonIdx].number : null;
-      useEffect(() => {
-        if (bannerSource !== 'stills' || !bannerData || !bannerData.tmdbId || stillsSeasonNumber == null) return;
-        const key = String(stillsSeasonNumber);
-        if (seasonStills[key]) return;
-        let cancelled = false;
-        tmdbFetch(`tv/${bannerData.tmdbId}/season/${key}`, { language: 'en-US' })
-          .then(sd => { if (!cancelled) setSeasonStills(prev => ({ ...prev, [key]: (sd.episodes || []).filter(ep => ep.still_path).map(ep => TMDB_IMG + 'w780' + ep.still_path) })); })
-          .catch(() => { if (!cancelled) setSeasonStills(prev => ({ ...prev, [key]: [] })); });
-        return () => { cancelled = true; };
-        // eslint-disable-next-line
-      }, [bannerSource, bannerData, stillsSeasonNumber]);
 
       const bannerOptionsFor = (seasonNumber) => {
         if (!bannerData) return [];
         const seen = new Set(), out = [];
         const add = (url, kind) => { if (url && !seen.has(url)) { seen.add(url); out.push({ url, kind }); } };
-        if (bannerSource === 'fanart') {
-          ((bannerData.seasons || {})[String(seasonNumber)] || []).forEach(u => add(u, 'season'));
-          (bannerData.tv || []).forEach(u => add(u, 'tv'));
-        } else if (bannerSource === 'stills') {
-          (seasonStills[String(seasonNumber)] || []).forEach(u => add(u, 'still'));
-        } else {
-          (bannerData.tmdb || []).forEach(u => add(u, 'tmdb'));
-        }
+        if (bannerSource === 'tvthumb') (bannerData.tv || []).forEach(u => add(u, 'tv'));
+        else ((bannerData.seasons || {})[String(seasonNumber)] || []).forEach(u => add(u, 'season'));
         return out;
       };
 
       const pickBanner = (url) => {
-        // البنر المختار يطبّق على الموسم الحالي فقط
         updateSeasonField(activeSeasonIdx, 'episodeThumbnail', url);
       };
 
@@ -5747,7 +5691,7 @@
                                   <span className="text-[10px] font-bold text-slate-500">يُطبّق على هذا الموسم فقط</span>
                                 </div>
                                 <div className="flex gap-1.5 mb-2 flex-wrap">
-                                  {[['tmdb', 'خلفيات TMDB'], ['stills', 'لقطات من الموسم'], ['fanart', 'Fanart.tv']].map(([k, l]) => (
+                                  {[['seasonthumb', 'صور الموسم'], ['tvthumb', 'TV Thumbs']].map(([k, l]) => (
                                     <button type="button" key={k} onClick={() => { setBannerSource(k); setShowAllBanners(false); }}
                                       className={`text-[11px] px-3 py-1.5 rounded-lg font-bold border transition ${bannerSource === k ? 'bg-accent-cyan text-glass-950 border-accent-cyan' : 'glass-card border-white/10 text-slate-300 hover:border-accent-cyan/50'}`}>{l}</button>
                                   ))}
@@ -5763,8 +5707,7 @@
                                   const opts = bannerOptionsFor(activeSeason.number);
                                   if (!opts.length) {
                                     if (bannerLoading || bannerError || !bannerData) return null;
-                                    if (bannerSource === 'stills' && seasonStills[String(activeSeason.number)] === undefined) return <p className="text-[11px] font-bold text-slate-400">جاري جلب اللقطات...</p>;
-                                    return <p className="text-[11px] font-bold text-slate-500">ما لكيت بنرات من هذا المصدر. جرّب مصدر ثاني، أو الصق رابط صورة بالحقل فوق.</p>;
+                                    return <p className="text-[11px] font-bold text-slate-500">ما لكيت صور بهذا المصدر، أو ما متوفرة لهذا الموسم. تگدر تلصق رابط صورة يدويًا من الحقل فوق.</p>;
                                   }
                                   const visible = showAllBanners ? opts : opts.slice(0, 8);
                                   return (
@@ -6253,10 +6196,63 @@
       );
     }
 
+    function getSubtitleStats(title) {
+      if (!title) return { done: 0, total: 0 };
+      if (title.type === 'movie') return { done: normalizeSubtitleUrl(title.subtitleUrl || '') ? 1 : 0, total: 1 };
+      const episodes = (title.seasons || []).flatMap(s => s.episodes || []);
+      return { done: episodes.filter(ep => normalizeSubtitleUrl(ep.subtitleUrl || '')).length, total: episodes.length };
+    }
+
+    function BatchContentPanel({ defaultType, onDone }) {
+      const [items, setItems] = useState([{ id: 1 }]);
+      const [active, setActive] = useState(1);
+      const addItem = () => {
+        if (items.length >= 6) { showToast('الحد الأقصى 6 أعمال في الدفعة الواحدة', 'error'); return; }
+        const id = Date.now() + Math.floor(Math.random() * 1000);
+        setItems(prev => [...prev, { id }]);
+        setActive(id);
+      };
+      const removeItem = (id) => {
+        const next = items.filter(x => x.id !== id);
+        if (!next.length) { onDone(); return; }
+        setItems(next);
+        if (active === id) setActive(next[0].id);
+      };
+      return (
+        <div className="space-y-4">
+          <div className="glass-panel rounded-3xl p-4 md:p-5 border border-accent-cyan/20">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <h3 className="font-black text-white text-base">رفع عدة {TYPE_PLURAL[defaultType]} معًا</h3>
+                <p className="text-[11px] text-slate-400 mt-1">كل تبويب يحتفظ ببياناته واستيراده بشكل مستقل، وتكدر تفتح حتى 6 أعمال بنفس الدفعة.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={addItem} className="px-4 py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-xs font-black"><Icon name="plus" className="w-4 h-4 inline-block ml-1" />إضافة عمل</button>
+                <button type="button" onClick={onDone} className="px-4 py-2.5 rounded-xl glass-card border border-white/10 text-xs font-bold text-slate-300">رجوع للقائمة</button>
+              </div>
+            </div>
+            <div className="flex gap-1.5 flex-wrap mt-4">
+              {items.map((item, idx) => (
+                <button key={item.id} type="button" onClick={() => setActive(item.id)} className={`px-3.5 py-2 rounded-xl text-xs font-bold border ${active === item.id ? 'bg-accent-cyan text-glass-950 border-accent-cyan' : 'bg-white/5 text-slate-300 border-white/10 hover:border-accent-cyan/40'}`}>
+                  {TYPE_LABELS[defaultType]} {idx + 1}
+                </button>
+              ))}
+            </div>
+          </div>
+          {items.map(item => (
+            <div key={item.id} className={active === item.id ? '' : 'hidden'}>
+              <AdminContentForm defaultType={defaultType} onDone={() => removeItem(item.id)} />
+            </div>
+          ))}
+        </div>
+      );
+    }
+
     function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
       const [tab, setTab] = useState('content');
       const [contentType, setContentType] = useState('movie');
       const [editing, setEditing] = useState(null);
+      const [batchMode, setBatchMode] = useState(false);
       const [deleteTarget, setDeleteTarget] = useState(null);
       const [query, setQuery] = useState('');
       const isFullAdmin = currentUser && currentUser.username === 'mavilovelife';
@@ -6309,7 +6305,7 @@
               ...(isFullAdmin ? [{ key: 'users', label: 'المستخدمون' }] : []),
               ...(isFullAdmin ? [{ key: 'audit', label: 'سجل النشاط' }] : []),
             ]}
-            active={tab} onChange={(k) => { setTab(k); if (k === 'content') setEditing(null); }}
+            active={tab} onChange={(k) => { setTab(k); if (k === 'content') { setEditing(null); setBatchMode(false); } }}
             trackClassName="bg-accent-cyan shadow-[0_0_15px_rgba(0,240,255,0.4)]"
             getButtonClassName={(isActive) => `px-5 py-2.5 rounded-xl text-sm font-bold ${isActive ? 'text-glass-950' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}
           />
@@ -6317,6 +6313,8 @@
           {tab === 'content' && (
             editing ? (
               <AdminContentForm initial={editing === 'new' ? null : editing} defaultType={contentType} onDone={() => setEditing(null)} />
+            ) : batchMode ? (
+              <BatchContentPanel defaultType={contentType} onDone={() => setBatchMode(false)} />
             ) : (
               <div>
                 <SlidingTabs
@@ -6330,6 +6328,7 @@
                 />
                 <div className="flex items-center gap-3 mb-6 flex-wrap">
                   <button onClick={() => setEditing('new')} className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition"><Icon name="plus" className="w-4 h-4" />رفع {TYPE_LABELS[contentType]} جديد</button>
+                  {contentType !== 'movie' && <button onClick={() => { setEditing(null); setBatchMode(true); }} className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan font-bold text-sm hover:bg-accent-cyan/20 transition"><Icon name="copy" className="w-4 h-4" />رفع عدة {TYPE_PLURAL[contentType]}</button>}
                   <div className="relative flex-1 min-w-[180px]">
                     <Icon name="search" className="w-4 h-4 absolute top-1/2 -translate-y-1/2 right-3.5 text-slate-400" />
                     <input value={query} onChange={e => setQuery(e.target.value)} placeholder="بحث ضمن هذا القسم..."
@@ -6348,6 +6347,7 @@
                         <p className="text-xs text-slate-400 font-medium">{TYPE_LABELS[t.type]} · {t.year || ''}{t.type !== 'movie' ? ` · ${(t.seasons || []).length} موسم` : ''}</p>
                       </div>
                       <span className={`text-[11px] px-3 py-1 rounded-full font-bold shrink-0 ${t.status === 'published' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-glass-800 text-slate-400 border border-white/5'}`}>{t.status === 'published' ? 'منشور' : 'مسودة'}</span>
+                      {(() => { const sub = getSubtitleStats(t); return <span title="عدد الحلقات التي لديها ترجمة محفوظة" className={`text-[11px] px-3 py-1 rounded-full font-bold shrink-0 border ${sub.total && sub.done === sub.total ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : sub.done ? 'bg-accent-cyan/10 text-accent-cyan border-accent-cyan/20' : 'bg-white/5 text-slate-500 border-white/5'}`}>ترجمة {sub.done}/{sub.total}</span>; })()}
                       {t.featured === true && <span className="text-[11px] px-3 py-1 rounded-full font-bold shrink-0 bg-amber-500/20 text-amber-400 border border-amber-500/30">Hero</span>}
                       <button onClick={() => toggleFeatured(t)} title={t.featured === true ? 'إزالة من العرض الرئيسي (Hero)' : 'إظهار في العرض الرئيسي (Hero)'} className={`w-9 h-9 rounded-xl glass-card border flex items-center justify-center transition shrink-0 ${t.featured === true ? 'border-amber-400 text-amber-400' : 'border-white/10 hover:border-accent-cyan text-slate-200'}`}><Icon name="star" className={`w-4 h-4 ${t.featured === true ? 'fill-current' : ''}`} /></button>
                       <button onClick={() => togglePublish(t)} title="تبديل حالة النشر" className="w-9 h-9 rounded-xl glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-200 transition shrink-0"><Icon name="eye" className="w-4 h-4" /></button>
