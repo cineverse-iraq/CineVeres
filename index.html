@@ -901,6 +901,61 @@
       return uploadFile(upload, folder, null);
     }
 
+    async function prepareSubtitlesForPublish(payload, sourceId, onProgress) {
+      const out = JSON.parse(JSON.stringify(payload || {}));
+      const type = out.type || 'movie';
+      const sid = String(sourceId || out.sourceId || out.imdbId || out.imdb || out.tmdbId || (type !== 'movie' ? guessTvSourceId(out.seasons) : '') || '').trim();
+      let added = 0, skipped = 0, failed = 0;
+
+      if (type === 'movie') {
+        if (out.subtitleUrl) {
+          skipped = 1;
+        } else {
+          try {
+            if (onProgress) onProgress('جاري جلب الترجمة العربية للفلم من SubDL...');
+            out.subtitleUrl = await findAndStoreSubdlSubtitle({ sourceId: sid, title: out.name, type: 'movie', folder: 'subtitles' });
+            if (out.subtitleUrl) added = 1;
+          } catch (e) {
+            failed = 1;
+          }
+        }
+      } else {
+        const seasons = Array.isArray(out.seasons) ? out.seasons : [];
+        const tasks = [];
+        seasons.forEach((se, si) => (se.episodes || []).forEach((ep, ei) => tasks.push({ se, ep, si, ei })));
+        const total = tasks.length;
+        let done = 0;
+        for (const task of tasks) {
+          const se = task.se;
+          const ep = task.ep;
+          if (ep.subtitleUrl) {
+            skipped++;
+            done++;
+            if (onProgress) onProgress(`الترجمات: ${done}/${total} — موجودة مسبقًا`);
+            continue;
+          }
+          try {
+            if (onProgress) onProgress(`جاري جلب ترجمة الموسم ${Number(se.number) || 1} الحلقة ${Number(ep.number) || 1} — ${done + 1}/${total}`);
+            const url = await findAndStoreSubdlSubtitle({
+              sourceId: sid,
+              title: out.name,
+              season: se.number,
+              episode: ep.number,
+              type,
+              folder: 'subtitles'
+            });
+            if (url) { ep.subtitleUrl = url; added++; }
+          } catch (e) {
+            failed++;
+          }
+          done++;
+        }
+      }
+
+      if (onProgress) onProgress(`اكتملت تهيئة الترجمة: تمت إضافة ${added}، موجودة ${skipped}، تعذر ${failed}.`);
+      return { payload: out, added, skipped, failed };
+    }
+
     async function openSubtitlesSearch(params) {
       const usp = new URLSearchParams(params || {});
       const res = await fetch(`${CINEMANA_PROXY}/opensubtitles/search?${usp.toString()}`, { headers: { Accept: 'application/json' } });
@@ -5107,7 +5162,7 @@
         setError('');
         if (!form.name.trim()) { setError('الرجاء إدخال اسم العمل.'); return; }
         setSaving(true);
-        const payload = {
+        let payload = {
           name: form.name.trim(),
           type: form.type,
           year: Number(form.year) || null,
@@ -5147,6 +5202,15 @@
             }))
           }));
           payload.videoUrl = '';
+        }
+        if (payload.status === 'published') {
+          try {
+            const prepared = await prepareSubtitlesForPublish(payload, sourceId, msg => setError(msg));
+            payload = prepared.payload;
+            setError(prepared.failed ? `تم الحفظ، لكن تعذر جلب ترجمة ${prepared.failed} عنصر. يمكنك إعادة النشر لاحقًا للمحاولة مرة أخرى.` : '');
+          } catch (e) {
+            setError('تعذر تجهيز الترجمة تلقائيًا، سيتم حفظ العمل بدونها.');
+          }
         }
         try {
           if (initial && initial.id) await db.ref(`titles/${initial.id}`).set(payload);
@@ -5820,10 +5884,27 @@
         showToast('تم حذف العمل بنجاح');
         setDeleteTarget(null);
       };
-      const togglePublish = (t) => {
-        db.ref(`titles/${t.id}/status`).set(t.status === 'published' ? 'draft' : 'published');
-        logAuditAction(currentUser, t.status === 'published' ? 'تحويل عمل لمسودة' : 'نشر عمل', t.name);
-        showToast(t.status === 'published' ? 'تم تحويل العمل لمسودة' : 'تم نشر العمل');
+      const togglePublish = async (t) => {
+        const willPublish = t.status !== 'published';
+        if (!willPublish) {
+          await db.ref(`titles/${t.id}/status`).set('draft');
+          logAuditAction(currentUser, 'تحويل عمل لمسودة', t.name);
+          showToast('تم تحويل العمل لمسودة');
+          return;
+        }
+        showToast('جاري تجهيز الترجمة العربية قبل النشر...');
+        try {
+          const snap = await db.ref(`titles/${t.id}`).once('value');
+          const current = snap.val() || t;
+          const prepared = await prepareSubtitlesForPublish(current, current.sourceId || current.imdbId || current.imdb || current.tmdbId || '', null);
+          await db.ref(`titles/${t.id}`).set({ ...prepared.payload, status: 'published' });
+          logAuditAction(currentUser, 'نشر عمل', current.name || t.name);
+          showToast(prepared.failed ? `تم النشر، لكن تعذر تجهيز ${prepared.failed} ترجمة.` : 'تم تجهيز الترجمة ونشر العمل بنجاح');
+        } catch (e) {
+          showToast('تم النشر بدون تجهيز الترجمة بسبب خطأ مؤقت', 'error');
+          await db.ref(`titles/${t.id}/status`).set('published');
+          logAuditAction(currentUser, 'نشر عمل', t.name);
+        }
       };
       const toggleFeatured = (t) => {
         db.ref(`titles/${t.id}/featured`).set(t.featured !== true);
