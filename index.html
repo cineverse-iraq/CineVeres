@@ -412,8 +412,9 @@
       let fetchUrl = rawUrl;
       try {
         const parsed = new URL(rawUrl, window.location.href);
-        const isFirebase = isFirebaseStorageUrl(rawUrl);
-        if (!parsed.protocol.startsWith('blob') && parsed.origin !== window.location.origin && !isFirebase) {
+        if (!parsed.protocol.startsWith('blob') && parsed.origin !== window.location.origin) {
+          // كل ترجمة خارجية تمر عبر البروكسي ثم تتحول إلى Blob/VTT؛ هذا يمنع CORS من تعطيل <track>،
+          // بما فيها ملفات Firebase Storage المحفوظة.
           fetchUrl = `${CINEMANA_PROXY}/subtitle?url=${encodeURIComponent(rawUrl)}`;
         }
       } catch (e) {}
@@ -2277,16 +2278,26 @@
           setSubtitleLoading(false);
           return () => { cancelled = true; };
         }
+        let objectUrl = '';
         fetchSubtitleAsVtt(subtitleUrl)
           .then(vtt => {
             if (cancelled) return;
             const blob = new Blob([vtt], { type: 'text/vtt;charset=utf-8' });
-            const objectUrl = URL.createObjectURL(blob);
+            objectUrl = URL.createObjectURL(blob);
             setSubtitleSrc(objectUrl);
             setSubtitleLoading(false);
           })
-          .catch(() => { if (!cancelled) { setSubtitleSrc(''); setSubtitleLoading(false); } });
-        return () => { cancelled = true; };
+          .catch(err => {
+            if (!cancelled) {
+              setSubtitleSrc('');
+              setSubtitleLoading(false);
+              showToast(err && err.message ? err.message : 'تعذر تحميل الترجمة', 'error');
+            }
+          });
+        return () => {
+          cancelled = true;
+          if (objectUrl) URL.revokeObjectURL(objectUrl);
+        };
       }, [subtitleUrl, src]);
       const fireComplete = () => {
         if (completedRef.current) return;
