@@ -624,9 +624,17 @@
     async function fetchSubtitleAsVtt(url) { // متوافق مع الاستدعاءات القديمة
       return cuesToVttText(await loadSubtitleCues(url), 0);
     }
-    const SUB_PREF_DEFAULTS = { size: 100, color: '#ffffff', bg: 'outline', pos: 6, weight: 700, font: 'Cairo', edge: 'outline', edgeColor: '#000000', bgOpacity: 65 };
+    const SUB_PREF_DEFAULTS = { size: 100, color: '#ffffff', bg: 'outline', pos: 6, weight: 700, font: 'Cairo', edge: 'outline', edgeColor: '#000000', bgOpacity: 65, edgeWidth: 2, bgShape: 'line', bgRadius: 30, letterSpacing: 0, lineHeight: 150, italic: false };
+    function subPrefsUser() { try { const u = JSON.parse(localStorage.getItem('cv_user') || 'null'); return u && u.username ? u.username : ''; } catch (e) { return ''; } }
+    function subPrefsKey() { const u = subPrefsUser(); return 'cinadam_sub_prefs' + (u ? '_' + u : ''); }
+    let _subSyncT = 0;
+    function syncSubPrefsRemote(p) { // حفظ إعدادات الترجمة بحساب المستخدم (تتبع حسابه بأي جهاز)
+      const u = subPrefsUser(); if (!u) return;
+      clearTimeout(_subSyncT);
+      _subSyncT = setTimeout(() => { try { db.ref('subPrefs/' + sanitizeKey(u)).set(p).catch(() => {}); } catch (e) {} }, 800);
+    }
     function readSubPrefs() {
-      try { return { ...SUB_PREF_DEFAULTS, ...(JSON.parse(localStorage.getItem('cinadam_sub_prefs') || '{}')) }; }
+      try { return { ...SUB_PREF_DEFAULTS, ...(JSON.parse(localStorage.getItem(subPrefsKey()) || localStorage.getItem('cinadam_sub_prefs') || '{}')) }; }
       catch (e) { return { ...SUB_PREF_DEFAULTS }; }
     }
     function readSubAdj(key) {
@@ -2698,23 +2706,43 @@
       }, []);
       const fontPx = Math.max(12, Math.min(72, boxH * 0.046 * ((Number(prefs.size) || 100) / 100)));
       const bgOp = (prefs.bgOpacity == null ? 65 : Number(prefs.bgOpacity)) / 100;
-      const bgStyle = prefs.bg === 'box' ? { background: `rgba(0,0,0,${bgOp})`, padding: '0.05em 0.5em', borderRadius: '0.3em' }
-        : prefs.bg === 'solid' ? { background: '#000', padding: '0.05em 0.5em', borderRadius: '0.2em' } : {};
+      const bgOn = prefs.bg === 'box' || prefs.bg === 'solid';
+      const bgCol = prefs.bg === 'solid' ? '#000' : `rgba(0,0,0,${bgOp})`;
+      const shape = prefs.bgShape || 'line';
+      const rad = ((prefs.bgRadius == null ? 30 : Number(prefs.bgRadius)) / 100) + 'em';
+      const boxCss = bgOn ? { background: bgCol, padding: '0.05em 0.5em', borderRadius: rad } : {};
       const ec = prefs.edgeColor || '#000000';
       const edge = prefs.edge || 'outline';
-      const shadow = edge === 'outline' ? `0 0 3px ${ec}, 0 0 3px ${ec}, 1px 1px 2px ${ec}, -1px -1px 2px ${ec}, 0 2px 6px ${ec}`
-        : edge === 'shadow' ? `2px 2px 4px ${ec}, 0 0 8px ${ec}`
-        : edge === 'raised' ? `1px 1px 0 ${ec}, 2px 2px 0 ${ec}, 3px 3px 2px ${ec}`
-        : edge === 'glow' ? `0 0 6px ${ec}, 0 0 12px ${ec}, 0 0 18px ${ec}` : 'none';
+      const w = Math.max(0.5, Number(prefs.edgeWidth) || 2);
+      const dirs = [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, -1], [0, 1], [-1, 0], [1, 0]];
+      const shadow = edge === 'outline' ? dirs.map(([x, y]) => `${x * w}px ${y * w}px ${w * 0.5}px ${ec}`).join(', ') + `, 0 0 ${w * 2}px ${ec}`
+        : edge === 'shadow' ? `${w}px ${w}px ${w * 2}px ${ec}, 0 0 ${w * 4}px ${ec}`
+        : edge === 'raised' ? `${w * 0.5}px ${w * 0.5}px 0 ${ec}, ${w}px ${w}px 0 ${ec}, ${w * 1.5}px ${w * 1.5}px ${w}px ${ec}`
+        : edge === 'glow' ? `0 0 ${w * 3}px ${ec}, 0 0 ${w * 6}px ${ec}, 0 0 ${w * 9}px ${ec}` : 'none';
+      const lsp = (Number(prefs.letterSpacing) || 0) / 100;
+      const groupStyle = shape === 'block' ? { display: 'inline-block', ...boxCss, padding: '0.1em 0.6em' }
+        : shape === 'bar' ? { display: 'block', ...(bgOn ? { background: bgCol, padding: '0.15em 0' } : {}) } : {};
+      const spanBg = shape === 'line' ? boxCss : {};
       return (
         <div ref={rootRef} className="absolute inset-0 pointer-events-none" style={{ zIndex: 15 }}>
           {text && (
-            <div style={{ position: 'absolute', left: 0, right: 0, bottom: `calc(${Number(prefs.pos) || 0}% + ${lifted ? 46 : 0}px)`, transition: 'bottom .2s', textAlign: 'center', padding: '0 4%' }}>
-              {text.split('\n').map((line, i) => (
-                <div key={i}><span dir="rtl" style={{ ...bgStyle, display: 'inline-block', color: prefs.color, fontSize: fontPx + 'px', fontWeight: prefs.weight, lineHeight: 1.5, textShadow: shadow, fontFamily: `'${prefs.font || 'Cairo'}', 'Cairo', sans-serif`, direction: 'rtl', unicodeBidi: 'isolate', textAlign: 'center' }}>{line}</span></div>
-              ))}
+            <div style={{ position: 'absolute', left: 0, right: 0, bottom: `calc(${Number(prefs.pos) || 0}% + ${lifted ? 46 : 0}px)`, transition: 'bottom .2s', textAlign: 'center', padding: shape === 'bar' ? 0 : '0 4%' }}>
+              <div style={{ ...groupStyle, fontSize: fontPx + 'px' }}>
+                {text.split('\n').map((line, i) => (
+                  <div key={i}><span dir="rtl" style={{ ...spanBg, display: 'inline-block', color: prefs.color, fontSize: fontPx + 'px', fontWeight: prefs.weight, fontStyle: prefs.italic ? 'italic' : 'normal', letterSpacing: lsp + 'em', wordSpacing: (lsp * 1.5) + 'em', lineHeight: (Number(prefs.lineHeight) || 150) / 100, textShadow: shadow, fontFamily: `'${prefs.font || 'Cairo'}', 'Cairo', sans-serif`, direction: 'rtl', unicodeBidi: 'isolate', textAlign: 'center' }}>{line}</span></div>
+                ))}
+              </div>
             </div>
           )}
+        </div>
+      );
+    }
+
+    function SubSlider({ label, value, unit, min, max, step, onChange }) {
+      return (
+        <div>
+          <div className="flex items-center justify-between mb-0.5"><span className="text-[10px] text-slate-300 font-bold">{label}</span><span className="text-[10px] text-accent-cyan font-mono">{value}{unit}</span></div>
+          <input type="range" min={min} max={max} step={step} value={value} onChange={e => onChange(Number(e.target.value))} className="w-full mb-2" style={{ accentColor: '#00F0FF' }} />
         </div>
       );
     }
@@ -2745,9 +2773,15 @@
         writeSubAdj(adjKey, n);
         return n;
       });
+      useEffect(() => { // تحميل إعدادات الحساب المحفوظة
+        const u = subPrefsUser(); if (!u) return; let dead = false;
+        try { db.ref('subPrefs/' + sanitizeKey(u)).once('value').then(snap => { const v = snap.val(); if (!dead && v && typeof v === 'object') { const n = { ...SUB_PREF_DEFAULTS, ...v }; setSubPrefs(n); try { localStorage.setItem(subPrefsKey(), JSON.stringify(n)); } catch (e) {} } }).catch(() => {}); } catch (e) {}
+        return () => { dead = true; };
+      }, []);
       const updSubPrefs = (patch) => setSubPrefs(prev => {
         const n = { ...prev, ...patch };
-        try { localStorage.setItem('cinadam_sub_prefs', JSON.stringify(n)); } catch (e) {}
+        try { localStorage.setItem(subPrefsKey(), JSON.stringify(n)); } catch (e) {}
+        syncSubPrefsRemote(n);
         return n;
       });
       const onLocalSub = async (e) => {
@@ -3175,6 +3209,7 @@
                         {['#ffffff', '#ffe14d', '#00f0ff', '#7cff7c'].map(c => (
                           <button key={c} type="button" onClick={() => updSubPrefs({ color: c })} className="w-6 h-6 rounded-full border-2" style={{ background: c, borderColor: subPrefs.color === c ? '#00F0FF' : 'rgba(255,255,255,0.25)' }} />
                         ))}
+                        <input type="color" value={subPrefs.color || '#ffffff'} onChange={e => updSubPrefs({ color: e.target.value })} className="w-6 h-6 rounded-full bg-transparent border-0 p-0 cursor-pointer" title="لون مخصص" />
                       </div>
 
                       <span className="text-[10px] text-slate-300 font-bold block mb-1">الخلفية</span>
@@ -3206,16 +3241,28 @@
                         {['#000000', '#ffffff', '#00f0ff', '#ff3b3b', '#ffe14d'].map(c => (
                           <button key={c} type="button" onClick={() => updSubPrefs({ edgeColor: c })} className="w-6 h-6 rounded-full border-2" style={{ background: c, borderColor: (subPrefs.edgeColor || '#000000') === c ? '#00F0FF' : 'rgba(255,255,255,0.25)' }} />
                         ))}
+                        <input type="color" value={subPrefs.edgeColor || '#000000'} onChange={e => updSubPrefs({ edgeColor: e.target.value })} className="w-6 h-6 rounded-full bg-transparent border-0 p-0 cursor-pointer" title="لون مخصص" />
                       </div>
                       <div className="flex items-center justify-between mb-0.5"><span className="text-[10px] text-slate-300 font-bold">شفافية الخلفية</span><span className="text-[10px] text-accent-cyan font-mono">{subPrefs.bgOpacity == null ? 65 : subPrefs.bgOpacity}%</span></div>
                       <input type="range" min="10" max="100" step="5" value={subPrefs.bgOpacity == null ? 65 : subPrefs.bgOpacity} onChange={e => updSubPrefs({ bgOpacity: Number(e.target.value), bg: subPrefs.bg === 'outline' ? 'box' : subPrefs.bg })} className="w-full mb-2" style={{ accentColor: '#00F0FF' }} />
 
+                      <SubSlider label="سماكة الحواف" value={subPrefs.edgeWidth == null ? 2 : subPrefs.edgeWidth} unit="px" min={0.5} max={6} step={0.5} onChange={v => updSubPrefs({ edgeWidth: v })} />
+                      <span className="text-[10px] text-slate-300 font-bold block mb-1">شكل الخلفية</span>
+                      <div className="grid grid-cols-3 gap-1 mb-2">
+                        {[['line', 'لكل سطر'], ['block', 'مربع واحد'], ['bar', 'شريط']].map(([k, l]) => (
+                          <button key={k} type="button" onClick={() => updSubPrefs({ bgShape: k, bg: subPrefs.bg === 'outline' ? 'box' : subPrefs.bg })} className={`px-1 py-1.5 rounded-lg text-[10px] font-bold ${(subPrefs.bgShape || 'line') === k ? 'bg-accent-cyan text-glass-950' : 'bg-white/5 text-white hover:bg-white/10'}`}>{l}</button>
+                        ))}
+                      </div>
+                      <SubSlider label="استدارة الخلفية" value={subPrefs.bgRadius == null ? 30 : subPrefs.bgRadius} unit="%" min={0} max={100} step={5} onChange={v => updSubPrefs({ bgRadius: v })} />
+                      <SubSlider label="تباعد الحروف" value={subPrefs.letterSpacing || 0} unit="" min={0} max={20} step={1} onChange={v => updSubPrefs({ letterSpacing: v })} />
+                      <SubSlider label="تباعد الأسطر" value={subPrefs.lineHeight || 150} unit="%" min={100} max={250} step={10} onChange={v => updSubPrefs({ lineHeight: v })} />
+                      <button type="button" onClick={() => updSubPrefs({ italic: !subPrefs.italic })} className={`w-full px-2 py-1.5 rounded-lg text-[10px] font-bold mb-2 ${subPrefs.italic ? 'bg-accent-cyan text-glass-950' : 'bg-white/5 text-white hover:bg-white/10'}`}>خط مائل</button>
                       <div className="flex items-center justify-between mb-0.5"><span className="text-[10px] text-slate-300 font-bold">ارتفاع الترجمة</span><span className="text-[10px] text-accent-cyan font-mono">{subPrefs.pos}%</span></div>
                       <input type="range" min="2" max="40" step="1" value={subPrefs.pos} onChange={e => updSubPrefs({ pos: Number(e.target.value) })} className="w-full mb-2" style={{ accentColor: '#00F0FF' }} />
 
                       <div className="grid grid-cols-2 gap-1">
                         <button type="button" onClick={() => localFileRef.current && localFileRef.current.click()} className="px-2 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10">ترجمة من جهازك</button>
-                        <button type="button" onClick={() => { setSubPrefs({ ...SUB_PREF_DEFAULTS }); try { localStorage.removeItem('cinadam_sub_prefs'); } catch (e) {} }} className="px-2 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10">الإعدادات الافتراضية</button>
+                        <button type="button" onClick={() => { setSubPrefs({ ...SUB_PREF_DEFAULTS }); try { localStorage.removeItem(subPrefsKey()); } catch (e) {} syncSubPrefsRemote({ ...SUB_PREF_DEFAULTS }); }} className="px-2 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10">الإعدادات الافتراضية</button>
                       </div>
                       {localSub && <button type="button" onClick={() => { setLocalSub(null); setSubAdj(subtitleUrl ? readSubAdj(subtitleUrl) : 0); }} className="w-full mt-1 px-2 py-1.5 rounded-lg bg-rose-500/20 text-rose-300 text-[10px] font-bold">إزالة ملف جهازك</button>}
                       <input ref={localFileRef} type="file" accept=".srt,.vtt,text/vtt,application/x-subrip" onChange={onLocalSub} className="hidden" />
@@ -4028,16 +4075,16 @@
               {similarTitles.length > 0 && onOpen && (
                 <div className="mt-8 border-t border-white/10 pt-6">
                   <h3 className="font-black text-lg text-white flex items-center gap-2 mb-4"><Icon name="sparkles" className="w-5 h-5 text-accent-cyan" />أعمال مشابهة قد تعجبك</h3>
-                  <div className={showAllSim ? 'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-4' : 'flex gap-4 overflow-x-auto pb-1 snap-x scrollbar-hide'}>
-                    {(showAllSim ? similarTitles : similarTitles.slice(0, 8)).map(({ t, why }) => (
-                      <div key={t.id} className={showAllSim ? '' : 'shrink-0 w-32 sm:w-38 md:w-44 snap-start'}>
-                        <PosterCard title={t} onOpen={onOpen} compact={!showAllSim} />
+                  <div className="flex gap-4 overflow-x-auto pb-1 snap-x scrollbar-hide md:grid md:grid-cols-4 md:overflow-visible">
+                    {similarTitles.map(({ t, why }, i) => (
+                      <div key={t.id} className={`shrink-0 w-32 sm:w-38 snap-start md:w-full ${i >= 4 && !showAllSim ? 'md:hidden' : ''}`}>
+                        <PosterCard title={t} onOpen={onOpen} />
                         {why && <p className="text-[10px] text-accent-cyan/80 mt-0.5 leading-tight text-right">{why}</p>}
                       </div>
                     ))}
                   </div>
-                  {similarTitles.length > 8 && (
-                    <button type="button" onClick={() => setShowAllSim(v => !v)} className="mt-4 w-full px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white text-sm font-bold">{showAllSim ? 'عرض أقل' : `عرض المزيد (${similarTitles.length - 8})`}</button>
+                  {similarTitles.length > 4 && (
+                    <button type="button" onClick={() => setShowAllSim(v => !v)} className="hidden md:block mt-4 w-full px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white text-sm font-bold">{showAllSim ? 'عرض أقل' : `عرض المزيد (${similarTitles.length - 4})`}</button>
                   )}
                 </div>
               )}
