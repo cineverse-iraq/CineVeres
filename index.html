@@ -1223,8 +1223,8 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
     return (React.createElement("div", { className: "glass-card rounded-2xl p-3.5 border border-accent-purple/20 mt-3.5" },
         React.createElement("p", { className: "text-[11px] font-bold text-accent-purple mb-2 flex items-center gap-1.5" },
             React.createElement(Icon, { name: "search", className: "w-3.5 h-3.5" }),
-            "\u0633\u064A\u0646\u0645\u0627\u0646\u0627 \u0644\u0644\u062A\u0634\u063A\u064A\u0644 + TMDB \u0644\u0644\u062A\u0639\u0628\u0626\u0629 \u0627\u0644\u062A\u0644\u0642\u0627\u0626\u064A\u0629"),
-        React.createElement("p", { className: "text-[10px] text-slate-500 mb-2" }, "\u0627\u0644\u062A\u0634\u063A\u064A\u0644 \u064A\u064F\u062D\u0641\u0638 \u0643\u0631\u0627\u0628\u0637 \u0633\u064A\u0646\u0645\u0627\u0646\u0627\u060C \u0648\u0627\u0644\u062C\u0648\u062F\u0627\u062A \u0627\u0644\u0645\u062A\u0627\u062D\u0629 \u062A\u064F\u062D\u0641\u0638 \u0645\u0639 \u0627\u0644\u0639\u0645\u0644. \u0644\u0627 \u064A\u062A\u0645 \u0625\u0646\u0634\u0627\u0621 \u0631\u0627\u0628\u0637 VidAPI \u0647\u0646\u0627."),
+            "\u0633\u064A\u0646\u0645\u0627\u0646\u0627 \u0644\u0631\u0648\u0627\u0628\u0637 \u0627\u0644\u062A\u0634\u063A\u064A\u0644 \u0641\u0642\u0637 + TMDB \u0644\u0644\u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0648\u0627\u0644\u062a\u0639\u0628\u0626\u0629 \u0641\u0642\u0637"),
+        React.createElement("p", { className: "text-[10px] text-slate-500 mb-2" }, "\u0627\u0644\u0645\u0639\u0644\u0648\u0645\u0627\u062a \u0648\u0627\u0644\u0628\u064a\u0627\u0646\u0627\u062a \u062a\u064f\u0633\u062d\u0628 \u0645\u0646 TMDB \u0641\u0642\u0637\u060c \u0628\u064a\u0646\u0645\u0627 \u0631\u0648\u0627\u0628\u0637 \u0627\u0644\u062a\u0634\u063a\u064a\u0644 \u0648\u0627\u0644\u062c\u0648\u062f\u0627\u062a \u062a\u064f\u0633\u062a\u062e\u0644\u0635 \u0645\u0646 \u0633\u064a\u0646\u0645\u0627\u0646\u0627 \u0641\u0642\u0637. \u0644\u0627 \u064a\u062a\u0645 \u0625\u0646\u0634\u0627\u0621 \u0631\u0627\u0628\u0637 VidAPI \u0647\u0646\u0627."),
         React.createElement("div", { className: "flex items-center gap-2 mb-2.5" },
             React.createElement("input", { value: query, onChange: ev => setQuery(ev.target.value), onKeyDown: ev => ev.key === 'Enter' && search(), placeholder: kind === 'anime' ? 'اسم الأنمي' : 'اسم العمل بالإنجليزي أو العربي', className: "flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-purple" }),
             React.createElement("button", { type: "button", onClick: () => search(), disabled: !query.trim() || loading, className: "shrink-0 px-4 py-2 rounded-xl bg-accent-purple text-white text-xs font-bold hover:brightness-110 transition disabled:opacity-40" }, loading ? 'جاري...' : 'بحث')),
@@ -5599,8 +5599,8 @@ function AdminContentForm({ initial, defaultType, onDone }) {
     const [error, setError] = useState('');
     const [activeSeasonIdx, setActiveSeasonIdx] = useState(0);
     const [editingEpisodeIdx, setEditingEpisodeIdx] = useState(null);
-    const [sourceId, setSourceId] = useState('');
-    const [subtitleSourceIds, setSubtitleSourceIds] = useState([]);
+    const [sourceId, setSourceId] = useState(() => initial && (initial.sourceId || initial.imdbId || initial.tmdbId) || '');
+    const [subtitleSourceIds, setSubtitleSourceIds] = useState(() => initial ? [initial.imdbId, initial.tmdbId].filter(Boolean) : []);
     const [bannerData, setBannerData] = useState(null);
     const [bannerLoading, setBannerLoading] = useState(false);
     const [bannerError, setBannerError] = useState('');
@@ -5762,6 +5762,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.subtitleUrl = normalizeSubtitleUrl(form.subtitleUrl || '');
             payload.subtitleOffset = Number(form.subtitleOffset) || 0;
             payload.cinemanaId = String(form.cinemanaId || '');
+            payload.playbackProvider = form.cinemanaId ? 'cinemana' : '';
             payload.trimStart = Number(form.trimStart) || 0;
             payload.trimEnd = Number(form.trimEnd) || 0;
             payload.introStart = Number(form.introStart) || 0;
@@ -5778,7 +5779,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 poster: (s.poster || '').trim(),
                 episodeThumbnail: (s.episodeThumbnail || '').trim(),
                 episodes: (s.episodes || []).map(e => ({
-                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || ''), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
+                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), playbackProvider: e.cinemanaId ? 'cinemana' : '', subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || ''), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
                     trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, introStart: Number(e.introStart) || 0, introEnd: Number(e.introEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
                 }))
             }));
@@ -5851,15 +5852,25 @@ function AdminContentForm({ initial, defaultType, onDone }) {
         form.type === 'movie' ? (React.createElement("div", null,
             React.createElement("div", { className: "mt-5" },
                 React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u0644\u0645 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: form.videoUrl, onChange: v => set('videoUrl', v), folder: "videos", accept: "video/*" })),
-            React.createElement(CinemanaHelper, { kind: form.type === 'anime' ? 'anime' : 'movie', defaultTitle: form.name, defaultYear: form.year, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb), onImportTmdb: async (item) => { const r = await importFromTmdbTitle(cinemanaTitle(item), form.type, cinemanaYear(item) || form.year, { withEpisodes: false }); setSourceId(r.sourceId || ''); setSubtitleSourceIds([r.imdbId, r.tmdbId].filter(Boolean)); setForm(prev => ({ ...prev, ...r.patch, videoUrl: prev.videoUrl, videoSources: prev.videoSources })); setBannerData(r.bannerData || null); return r; } }),
+            React.createElement(CinemanaHelper, { kind: form.type === 'anime' ? 'anime' : 'movie', defaultTitle: form.name, defaultYear: form.year, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb), onImportTmdb: async (item) => {
+                    if (sourceId) return { patch: {}, sourceId, imdbId: '', tmdbId: '' };
+                    const r = await importFromTmdbTitle(cinemanaTitle(item), form.type, cinemanaYear(item) || form.year, { withEpisodes: false });
+                    setSourceId(r.sourceId || '');
+                    setSubtitleSourceIds([r.imdbId, r.tmdbId].filter(Boolean));
+                    setForm(prev => ({ ...prev, ...r.patch, videoUrl: prev.videoUrl, videoSources: prev.videoSources }));
+                    setBannerData(r.bannerData || null);
+                    return r;
+                  } }),
             React.createElement(SubtitleHelper, { cinemanaId: form.cinemanaId, value: form.subtitleUrl || '', onChange: v => set('subtitleUrl', v), sourceId: sourceId, title: form.name, year: form.year, type: "movie", folder: "subtitles", offset: form.subtitleOffset || 0, onOffsetChange: v => set('subtitleOffset', v) }),
             React.createElement(VideoDisplaySettings, { value: form, onChange: patch => setForm(prev => ({ ...prev, ...patch })) }))) : (React.createElement(React.Fragment, null,
             React.createElement("div", null,
                 React.createElement(CinemanaSeriesImportPanel, { type: form.type === 'anime' ? 'anime' : 'tv', defaultTitle: form.name, defaultYear: form.year, onImport: async (item, onProgress) => {
-                        const r = await importFromTmdbTitle(cinemanaTitle(item), form.type, cinemanaYear(item) || form.year, { withEpisodes: true, onProgress });
+                        const r = sourceId
+                          ? await importFromTmdb(sourceId, form.type, { withEpisodes: true, onProgress })
+                          : await importFromTmdbTitle(cinemanaTitle(item), form.type, cinemanaYear(item) || form.year, { withEpisodes: true, onProgress });
                         const ce = await cinemanaEpisodes(String(item.nb));
                         r.patch.seasons = await enrichTmdbSeasonsWithCinemana(r.patch.seasons || [], ce, onProgress);
-                        setSourceId(r.sourceId || '');
+                        setSourceId(r.sourceId || sourceId || '');
                         setSubtitleSourceIds([r.imdbId, r.tmdbId].filter(Boolean));
                         setBannerData(r.bannerData || null);
                         setShowAllBanners(false);
