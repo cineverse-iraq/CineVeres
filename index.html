@@ -2707,7 +2707,42 @@
       );
     }
 
-    function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart, trimEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, qualities, onQualityChange, startAt }) {
+    async function fetchIntroSegment(imdbId, seasonNumber, episodeNumber, durationSeconds) {
+      const imdb = String(imdbId || '').trim();
+      const season = Number(seasonNumber) || 0;
+      const episode = Number(episodeNumber) || 0;
+      if (!imdb || !season || !episode) return null;
+      const cacheKey = `cinadam_intro_${imdb}_${season}_${episode}_${Math.round(Number(durationSeconds) || 0)}`;
+      try {
+        const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
+        if (cached && Number.isFinite(cached.start) && Number.isFinite(cached.end) && cached.end > cached.start) return cached;
+      } catch (e) {}
+
+      const duration = Number(durationSeconds) || 0;
+      const urls = [
+        `https://api.skipdb.tv/api/segments?imdb_id=${encodeURIComponent(imdb)}&season=${season}&episode=${episode}${duration > 0 ? `&duration=${encodeURIComponent(duration)}` : ''}&type=intro`,
+        `https://api.introdb.app/segments?imdb_id=${encodeURIComponent(imdb)}&season=${season}&episode=${episode}&segment_type=intro`
+      ];
+
+      for (const url of urls) {
+        try {
+          const res = await fetch(url, { headers: { Accept: 'application/json' } });
+          if (!res.ok) continue;
+          const data = await res.json();
+          const seg = data && data.segments ? data.segments.intro : data && data.intro;
+          if (!seg) continue;
+          const start = Number(seg.start_ms ?? (Number(seg.start_sec) * 1000) ?? (Number(seg.start) * 1000));
+          const end = Number(seg.end_ms ?? (Number(seg.end_sec) * 1000) ?? (Number(seg.end) * 1000));
+          if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || end - start < 5000) continue;
+          const out = { start: Math.max(0, start / 1000), end: Math.max(0, end / 1000) };
+          try { localStorage.setItem(cacheKey, JSON.stringify(out)); } catch (e) {}
+          return out;
+        } catch (e) {}
+      }
+      return null;
+    }
+
+    function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart, trimEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, qualities, onQualityChange, startAt, introImdb, introSeason, introEpisode }) {
       const videoRef = useRef(null);
       const wrapRef = useRef(null);
       const hideTimerRef = useRef(null);
@@ -2835,6 +2870,9 @@
       const [showSpeedMenu, setShowSpeedMenu] = useState(false);
       const [showQualityMenu, setShowQualityMenu] = useState(false);
       const [fakeFullscreen, setFakeFullscreen] = useState(false);
+      const [introSegment, setIntroSegment] = useState(null);
+      const [introLoading, setIntroLoading] = useState(false);
+      const introSkippedRef = useRef(false);
 
       useEffect(() => {
         const videoEl = videoRef.current;
@@ -2880,6 +2918,43 @@
           videoEl.removeEventListener('ended', onEnded);
         };
       }, [src]);
+
+      useEffect(() => {
+        let cancelled = false;
+        setIntroSegment(null);
+        introSkippedRef.current = false;
+        if (!introImdb || !introSeason || !introEpisode) return;
+        setIntroLoading(true);
+        const loadIntro = async () => {
+          const v = videoRef.current;
+          const duration = v && Number.isFinite(v.duration) ? v.duration : 0;
+          const seg = await fetchIntroSegment(introImdb, introSeason, introEpisode, duration);
+          if (!cancelled) {
+            setIntroSegment(seg);
+            setIntroLoading(false);
+          }
+        };
+        // ننتظر metadata حتى نرسل مدة النسخة الحالية للمطابقة الدقيقة
+        const v = videoRef.current;
+        if (v && Number.isFinite(v.duration) && v.duration > 0) loadIntro();
+        else if (v) {
+          const onMeta = () => { v.removeEventListener('loadedmetadata', onMeta); loadIntro(); };
+          v.addEventListener('loadedmetadata', onMeta);
+          return () => { cancelled = true; v.removeEventListener('loadedmetadata', onMeta); };
+        }
+        return () => { cancelled = true; };
+      }, [src, introImdb, introSeason, introEpisode]);
+
+      const skipIntro = () => {
+        const v = videoRef.current;
+        if (!v || !introSegment) return;
+        const target = Math.max(0, Math.min((v.duration || introSegment.end), introSegment.end + 0.15));
+        try { v.currentTime = target; } catch (e) {}
+        introSkippedRef.current = true;
+        setSkipFlash('intro');
+        setTimeout(() => setSkipFlash(null), 650);
+        showBarTemporarily();
+      };
 
       const togglePlay = () => {
         const v = videoRef.current;
@@ -3035,6 +3110,7 @@
       };
 
       const RATE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+      const introVisible = !!introSegment && ctrl.current >= Math.max(0, introSegment.start - 1.5) && ctrl.current < introSegment.end && !loading;
 
       return (
         <div ref={wrapRef} className={`video-crop-wrap ${fakeFullscreen ? 'ios-fake-fullscreen' : 'aspect-video'}`} onMouseMove={showBarTemporarily} onClick={onStageClick}>
@@ -3058,11 +3134,19 @@
             </div>
           )}
 
+          {introVisible && (
+            <button type="button" onClick={(e) => { e.stopPropagation(); skipIntro(); }}
+              className="absolute bottom-16 left-4 md:left-6 z-30 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-glass-950 font-black text-xs md:text-sm shadow-[0_8px_30px_rgba(0,0,0,0.45)] hover:bg-slate-100 active:scale-95 transition">
+              <Icon name="rotateCw5" className="w-4 h-4" />
+              تخطي المقدمة
+            </button>
+          )}
+
           {skipFlash && (
             <div className={`absolute inset-y-0 ${skipFlash === 'fwd' ? 'right-0' : 'left-0'} w-1/3 flex items-center justify-center pointer-events-none z-20`}>
               <div className="w-16 h-16 rounded-full bg-black/50 flex flex-col items-center justify-center gap-0.5 yt-skip-flash">
-                <Icon name={skipFlash === 'fwd' ? 'rotateCw5' : 'rotateCcw5'} className="w-6 h-6 text-white" />
-                <span className="text-[10px] font-bold text-white">5 ث</span>
+                <Icon name={skipFlash === 'intro' ? 'skip-forward' : (skipFlash === 'fwd' ? 'rotateCw5' : 'rotateCcw5')} className="w-6 h-6 text-white" />
+                <span className="text-[10px] font-bold text-white">{skipFlash === 'intro' ? 'تم التخطي' : '5 ث'}</span>
               </div>
             </div>
           )}
@@ -3562,6 +3646,9 @@
                       trimStart={playingMeta.trimStart} trimEnd={playingMeta.trimEnd}
                       fitMobile={playingMeta.fitMobile} fitDesktop={playingMeta.fitDesktop} crop={playingMeta.crop}
                       episodeLabel={playingLabel} qualities={playingQualities} startAt={resumeAt} onQualityChange={handleQualityChange}
+                      introImdb={playingMeta.imdb || (title.type !== 'movie' ? title.imdb : '')}
+                      introSeason={title.type !== 'movie' ? playingSeasonNumber : 0}
+                      introEpisode={title.type !== 'movie' ? playingMeta.number : 0}
                       onComplete={title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete} />
                   ) : (
                     <iframe key={playingUrl} src={normalizeVideoUrl(playingUrl)} allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen
@@ -5628,7 +5715,7 @@
             episodeThumbnail: (s.episodeThumbnail || '').trim(),
             episodes: (s.episodes || []).map(e => ({
               number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || ''), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
-              trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
+              trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, introStart: Number(e.introStart) || 0, introEnd: Number(e.introEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
             }))
           }));
           payload.videoUrl = '';
