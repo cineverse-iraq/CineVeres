@@ -2648,7 +2648,7 @@
           {text && (
             <div style={{ position: 'absolute', left: 0, right: 0, bottom: `calc(${Number(prefs.pos) || 0}% + ${lifted ? 46 : 0}px)`, transition: 'bottom .2s', textAlign: 'center', padding: '0 4%' }}>
               {text.split('\n').map((line, i) => (
-                <div key={i}><span dir="auto" style={{ ...bgStyle, display: 'inline-block', color: prefs.color, fontSize: fontPx + 'px', fontWeight: prefs.weight, lineHeight: 1.5, textShadow: shadow, fontFamily: "'Cairo', sans-serif" }}>{line}</span></div>
+                <div key={i}><span dir="rtl" style={{ ...bgStyle, display: 'inline-block', color: prefs.color, fontSize: fontPx + 'px', fontWeight: prefs.weight, lineHeight: 1.5, textShadow: shadow, fontFamily: "'Cairo', sans-serif", direction: 'rtl', unicodeBidi: 'plaintext', textAlign: 'center' }}>{line}</span></div>
               ))}
             </div>
           )}
@@ -6253,6 +6253,13 @@
       );
     }
 
+    function getSubtitleProgress(title) {
+      if (!title) return { done: 0, total: 0 };
+      if (title.type === 'movie') return { done: normalizeSubtitleUrl(title.subtitleUrl || '') ? 1 : 0, total: 1 };
+      const episodes = (title.seasons || []).flatMap(se => Array.isArray(se.episodes) ? se.episodes : []);
+      return { done: episodes.filter(ep => normalizeSubtitleUrl(ep.subtitleUrl || '')).length, total: episodes.length };
+    }
+
     function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
       const [tab, setTab] = useState('content');
       const [contentType, setContentType] = useState('movie');
@@ -6338,7 +6345,9 @@
                 </div>
                 <div className="space-y-3">
                   {filteredTitles.length === 0 && <p className="text-sm text-slate-500 font-medium">لا توجد أعمال مطابقة في هذا القسم.</p>}
-                  {filteredTitles.map(t => (
+                  {filteredTitles.map(t => {
+                    const subProgress = getSubtitleProgress(t);
+                    return (
                     <div key={t.id} className="glass-card rounded-2xl p-4 border border-white/10 flex items-center gap-4 flex-wrap">
                       <div className="w-12 h-16 rounded-xl bg-glass-900 overflow-hidden shrink-0 border border-white/5 shadow-md">
                         {t.poster && <img src={t.poster} className="w-full h-full object-cover" />}
@@ -6348,13 +6357,15 @@
                         <p className="text-xs text-slate-400 font-medium">{TYPE_LABELS[t.type]} · {t.year || ''}{t.type !== 'movie' ? ` · ${(t.seasons || []).length} موسم` : ''}</p>
                       </div>
                       <span className={`text-[11px] px-3 py-1 rounded-full font-bold shrink-0 ${t.status === 'published' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-glass-800 text-slate-400 border border-white/5'}`}>{t.status === 'published' ? 'منشور' : 'مسودة'}</span>
+                      <span title="عدد الحلقات التي لديها ترجمة من إجمالي الحلقات" className={`text-[10px] px-2.5 py-1 rounded-full font-bold shrink-0 border ${subProgress.total > 0 && subProgress.done === subProgress.total ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-white/5 text-slate-400 border-white/5'}`}>ترجمة {subProgress.done}/{subProgress.total}</span>
                       {t.featured === true && <span className="text-[11px] px-3 py-1 rounded-full font-bold shrink-0 bg-amber-500/20 text-amber-400 border border-amber-500/30">Hero</span>}
                       <button onClick={() => toggleFeatured(t)} title={t.featured === true ? 'إزالة من العرض الرئيسي (Hero)' : 'إظهار في العرض الرئيسي (Hero)'} className={`w-9 h-9 rounded-xl glass-card border flex items-center justify-center transition shrink-0 ${t.featured === true ? 'border-amber-400 text-amber-400' : 'border-white/10 hover:border-accent-cyan text-slate-200'}`}><Icon name="star" className={`w-4 h-4 ${t.featured === true ? 'fill-current' : ''}`} /></button>
                       <button onClick={() => togglePublish(t)} title="تبديل حالة النشر" className="w-9 h-9 rounded-xl glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-200 transition shrink-0"><Icon name="eye" className="w-4 h-4" /></button>
                       <button onClick={() => setEditing(t)} title="تعديل" className="w-9 h-9 rounded-xl glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-200 transition shrink-0"><Icon name="pencil" className="w-4 h-4" /></button>
                       <button onClick={() => setDeleteTarget(t.id)} title="حذف" className="w-9 h-9 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 flex items-center justify-center text-rose-400 transition shrink-0"><Icon name="trash-2" className="w-4 h-4" /></button>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )
