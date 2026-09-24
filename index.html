@@ -2896,7 +2896,16 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
     const videoRef = useRef(null);
     const wrapRef = useRef(null);
     const hideTimerRef = useRef(null);
+    const bufferingTimerRef = useRef(null);
+    const lastUiTickRef = useRef(0);
+    const lastProgressTickRef = useRef(0);
     const completedRef = useRef(false);
+    const clearBufferingTimer = () => {
+        if (bufferingTimerRef.current) {
+            clearTimeout(bufferingTimerRef.current);
+            bufferingTimerRef.current = null;
+        }
+    };
     const [loading, setLoading] = useState(true);
     const [subtitleSrc, setSubtitleSrc] = useState(''); // لمسار iOS الأصلي فقط
     const [subtitleLoading, setSubtitleLoading] = useState(false);
@@ -3040,13 +3049,24 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
         const hlsConfig = {
             enableWorker: true,
             capLevelToPlayerSize: true,
+            capLevelOnFPSDrop: true,
             lowLatencyMode: false,
-            maxBufferLength: CV_LOW_POWER ? 8 : 18,
-            maxMaxBufferLength: CV_LOW_POWER ? 16 : 36,
-            backBufferLength: CV_LOW_POWER ? 4 : 12,
-            maxBufferHole: 0.5,
             startFragPrefetch: !CV_LOW_POWER,
-            abrEwmaDefaultEstimate: CV_LOW_POWER ? 900000 : 1800000
+            maxBufferLength: CV_LOW_POWER ? 5 : 18,
+            maxMaxBufferLength: CV_LOW_POWER ? 10 : 36,
+            backBufferLength: CV_LOW_POWER ? 2 : 12,
+            maxBufferHole: CV_LOW_POWER ? 0.8 : 0.5,
+            maxBufferSize: CV_LOW_POWER ? 12 * 1000 * 1000 : 60 * 1000 * 1000,
+            abrEwmaDefaultEstimate: CV_LOW_POWER ? 600000 : 1800000,
+            abrEwmaFastLive: CV_LOW_POWER ? 2.0 : 3.0,
+            abrEwmaSlowLive: CV_LOW_POWER ? 5.0 : 9.0,
+            abrBandWidthFactor: CV_LOW_POWER ? 0.60 : 0.95,
+            abrBandWidthUpFactor: CV_LOW_POWER ? 0.45 : 0.70,
+            maxStarvationDelay: CV_LOW_POWER ? 3 : 4,
+            highBufferWatchdogPeriod: CV_LOW_POWER ? 1.2 : 2,
+            fragLoadingTimeOut: CV_LOW_POWER ? 20000 : 20000,
+            manifestLoadingTimeOut: 20000,
+            levelLoadingTimeOut: 20000
         };
         const tryPlay = () => {
             if (cancelled || !videoEl.paused)
@@ -3055,7 +3075,11 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
             if (p && p.catch)
                 p.catch(() => { });
         };
-        const onReady = () => { setLoading(false); tryPlay(); };
+        const markReady = () => {
+            clearBufferingTimer();
+            setLoading(false);
+        };
+        const onReady = () => { markReady(); tryPlay(); };
         videoEl.addEventListener('canplay', onReady);
         videoEl.addEventListener('loadeddata', onReady);
         const setup = async () => {
@@ -3133,6 +3157,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
             if (hls)
                 hls.destroy();
             clearTimeout(stuckTimer);
+            clearBufferingTimer();
         };
     }, [src]);
     useEffect(() => {
@@ -3180,8 +3205,20 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
         const onPause = () => setCtrl(c2 => ({ ...c2, playing: false }));
         const onVolume = () => setCtrl(c2 => ({ ...c2, muted: videoEl.muted, volume: videoEl.volume }));
         const onLoadedMeta = () => setCtrl(c2 => ({ ...c2, duration: videoEl.duration || 0 }));
-        const onTimeUpdate = () => setCtrl(c2 => ({ ...c2, current: videoEl.currentTime || 0 }));
+        const onTimeUpdate = () => {
+            const now = performance.now();
+            if (now - lastUiTickRef.current < 250)
+                return;
+            lastUiTickRef.current = now;
+            if (!videoEl.paused && videoEl.readyState >= 2)
+                setLoading(false);
+            setCtrl(c2 => ({ ...c2, current: videoEl.currentTime || 0 }));
+        };
         const onProgress = () => {
+            const now = performance.now();
+            if (now - lastProgressTickRef.current < 650)
+                return;
+            lastProgressTickRef.current = now;
             try {
                 const b = videoEl.buffered;
                 if (b && b.length)
@@ -3190,10 +3227,27 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
             catch (e) { }
         };
         const onRate = () => setCtrl(c2 => ({ ...c2, rate: videoEl.playbackRate || 1 }));
-        const onWaiting = () => setLoading(true);
-        const onStalled = () => setLoading(true);
-        const onLoadedData = () => setLoading(false);
-        const onEnded = () => { fireComplete(); };
+        const onWaiting = () => {
+            if (videoEl.paused || videoEl.ended)
+                return;
+            clearTimeout(bufferingTimerRef.current);
+            bufferingTimerRef.current = setTimeout(() => {
+                if (!videoEl.paused && videoEl.readyState < 3)
+                    setLoading(true);
+            }, CV_LOW_POWER ? 850 : 650);
+        };
+        const onStalled = () => {
+            if (videoEl.paused || videoEl.ended)
+                return;
+            clearTimeout(bufferingTimerRef.current);
+            bufferingTimerRef.current = setTimeout(() => {
+                if (!videoEl.paused && videoEl.readyState < 3)
+                    setLoading(true);
+            }, CV_LOW_POWER ? 1000 : 700);
+        };
+        const onPlaying = () => { clearBufferingTimer(); setLoading(false); };
+        const onLoadedData = () => { clearBufferingTimer(); setLoading(false); };
+        const onEnded = () => { clearBufferingTimer(); setLoading(false); fireComplete(); };
         videoEl.addEventListener('play', onPlay);
         videoEl.addEventListener('pause', onPause);
         videoEl.addEventListener('volumechange', onVolume);
@@ -3203,6 +3257,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
         videoEl.addEventListener('ratechange', onRate);
         videoEl.addEventListener('waiting', onWaiting);
         videoEl.addEventListener('stalled', onStalled);
+        videoEl.addEventListener('playing', onPlaying);
         videoEl.addEventListener('loadeddata', onLoadedData);
         videoEl.addEventListener('ended', onEnded);
         return () => {
@@ -3215,8 +3270,10 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
             videoEl.removeEventListener('ratechange', onRate);
             videoEl.removeEventListener('waiting', onWaiting);
             videoEl.removeEventListener('stalled', onStalled);
+            videoEl.removeEventListener('playing', onPlaying);
             videoEl.removeEventListener('loadeddata', onLoadedData);
             videoEl.removeEventListener('ended', onEnded);
+            clearBufferingTimer();
         };
     }, [src]);
     const togglePlay = () => {
@@ -6710,6 +6767,7 @@ function App() {
         accountNotice && (React.createElement(AppealModal, { username: accountNotice.username, type: accountNotice.type, message: accountNotice.message, outcomeOnly: accountNotice.outcomeOnly, onClose: () => setAccountNotice(null) }))));
 }
 const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(React.createElement(App, null));</script>
+root.render(React.createElement(App, null));
+  </script>
 </body>
 </html>
