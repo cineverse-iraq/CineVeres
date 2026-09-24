@@ -733,6 +733,45 @@ async function subSave(meta, vtt, info = {}) {
     _subCache.delete('fbsub:' + key);
     return 'fbsub:' + key;
 }
+async function makeSubtitlePublicUrl(subtitleUrl) {
+    const u = normalizeSubtitleUrl(subtitleUrl);
+    if (!u) return '';
+    if (!/^fbsub:/i.test(u)) return /^https?:\/\//i.test(u) ? u : '';
+    const key = u.slice(6);
+    try {
+        const snap = await withTimeout(db.ref('subtitleFiles/' + key + '/publicUrl').once('value'), 10000, '');
+        const cached = snap.val();
+        if (typeof cached === 'string' && /^https?:\/\//i.test(cached)) return cached;
+    } catch (e) {}
+    try {
+        const snap = await withTimeout(db.ref('subtitleFiles/' + key + '/vtt').once('value'), 12000, '');
+        const vtt = snap.val();
+        if (typeof vtt !== 'string' || !vtt) return '';
+        if (SUBTITLE_PUBLIC_BASE) return `${SUBTITLE_PUBLIC_BASE}/${encodeURIComponent(key)}.vtt`;
+        const file = new File([vtt], `subtitle_${key}.vtt`, { type: 'text/vtt' });
+        const publicUrl = await uploadFile(file, 'subtitle-public', null);
+        if (!publicUrl) return '';
+        await db.ref('subtitleFiles/' + key + '/publicUrl').set(publicUrl);
+        return publicUrl;
+    } catch (e) {
+        return '';
+    }
+}
+function isVidApiUrl(url) {
+    try { return new URL(String(url || ''), window.location.href).hostname === new URL(VIDAPI_EMBED_HOST).hostname; } catch (e) { return false; }
+}
+function buildVidApiPlaybackUrl(rawUrl, subtitlePublicUrl) {
+    const clean = normalizeVideoUrl(rawUrl || '');
+    if (!clean || !subtitlePublicUrl || !/^https?:\/\//i.test(subtitlePublicUrl)) return clean;
+    try {
+        const u = new URL(clean, window.location.href);
+        u.searchParams.set('sub_url', subtitlePublicUrl);
+        u.searchParams.set('sub_lang', 'ar');
+        u.searchParams.set('sub_label', 'Arabic');
+        u.searchParams.set('sub_default', '1');
+        return u.toString();
+    } catch (e) { return clean; }
+}
 async function subFetchWithTimeout(url, ms) {
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), ms);
@@ -967,17 +1006,43 @@ async function buildVidApiUrl(kind, rawId, season, episode) {
     params.set('autoplay', '1');
     return `${base}?${params.toString()}`;
 }
-function VidApiHelper({ kind, season, episode, onGenerate, defaultId }) {
+function VidApiHelper({ kind, season, episode, onGenerate, defaultId, defaultTitle, defaultYear, onGenerateSubtitle }) {
     const [id, setId] = useState(defaultId || '');
     useEffect(() => { if (defaultId)
         setId(defaultId); }, [defaultId]);
     const [generating, setGenerating] = useState(false);
+    const [subMsg, setSubMsg] = useState('');
     const generate = async () => {
+        const vidId = id.trim();
+        if (!vidId) return;
         setGenerating(true);
+        setSubMsg('');
         try {
-            const url = await buildVidApiUrl(kind, id, season, episode);
-            if (url)
-                onGenerate(normalizeVideoUrl(url));
+            const url = await buildVidApiUrl(kind, vidId, season, episode);
+            if (!url)
+                return;
+            onGenerate(normalizeVideoUrl(url));
+            if (onGenerateSubtitle) {
+                setSubMsg('جاري البحث عن الترجمة العربية...');
+                try {
+                    const r = await findAndStoreSubtitle({
+                        sourceId: vidId,
+                        altSourceIds: [],
+                        title: defaultTitle || '',
+                        year: defaultYear || '',
+                        type: kind === 'tv' ? 'series' : 'movie',
+                        season,
+                        episode,
+                        onProgress: setSubMsg
+                    });
+                    const publicUrl = await makeSubtitlePublicUrl(r.url);
+                    onGenerateSubtitle(r.url, publicUrl);
+                    setSubMsg(`✓ ترجمة عربية من ${r.sourceLabel} — ${r.cues} سطر${publicUrl ? ' · مرتبطة بـ VidAPI' : ''}`);
+                }
+                catch (e) {
+                    setSubMsg('تعذرت الترجمة التلقائية: ' + (e && e.message ? e.message : ''));
+                }
+            }
         }
         finally {
             setGenerating(false);
@@ -986,16 +1051,17 @@ function VidApiHelper({ kind, season, episode, onGenerate, defaultId }) {
     return (React.createElement("div", { className: "glass-card rounded-2xl p-3.5 border border-accent-cyan/20 mt-3.5" },
         React.createElement("p", { className: "text-[11px] font-bold text-accent-cyan mb-2 flex items-center gap-1.5" },
             React.createElement(Icon, { name: "sparkles", className: "w-3.5 h-3.5" }),
-            "\u062A\u0648\u0644\u064A\u062F \u0631\u0627\u0628\u0637 VidAPI \u0628\u062F\u0648\u0646 \u062A\u0631\u062C\u0645\u0629 \u062E\u0627\u0631\u062C\u064A\u0629"),
+            "VidAPI + ترجمة عربية تلقائية"),
         React.createElement("div", { className: "flex items-center gap-2" },
-            React.createElement("input", { value: id, onChange: ev => setId(ev.target.value), onKeyDown: ev => ev.key === 'Enter' && generate(), placeholder: "\u0645\u0639\u0631\u0641 IMDB (\u0645\u062B\u0627\u0644: tt1517268) \u0623\u0648 TMDB (\u0645\u062B\u0627\u0644: 385687)", className: "flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" }),
+            React.createElement("input", { value: id, onChange: ev => setId(ev.target.value), onKeyDown: ev => ev.key === 'Enter' && generate(), placeholder: "معرف IMDB (مثال: tt1517268) أو TMDB (مثال: 385687)", className: "flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" }),
             React.createElement("button", { type: "button", onClick: generate, disabled: !id.trim() || generating, className: "shrink-0 px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 text-xs font-bold hover:brightness-110 transition disabled:opacity-40" }, generating ? 'جاري...' : 'توليد الرابط')),
         kind === 'tv' && React.createElement("p", { className: "text-[10px] text-slate-500 mt-1.5" },
-            "\u0627\u0644\u0645\u0648\u0633\u0645 ",
+            "الموسم ",
             Number(season) || 1,
-            " \u00B7 \u0627\u0644\u062D\u0644\u0642\u0629 ",
+            " · الحلقة ",
             Number(episode) || 1),
-        React.createElement("p", { className: "text-[10px] text-slate-500 mt-1.5" }, "\u062A\u0645 \u062A\u0639\u0637\u064A\u0644 OpenSubtitles \u0648\u0627\u0644\u062A\u0631\u062C\u0645\u0627\u062A \u0627\u0644\u062E\u0627\u0631\u062C\u064A\u0629 \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0631\u0627\u0628\u0637.")));
+        subMsg && React.createElement("p", { className: `text-[10px] font-bold mt-1.5 ${/^✓/.test(subMsg) ? 'text-emerald-400' : 'text-slate-400'}` }, subMsg),
+        React.createElement("p", { className: "text-[10px] text-slate-500 mt-1.5" }, "بعد توليد الرابط، يُستدعى نفس محرك الترجمة العربي المستخدم مع سينمانا.")));
 }
 // http://localhost:8787/search
 // http://localhost:8787/info/:id
@@ -3914,6 +3980,12 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             throw new Error('سينمانا ما رجّعت روابط فيديو لهذه الحلقة.');
         return { url: sources[0].url, sources, sourceId: String(match.nb) };
     };
+    const ensureVidApiSubtitlePublic = async (meta) => {
+        if (!meta || !isVidApiUrl(meta.videoUrl || '') || meta.subtitlePublicUrl || !meta.subtitleUrl) return '';
+        const publicUrl = await makeSubtitlePublicUrl(meta.subtitleUrl);
+        if (publicUrl) setPlayingMeta(prev => ({ ...prev, subtitlePublicUrl: publicUrl }));
+        return publicUrl;
+    };
     const handlePlay = async () => {
         setVideoError(false);
         setResumeAt(0);
@@ -3927,8 +3999,9 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                     sources = recovered.sources;
                 }
                 setPlayingUrl(url);
-                setPlayingMeta({ ...title, videoUrl: url, videoSources: sources, subtitleUrl: title.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
+                setPlayingMeta({ ...title, videoUrl: url, videoSources: sources, subtitleUrl: title.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: title.subtitlePublicUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
                 setPlayingLabel(title.name);
+                ensureVidApiSubtitlePublic({ ...title, videoUrl: url });
             }
             else {
                 const found = firstEpisode();
@@ -3955,9 +4028,10 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 sources = recovered.sources;
             }
             setPlayingUrl(url);
-            setPlayingMeta({ ...ep, videoUrl: url, videoSources: sources, subtitleUrl: ep.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
+            setPlayingMeta({ ...ep, videoUrl: url, videoSources: sources, subtitleUrl: ep.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: ep.subtitlePublicUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
             setPlayingSeasonNumber(seasonNumber != null ? seasonNumber : null);
             setPlayingLabel(`${title.name} · ${ep.title || `الحلقة ${ep.number != null ? ep.number : ''}`}`);
+                ensureVidApiSubtitlePublic({ ...ep, videoUrl: url });
         }
         catch (e) {
             setVideoError(true);
@@ -3977,6 +4051,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const playingQualities = normalizeVideoSources(playingMeta && playingMeta.videoSources ? playingMeta.videoSources : (title.type === 'movie' ? title.videoSources : []));
     const activeSubtitleUrl = (playingMeta && playingMeta.subtitleUrl) || (playingQualities[0] && playingQualities[0].subtitleUrl) || (title.type === 'movie' ? title.subtitleUrl : '');
     const activeSubtitleOffset = Number((playingMeta && playingMeta.subtitleOffset) ?? (title.type === 'movie' ? title.subtitleOffset : 0)) || 0;
+    const activeSubtitlePublicUrl = (playingMeta && playingMeta.subtitlePublicUrl) || (title.type === 'movie' ? title.subtitlePublicUrl : '');
     const handleQualityChange = (url, at, quality) => {
         if (!url || url === playingUrl)
             return;
@@ -4053,7 +4128,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         React.createElement("div", { onClick: e => e.stopPropagation(), className: `${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl` },
             React.createElement("div", { className: "relative" },
                 playingUrl ? (React.createElement("div", { className: "relative" },
-                    isDirectVideo(playingUrl) ? (React.createElement(VideoPlayer, { key: playingUrl + '|' + (playingMeta.subtitleUrl || '') + '|' + activeSubtitleOffset, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: () => setVideoError(true), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: playingMeta.introStart, introEnd: playingMeta.introEnd, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onComplete: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete })) : (React.createElement("iframe", { key: playingUrl, src: normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
+                    isDirectVideo(playingUrl) ? (React.createElement(VideoPlayer, { key: playingUrl + '|' + (playingMeta.subtitleUrl || '') + '|' + activeSubtitleOffset, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: () => setVideoError(true), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: playingMeta.introStart, introEnd: playingMeta.introEnd, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onComplete: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
                     videoError && (React.createElement("div", { className: "absolute inset-0 bg-black/90 flex flex-col items-center justify-center gap-3 p-6 text-center" },
                         React.createElement("p", { className: "text-sm text-slate-200 font-bold" }, "\u062A\u0639\u0630\u0651\u0631 \u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u0639\u0644\u0649 \u0647\u0630\u0627 \u0627\u0644\u062C\u0647\u0627\u0632."),
                         isIOS && (React.createElement("p", { className: "text-xs text-slate-400 max-w-xs leading-relaxed" }, "\u063A\u0627\u0644\u0628\u064B\u0627 \u0627\u0644\u0633\u0628\u0628 \u0623\u0646 \u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u063A\u064A\u0631 \u0645\u0631\u0641\u0648\u0639 \u0628\u0635\u064A\u063A\u0629 \u064A\u062F\u0639\u0645\u0647\u0627 \u0627\u0644\u0622\u064A\u0641\u0648\u0646 \u0645\u0628\u0627\u0634\u0631\u0629. \u0627\u0644\u0623\u0639\u0645\u0627\u0644 \u0627\u0644\u062A\u064A \u062A\u064F\u0631\u0641\u0639 \u0645\u0646 \u0644\u0648\u062D\u0629 \u0627\u0644\u062A\u062D\u0643\u0645 \u0639\u0628\u0631 \u0632\u0631 \"\u0631\u0641\u0639 \u0645\u0646 \u0627\u0644\u062C\u0647\u0627\u0632\" \u062A\u0639\u0645\u0644 \u0628\u0634\u0643\u0644 \u0635\u062D\u064A\u062D \u0639\u0644\u0649 \u0643\u0644 \u0627\u0644\u0623\u062C\u0647\u0632\u0629.")),
@@ -5524,10 +5599,10 @@ function VideoDisplaySettings({ value, onChange }) {
         showCropStudio && (React.createElement(CropStudioModal, { videoUrl: normalizeVideoUrl(v.videoUrl), initial: crop, onCancel: () => setShowCropStudio(false), onSave: (newCrop) => { set('crop', newCrop); setShowCropStudio(false); } }))));
 }
 function emptyForm(type) {
-    return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], subtitleUrl: '', subtitleOffset: 0, trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
+    return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
 }
 function emptyEpisode(num) {
-    return { number: num, title: '', videoUrl: '', videoSources: [], subtitleUrl: '', subtitleOffset: 0, imdb: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
+    return { number: num, title: '', videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, imdb: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
 }
 function SubtitleHelper({ value, onChange, sourceId, title, type, season, episode, year, cinemanaId, offset = 0, onOffsetChange }) {
     const [loading, setLoading] = useState(false);
@@ -5601,7 +5676,9 @@ function SubtitleHelper({ value, onChange, sourceId, title, type, season, episod
 }
 function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sourceId, seriesName }) {
     const e = episode;
-    const set = (k, val) => onChange({ ...e, [k]: val });
+    const eRef = useRef(e);
+    useEffect(() => { eRef.current = e; }, [e]);
+    const set = (k, val) => onChange({ ...eRef.current, [k]: val });
     return (React.createElement("div", null,
         React.createElement("div", { className: "flex items-center gap-2.5 mb-4" },
             React.createElement("button", { type: "button", onClick: onBack, title: "\u0627\u0644\u0631\u062C\u0648\u0639 \u0644\u0642\u0627\u0626\u0645\u0629 \u0627\u0644\u062D\u0644\u0642\u0627\u062A", className: "w-9 h-9 shrink-0 rounded-xl glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-accent-cyan transition" },
@@ -5635,6 +5712,11 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
         React.createElement("div", { className: "mt-3.5" },
             React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u062D\u0644\u0642\u0629 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: e.videoUrl, onChange: v => set('videoUrl', v), folder: "episodes", accept: "video/*" })),
         React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb) }),
+        React.createElement("div", { className: "mt-3.5 flex items-center gap-2" },
+            React.createElement("div", { className: "h-px flex-1 bg-white/10" }),
+            React.createElement("span", { className: "text-[10px] font-black text-slate-500 px-1" }, "أو استخدم VidAPI"),
+            React.createElement("div", { className: "h-px flex-1 bg-white/10" })),
+        React.createElement(VidApiHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultId: sourceId || '', defaultTitle: seriesName, defaultYear: new Date().getFullYear(), onGenerate: (url) => set('videoUrl', url), onGenerateSubtitle: (url, publicUrl) => onChange({ ...eRef.current, subtitleUrl: url, subtitlePublicUrl: publicUrl || eRef.current.subtitlePublicUrl || '' }) }),
         React.createElement(SubtitleHelper, { cinemanaId: e.cinemanaId, value: e.subtitleUrl || '', onChange: v => set('subtitleUrl', v), sourceId: sourceId, title: seriesName, year: new Date().getFullYear(), type: "series", season: seasonNumber, episode: e.number, folder: "subtitles", offset: e.subtitleOffset || 0, onOffsetChange: v => set('subtitleOffset', v) }),
         React.createElement("div", { className: "grid grid-cols-2 gap-3.5 mt-3.5" },
             React.createElement("div", null,
@@ -5817,9 +5899,10 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.videoUrl = normalizeVideoUrl(form.videoUrl.trim());
             payload.videoSources = normalizeVideoSources(form.videoSources);
             payload.subtitleUrl = normalizeSubtitleUrl(form.subtitleUrl || '');
+            payload.subtitlePublicUrl = String(form.subtitlePublicUrl || '').trim();
             payload.subtitleOffset = Number(form.subtitleOffset) || 0;
             payload.cinemanaId = String(form.cinemanaId || '');
-            payload.playbackProvider = form.cinemanaId ? 'cinemana' : '';
+            payload.playbackProvider = form.cinemanaId ? 'cinemana' : (isVidApiUrl(form.videoUrl) ? 'vidapi' : (form.playbackProvider || ''));
             payload.trimStart = Number(form.trimStart) || 0;
             payload.trimEnd = Number(form.trimEnd) || 0;
             payload.introStart = Number(form.introStart) || 0;
@@ -5836,7 +5919,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 poster: (s.poster || '').trim(),
                 episodeThumbnail: (s.episodeThumbnail || '').trim(),
                 episodes: (s.episodes || []).map(e => ({
-                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), playbackProvider: e.cinemanaId ? 'cinemana' : '', subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || ''), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
+                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || ''), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
                     trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, introStart: Number(e.introStart) || 0, introEnd: Number(e.introEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
                 }))
             }));
@@ -5918,6 +6001,11 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                     setBannerData(r.bannerData || null);
                     return r;
                   } }),
+            React.createElement("div", { className: "mt-3.5 flex items-center gap-2" },
+                React.createElement("div", { className: "h-px flex-1 bg-white/10" }),
+                React.createElement("span", { className: "text-[10px] font-black text-slate-500 px-1" }, "أو استخدم VidAPI"),
+                React.createElement("div", { className: "h-px flex-1 bg-white/10" })),
+            React.createElement(VidApiHelper, { kind: "movie", defaultId: sourceId || '', defaultTitle: form.name, defaultYear: form.year, onGenerate: (url) => set('videoUrl', url), onGenerateSubtitle: (url, publicUrl) => setForm(prev => ({ ...prev, subtitleUrl: url, subtitlePublicUrl: publicUrl || prev.subtitlePublicUrl || '' })) }),
             React.createElement(SubtitleHelper, { cinemanaId: form.cinemanaId, value: form.subtitleUrl || '', onChange: v => set('subtitleUrl', v), sourceId: sourceId, title: form.name, year: form.year, type: "movie", folder: "subtitles", offset: form.subtitleOffset || 0, onOffsetChange: v => set('subtitleOffset', v) }),
             React.createElement(VideoDisplaySettings, { value: form, onChange: patch => setForm(prev => ({ ...prev, ...patch })) }))) : (React.createElement(React.Fragment, null,
             React.createElement("div", null,
