@@ -1930,75 +1930,99 @@
       const [slide, setSlide] = useState(null);
       const [slideActive, setSlideActive] = useState(false);
       const [dragOffset, setDragOffset] = useState(0);
-      const dragState = useRef({ startX: 0, dragging: false });
-      const timerRef = useRef(null);
+      const dragRef = useRef({ active: false, startX: 0, pointerId: null, offset: 0 });
+      const transitionRef = useRef(null);
+      const autoRef = useRef(null);
+      const goRef = useRef(null);
 
       useEffect(() => {
         if (idx >= items.length) setIdx(0);
       }, [items.length, idx]);
 
-      useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
-
-      useEffect(() => {
-        if (!slide) return;
-        setSlideActive(false);
-        const a = requestAnimationFrame(() => {
-          const b = requestAnimationFrame(() => setSlideActive(true));
-          timerRef.current = b;
-        });
-        return () => cancelAnimationFrame(a);
-      }, [slide]);
+      useEffect(() => () => {
+        if (transitionRef.current) clearTimeout(transitionRef.current);
+        if (autoRef.current) clearTimeout(autoRef.current);
+      }, []);
 
       const finishSlide = () => {
-        if (!slide) return;
-        setIdx(slide.to);
-        setSlide(null);
+        setSlide(current => {
+          if (!current) return null;
+          setIdx(current.to);
+          return null;
+        });
         setSlideActive(false);
         setDragOffset(0);
       };
 
-      const go = (target, direction) => {
-        if (items.length < 2 || slide) return;
+      const go = (target, direction, fromOffset = 0) => {
+        if (items.length < 2 || slide) return false;
         const next = ((target % items.length) + items.length) % items.length;
-        if (next === idx) return;
+        if (next === idx) return false;
         const dir = direction || (next === (idx + 1) % items.length ? 'next' : 'prev');
-        setSlide({ to: next, direction: dir });
-        if (timerRef.current) clearTimeout(timerRef.current);
-        timerRef.current = setTimeout(finishSlide, 600);
+        if (transitionRef.current) clearTimeout(transitionRef.current);
+        setDragOffset(fromOffset);
+        setSlide({ to: next, direction: dir, fromOffset });
+        setSlideActive(false);
+        requestAnimationFrame(() => requestAnimationFrame(() => setSlideActive(true)));
+        transitionRef.current = setTimeout(finishSlide, 680);
+        return true;
       };
 
+      goRef.current = go;
+
       useEffect(() => {
-        if (items.length < 2 || slide || dragState.current.dragging) return;
-        const t = setInterval(() => go(idx + 1, 'next'), 5200);
-        return () => clearInterval(t);
+        if (items.length < 2) return;
+        const schedule = () => {
+          autoRef.current = setTimeout(() => {
+            if (!dragRef.current.active && !slide && goRef.current) goRef.current(idx + 1, 'next');
+            schedule();
+          }, 5200);
+        };
+        schedule();
+        return () => { if (autoRef.current) clearTimeout(autoRef.current); };
       }, [items.length, idx, slide]);
 
       if (!items.length) return null;
 
-      const getX = e => e.touches ? e.touches[0].clientX : e.clientX;
-      const onDragStart = e => {
+      const getClientX = e => e.clientX != null ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+
+      const onPointerDown = e => {
         if (items.length < 2 || slide) return;
-        dragState.current = { startX: getX(e), dragging: true };
+        if (e.target.closest && e.target.closest('button,a')) return;
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        dragRef.current = { active: true, startX: getClientX(e), pointerId: e.pointerId, offset: 0 };
         setDragOffset(0);
+        try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
       };
-      const onDragMove = e => {
-        if (!dragState.current.dragging) return;
-        setDragOffset(getX(e) - dragState.current.startX);
+
+      const onPointerMove = e => {
+        if (!dragRef.current.active || slide) return;
+        const offset = getClientX(e) - dragRef.current.startX;
+        dragRef.current.offset = offset;
+        setDragOffset(offset);
       };
-      const endDrag = () => {
-        if (!dragState.current.dragging) return;
-        const offset = dragOffset;
-        dragState.current.dragging = false;
-        if (offset > 55) go(idx - 1, 'prev');
-        else if (offset < -55) go(idx + 1, 'next');
+
+      const onPointerUp = e => {
+        if (!dragRef.current.active) return;
+        const offset = dragRef.current.offset;
+        const pointerId = dragRef.current.pointerId;
+        dragRef.current.active = false;
+        try { e.currentTarget.releasePointerCapture(pointerId); } catch (_) {}
+        if (offset < -55) goRef.current(idx + 1, 'next', offset);
+        else if (offset > 55) goRef.current(idx - 1, 'prev', offset);
         else setDragOffset(0);
+      };
+
+      const onPointerCancel = () => {
+        dragRef.current.active = false;
+        setDragOffset(0);
       };
 
       const current = items[idx % items.length];
       const incoming = slide ? items[slide.to % items.length] : null;
-      const direction = slide?.direction || 'next';
-      const dragging = dragState.current.dragging;
-      const duration = '600ms cubic-bezier(.22,.61,.36,1)';
+      const direction = slide?.direction || (dragOffset < 0 ? 'next' : 'prev');
+      const dragging = dragRef.current.active;
+      const duration = '680ms cubic-bezier(.22,.61,.36,1)';
 
       const SlideContent = ({ item }) => (
         <div className="absolute inset-0 overflow-hidden">
@@ -2012,7 +2036,7 @@
             </div>
             <h1 className="text-2xl sm:text-3xl md:text-5xl font-black text-white leading-tight mb-2 md:mb-3 drop-shadow-md line-clamp-2"><bdi>{item.name}</bdi></h1>
             {item.description && <p className="hidden md:block text-slate-300 text-sm md:text-base line-clamp-3 mb-5 leading-relaxed font-medium max-w-xl">{item.description}</p>}
-            <button onClick={() => onOpen(item)} className="flex items-center gap-2 px-5 md:px-6 py-2.5 md:py-3 rounded-xl bg-accent-red hover:bg-accent-redHover font-bold text-white shadow-[0_0_20px_rgba(255,51,75,0.5)] transition transform hover:scale-105 active:scale-95 text-sm md:text-base">
+            <button type="button" onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); onOpen(item); }} className="flex items-center gap-2 px-5 md:px-6 py-2.5 md:py-3 rounded-xl bg-accent-red hover:bg-accent-redHover font-bold text-white shadow-[0_0_20px_rgba(255,51,75,0.5)] transition transform hover:scale-105 active:scale-95 text-sm md:text-base">
               <Icon name="play" className="w-4 h-4 md:w-5 md:h-5 fill-current" />مشاهدة الآن
             </button>
           </div>
@@ -2020,27 +2044,28 @@
       );
 
       const currentTransform = slide
-        ? (slideActive ? (direction === 'next' ? 'translate3d(-100%,0,0)' : 'translate3d(100%,0,0)') : 'translate3d(0,0,0)')
+        ? (slideActive ? (direction === 'next' ? 'translate3d(-100%,0,0)' : 'translate3d(100%,0,0)') : `translate3d(${slide.fromOffset || 0}px,0,0)`)
         : `translate3d(${dragging ? dragOffset : 0}px,0,0)`;
       const incomingTransform = slide
-        ? (slideActive ? 'translate3d(0,0,0)' : (direction === 'next' ? 'translate3d(100%,0,0)' : 'translate3d(-100%,0,0)'))
+        ? (slideActive ? 'translate3d(0,0,0)' : `translate3d(calc(${direction === 'next' ? '100%' : '-100%'} + ${slide.fromOffset || 0}px),0,0)`)
         : (dragging ? `translate3d(calc(${dragOffset < 0 ? '100%' : '-100%'} + ${dragOffset}px),0,0)` : 'translate3d(100%,0,0)');
-      const currentTransition = slide ? `transform ${duration}` : 'none';
-      const incomingTransition = slide ? `transform ${duration}` : 'none';
 
       return (
         <section
           className="relative h-[390px] sm:h-[430px] md:h-[72vh] md:min-h-[520px] -mx-4 md:mx-0 mb-8 md:mb-10 md:rounded-3xl overflow-hidden glass-panel border border-white/10 shadow-2xl select-none"
           style={{ touchAction: 'pan-y' }}
-          onMouseDown={onDragStart} onMouseMove={onDragMove} onMouseUp={endDrag} onMouseLeave={endDrag}
-          onTouchStart={onDragStart} onTouchMove={onDragMove} onTouchEnd={endDrag}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerCancel}
+          onPointerLeave={e => { if (e.pointerType === 'mouse' && dragRef.current.active) onPointerUp(e); }}
         >
           <div className="absolute inset-0 overflow-hidden">
-            <div className="absolute inset-0" style={{ transform: currentTransform, transition: currentTransition, willChange: 'transform' }}>
+            <div className="absolute inset-0" style={{ transform: currentTransform, transition: slide ? `transform ${duration}` : 'none', willChange: 'transform' }}>
               <SlideContent item={current} />
             </div>
             {slide && (
-              <div className="absolute inset-0" style={{ transform: incomingTransform, transition: incomingTransition, willChange: 'transform' }}>
+              <div className="absolute inset-0" style={{ transform: incomingTransform, transition: `transform ${duration}`, willChange: 'transform' }}>
                 <SlideContent item={incoming} />
               </div>
             )}
@@ -2052,10 +2077,16 @@
           </div>
 
           {items.length > 1 && (
-            <div className="absolute bottom-3 md:bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 md:gap-2 px-2 py-1.5 rounded-full bg-black/60 backdrop-blur-xl border border-white/10 z-30 shadow-lg">
+            <div className="absolute bottom-3 md:bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 md:gap-2 px-2.5 py-1.5 rounded-full bg-black/60 backdrop-blur-xl border border-white/10 z-30 shadow-lg" onPointerDown={e => e.stopPropagation()}>
               {items.map((_, i) => (
-                <button key={i} aria-label={`انتقل إلى العرض ${i + 1}`} onClick={e => { e.stopPropagation(); go(i, i === (idx + 1) % items.length ? 'next' : 'prev'); }}
-                  className={`h-1.5 md:h-2 rounded-full transition-all duration-300 ${i === idx ? 'bg-accent-cyan w-5 md:w-6 shadow-[0_0_8px_rgba(0,240,255,0.8)]' : 'bg-white/35 w-1.5 md:w-2 hover:bg-white/60'}`}></button>
+                <button
+                  type="button"
+                  key={i}
+                  aria-label={`انتقل إلى العرض ${i + 1}`}
+                  onPointerDown={e => e.stopPropagation()}
+                  onClick={e => { e.stopPropagation(); if (!slide) goRef.current(i, i === (idx + 1) % items.length ? 'next' : 'prev'); }}
+                  className={`h-1.5 md:h-2 rounded-full transition-all duration-300 ${i === idx ? 'bg-accent-cyan w-5 md:w-6 shadow-[0_0_8px_rgba(0,240,255,0.8)]' : 'bg-white/35 w-1.5 md:w-2 hover:bg-white/60'}`}
+                />
               ))}
             </div>
           )}
