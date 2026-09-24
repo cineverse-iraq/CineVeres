@@ -1070,7 +1070,7 @@ function VidApiHelper({ kind, season, episode, onGenerate, defaultId, defaultTit
 const CINEMANA_PROXY = (() => {
     const configured = (typeof window !== 'undefined' && (window.CINEMANA_PROXY_URL || window.CINEMANA_PROXY)) ||
         (typeof localStorage !== 'undefined' ? localStorage.getItem('cinemana_proxy_url') : '') ||
-        'http://localhost:8787';
+        'https://api.cinadam.xyz';
     return String(configured || '').trim().replace(/\/+$/, '');
 })();
 const SUBTITLE_PUBLIC_BASE = (() => {
