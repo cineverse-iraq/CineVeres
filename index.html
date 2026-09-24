@@ -475,7 +475,7 @@
         const text = lines.slice(i + 1).join('\n')
           .replace(/\{\\[^}]*\}/g, '').replace(/<[^>]+>/g, '')
           .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&')
-          .split('\n').map(l => l.replace(/[\u200e\u200f\u202a-\u202e]/g, '').trim()).filter(Boolean).join('\n');
+          .split('\n').map(l => { l = l.replace(/[\u200e\u200f\u202a-\u202e]/g, '').trim(); return l && /[\u0600-\u06ff]/.test(l) ? '\u200F' + l : l; }).filter(Boolean).join('\n');
         if (!text) continue;
         if (end <= start) end = start + 1500;
         cues.push({ s: start, e: end, text });
@@ -2670,7 +2670,7 @@
           {text && (
             <div style={{ position: 'absolute', left: 0, right: 0, bottom: `calc(${Number(prefs.pos) || 0}% + ${lifted ? 46 : 0}px)`, transition: 'bottom .2s', textAlign: 'center', padding: '0 4%' }}>
               {text.split('\n').map((line, i) => (
-                <div key={i}><span dir="rtl" style={{ ...bgStyle, display: 'inline-block', color: prefs.color, fontSize: fontPx + 'px', fontWeight: prefs.weight, lineHeight: 1.5, textShadow: shadow, fontFamily: "'Cairo', sans-serif", direction: 'rtl', unicodeBidi: 'plaintext', textAlign: 'center' }}>{line}</span></div>
+                <div key={i}><span dir="rtl" style={{ ...bgStyle, display: 'inline-block', color: prefs.color, fontSize: fontPx + 'px', fontWeight: prefs.weight, lineHeight: 1.5, textShadow: shadow, fontFamily: "'Cairo', sans-serif", direction: 'rtl', unicodeBidi: 'isolate', textAlign: 'center' }}>{line}</span></div>
               ))}
             </div>
           )}
@@ -6662,4 +6662,3 @@
   </script>
 </body>
 </html>
-
