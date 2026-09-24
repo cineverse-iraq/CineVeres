@@ -167,6 +167,7 @@
     .yt-vol::-moz-range-thumb { width: 10px; height: 10px; border-radius: 50%; background: #fff; border: none; cursor: pointer; }
     .yt-btn { display: flex; align-items: center; justify-content: center; color: #fff; transition: opacity 0.15s ease, transform 0.1s ease; opacity: 0.9; }
     .yt-btn:hover { opacity: 1; }
+    .yt-btn:focus, .yt-btn:focus-visible { outline: none !important; box-shadow: none !important; }
     .yt-btn:active { transform: scale(0.9); }
     @keyframes yt-skip-flash { 0% { opacity: 0.9; } 100% { opacity: 0; } }
     .yt-skip-flash { animation: yt-skip-flash 0.55s ease-out forwards; }
@@ -468,10 +469,20 @@
     }
 
     // يصلح الأقواس المعكوسة: سطر يبدأ بـ ")" قبل أي "(" بنفس العدد => نبدّل كل الأقواس
-    function fixDash(l) { // شارطة الحوار بآخر السطر (ترتيب معكوس) => ننقلها للبداية (الجهة اليمنى)
-      if (/^[-\u2013\u2014]/.test(l)) return l;
-      const m = l.match(/^([\s\S]*\S)\s*[-\u2013\u2014]$/);
-      return m && /[\u0600-\u06ff]/.test(m[1]) ? '- ' + m[1] : l;
+    function fixDash(l) {
+      const raw = String(l || '').replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '').trim();
+      if (!raw || !/[\u0600-\u06ff]/.test(raw)) return raw;
+      const dash = /[-\u2010\u2011\u2012\u2013\u2014\u2212]/;
+      let text = raw;
+      let hasDash = false;
+      if (/^\s*[-\u2010\u2011\u2012\u2013\u2014\u2212]\s*/.test(text)) {
+        hasDash = true;
+        text = text.replace(/^\s*[-\u2010\u2011\u2012\u2013\u2014\u2212]\s*/, '').trim();
+      } else if (dash.test(text.slice(-2)) || /[-\u2010\u2011\u2012\u2013\u2014\u2212]\s*$/.test(text)) {
+        hasDash = true;
+        text = text.replace(/\s*[-\u2010\u2011\u2012\u2013\u2014\u2212]\s*$/, '').trim();
+      }
+      return hasDash ? '\u200F—\u00A0' + text : text;
     }
     function fixParens(l) {
       const pairs = [['(', ')'], ['[', ']'], ['{', '}']];
@@ -488,12 +499,12 @@
 
     // يصلح الأسطر المحفوظة بترتيب معكوس: علامة الترقيم بأول السطر بدل آخره (مثل ".مرحبا" أو "؟ماذا")
     function fixLeadPunct(l) {
-      const m = l.match(/^([.,!?\u061F\u060C\u061B:\u2026]+)\s*([\s\S]*\S)$/);
-      if (!m) return l;
-      const lead = m[1], rest = m[2];
-      if (!/[\u0600-\u06ff]/.test(rest)) return l;
-      if (/[.,!?\u061F\u060C\u061B:\u2026]$/.test(rest)) return l; // السطر أصلًا ينتهي بعلامة
-      return rest + Array.from(lead).reverse().join('');
+      let text = String(l || '').replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '').trim();
+      const m = text.match(/^([.,!?\u061F\u060C\u061B:\u2026]+)\s*([\s\S]*\S)$/);
+      if (m && /[\u0600-\u06ff]/.test(m[2]) && !/[.,!?\u061F\u060C\u061B:\u2026]$/.test(m[2])) {
+        text = m[2] + Array.from(m[1]).reverse().join('');
+      }
+      return fixDash(text);
     }
 
     function parseSubtitleCues(input) {
@@ -510,7 +521,7 @@
         const text = lines.slice(i + 1).join('\n')
           .replace(/\{\\[^}]*\}/g, '').replace(/<[^>]+>/g, '')
           .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&')
-          .split('\n').map(l => { l = l.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '').trim(); l = wrapParenGroups(fixParens(fixDash(fixLeadPunct(l)))); return l && /[\u0600-\u06ff]/.test(l) ? '\u200F' + l + '\u200F' : l; }).filter(Boolean).join('\n');
+          .split('\n').map(l => { l = l.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '').trim(); l = wrapParenGroups(fixParens(fixLeadPunct(l))); return l; }).filter(Boolean).join('\n');
         if (!text) continue;
         if (end <= start) end = start + 1500;
         cues.push({ s: start, e: end, text });
@@ -2729,7 +2740,7 @@
             <div style={{ position: 'absolute', left: 0, right: 0, bottom: `calc(${Number(prefs.pos) || 0}% + ${lifted ? 46 : 0}px)`, transition: 'bottom .2s', textAlign: 'center', padding: shape === 'bar' ? 0 : '0 4%' }}>
               <div style={{ ...groupStyle, fontSize: fontPx + 'px' }}>
                 {text.split('\n').map((line, i) => (
-                  <div key={i}><span dir="rtl" style={{ ...spanBg, display: 'inline-block', color: prefs.color, fontSize: fontPx + 'px', fontWeight: prefs.weight, fontStyle: prefs.italic ? 'italic' : 'normal', letterSpacing: lsp + 'em', wordSpacing: (lsp * 1.5) + 'em', lineHeight: (Number(prefs.lineHeight) || 150) / 100, textShadow: shadow, fontFamily: `'${prefs.font || 'Cairo'}', 'Cairo', sans-serif`, direction: 'rtl', unicodeBidi: 'isolate', textAlign: 'center' }}>{line}</span></div>
+                  <div key={i}><span dir="rtl" style={{ ...spanBg, display: 'inline-block', color: prefs.color, fontSize: fontPx + 'px', fontWeight: prefs.weight, fontStyle: prefs.italic ? 'italic' : 'normal', letterSpacing: lsp + 'em', wordSpacing: (lsp * 1.5) + 'em', lineHeight: (Number(prefs.lineHeight) || 150) / 100, textShadow: shadow, fontFamily: `'${prefs.font || 'Cairo'}', 'Cairo', sans-serif`, direction: 'rtl', unicodeBidi: 'plaintext', textAlign: 'center' }}>{line}</span></div>
                 ))}
               </div>
             </div>
@@ -2834,9 +2845,12 @@
         const videoEl = videoRef.current;
         if (!videoEl || !src) return;
         setLoading(true);
-        videoEl.muted = true;
-        videoEl.defaultMuted = true;
-        try { videoEl.setAttribute('muted', ''); } catch (e) {}
+        let savedMuted = null, savedVolume = null;
+        try { savedMuted = localStorage.getItem('cinadam_player_muted'); savedVolume = localStorage.getItem('cinadam_player_volume'); } catch (e) {}
+        videoEl.muted = savedMuted === '1';
+        videoEl.defaultMuted = savedMuted === '1';
+        if (savedVolume !== null) { const vv = Math.max(0, Math.min(1, Number(savedVolume))); if (isFinite(vv)) videoEl.volume = vv; }
+        try { if (videoEl.muted) videoEl.setAttribute('muted', ''); else videoEl.removeAttribute('muted'); } catch (e) {}
         let hls;
         const isM3u8 = /\.m3u8(\?.*)?$/i.test(src);
         if (isM3u8 && window.Hls && window.Hls.isSupported()) {
@@ -2879,7 +2893,7 @@
         return () => { videoEl.removeEventListener('loadedmetadata', onLoaded); videoEl.removeEventListener('timeupdate', onTime); };
       }, [src, trimStart, trimEnd, startAt]);
 
-      const [ctrl, setCtrl] = useState({ playing: false, muted: true, volume: 1, current: 0, duration: 0, buffered: 0, rate: 1 });
+      const [ctrl, setCtrl] = useState({ playing: false, muted: false, volume: 1, current: 0, duration: 0, buffered: 0, rate: 1 });
       const [barVisible, setBarVisible] = useState(true);
       const [skipFlash, setSkipFlash] = useState(null);
       const [showSpeedMenu, setShowSpeedMenu] = useState(false);
@@ -2937,8 +2951,8 @@
         if (v.paused) { const p = v.play(); if (p && p.catch) p.catch(() => {}); }
         else v.pause();
       };
-      const toggleMute = () => { const v = videoRef.current; if (!v) return; v.muted = !v.muted; if (!v.muted && v.volume === 0) v.volume = 0.5; };
-      const setVolume = (val) => { const v = videoRef.current; if (!v) return; const num = Number(val); v.volume = num; v.muted = num === 0; };
+      const toggleMute = () => { const v = videoRef.current; if (!v) return; v.muted = !v.muted; if (!v.muted && v.volume === 0) v.volume = 0.5; try { localStorage.setItem('cinadam_player_muted', v.muted ? '1' : '0'); } catch (e) {} };
+      const setVolume = (val) => { const v = videoRef.current; if (!v) return; const num = Number(val); v.volume = num; v.muted = num === 0; try { localStorage.setItem('cinadam_player_volume', String(num)); localStorage.setItem('cinadam_player_muted', v.muted ? '1' : '0'); } catch (e) {} };
       const seekTo = (val) => { const v = videoRef.current; if (v) v.currentTime = Number(val); };
       const setRate = (r) => { const v = videoRef.current; if (!v) return; v.playbackRate = r; setShowSpeedMenu(false); };
       const skip = (delta) => {
@@ -3093,7 +3107,7 @@
               <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan yt-spinner"></div>
             </div>
           )}
-          <video ref={videoRef} controls={false} autoPlay muted playsInline webkit-playsinline="true" x5-playsinline="true" preload="auto"
+          <video ref={videoRef} controls={false} autoPlay playsInline webkit-playsinline="true" x5-playsinline="true" preload="auto"
             onCanPlay={() => setLoading(false)} onPlaying={() => setLoading(false)} onLoadedData={() => setLoading(false)}
             onError={() => { setLoading(false); onError && onError(); }}
             style={videoStyle}>
@@ -4488,7 +4502,24 @@
       const [newIsPublic, setNewIsPublic] = useState(true);
       const [creating, setCreating] = useState(false);
       const [justToggled, setJustToggled] = useState(null);
+      const [myListRating, setMyListRating] = useState(null);
+      const [showListReview, setShowListReview] = useState(false);
+      const [listReviewStars, setListReviewStars] = useState(0);
+      const [listReviewText, setListReviewText] = useState('');
+      const [savingListReview, setSavingListReview] = useState(false);
       const key = sanitizeKey(currentUser.username);
+
+      useEffect(() => {
+        const ref = db.ref(`ratings/${title.id}/${currentUser.id}`);
+        const cb = snap => {
+          const v = snap.val();
+          setMyListRating(v || null);
+          if (v) { setListReviewStars(Number(v.stars) || 0); setListReviewText(v.review || ''); }
+          else { setListReviewStars(0); setListReviewText(''); }
+        };
+        ref.on('value', cb);
+        return () => ref.off('value', cb);
+      }, [title.id, currentUser.id]);
 
       useEffect(() => {
         const ref = db.ref(`lists/${key}`);
@@ -4507,6 +4538,18 @@
         db.ref(`lists/${key}/${list.id}/items/${title.id}`).set(has ? null : true)
           .then(() => showToast(has ? `تمت الإزالة من "${list.name}"` : `تمت الإضافة إلى "${list.name}"`))
           .catch(() => showToast('حدث خطأ، حاول مجددًا', 'error'));
+      };
+
+      const saveListReview = async () => {
+        if (!listReviewStars) { showToast('اختار النجوم أولًا إذا تريد تحفظ المراجعة.', 'error'); return; }
+        setSavingListReview(true);
+        const payload = { stars: listReviewStars, review: listReviewText.trim(), author: currentUser.name, username: currentUser.username, avatar: currentUser.avatar || '', date: Date.now() };
+        try {
+          await db.ref(`ratings/${title.id}/${currentUser.id}`).set(payload);
+          await db.ref(`userRatings/${currentUser.id}/${title.id}`).set({ stars: listReviewStars, review: listReviewText.trim(), date: Date.now() });
+          setShowListReview(false); showToast('تم حفظ مراجعتك لهذا العمل');
+        } catch (e) { showToast('تعذر حفظ المراجعة', 'error'); }
+        setSavingListReview(false);
       };
 
       const createList = async () => {
@@ -4535,14 +4578,28 @@
               ) : lists.map(l => {
                 const has = l.items && l.items[title.id];
                 return (
-                  <button key={l.id} onClick={() => toggleItem(l)}
-                    className={`w-full flex items-center justify-between gap-3 p-3 rounded-2xl glass-card border transition-all duration-300 text-right ${justToggled === l.id ? 'border-accent-cyan/60 scale-[0.98] bg-accent-cyan/5' : 'border-white/5 hover:border-accent-cyan/40'}`}>
-                    <span className="text-sm font-bold text-slate-200">{l.name}</span>
-                    <span key={`${l.id}-${has}`} className={`w-6 h-6 rounded-lg flex items-center justify-center border transition ${has ? 'bg-accent-cyan border-accent-cyan text-glass-950 check-pop' : 'border-white/20 text-transparent'}`}><Icon name="check" className="w-4 h-4" /></span>
-                  </button>
+                  <div key={l.id} className={`w-full p-3 rounded-2xl glass-card border transition-all duration-300 ${justToggled === l.id ? 'border-accent-cyan/60 scale-[0.98] bg-accent-cyan/5' : 'border-white/5 hover:border-accent-cyan/40'}`}>
+                    <div className="flex items-center gap-3">
+                      <button type="button" onClick={() => toggleItem(l)} className="flex items-center gap-2.5 min-w-0 flex-1 text-right">
+                        <span className="text-sm font-bold text-slate-200 truncate">{l.name}</span>
+                        <span key={`${l.id}-${has}`} className={`w-6 h-6 rounded-lg flex items-center justify-center border transition shrink-0 ${has ? 'bg-accent-cyan border-accent-cyan text-glass-950 check-pop' : 'border-white/20 text-transparent'}`}><Icon name="check" className="w-4 h-4" /></span>
+                      </button>
+                      {has && !myListRating ? (
+                        <button type="button" onClick={() => setShowListReview(v => !v)} className="shrink-0 px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[10px] font-bold hover:bg-amber-500/20 transition"><Icon name="star" className="w-3 h-3 inline-block ml-1" />مراجعة</button>
+                      ) : myListRating ? <StarRatingDisplay value={myListRating.stars} size="w-2.5 h-2.5" /> : null}
+                    </div>
+                  </div>
                 );
               })}
             </div>
+            {showListReview && !myListRating && (
+              <div className="mx-4 mb-3 glass-card rounded-2xl p-3.5 border border-amber-500/20">
+                <div className="flex items-center justify-between gap-2 mb-2"><p className="text-xs font-black text-white">مراجعتك لـ {title.name}</p><button type="button" onClick={() => setShowListReview(false)} className="text-slate-500 hover:text-white"><Icon name="x" className="w-4 h-4" /></button></div>
+                <StarRatingInput value={listReviewStars} onChange={setListReviewStars} size="w-6 h-6" />
+                <textarea value={listReviewText} onChange={e => setListReviewText(e.target.value)} rows={3} placeholder="اكتب رأيك (اختياري)..." className="w-full mt-2.5 bg-glass-900 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white outline-none focus:border-amber-400"></textarea>
+                <div className="flex items-center gap-2 mt-2"><button type="button" onClick={saveListReview} disabled={savingListReview} className="px-4 py-2 rounded-xl bg-amber-400 text-glass-950 text-xs font-bold disabled:opacity-50">{savingListReview ? 'جارٍ الحفظ...' : 'حفظ المراجعة'}</button><span className="text-[10px] text-slate-500">اختياري، وتكدر تكمل الإضافة للقائمة بدونه.</span></div>
+              </div>
+            )}
             <div className="p-4 border-t border-white/10 shrink-0 space-y-2.5">
               <div className="flex gap-2">
                 <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === 'Enter' && createList()} placeholder="اسم قائمة جديدة..." className="flex-1 bg-glass-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-accent-cyan" />
@@ -4575,6 +4632,7 @@
       const [showAddPanel, setShowAddPanel] = useState(false);
       const [addQuery, setAddQuery] = useState('');
       const [removingIds, setRemovingIds] = useState({});
+      const [itemRatings, setItemRatings] = useState({});
 
       useEffect(() => {
         db.ref('titles').once('value', snap => {
@@ -4600,6 +4658,16 @@
 
       const itemIds = Object.keys(liveItems || {});
       const items = titlesMap ? itemIds.map(id => titlesMap[id]).filter(t => t && t.status === 'published') : [];
+      useEffect(() => {
+        let cancelled = false;
+        if (!items.length) { setItemRatings({}); return; }
+        Promise.all(items.map(t => db.ref(`ratings/${t.id}`).once('value').then(snap => {
+          const data = snap.val() || {};
+          const owner = Object.values(data).find(r => r && sanitizeKey(r.username || '') === listOwnerKey);
+          return [t.id, owner || null];
+        }).catch(() => [t.id, null]))).then(rows => { if (!cancelled) setItemRatings(Object.fromEntries(rows)); });
+        return () => { cancelled = true; };
+      }, [listOwnerKey, JSON.stringify(itemIds)]);
       const allTitlesList = titlesMap ? Object.values(titlesMap).filter(t => t.status === 'published') : [];
       const addResults = addQuery.trim()
         ? allTitlesList.filter(t => !itemIds.includes(t.id) && (t.name || '').toLowerCase().includes(addQuery.trim().toLowerCase())).slice(0, 20)
@@ -4690,16 +4758,19 @@
                 <p className="text-sm text-slate-500 font-medium text-center py-8">القائمة فاضية حاليًا.</p>
               ) : (
                 <div className="profile-poster-grid">
-                  {items.map(t => (
-                    <div key={t.id} className={`relative ${removingIds[t.id] ? 'item-pop-out' : 'item-sink-in'}`}>
-                      <button onClick={() => { onOpen(t); requestClose(); }} className="relative aspect-[2/3] w-full rounded-lg overflow-hidden glass-card">
-                        {t.poster && <img src={t.poster} alt={t.name} className="w-full h-full object-cover" />}
-                      </button>
-                      {isOwn && (
-                        <button onClick={() => removeItem(t.id)} title="إزالة من القائمة" className="absolute top-1 left-1 w-6 h-6 rounded-full bg-black/70 flex items-center justify-center text-rose-400 transition-transform hover:scale-110 active:scale-90"><Icon name="x" className="w-3.5 h-3.5" /></button>
-                      )}
-                    </div>
-                  ))}
+                  {items.map(t => {
+                    const r = itemRatings[t.id];
+                    return (
+                      <div key={t.id} className={`relative ${removingIds[t.id] ? 'item-pop-out' : 'item-sink-in'}`}>
+                        <button onClick={() => { onOpen(t); requestClose(); }} className="relative aspect-[2/3] w-full rounded-lg overflow-hidden glass-card">
+                          {t.poster && <img src={t.poster} alt={t.name} className="w-full h-full object-cover" />}
+                          {r && <div className="absolute inset-x-0 bottom-0 bg-black/75 px-1.5 py-1 flex items-center justify-center"><StarRatingDisplay value={r.stars} size="w-2.5 h-2.5" /></div>}
+                        </button>
+                        {isOwn && <button onClick={() => removeItem(t.id)} title="إزالة من القائمة" className="absolute top-1 left-1 w-6 h-6 rounded-full bg-black/70 flex items-center justify-center text-rose-400 transition-transform hover:scale-110 active:scale-90"><Icon name="x" className="w-3.5 h-3.5" /></button>}
+                        {r && r.review && <div className="mt-1.5 px-1"><p className="text-[9px] font-bold text-amber-300/80 mb-0.5">مراجعة صاحب القائمة</p><p className="text-[10px] leading-relaxed text-slate-300 line-clamp-2" title={r.review}>{r.review}</p></div>}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
