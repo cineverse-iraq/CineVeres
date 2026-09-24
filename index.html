@@ -1999,23 +1999,47 @@
 
     function Hero({ items, onOpen }) {
       const [idx, setIdx] = useState(0);
+      const [nextIdx, setNextIdx] = useState(null);
+      const [fading, setFading] = useState(false);
       const dragState = useRef({ startX: 0, dragging: false });
+      const transitionTimer = useRef(null);
       const [dragOffset, setDragOffset] = useState(0);
       const [isDragging, setIsDragging] = useState(false);
 
       useEffect(() => {
-        if (items.length < 2 || isDragging) return;
-        const t = setInterval(() => setIdx(i => (i + 1) % items.length), 6000);
+        if (idx >= items.length) setIdx(0);
+      }, [items.length, idx]);
+
+      useEffect(() => () => { if (transitionTimer.current) clearTimeout(transitionTimer.current); }, []);
+
+      useEffect(() => {
+        if (items.length < 2 || isDragging || fading) return;
+        const t = setInterval(() => {
+          go(idx + 1);
+        }, 5200);
         return () => clearInterval(t);
-      }, [items.length, isDragging]);
+      }, [items.length, idx, isDragging, fading]);
 
       if (!items.length) return null;
 
-      const go = (i) => setIdx(((i % items.length) + items.length) % items.length);
-      const getX = (e) => (e.touches ? e.touches[0].clientX : e.clientX);
+      const go = (target) => {
+        if (items.length < 2 || fading) return;
+        const next = ((target % items.length) + items.length) % items.length;
+        if (next === idx) return;
+        setNextIdx(next);
+        setFading(true);
+        if (transitionTimer.current) clearTimeout(transitionTimer.current);
+        transitionTimer.current = setTimeout(() => {
+          setIdx(next);
+          setNextIdx(null);
+          setFading(false);
+          transitionTimer.current = null;
+        }, 760);
+      };
 
+      const getX = (e) => (e.touches ? e.touches[0].clientX : e.clientX);
       const onDragStart = (e) => {
-        if (items.length < 2) return;
+        if (items.length < 2 || fading) return;
         dragState.current = { startX: getX(e), dragging: true };
         setIsDragging(true);
       };
@@ -2025,7 +2049,7 @@
       };
       const endDrag = () => {
         if (!dragState.current.dragging) return;
-        const threshold = 60;
+        const threshold = 55;
         if (dragOffset > threshold) go(idx - 1);
         else if (dragOffset < -threshold) go(idx + 1);
         dragState.current.dragging = false;
@@ -2034,35 +2058,54 @@
       };
 
       const item = items[idx % items.length];
+      const incoming = nextIdx == null ? null : items[nextIdx % items.length];
+
       return (
         <section
-          className="relative h-[42vh] min-h-[300px] md:h-[72vh] -mx-4 md:mx-0 mb-8 md:mb-10 md:rounded-3xl overflow-hidden glass-panel border border-white/10 shadow-2xl select-none cursor-grab active:cursor-grabbing"
+          className="relative h-[43vh] min-h-[320px] md:h-[72vh] -mx-4 md:mx-0 mb-8 md:mb-10 md:rounded-3xl overflow-hidden glass-panel border border-white/10 shadow-2xl select-none"
           style={{ touchAction: 'pan-y' }}
           onMouseDown={onDragStart} onMouseMove={onDragMove} onMouseUp={endDrag} onMouseLeave={endDrag}
           onTouchStart={onDragStart} onTouchMove={onDragMove} onTouchEnd={endDrag}
         >
           {item.backdrop && (
             <img src={item.backdrop} alt="" draggable="false"
-              className="absolute inset-0 w-full h-full object-cover opacity-60"
-              style={{ transform: `translateX(${dragOffset * 0.3}px) scale(1.05)`, transition: isDragging ? 'none' : 'transform 0.4s ease' }} />
+              className="absolute inset-0 w-full h-full object-cover"
+              style={{
+                opacity: fading ? 0 : 0.62,
+                transform: `translateX(${isDragging ? dragOffset * 0.12 : 0}px) scale(1.045)`,
+                transition: isDragging ? 'none' : 'opacity .76s cubic-bezier(.22,.61,.36,1), transform 1.1s cubic-bezier(.22,.61,.36,1)',
+                willChange: 'opacity, transform'
+              }} />
           )}
-          <div className="absolute inset-0 bg-gradient-to-t from-glass-950 via-glass-950/60 to-transparent" />
-          <div className="absolute inset-x-0 bottom-0 p-5 md:p-12 max-w-2xl">
-            <div className="flex items-center gap-2 mb-3 flex-wrap">
-              <span className="text-xs px-3 py-1 rounded-full bg-accent-red text-white font-bold shadow-[0_0_15px_rgba(255,51,75,0.4)]">{TYPE_LABELS[item.type]}</span>
+          {incoming && incoming.backdrop && (
+            <img src={incoming.backdrop} alt="" draggable="false"
+              className="absolute inset-0 w-full h-full object-cover"
+              style={{
+                opacity: fading ? 0.62 : 0,
+                transform: `translateX(${fading ? 0 : 18}px) scale(${fading ? 1.045 : 1.055})`,
+                transition: 'opacity .76s cubic-bezier(.22,.61,.36,1), transform 1.05s cubic-bezier(.22,.61,.36,1)',
+                willChange: 'opacity, transform'
+              }} />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-glass-950 via-glass-950/55 to-glass-950/10" />
+          <div className="absolute inset-0 bg-gradient-to-r from-glass-950/35 via-transparent to-transparent" />
+          <div className="absolute inset-x-0 bottom-[42px] md:bottom-0 p-5 pb-6 md:p-12 max-w-2xl"
+            style={{ opacity: fading ? 0 : 1, transform: fading ? 'translateY(8px)' : 'translateY(0)', transition: 'opacity .34s ease, transform .45s ease' }}>
+            <div className="flex items-center gap-2 mb-2.5 md:mb-3 flex-wrap">
+              <span className="text-[10px] md:text-xs px-2.5 md:px-3 py-1 rounded-full bg-accent-red text-white font-bold shadow-[0_0_15px_rgba(255,51,75,0.4)]">{TYPE_LABELS[item.type]}</span>
               <RatingBadges imdb={item.imdbRating} rt={item.rtRating} />
             </div>
-            <h1 className="text-3xl md:text-5xl font-black text-white leading-tight mb-3 drop-shadow-md"><bdi>{item.name}</bdi></h1>
-            {item.description && <p className="text-slate-300 text-sm md:text-base line-clamp-2 md:line-clamp-3 mb-5 leading-relaxed font-medium">{item.description}</p>}
-            <button onClick={() => onOpen(item)} className="flex items-center gap-2 px-6 py-3 rounded-xl bg-accent-red hover:bg-accent-redHover font-bold text-white shadow-[0_0_20px_rgba(255,51,75,0.5)] transition transform hover:scale-105 active:scale-95">
-              <Icon name="play" className="w-5 h-5 fill-current" />مشاهدة الآن
+            <h1 className="text-2xl sm:text-3xl md:text-5xl font-black text-white leading-tight mb-2 md:mb-3 drop-shadow-md line-clamp-2"><bdi>{item.name}</bdi></h1>
+            {item.description && <p className="text-slate-300 text-xs sm:text-sm md:text-base line-clamp-2 md:line-clamp-3 mb-3.5 md:mb-5 leading-relaxed font-medium max-w-xl">{item.description}</p>}
+            <button onClick={() => onOpen(item)} className="flex items-center gap-2 px-5 md:px-6 py-2.5 md:py-3 rounded-xl bg-accent-red hover:bg-accent-redHover font-bold text-white shadow-[0_0_20px_rgba(255,51,75,0.5)] transition transform hover:scale-105 active:scale-95 text-sm md:text-base">
+              <Icon name="play" className="w-4 h-4 md:w-5 md:h-5 fill-current" />مشاهدة الآن
             </button>
           </div>
           {items.length > 1 && (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 p-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/5 z-10">
+            <div className="absolute bottom-3 md:bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 md:gap-2 px-2 py-1.5 rounded-full bg-black/50 backdrop-blur-xl border border-white/10 z-20 shadow-lg">
               {items.map((_, i) => (
-                <button key={i} onClick={(e) => { e.stopPropagation(); go(i); }}
-                  className={`h-2 rounded-full transition-all duration-300 ${i === idx ? 'bg-accent-cyan w-6 shadow-[0_0_8px_rgba(0,240,255,0.8)]' : 'bg-white/30 w-2 hover:bg-white/50'}`}></button>
+                <button key={i} aria-label={`انتقل إلى العرض ${i + 1}`} onClick={(e) => { e.stopPropagation(); go(i); }}
+                  className={`h-1.5 md:h-2 rounded-full transition-all duration-500 ${i === idx ? 'bg-accent-cyan w-5 md:w-6 shadow-[0_0_8px_rgba(0,240,255,0.8)]' : 'bg-white/35 w-1.5 md:w-2 hover:bg-white/60'}`}></button>
               ))}
             </div>
           )}
@@ -2721,7 +2764,7 @@
         return () => { cancelled = true; };
       }, [subtitleUrl, subRetry]);
 
-      // iOS يعرض الفيديو بمشغله الأصلي في ملء الشاشة، لذلك نستخدم <track> أصلي هناك فقط
+     
       useEffect(() => {
         if (!isIOS) return;
         if (!activeCues.length) { setSubtitleSrc(''); return; }
@@ -3146,7 +3189,6 @@
       );
     }
 
-    // ===== الأعمال المشابهة: ترتيب حقيقي بالنقاط (مو بس نفس التصنيف) =====
     const normName = (s) => (s || '').toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]+/g, ' ').trim();
     const RECS_CACHE = {};
 
@@ -3159,7 +3201,6 @@
       return id ? { kind: 'tv', id: id } : null;
     }
 
-    // ترشيحات TMDB الحقيقية لهذا العمل (recommendations + similar)، ترجّع قائمة أسماء مرتبة. نتيجتها تنخزن بالذاكرة.
     async function fetchTmdbRecommendedNames(title) {
       if (RECS_CACHE[title.id]) return RECS_CACHE[title.id];
       const src = guessTitleSource(title);
