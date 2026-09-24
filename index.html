@@ -1070,7 +1070,7 @@ function VidApiHelper({ kind, season, episode, onGenerate, defaultId, defaultTit
 const CINEMANA_PROXY = (() => {
     const configured = (typeof window !== 'undefined' && (window.CINEMANA_PROXY_URL || window.CINEMANA_PROXY)) ||
         (typeof localStorage !== 'undefined' ? localStorage.getItem('cinemana_proxy_url') : '') ||
-        'https://api.cinadam.xyz';
+        'curl.exe http://127.0.0.1:8787/health';
     return String(configured || '').trim().replace(/\/+$/, '');
 })();
 const SUBTITLE_PUBLIC_BASE = (() => {
