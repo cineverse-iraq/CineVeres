@@ -461,6 +461,35 @@
       return new TextDecoder('utf-8').decode(u8);
     }
 
+    // يحصر كل مجموعة أقواس داخل عزل اتجاهي (عربي RLI أو لاتيني FSI) حتى يبقى القوسين مع محتواهم وما يهربون لأول/آخر السطر
+    function wrapParenGroups(l) {
+      return l.replace(/\([^()]*\)|\[[^\[\]]*\]/g, g => (/[A-Za-z0-9]/.test(g) ? '\u2068' : '\u2067') + g + '\u2069');
+    }
+
+    // يصلح الأقواس المعكوسة: سطر يبدأ بـ ")" قبل أي "(" بنفس العدد => نبدّل كل الأقواس
+    function fixParens(l) {
+      const pairs = [['(', ')'], ['[', ']'], ['{', '}']];
+      let out = l;
+      for (const [o, c] of pairs) {
+        const nO = l.split(o).length - 1, nC = l.split(c).length - 1;
+        if (!nO || nO !== nC) continue;
+        let depth = 0, bad = false;
+        for (const ch of l) { if (ch === o) depth++; else if (ch === c) { depth--; if (depth < 0) { bad = true; break; } } }
+        if (bad) out = Array.from(out).map(ch => ch === o ? c : ch === c ? o : ch).join('');
+      }
+      return out;
+    }
+
+    // يصلح الأسطر المحفوظة بترتيب معكوس: علامة الترقيم بأول السطر بدل آخره (مثل ".مرحبا" أو "؟ماذا")
+    function fixLeadPunct(l) {
+      const m = l.match(/^([.,!?\u061F\u060C\u061B:\u2026]+)\s*([\s\S]*\S)$/);
+      if (!m) return l;
+      const lead = m[1], rest = m[2];
+      if (!/[\u0600-\u06ff]/.test(rest)) return l;
+      if (/[.,!?\u061F\u060C\u061B:\u2026]$/.test(rest)) return l; // السطر أصلًا ينتهي بعلامة
+      return rest + Array.from(lead).reverse().join('');
+    }
+
     function parseSubtitleCues(input) {
       const s = String(input || '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
       const cues = [];
@@ -475,7 +504,7 @@
         const text = lines.slice(i + 1).join('\n')
           .replace(/\{\\[^}]*\}/g, '').replace(/<[^>]+>/g, '')
           .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&')
-          .split('\n').map(l => { l = l.replace(/[\u200e\u200f\u202a-\u202e]/g, '').trim(); return l && /[\u0600-\u06ff]/.test(l) ? '\u200F' + l : l; }).filter(Boolean).join('\n');
+          .split('\n').map(l => { l = l.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '').trim(); l = wrapParenGroups(fixParens(fixLeadPunct(l))); return l && /[\u0600-\u06ff]/.test(l) ? '\u200F' + l + '\u200F' : l; }).filter(Boolean).join('\n');
         if (!text) continue;
         if (end <= start) end = start + 1500;
         cues.push({ s: start, e: end, text });
@@ -2948,6 +2977,15 @@
         if (e.target.closest && e.target.closest('.yt-controls-bottom')) return;
         const rect = wrapRef.current.getBoundingClientRect();
         const relX = (e.clientX - rect.left) / rect.width;
+        const pt = e.nativeEvent && e.nativeEvent.pointerType;
+        const isMouse = pt ? pt === 'mouse' : !!(window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches);
+        if (isMouse) { // ماوس: كلك يسار = إيقاف/تشغيل. النقر المزدوج يلغي التبديل ويبقى تقديم/تأخير 5 ثوان على الأطراف
+          if (e.button !== undefined && e.button !== 0) return;
+          togglePlay();
+          if (e.detail === 2) { if (relX < 0.35) skip(-5); else if (relX > 0.65) skip(5); }
+          showBarTemporarily();
+          return;
+        }
         clickState.current.count += 1;
         if (clickState.current.timer) clearTimeout(clickState.current.timer);
         clickState.current.timer = setTimeout(() => {
