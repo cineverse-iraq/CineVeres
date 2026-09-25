@@ -4112,6 +4112,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const [copied, setCopied] = useState(false);
     const [resumeAt, setResumeAt] = useState(0);
     const [playingDurationSec, setPlayingDurationSec] = useState(0);
+    const [runtimeOverrides, setRuntimeOverrides] = useState({});
     const [ratings, setRatings] = useState({});
     const [myStars, setMyStars] = useState(0);
     const [reviewReplyingTo, setReviewReplyingTo] = useState(null);
@@ -4229,6 +4230,76 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         .map(s => ({ ...s, episodes: (s.episodes || []).slice().sort((a, b) => (a.number || 0) - (b.number || 0)) }))
         .sort((a, b) => (a.number || 0) - (b.number || 0));
     const isSeries = title.type !== 'movie';
+
+    // Keep duration visible in the metadata row even when the saved title/episode
+    // does not already contain runtime data. Fetch it from TMDB before playback.
+    useEffect(() => {
+        let cancelled = false;
+        const resolveTmdbId = async () => {
+            let id = String(title.tmdbId || title.sourceId || title.imdbId || title.imdb || '').trim();
+            if (!id && title.type === 'movie') {
+                const src = guessTitleSource(title);
+                id = String(src && src.id || '').trim();
+            }
+            if (!id && isSeries)
+                id = String(guessTvSourceId(title.seasons) || '').trim();
+            if (!id) return '';
+            if (/^tt\d+$/i.test(id)) {
+                const found = await tmdbFetch(`find/${id.toLowerCase()}`, { external_source: 'imdb_id' });
+                const list = isSeries ? (found.tv_results || []) : (found.movie_results || []);
+                return list.length ? String(list[0].id) : '';
+            }
+            return id;
+        };
+        const loadMovieRuntime = async () => {
+            if (isSeries || getRuntimeSeconds(title) > 0) return;
+            try {
+                const tmdbId = await resolveTmdbId();
+                if (!tmdbId || cancelled) return;
+                const data = await tmdbFetch(`movie/${tmdbId}`, { language: 'en-US' });
+                const sec = Number(data && data.runtime || 0) * 60;
+                if (sec > 0 && !cancelled)
+                    setRuntimeOverrides(prev => ({ ...prev, [title.id]: sec }));
+            }
+            catch (e) { }
+        };
+        loadMovieRuntime();
+        return () => { cancelled = true; };
+    }, [title.id, title.type, title.tmdbId, title.sourceId, title.imdbId, title.imdb, title.videoUrl]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const loadEpisodeRuntimes = async () => {
+            if (!isSeries) return;
+            const season = seasons[activeSeason];
+            if (!season || !season.episodes || !season.episodes.length) return;
+            try {
+                let id = String(title.tmdbId || title.sourceId || title.imdbId || title.imdb || guessTvSourceId(title.seasons) || '').trim();
+                if (!id) return;
+                if (/^tt\d+$/i.test(id)) {
+                    const found = await tmdbFetch(`find/${id.toLowerCase()}`, { external_source: 'imdb_id' });
+                    id = String((found.tv_results || [])[0] && (found.tv_results || [])[0].id || '');
+                }
+                if (!id) return;
+                for (const ep of season.episodes) {
+                    if (cancelled || getRuntimeSeconds(ep) > 0 || !ep.number) continue;
+                    try {
+                        const data = await tmdbFetch(`tv/${id}/season/${season.number}/episode/${ep.number}`, { language: 'en-US' });
+                        const sec = Number(data && data.runtime || 0) * 60;
+                        if (sec > 0 && !cancelled)
+                            setRuntimeOverrides(prev => ({ ...prev, [`${title.id}:${season.number}:${ep.number}`]: sec }));
+                    }
+                    catch (e) { }
+                }
+            }
+            catch (e) { }
+        };
+        loadEpisodeRuntimes();
+        return () => { cancelled = true; };
+    }, [title.id, title.type, title.tmdbId, title.sourceId, title.imdbId, title.imdb, activeSeason, JSON.stringify(seasons.map(s => ({ n: s.number, e: (s.episodes || []).map(ep => [ep.number, getRuntimeSeconds(ep)]) })))]);
+
+    const getDisplayRuntime = (item, key) => runtimeOverrides[key] || getRuntimeSeconds(item);
+    const titleDisplayRuntime = runtimeOverrides[title.id] || getRuntimeSeconds(title);
     const allEpisodesFlat = React.useMemo(() => {
         const flat = [];
         seasons.forEach(s => { (s.episodes || []).forEach(ep => flat.push({ ...ep, seasonNumber: s.number, episodeThumbnail: s.episodeThumbnail })); });
@@ -4446,8 +4517,8 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                     React.createElement("span", { className: "text-xs px-3 py-1 rounded-full bg-accent-red text-white font-bold shadow-[0_0_12px_rgba(255,51,75,0.4)]" }, TYPE_LABELS[title.type]),
                     React.createElement("span", { className: "text-xs text-slate-300 font-semibold" }, title.year),
                     React.createElement(RatingBadges, { imdb: title.imdbRating, rt: title.rtRating }),
-                    (playingDurationSec || getRuntimeSeconds(playingMeta) || getRuntimeSeconds(title)) ? (React.createElement("span", { className: "inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-black/60 text-slate-200 font-bold border border-white/10", dir: "ltr", title: "مدة العمل" },
-                        formatRuntimeMinutesSeconds(playingDurationSec || getRuntimeSeconds(playingMeta) || getRuntimeSeconds(title)),
+                    (playingDurationSec || getRuntimeSeconds(playingMeta) || titleDisplayRuntime) ? (React.createElement("span", { className: "inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-black/60 text-slate-200 font-bold border border-white/10", dir: "ltr", title: "مدة العمل" },
+                        formatRuntimeMinutesSeconds(playingDurationSec || getRuntimeSeconds(playingMeta) || titleDisplayRuntime),
                         " دقيقة")) : null,
                     ratingList.length > 0 && (React.createElement("span", { className: "inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-black/60 backdrop-blur-md text-amber-400 font-bold border border-amber-400/20 shadow-sm" },
                         React.createElement(Icon, { name: "star", className: "w-3 h-3" }),
@@ -4527,8 +4598,8 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                                     React.createElement("div", { className: "flex items-center gap-1.5 flex-wrap mt-1" },
                                         ep.imdb && React.createElement("span", { className: "inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-black/60 text-amber-400 font-bold border border-amber-400/20", dir: "ltr" },
                                             React.createElement(Icon, { name: "star", className: "w-2.5 h-2.5" }), ep.imdb),
-                                        getRuntimeSeconds(ep) > 0 && React.createElement("span", { className: "inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-black/60 text-slate-300 font-bold border border-white/10", dir: "ltr", title: "مدة الحلقة" },
-                                            formatRuntimeMinutesSeconds(getRuntimeSeconds(ep)), " دقيقة"))),
+                                        getDisplayRuntime(ep, `${title.id}:${ep.seasonNumber}:${ep.number}`) > 0 && React.createElement("span", { className: "inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-black/60 text-slate-300 font-bold border border-white/10", dir: "ltr", title: "مدة الحلقة" },
+                                            formatRuntimeMinutesSeconds(getDisplayRuntime(ep, `${title.id}:${ep.seasonNumber}:${ep.number}`)), " دقيقة"))),
                                 done && React.createElement(Icon, { name: "check", className: "w-4 h-4 text-emerald-400 shrink-0 hidden xs:block" }),
                                 isCurrent && React.createElement("span", { className: "text-[10px] px-2 py-1 rounded-lg bg-accent-cyan/15 text-accent-cyan font-bold shrink-0 hidden sm:inline" }, "\u0642\u064A\u062F \u0627\u0644\u062A\u0634\u063A\u064A\u0644"),
                                 React.createElement("button", { onClick: () => playEpisode(ep, ep.seasonNumber), className: "w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition" },
@@ -4579,8 +4650,8 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                                                     ")")))) : episodeAutoLabel(ep)),
                                         React.createElement("div", { className: "flex items-center gap-1.5 flex-wrap" },
                                             React.createElement(RatingBadges, { imdb: ep.imdb, rt: ep.rt, size: "xs", flat: true }),
-                                            getRuntimeSeconds(ep) > 0 && React.createElement("span", { className: "inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-black/60 text-slate-300 font-bold border border-white/10", dir: "ltr", title: "مدة الحلقة" },
-                                                formatRuntimeMinutesSeconds(getRuntimeSeconds(ep)),
+                                            getDisplayRuntime(ep, `${title.id}:${seasons[activeSeason].number}:${ep.number}`) > 0 && React.createElement("span", { className: "inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-black/60 text-slate-300 font-bold border border-white/10", dir: "ltr", title: "مدة الحلقة" },
+                                                formatRuntimeMinutesSeconds(getDisplayRuntime(ep, `${title.id}:${seasons[activeSeason].number}:${ep.number}`)),
                                                 " دقيقة"))),
                                     done && React.createElement(Icon, { name: "check", className: "w-4 h-4 text-emerald-400 shrink-0 hidden xs:block" }),
                                     isCurrent && React.createElement("span", { className: "text-[10px] px-2 py-1 rounded-lg bg-accent-cyan/15 text-accent-cyan font-bold shrink-0" }, "\u0642\u064A\u062F \u0627\u0644\u062A\u0634\u063A\u064A\u0644"),
