@@ -1150,7 +1150,7 @@ function VidApiHelper({ kind, season, episode, onGenerate, defaultId, defaultTit
                     setSubMsg(`✓ ترجمة عربية من ${r.sourceLabel} — ${r.cues} سطر${publicUrl ? ' · مرتبطة بـ VidAPI' : ''}`);
                 }
                 catch (e) {
-                    setSubMsg('تعذرت الترجمة التلقائية: ' + (e && e.message ? e.message : ''));
+                    setSubMsg('لم تكتمل مطابقة الترجمة العربية: ' + (e && e.message ? e.message : ''));
                 }
             }
         }
@@ -1371,7 +1371,7 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
             setSubMsg(`✓ ترجمة عربية من ${r.sourceLabel} — ${r.cues} سطر`);
         }
         catch (e) {
-            setSubMsg('تعذرت الترجمة التلقائية: ' + (e && e.message ? e.message : ''));
+            setSubMsg('لم تكتمل مطابقة الترجمة العربية: ' + (e && e.message ? e.message : ''));
         }
     };
     const search = async (auto) => {
@@ -1660,28 +1660,19 @@ async function findAndStoreSubtitle({ cinemanaId, sourceId, altSourceIds = [], t
     const tmdb = ids.find(x => /^\d+$/.test(x)) || '';
     const isMovie = type === 'movie';
     const usp = new URLSearchParams();
-    if (cinemanaId)
-        usp.set('nb', String(cinemanaId));
-    if (title)
-        usp.set('title', String(title));
-    if (year)
-        usp.set('year', String(year));
+    if (cinemanaId) usp.set('nb', String(cinemanaId));
+    if (title) usp.set('title', String(title));
+    if (year) usp.set('year', String(year));
     usp.set('type', isMovie ? 'movie' : 'series');
     if (!isMovie) {
         usp.set('season', String(Number(season) || 1));
         usp.set('episode', String(Number(episode) || 1));
     }
-    if (imdb)
-        usp.set('imdb', imdb);
-    if (tmdb)
-        usp.set('tmdb', tmdb);
+    if (imdb) usp.set('imdb', imdb);
+    if (tmdb) usp.set('tmdb', tmdb);
     if (!cinemanaId && !title && !imdb && !tmdb)
         throw new Error('لا يوجد عنوان أو معرّف للبحث عن الترجمة.');
-    if (onProgress)
-        onProgress('جاري البحث الذكي (سينمانا ثم SubDL)...');
-    // البحث عن الترجمة يجب أن يستخدم نفس آلية fallback الخاصة ببروكسي الفيديو.
-    // سابقًا كان /sub/resolve يذهب فقط إلى CINEMANA_PROXY، فإذا كان Worker
-    // العام متوقفًا يفشل حتى لو كان server.js المحلي يعمل والاعتماد موجود.
+
     const proxyCandidates = [];
     const addProxyCandidate = (base) => {
         const b = String(base || '').trim().replace(/\/+$/, '');
@@ -1689,32 +1680,30 @@ async function findAndStoreSubtitle({ cinemanaId, sourceId, altSourceIds = [], t
     };
     addProxyCandidate(CINEMANA_PROXY);
     addProxyCandidate('http://localhost:8787');
-    let res = null, data = {};
-    let lastNetworkError = null;
-    for (const base of proxyCandidates) {
-        try {
-            res = await fetchWithTimeout(`${base}/sub/resolve?${usp.toString()}`, { headers: { Accept: 'application/json' } }, 45000);
-            data = await res.json().catch(() => ({}));
-            // 404 هنا يعني أن البروكسي اشتغل لكنه لم يجد ترجمة؛ لا نعتبره فشل اتصال
-            // ونترك الرسالة الحقيقية تظهر للمستخدم.
-            if (res.ok || (data && data.ok)) break;
-            if (res.status === 404 && data && data.tried) break;
-        } catch (e) {
-            lastNetworkError = e;
-            res = null;
-            data = {};
+
+    let lastError = null;
+    // نعيد المحاولة مرتين عند أخطاء الشبكة أو ضغط المصادر.
+    for (let round = 1; round <= 2; round++) {
+        if (onProgress) onProgress(round === 1 ? 'جاري مطابقة الترجمة العربية من المصدر الأصلي ثم المصادر الاحتياطية...' : 'جاري إعادة المحاولة ومطابقة نسخة أخرى...');
+        for (const base of proxyCandidates) {
+            try {
+                const res = await fetchWithTimeout(`${base}/sub/resolve?${usp.toString()}`, { headers: { Accept: 'application/json' } }, 60000);
+                const data = await res.json().catch(() => ({}));
+                if (res.ok && data && data.ok) {
+                    const sourceLabel = data.source === 'cinemana' ? 'سينمانا' : (data.source === 'opensubtitles' ? 'OpenSubtitles' : 'SubDL');
+                    if (onProgress) onProgress(`تمت مطابقة ترجمة عربية من ${sourceLabel} (${data.cues} سطر) — جاري الحفظ...`);
+                    const url = await subSave({ cinemanaId, title, type: isMovie ? 'movie' : 'series', season, episode }, data.vtt, { source: data.source, label: data.label, cues: data.cues });
+                    return { url, source: data.source, sourceLabel, cues: data.cues, lastEndSec: data.lastEndSec, durationSec: data.durationSec, label: data.label };
+                }
+                // 404 يعني أن البحث اكتمل ولم توجد مطابقة موثوقة، نجرّب الجولة/المصدر التالي.
+                lastError = new Error((data && data.error) || `فشل مطابقة الترجمة (رمز ${res.status})`);
+            } catch (e) {
+                lastError = e;
+            }
         }
+        if (round < 2) await new Promise(r => setTimeout(r, 900));
     }
-    if (!res) throw lastNetworkError || new Error('تعذر الاتصال بخدمة الترجمة.');
-    if (!res.ok || !data.ok) {
-        const why = (data.tried || []).slice(-5).map(t => `${t.source === 'cinemana' ? 'سينمانا' : 'SubDL'}${t.attempt ? ' (' + t.attempt + ')' : ''}: ${t.reason || ''}`).join(' | ');
-        throw new Error((data.error || `فشل البحث (رمز ${res.status})`) + (why ? ' — ' + why : ''));
-    }
-    const sourceLabel = data.source === 'cinemana' ? 'سينمانا' : 'SubDL';
-    if (onProgress)
-        onProgress(`وُجدت ترجمة من ${sourceLabel} (${data.cues} سطر) — جاري الحفظ...`);
-    const url = await subSave({ cinemanaId, title, type: isMovie ? 'movie' : 'series', season, episode }, data.vtt, { source: data.source, label: data.label, cues: data.cues });
-    return { url, source: data.source, sourceLabel, cues: data.cues, lastEndSec: data.lastEndSec, durationSec: data.durationSec, label: data.label };
+    throw lastError || new Error('لم تكتمل مطابقة ترجمة عربية موثوقة من المصادر المتاحة.');
 }
 async function findAndStoreSubdlSubtitle(args) { return (await findAndStoreSubtitle(args)).url; } // اسم قديم
 async function prepareSubtitlesForPublish(payload, sourceId, onProgress, altSourceIds = []) {
@@ -1753,7 +1742,7 @@ async function prepareSubtitlesForPublish(payload, sourceId, onProgress, altSour
             }
             catch (e) {
                 failed++;
-                failedItems.push(`${job.label}: ${e.message || 'لم يتم العثور على ترجمة'}`);
+                failedItems.push(`${job.label}: ${e.message || 'تحتاج الحلقة إلى إعادة مطابقة'}`);
             }
             done++;
             if (onProgress)
@@ -1762,7 +1751,7 @@ async function prepareSubtitlesForPublish(payload, sourceId, onProgress, altSour
     };
     await Promise.all([worker(), worker(), worker(), worker(), worker()]);
     if (onProgress)
-        onProgress(`اكتملت تهيئة الترجمة: تمت إضافة ${added}، موجودة ${skipped}، تعذر ${failed}.`);
+        onProgress(`اكتملت تهيئة الترجمة: تمت إضافة ${added}، موجودة ${skipped}، وتحتاج ${failed} حلقة إلى إعادة المحاولة.`);
     return { payload: out, added, skipped, failed, failedItems };
 }
 async function openSubtitlesSearch(params) {
@@ -6273,7 +6262,7 @@ function SubtitleHelper({ value, onChange, sourceId, title, type, season, episod
             showCoverage(r);
         }
         catch (e) {
-            setMsg(e.message || 'تعذر جلب الترجمة.');
+            setMsg(e.message || 'لم تكتمل مطابقة الترجمة العربية — ستستمر المحاولة من المصادر الاحتياطية.');
         }
         finally {
             setLoading(false);
