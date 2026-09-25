@@ -158,6 +158,22 @@
       padding: 10px 10px calc(8px + env(safe-area-inset-bottom));
       transition: opacity 0.25s ease, transform 0.25s ease;
     }
+    .yt-bar-inner { min-width: 0; }
+    .cv-player-controls-row { min-width: 0; overflow: visible; flex-wrap: nowrap !important; }
+        .cv-player-menu { position: absolute !important; right: 0 !important; left: auto !important; bottom: calc(100% + 8px) !important; max-height: min(62vh, 520px); overflow-y: auto; overscroll-behavior: contain; transform-origin: bottom right; }
+    .cv-player-menu button, .cv-player-menu input { touch-action: manipulation; }
+    @media (max-width: 767px) {
+      .yt-controls-bottom { padding-left: 7px; padding-right: 7px; padding-bottom: calc(6px + env(safe-area-inset-bottom)); }
+      .cv-player-controls-row { gap: 2px !important; }
+      .cv-player-controls-row > .flex-1 { flex: 1 1 8px !important; min-width: 8px !important; }
+      .cv-player-menu { max-width: min(86vw, 360px); }
+    }
+    @media (max-width: 419px) {
+      .cv-control-label-mobile { display: none !important; }
+      .cv-player-controls-row { gap: 1px !important; }
+      .cv-control-time { display: none !important; }
+      .cv-player-controls-row .yt-btn { padding-left: 5px !important; padding-right: 5px !important; }
+    }
     .yt-controls-bottom.hidden-bar { opacity: 0; pointer-events: none; transform: translateY(6px); }
     .yt-progress { -webkit-appearance: none; appearance: none; height: 4px; border-radius: 999px; background: rgba(255,255,255,0.25); outline: none; cursor: pointer; }
     .yt-progress::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 13px; height: 13px; border-radius: 50%; background: #00F0FF; box-shadow: 0 0 8px rgba(0,240,255,0.8); cursor: pointer; margin-top: -4.5px; }
@@ -167,6 +183,27 @@
     .yt-vol::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 10px; height: 10px; border-radius: 50%; background: #fff; cursor: pointer; margin-top: -3.5px; }
     .yt-vol::-moz-range-thumb { width: 10px; height: 10px; border-radius: 50%; background: #fff; border: none; cursor: pointer; }
     .yt-btn { display: flex; align-items: center; justify-content: center; color: #fff; transition: opacity 0.15s ease, transform 0.1s ease; opacity: 0.9; }
+    /* منع الخط/الحافة التي تظهر ملاصقة لزر الإعداد عند الضغط على الترجمة/الجودة/السرعة.
+       بعض متصفحات Android ترسم focus/active indicator فوق الزر، لذلك نلغيها صراحة. */
+    .yt-btn,
+    .yt-btn:focus,
+    .yt-btn:focus-visible,
+    .yt-btn:active,
+    .cv-menu-toggle,
+    .cv-menu-toggle:focus,
+    .cv-menu-toggle:focus-visible,
+    .cv-menu-toggle:active {
+      outline: none !important;
+      box-shadow: none !important;
+      border: 0 !important;
+      -webkit-tap-highlight-color: transparent !important;
+      text-decoration: none !important;
+    }
+    .yt-btn::before, .yt-btn::after,
+    .cv-menu-toggle::before, .cv-menu-toggle::after {
+      content: none !important;
+      display: none !important;
+    }
     .yt-btn:hover { opacity: 1; }
     .yt-btn:focus, .yt-btn:focus-visible { outline: none !important; box-shadow: none !important; }
     .yt-btn:active { transform: scale(0.9); }
@@ -192,7 +229,7 @@
       transform: none !important;
       box-shadow: none !important;
     }
-    html.cv-low-power main section { content-visibility: auto; contain-intrinsic-size: 320px; }
+    html.cv-low-power main section, html.cv-android main section { content-visibility: auto; contain-intrinsic-size: 320px; }
     @media (max-width: 767px) {
       html.cv-low-power .page-fade-in,
       html.cv-low-power .toast-item,
@@ -404,9 +441,31 @@ const CV_DEVICE_INFO = (() => {
     }
 })();
 const CV_LOW_POWER = CV_DEVICE_INFO.low;
+const CV_ANDROID = CV_DEVICE_INFO.android;
 try {
-    if (CV_LOW_POWER)
-        document.documentElement.classList.add('cv-low-power');
+    if (CV_LOW_POWER) document.documentElement.classList.add('cv-low-power');
+    if (CV_ANDROID) document.documentElement.classList.add('cv-android');
+}
+catch (e) { }
+// تحميل ذكي للصور: نؤجل الصور البعيدة عن الشاشة بدل تحميل كتالوج الموقع كله دفعة واحدة.
+try {
+    const markLazyImages = root => {
+        if (!root || !root.querySelectorAll) return;
+        root.querySelectorAll('img:not([data-eager]):not([loading])').forEach(img => {
+            img.setAttribute('loading', 'lazy');
+            img.setAttribute('decoding', 'async');
+            if (!img.getAttribute('fetchpriority')) img.setAttribute('fetchpriority', 'low');
+        });
+    };
+    markLazyImages(document);
+    const mo = new MutationObserver(muts => muts.forEach(m => m.addedNodes.forEach(n => {
+        if (n.nodeType !== 1) return;
+        if (n.tagName === 'IMG' && !n.hasAttribute('data-eager') && !n.hasAttribute('loading')) {
+            n.setAttribute('loading','lazy'); n.setAttribute('decoding','async'); n.setAttribute('fetchpriority','low');
+        }
+        markLazyImages(n);
+    })));
+    mo.observe(document.documentElement, { childList:true, subtree:true });
 }
 catch (e) { }
 const CV_TITLE_CACHE_KEY = 'cinadam_public_titles_cache_v2';
@@ -602,6 +661,15 @@ function fixDash(l) {
     else if (dash.test(text.slice(-2)) || /[-\u2010\u2011\u2012\u2013\u2014\u2212]\s*$/.test(text)) {
         hasDash = true;
         text = text.replace(/\s*[-\u2010\u2011\u2012\u2013\u2014\u2212]\s*$/, '').trim();
+    }
+    else {
+        // بعض ملفات SRT تقلب السطر العربي فيصبح مثل: "... - (دب)".
+        // ننقل شرطة الحوار إلى بداية السطر مع الحفاظ على بقية النص كما هو.
+        const mid = text.match(/^(.*?)(?:\s+)[-\u2010\u2011\u2012\u2013\u2014\u2212](?:\s+)(.+)$/);
+        if (mid && /[\u0600-\u06ff]/.test(mid[1] + mid[2])) {
+            hasDash = true;
+            text = (mid[1] + ' ' + mid[2]).trim();
+        }
     }
     return hasDash ? '\u200F—\u00A0' + text : text;
 }
@@ -2561,7 +2629,7 @@ function Hero({ items, onOpen }) {
     const dragging = dragRef.current.active;
     const duration = '680ms cubic-bezier(.22,.61,.36,1)';
     const SlideContent = ({ item }) => (React.createElement("div", { className: "absolute inset-0 overflow-hidden" },
-        item.backdrop && React.createElement("img", { src: item.backdrop, alt: "", draggable: "false", className: "absolute inset-0 w-full h-full object-cover" }),
+        item.backdrop && React.createElement("img", { src: item.backdrop, alt: "", draggable: "false", "data-eager": "1", fetchpriority: "high", decoding: "async", className: "absolute inset-0 w-full h-full object-cover" }),
         React.createElement("div", { className: "absolute inset-0 bg-gradient-to-t from-glass-950 via-glass-950/45 to-glass-950/5" }),
         React.createElement("div", { className: "absolute inset-0 bg-gradient-to-r from-glass-950/35 via-transparent to-transparent" }),
         React.createElement("div", { className: "absolute inset-x-0 bottom-0 p-5 pb-16 md:p-12 md:pb-10 max-w-2xl" },
@@ -3002,6 +3070,15 @@ function ConfirmDialog({ title, body, confirmLabel, cancelLabel, onCancel, onCon
                 React.createElement("button", { onClick: requestClose, className: "flex-1 py-2.5 rounded-xl glass-card border border-white/10 text-sm font-bold text-slate-300 hover:bg-white/5 transition" }, cancelLabel),
                 React.createElement("button", { onClick: doConfirm, className: "flex-1 py-2.5 rounded-xl bg-accent-red hover:bg-accent-redHover text-sm font-bold text-white shadow-[0_0_15px_rgba(255,51,75,0.4)] transition" }, confirmLabel)))));
 }
+function renderSubtitleLine(line, key, fontPx, prefs, spanBg, shadow, lsp) {
+    const raw = String(line || '');
+    const m = raw.match(/^\u200F?([—-])(?:\u00A0|\s)*(.*)$/s);
+    const common = { color: prefs.color, fontSize: fontPx + 'px', fontWeight: prefs.weight, fontStyle: prefs.italic ? 'italic' : 'normal', letterSpacing: lsp + 'em', wordSpacing: (lsp * 1.5) + 'em', lineHeight: (Number(prefs.lineHeight) || 150) / 100, textShadow: shadow, fontFamily: `'${prefs.font || 'Cairo'}', 'Cairo', sans-serif`, direction: 'rtl', textAlign: 'center' };
+    if (!m) return React.createElement('div', { key, style: common }, React.createElement('span', { dir:'rtl', style:{ ...spanBg, display:'inline-block', unicodeBidi:'isolate' } }, raw));
+    return React.createElement('div', { key, dir:'rtl', style:{ ...common, unicodeBidi:'isolate', display:'block' } },
+        React.createElement('span', { style:{ ...spanBg, display:'inline-block', unicodeBidi:'isolate' } }, '\u200F—\u00A0'),
+        React.createElement('span', { style:{ unicodeBidi:'isolate' } }, m[2]));
+}
 function SubtitleOverlay({ videoRef, cues, shiftMs, prefs, lifted }) {
     const [text, setText] = useState('');
     const [boxH, setBoxH] = useState(360);
@@ -3058,9 +3135,13 @@ function SubtitleOverlay({ videoRef, cues, shiftMs, prefs, lifted }) {
     const groupStyle = shape === 'block' ? { display: 'inline-block', ...boxCss, padding: '0.1em 0.6em' }
         : shape === 'bar' ? { display: 'block', ...(bgOn ? { background: bgCol, padding: '0.15em 0' } : {}) } : {};
     const spanBg = shape === 'line' ? boxCss : {};
-    return (React.createElement("div", { ref: rootRef, className: "absolute inset-0 pointer-events-none", style: { zIndex: 15 } }, text && (React.createElement("div", { style: { position: 'absolute', left: 0, right: 0, bottom: `calc(${Number(prefs.pos) || 0}% + ${lifted ? 46 : 0}px)`, transition: 'bottom .2s', textAlign: 'center', padding: shape === 'bar' ? 0 : '0 4%' } },
-        React.createElement("div", { style: { ...groupStyle, fontSize: fontPx + 'px' } }, text.split('\n').map((line, i) => (React.createElement("div", { key: i },
-            React.createElement("span", { dir: "rtl", style: { ...spanBg, display: 'inline-block', color: prefs.color, fontSize: fontPx + 'px', fontWeight: prefs.weight, fontStyle: prefs.italic ? 'italic' : 'normal', letterSpacing: lsp + 'em', wordSpacing: (lsp * 1.5) + 'em', lineHeight: (Number(prefs.lineHeight) || 150) / 100, textShadow: shadow, fontFamily: `'${prefs.font || 'Cairo'}', 'Cairo', sans-serif`, direction: 'rtl', unicodeBidi: 'plaintext', textAlign: 'center' } }, line)))))))));
+    return React.createElement("div", { ref: rootRef, className: "absolute inset-0 pointer-events-none", style: { zIndex: 15 } },
+        text ? React.createElement("div", { style: { position: 'absolute', left: 0, right: 0, bottom: `calc(${Number(prefs.pos) || 0}% + ${lifted ? 46 : 0}px)`, transition: 'bottom .2s', textAlign: 'center', padding: shape === 'bar' ? 0 : '0 4%' } },
+            React.createElement("div", { style: { ...groupStyle, fontSize: fontPx + 'px' } },
+                text.split('\n').map((line, i) => renderSubtitleLine(line, i, fontPx, prefs, spanBg, shadow, lsp))
+            )
+        ) : null
+    );
 }
 function SubSlider({ label, value, unit, min, max, step, onChange }) {
     return (React.createElement("div", null,
@@ -3230,19 +3311,19 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
             capLevelToPlayerSize: true,
             capLevelOnFPSDrop: true,
             lowLatencyMode: false,
-            startFragPrefetch: !CV_LOW_POWER,
-            maxBufferLength: CV_LOW_POWER ? 5 : 18,
-            maxMaxBufferLength: CV_LOW_POWER ? 10 : 36,
-            backBufferLength: CV_LOW_POWER ? 2 : 12,
-            maxBufferHole: CV_LOW_POWER ? 0.8 : 0.5,
-            maxBufferSize: CV_LOW_POWER ? 12 * 1000 * 1000 : 60 * 1000 * 1000,
-            abrEwmaDefaultEstimate: CV_LOW_POWER ? 600000 : 1800000,
-            abrEwmaFastLive: CV_LOW_POWER ? 2.0 : 3.0,
-            abrEwmaSlowLive: CV_LOW_POWER ? 5.0 : 9.0,
-            abrBandWidthFactor: CV_LOW_POWER ? 0.60 : 0.95,
-            abrBandWidthUpFactor: CV_LOW_POWER ? 0.45 : 0.70,
-            maxStarvationDelay: CV_LOW_POWER ? 3 : 4,
-            highBufferWatchdogPeriod: CV_LOW_POWER ? 1.2 : 2,
+            startFragPrefetch: !(CV_LOW_POWER || CV_ANDROID),
+            maxBufferLength: CV_LOW_POWER ? 5 : (CV_ANDROID ? 8 : 18),
+            maxMaxBufferLength: CV_LOW_POWER ? 10 : (CV_ANDROID ? 18 : 36),
+            backBufferLength: CV_LOW_POWER ? 2 : (CV_ANDROID ? 4 : 12),
+            maxBufferHole: CV_LOW_POWER ? 0.8 : (CV_ANDROID ? 1.0 : 0.5),
+            maxBufferSize: CV_LOW_POWER ? 12 * 1000 * 1000 : (CV_ANDROID ? 24 * 1000 * 1000 : 60 * 1000 * 1000),
+            abrEwmaDefaultEstimate: CV_LOW_POWER ? 600000 : (CV_ANDROID ? 1000000 : 1800000),
+            abrEwmaFastLive: CV_LOW_POWER ? 2.0 : (CV_ANDROID ? 2.5 : 3.0),
+            abrEwmaSlowLive: CV_LOW_POWER ? 5.0 : (CV_ANDROID ? 6.0 : 9.0),
+            abrBandWidthFactor: CV_LOW_POWER ? 0.60 : (CV_ANDROID ? 0.72 : 0.95),
+            abrBandWidthUpFactor: CV_LOW_POWER ? 0.45 : (CV_ANDROID ? 0.55 : 0.70),
+            maxStarvationDelay: CV_LOW_POWER ? 3 : (CV_ANDROID ? 3 : 4),
+            highBufferWatchdogPeriod: CV_LOW_POWER ? 1.2 : (CV_ANDROID ? 1.5 : 2),
             fragLoadingTimeOut: CV_LOW_POWER ? 20000 : 20000,
             manifestLoadingTimeOut: 20000,
             levelLoadingTimeOut: 20000
@@ -3333,8 +3414,8 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
             cancelled = true;
             videoEl.removeEventListener('canplay', onReady);
             videoEl.removeEventListener('loadeddata', onReady);
-            if (hls)
-                hls.destroy();
+            if (hls) hls.destroy();
+            try { videoEl.pause(); videoEl.removeAttribute('src'); videoEl.load(); } catch (e) { }
             clearTimeout(stuckTimer);
             clearBufferingTimer();
         };
@@ -3376,6 +3457,17 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
     const [showSpeedMenu, setShowSpeedMenu] = useState(false);
     const [showQualityMenu, setShowQualityMenu] = useState(false);
     const [fakeFullscreen, setFakeFullscreen] = useState(false);
+    const closePlayerMenus = () => { setShowSubtitleMenu(false); setShowQualityMenu(false); setShowSpeedMenu(false); };
+    useEffect(() => {
+        const onOutsideMenu = e => {
+            if (!wrapRef.current || !wrapRef.current.contains(e.target)) return;
+            if (e.target.closest && e.target.closest('.cv-player-menu, .cv-menu-toggle')) return;
+            closePlayerMenus();
+        };
+        document.addEventListener('pointerdown', onOutsideMenu, true);
+        return () => document.removeEventListener('pointerdown', onOutsideMenu, true);
+    }, []);
+    useEffect(() => { closePlayerMenus(); }, [src]);
     useEffect(() => {
         const videoEl = videoRef.current;
         if (!videoEl)
@@ -3481,8 +3573,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
     catch (e) { } };
     const seekTo = (val) => { const v = videoRef.current; if (v)
         v.currentTime = Number(val); };
-    const setRate = (r) => { const v = videoRef.current; if (!v)
-        return; v.playbackRate = r; setShowSpeedMenu(false); };
+    const setRate = (r) => { const v = videoRef.current; if (!v) return; v.playbackRate = r; closePlayerMenus(); showBarTemporarily(); };
     const skip = (delta) => {
         const v = videoRef.current;
         if (!v)
@@ -3668,9 +3759,9 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
     const currentQuality = qualityOptions.find(q => q.url === src) || qualityOptions[0] || null;
     const changeQuality = (q) => {
         const at = videoRef.current ? Number(videoRef.current.currentTime) || 0 : 0;
-        setShowQualityMenu(false);
-        if (q && onQualityChange)
-            onQualityChange(q.url, at, q);
+        closePlayerMenus();
+        if (q && onQualityChange) onQualityChange(q.url, at, q);
+        showBarTemporarily();
     };
     const RATE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2];
     return (React.createElement("div", { ref: wrapRef, className: `video-crop-wrap ${fakeFullscreen ? 'ios-fake-fullscreen' : 'aspect-video'}${!barVisible ? ' cv-nocursor' : ''}`, onMouseMove: showBarTemporarily, onClick: onStageClick },
@@ -3709,7 +3800,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
                 React.createElement("input", { type: "range", min: "0", max: ctrl.duration || 0, step: "0.1", value: ctrl.current, onChange: e => seekTo(e.target.value), className: "yt-progress w-full mb-1.5", style: {
                         background: `linear-gradient(to left, #00F0FF ${(ctrl.current / (ctrl.duration || 1)) * 100}%, rgba(255,255,255,0.25) ${(ctrl.current / (ctrl.duration || 1)) * 100}%)`
                     } }),
-                React.createElement("div", { className: "flex items-center gap-1 flex-wrap" },
+                React.createElement("div", { className: "cv-player-controls-row flex items-center gap-1 flex-nowrap" },
                     React.createElement("button", { type: "button", onClick: togglePlay, className: "yt-btn yt-btn-main w-8 h-8 shrink-0", title: ctrl.playing ? 'إيقاف مؤقت (مسافة)' : 'تشغيل (مسافة)' },
                         React.createElement(Icon, { name: ctrl.playing ? 'pause' : 'play', className: "w-4 h-4 fill-current" })),
                     React.createElement("button", { type: "button", onClick: () => skip(-5), className: "yt-btn w-7 h-7 shrink-0", title: "\u0631\u062C\u0648\u0639 5 \u062B\u0648\u0627\u0646\u064A (\u0627\u0644\u0633\u0647\u0645 \u0627\u0644\u0623\u064A\u0633\u0631)" },
@@ -3722,16 +3813,16 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
                         React.createElement("input", { type: "range", min: "0", max: "1", step: "0.05", value: ctrl.muted ? 0 : ctrl.volume, onChange: e => setVolume(e.target.value), className: "yt-vol w-14 md:w-16" })),
                     React.createElement("button", { type: "button", onClick: toggleMute, className: "yt-btn w-7 h-7 shrink-0 sm:hidden", title: "\u0643\u062A\u0645/\u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0635\u0648\u062A" },
                         React.createElement(Icon, { name: ctrl.muted || ctrl.volume === 0 ? 'volumeX' : 'volume2', className: "w-3.5 h-3.5" })),
-                    React.createElement("span", { className: "text-[10px] font-mono text-white/90 shrink-0 mr-0.5" },
+                    React.createElement("span", { className: "cv-control-time text-[10px] font-mono text-white/90 shrink-0 mr-0.5" },
                         formatClock(ctrl.current),
                         " / ",
                         formatClock(ctrl.duration)),
                     React.createElement("span", { className: "flex-1" }),
                     React.createElement("div", { className: "relative shrink-0" },
-                        React.createElement("button", { type: "button", onClick: () => { setShowSubtitleMenu(v => !v); setShowQualityMenu(false); setShowSpeedMenu(false); }, className: `yt-btn h-7 px-2 gap-1 text-[11px] font-bold ${subtitleOn && activeCues.length ? 'text-accent-cyan' : 'text-white/60'}`, title: "\u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u062A\u0631\u062C\u0645\u0629" },
+                        React.createElement("button", { type: "button", onClick: () => { setShowSubtitleMenu(v => !v); setShowQualityMenu(false); setShowSpeedMenu(false); }, className: `yt-btn cv-menu-toggle h-7 px-2 gap-1 text-[11px] font-bold ${subtitleOn && activeCues.length ? 'text-accent-cyan' : 'text-white/60'}`, title: "\u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u062A\u0631\u062C\u0645\u0629" },
                             React.createElement(Icon, { name: "captions", className: "w-3.5 h-3.5" }),
                             React.createElement("span", { className: "hidden xs:inline" }, subtitleLoading ? '...' : 'ترجمة')),
-                        showSubtitleMenu && (React.createElement("div", { className: "absolute bottom-10 left-0 bg-black/95 backdrop-blur-md rounded-xl border border-white/10 p-2.5 shadow-2xl w-64 max-w-[78vw] max-h-[60vh] overflow-y-auto z-30 text-right", onClick: e => e.stopPropagation() },
+                        showSubtitleMenu && (React.createElement("div", { className: "cv-player-menu absolute bottom-10 left-0 bg-black/95 backdrop-blur-md rounded-xl border border-white/10 p-2.5 shadow-2xl w-64 max-w-[78vw] max-h-[60vh] overflow-y-auto z-30 text-right", onClick: e => e.stopPropagation() },
                             React.createElement("p", { className: "text-[10px] font-bold text-slate-300 mb-1.5" }, activeCues.length ? (localSub ? `ملف من جهازك: ${localSub.name}` : 'الترجمة العربية جاهزة') : subtitleLoading ? 'جاري تحميل الترجمة...' : (subError || 'لا توجد ترجمة لهذا العمل')),
                             subError && !localSub && (React.createElement("button", { type: "button", onClick: () => setSubRetry(n => n + 1), className: "w-full mb-1.5 px-2 py-1.5 rounded-lg bg-accent-cyan/20 text-accent-cyan text-[10px] font-bold" }, "\u0625\u0639\u0627\u062F\u0629 \u0627\u0644\u0645\u062D\u0627\u0648\u0644\u0629")),
                             activeCues.length > 0 && (React.createElement("button", { type: "button", onClick: () => setSubtitleOn(v => !v), className: "w-full mb-2 px-2 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10" }, subtitleOn ? 'إخفاء الترجمة' : 'إظهار الترجمة')),
@@ -3797,17 +3888,17 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
                             localSub && React.createElement("button", { type: "button", onClick: () => { setLocalSub(null); setSubAdj(subtitleUrl ? readSubAdj(subtitleUrl) : 0); }, className: "w-full mt-1 px-2 py-1.5 rounded-lg bg-rose-500/20 text-rose-300 text-[10px] font-bold" }, "\u0625\u0632\u0627\u0644\u0629 \u0645\u0644\u0641 \u062C\u0647\u0627\u0632\u0643"),
                             React.createElement("input", { ref: localFileRef, type: "file", accept: ".srt,.vtt,text/vtt,application/x-subrip", onChange: onLocalSub, className: "hidden" })))),
                     qualityOptions.length > 1 && (React.createElement("div", { className: "relative shrink-0" },
-                        React.createElement("button", { type: "button", onClick: () => { setShowQualityMenu(v => !v); setShowSpeedMenu(false); }, className: "yt-btn h-7 px-2 gap-1 text-[11px] font-bold", title: "\u0627\u062E\u062A\u064A\u0627\u0631 \u0627\u0644\u062C\u0648\u062F\u0629" },
+                        React.createElement("button", { type: "button", onClick: () => { setShowQualityMenu(v => !v); setShowSpeedMenu(false); }, className: "yt-btn cv-menu-toggle h-7 px-2 gap-1 text-[11px] font-bold", title: "\u0627\u062E\u062A\u064A\u0627\u0631 \u0627\u0644\u062C\u0648\u062F\u0629" },
                             React.createElement(Icon, { name: "sliders-horizontal", className: "w-3.5 h-3.5" }),
                             React.createElement("span", null, currentQuality ? currentQuality.label : 'جودة')),
-                        showQualityMenu && (React.createElement("div", { className: "absolute bottom-10 left-0 bg-black/95 backdrop-blur-md rounded-xl border border-white/10 p-1.5 flex flex-col gap-0.5 shadow-2xl min-w-[88px] z-30" }, qualityOptions.map((q, i) => (React.createElement("button", { key: i, type: "button", onClick: () => changeQuality(q), className: `text-[11px] font-bold px-3 py-1.5 rounded-lg text-right transition ${currentQuality && currentQuality.url === q.url ? 'bg-accent-cyan text-glass-950' : 'text-white hover:bg-white/10'}` }, q.label))))))),
+                        showQualityMenu && (React.createElement("div", { className: "cv-player-menu absolute bottom-10 left-0 bg-black/95 backdrop-blur-md rounded-xl border border-white/10 p-1.5 flex flex-col gap-0.5 shadow-2xl min-w-[88px] z-30" }, qualityOptions.map((q, i) => (React.createElement("button", { key: i, type: "button", onClick: () => changeQuality(q), className: `text-[11px] font-bold px-3 py-1.5 rounded-lg text-right transition ${currentQuality && currentQuality.url === q.url ? 'bg-accent-cyan text-glass-950' : 'text-white hover:bg-white/10'}` }, q.label))))))),
                     React.createElement("div", { className: "relative shrink-0" },
-                        React.createElement("button", { type: "button", onClick: () => { setShowSpeedMenu(v => !v); setShowQualityMenu(false); }, className: "yt-btn h-7 px-2 gap-1 text-[11px] font-bold", title: "\u0633\u0631\u0639\u0629 \u0627\u0644\u062A\u0634\u063A\u064A\u0644" },
+                        React.createElement("button", { type: "button", onClick: () => { setShowSpeedMenu(v => !v); setShowQualityMenu(false); }, className: "yt-btn cv-menu-toggle h-7 px-2 gap-1 text-[11px] font-bold", title: "\u0633\u0631\u0639\u0629 \u0627\u0644\u062A\u0634\u063A\u064A\u0644" },
                             React.createElement(Icon, { name: "gauge", className: "w-3.5 h-3.5" }),
                             React.createElement("span", { className: "hidden xs:inline" },
                                 ctrl.rate,
                                 "\u00D7")),
-                        showSpeedMenu && (React.createElement("div", { className: "absolute bottom-10 left-0 bg-black/90 backdrop-blur-md rounded-xl border border-white/10 p-1.5 flex flex-col gap-0.5 shadow-2xl min-w-[64px] z-30" }, RATE_OPTIONS.map(r => (React.createElement("button", { key: r, type: "button", onClick: () => setRate(r), className: `text-[11px] font-bold px-3 py-1.5 rounded-lg transition ${ctrl.rate === r ? 'bg-accent-cyan text-glass-950' : 'text-white hover:bg-white/10'}` },
+                        showSpeedMenu && (React.createElement("div", { className: "cv-player-menu absolute bottom-10 left-0 bg-black/90 backdrop-blur-md rounded-xl border border-white/10 p-1.5 flex flex-col gap-0.5 shadow-2xl min-w-[64px] z-30" }, RATE_OPTIONS.map(r => (React.createElement("button", { key: r, type: "button", onClick: () => setRate(r), className: `text-[11px] font-bold px-3 py-1.5 rounded-lg transition ${ctrl.rate === r ? 'bg-accent-cyan text-glass-950' : 'text-white hover:bg-white/10'}` },
                             r,
                             "\u00D7")))))),
                     React.createElement("button", { type: "button", onClick: toggleFullscreen, title: effectiveFs ? 'إنهاء ملء الشاشة (F)' : 'ملء الشاشة (F)', className: "yt-btn w-7 h-7 shrink-0" },
