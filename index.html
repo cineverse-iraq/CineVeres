@@ -6420,6 +6420,19 @@ async function getImdbEpisodeRatingFromSeason(imdbSeriesId, seasonNumber, episod
     // 3) آخر محاولة آمنة نسبيًا: بحث OMDb بعنوان الحلقة مع التحقق من المسلسل/الموسم/الحلقة.
     return fetchImdbEpisodeRatingByTitle(episodeTitle, episodeYear, imdbSeriesId, seasonNumber, episodeNumber);
 }
+async function resolveSeriesTmdbIdForRatings(sourceId) {
+    let id = String(sourceId || '').trim();
+    if (/^\d+$/.test(id)) return id;
+    if (/^tt\d+$/i.test(id)) {
+        try {
+            const found = await tmdbFetch(`find/${id.toLowerCase()}`, { external_source: 'imdb_id', language: 'en-US' });
+            return String((found.tv_results || [])[0] && (found.tv_results || [])[0].id || '');
+        } catch (e) {
+            return '';
+        }
+    }
+    return '';
+}
 async function refreshSeasonImdbRatings(sourceId, seasonNumber, episodes, onProgress) {
     const list = Array.isArray(episodes) ? episodes : [];
     if (!list.length) return [];
