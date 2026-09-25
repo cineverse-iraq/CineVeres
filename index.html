@@ -1086,9 +1086,9 @@ const CINEMANA_PROXY = (() => {
     const stored = (typeof localStorage !== 'undefined' ? localStorage.getItem('cinemana_proxy_url') : '') || '';
     const configured = String(explicit || stored || '').trim().replace(/\/+$/, '');
     if (configured && (isLocalPage || !/^https?:\/\/localhost(?::\d+)?$/i.test(configured))) return configured;
-    // لوحة الإدارة على الكمبيوتر يجب أن تستخدم بروكسي Node المحلي تلقائيًا.
-    // رابط Render لا يُفترض كبديل لأن نشره قديم/متوقف، ولأن localhost مطلوب عندما يكون السيرفر على جهاز الإدارة.
-    return 'http://localhost:8787';
+    // لوحة الإدارة على الكمبيوتر تستخدم Node المحلي، أما الموقع المنشور/الهاتف
+    // فيستخدم البروكسي العام حتى لا يتحول localhost إلى هاتف المستخدم نفسه.
+    return isLocalPage ? 'http://localhost:8787' : 'https://api.cinadam.xyz';
 })();
 const SUBTITLE_PUBLIC_BASE = (() => {
     const configured = (typeof window !== 'undefined' && (window.SUBTITLE_PUBLIC_BASE_URL || window.CINEMANA_SUBTITLE_PUBLIC_BASE)) ||
