@@ -1068,9 +1068,10 @@ function VidApiHelper({ kind, season, episode, onGenerate, defaultId, defaultTit
 // http://localhost:8787/episodes/:id
 // http://localhost:8787/videos/:id
 const CINEMANA_PROXY = (() => {
+    const isLocalPage = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(String(location.hostname || ''));
     const configured = (typeof window !== 'undefined' && (window.CINEMANA_PROXY_URL || window.CINEMANA_PROXY)) ||
         (typeof localStorage !== 'undefined' ? localStorage.getItem('cinemana_proxy_url') : '') ||
-        'http://localhost:8787';
+        (isLocalPage ? 'http://localhost:8787' : 'https://cinemana-proxy-pa5l.onrender.com');
     return String(configured || '').trim().replace(/\/+$/, '');
 })();
 const SUBTITLE_PUBLIC_BASE = (() => {
