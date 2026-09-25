@@ -1074,7 +1074,9 @@ const CINEMANA_PROXY = (() => {
     const stored = (typeof localStorage !== 'undefined' ? localStorage.getItem('cinemana_proxy_url') : '') || '';
     const configured = String(explicit || stored || '').trim().replace(/\/+$/, '');
     if (configured && (isLocalPage || !/^https?:\/\/localhost(?::\d+)?$/i.test(configured))) return configured;
-    return isLocalPage ? 'http://localhost:8787' : 'https://cinemana-proxy-pa5l.onrender.com';
+    // لوحة الإدارة على الكمبيوتر يجب أن تستخدم بروكسي Node المحلي تلقائيًا.
+    // رابط Render لا يُفترض كبديل لأن نشره قديم/متوقف، ولأن localhost مطلوب عندما يكون السيرفر على جهاز الإدارة.
+    return 'http://localhost:8787';
 })();
 const SUBTITLE_PUBLIC_BASE = (() => {
     const configured = (typeof window !== 'undefined' && (window.SUBTITLE_PUBLIC_BASE_URL || window.CINEMANA_SUBTITLE_PUBLIC_BASE)) ||
@@ -1143,7 +1145,8 @@ async function cinemanaSearch(title, type) {
                 firstHardError = e;
         }
     }
-    if (!out.length && firstHardError && type !== 'anime')
+    // لا نخفي خطأ البروكسي للأنمي؛ ظهور "لا نتائج" كان يخفي المشكلة الحقيقية.
+    if (!out.length && firstHardError)
         throw firstHardError;
     return out;
 }
