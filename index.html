@@ -3199,7 +3199,7 @@ function SubSlider({ label, value, unit, min, max, step, onChange }) {
                 unit)),
         React.createElement("input", { type: "range", min: min, max: max, step: step, value: value, onChange: e => onChange(Number(e.target.value)), className: "w-full mb-2", style: { accentColor: '#00F0FF' } })));
 }
-function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration, trimStart, trimEnd, introStart, introEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, qualities, onQualityChange, startAt }) {
+function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration, trimStart, trimEnd, introStart, introEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, qualities, onQualityChange, startAt, skipImdbId, skipSeason, skipEpisode, onNextEpisode, hasNextEpisode }) {
     const videoRef = useRef(null);
     const wrapRef = useRef(null);
     const hideTimerRef = useRef(null);
@@ -3214,6 +3214,10 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         }
     };
     const [loading, setLoading] = useState(true);
+    // SkipDB: automatic intro/recap/outro/preview timing. Read-only API needs no key.
+    const [skipSegments, setSkipSegments] = useState({ intro: null, recap: null, outro: null, preview: null });
+    const [skipDbLoading, setSkipDbLoading] = useState(false);
+    const [skipDbError, setSkipDbError] = useState('');
     const [subtitleSrc, setSubtitleSrc] = useState(''); // لمسار iOS الأصلي فقط
     const [subtitleLoading, setSubtitleLoading] = useState(false);
     const [subtitleOn, setSubtitleOn] = useState(true);
@@ -3252,6 +3256,49 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         catch (e) { }
         return () => { dead = true; };
     }, []);
+    // Fetch SkipDB timing after the real stream duration is known. The duration-aware
+    // lookup lets SkipDB shift timestamps for versions that have a slightly different
+    // runtime. Reading is public; do not expose a write/API secret in this static page.
+    useEffect(() => {
+        let cancelled = false;
+        const imdb = String(skipImdbId || '').trim();
+        const duration = Number(ctrl.duration) || 0;
+        if (!imdb || !/^tt\d+$/i.test(imdb) || duration <= 0) {
+            setSkipSegments({ intro: null, recap: null, outro: null, preview: null });
+            setSkipDbLoading(false);
+            setSkipDbError('');
+            return () => { cancelled = true; };
+        }
+        const params = new URLSearchParams();
+        params.set('imdb_id', imdb);
+        if (skipSeason != null && Number(skipSeason) > 0) params.set('season', String(Number(skipSeason)));
+        if (skipEpisode != null && Number(skipEpisode) > 0) params.set('episode', String(Number(skipEpisode)));
+        params.set('duration', String(Math.round(duration)));
+        params.set('adjust', 'conservative');
+        setSkipDbLoading(true);
+        setSkipDbError('');
+        fetch(`https://api.skipdb.tv/api/segments?${params.toString()}`, { method: 'GET', headers: { Accept: 'application/json' } })
+            .then(r => r.ok ? r.json() : Promise.reject(new Error(`SkipDB ${r.status}`)))
+            .then(data => {
+                if (cancelled) return;
+                const seg = data && data.segments ? data.segments : {};
+                setSkipSegments({
+                    intro: seg.intro || null,
+                    recap: seg.recap || null,
+                    outro: seg.outro || null,
+                    preview: seg.preview || null
+                });
+            })
+            .catch(err => {
+                if (!cancelled) {
+                    setSkipSegments({ intro: null, recap: null, outro: null, preview: null });
+                    setSkipDbError(err && err.message ? err.message : 'SkipDB unavailable');
+                }
+            })
+            .finally(() => { if (!cancelled) setSkipDbLoading(false); });
+        return () => { cancelled = true; };
+    }, [src, skipImdbId, skipSeason, skipEpisode, ctrl.duration]);
+
     const updSubPrefs = (patch) => setSubPrefs(prev => {
         const n = { ...prev, ...patch };
         try {
@@ -3857,19 +3904,29 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
             React.createElement("p", { className: "text-white text-sm md:text-base font-bold truncate drop-shadow" },
                 React.createElement(BidiJoined, { text: episodeLabel })))),
         (() => {
-            const iEnd = Number(introEnd) || 0, iStart = Math.max(0, Number(introStart) || 0);
+            const introSeg = skipSegments.intro || skipSegments.recap;
+            const autoStart = introSeg ? Number(introSeg.start_ms) / 1000 : 0;
+            const autoEnd = introSeg ? Number(introSeg.end_ms) / 1000 : 0;
+            const iStart = autoEnd > autoStart ? autoStart : Math.max(0, Number(introStart) || 0);
+            const iEnd = autoEnd > autoStart ? autoEnd : (Number(introEnd) || 0);
             const inIntro = iEnd > iStart && ctrl.current >= iStart && ctrl.current < iEnd - 0.5;
             if (!inIntro || loading)
                 return null;
-            return (React.createElement("button", { type: "button", "data-skip-intro": "1", onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); const v = videoRef.current; if (!v)
-                    return; try {
-                    v.currentTime = iEnd;
-                }
-                catch (err) { } const p = v.play(); if (p && p.catch)
-                    p.catch(() => { }); showBarTemporarily(); }, className: "absolute right-3 md:right-5 z-30 flex items-center gap-2 px-4 py-2 rounded-xl bg-black/70 hover:bg-white hover:text-black text-white text-xs md:text-sm font-black border border-white/40 backdrop-blur-md shadow-lg transition-all duration-200", style: { bottom: barVisible ? 76 : 20 } },
-                React.createElement("span", null, "\u062A\u062E\u0637\u064A \u0627\u0644\u0645\u0642\u062F\u0645\u0629"),
+            return (React.createElement("button", { type: "button", "data-skip-intro": "1", onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); const v = videoRef.current; if (!v) return; try { v.currentTime = iEnd; } catch (err) {} const p = v.play(); if (p && p.catch) p.catch(() => {}); showBarTemporarily(); }, className: "absolute right-3 md:right-5 z-30 flex items-center gap-2 px-4 py-2 rounded-xl bg-black/70 hover:bg-white hover:text-black text-white text-xs md:text-sm font-black border border-white/40 backdrop-blur-md shadow-lg transition-all duration-200", style: { bottom: barVisible ? 76 : 20 } },
+                React.createElement("span", null, skipSegments.recap && !skipSegments.intro ? "تخطي الملخص" : "تخطي المقدمة"),
                 React.createElement("svg", { viewBox: "0 0 24 24", className: "w-4 h-4 fill-current", "aria-hidden": "true" },
                     React.createElement("path", { d: "M5 5l9 7-9 7V5zm10 0h3v14h-3V5z" }))));
+        })(),
+        (() => {
+            const outro = skipSegments.outro;
+            const oStart = outro ? Number(outro.start_ms) / 1000 : 0;
+            const oEnd = outro ? Number(outro.end_ms) / 1000 : 0;
+            const inOutro = oStart > 0 && oEnd > oStart && ctrl.current >= oStart && ctrl.current < oEnd;
+            if (!inOutro || loading || !hasNextEpisode || !onNextEpisode)
+                return null;
+            return React.createElement("button", { type: "button", onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); onNextEpisode(); }, className: "absolute left-3 md:left-5 z-30 flex items-center gap-2 px-4 py-2 rounded-xl bg-accent-red/90 hover:bg-accent-red text-white text-xs md:text-sm font-black border border-white/30 backdrop-blur-md shadow-lg transition-all duration-200", style: { bottom: barVisible ? 76 : 20 }, title: "تشغيل الحلقة التالية" },
+                React.createElement("span", null, "الحلقة التالية"),
+                React.createElement(Icon, { name: "play", className: "w-4 h-4 fill-current" }));
         })(),
         skipFlash && (React.createElement("div", { className: `cv-skip-zone ${skipFlash === 'fwd' ? 'right' : 'left'}` },
             React.createElement("div", { className: "cv-skip-circle" },
@@ -4300,12 +4357,15 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
 
     // Probe the actual video file metadata so the UI can show real minutes:seconds
     // (for example 90:12) before the user presses Play. TMDB only supplies whole
-    // minutes, so it cannot provide the seconds by itself.
+    // minutes, so it remains a fallback when the video source cannot expose metadata.
     useEffect(() => {
         let cancelled = false;
         const cleanups = [];
         const probe = (url, key) => {
-            if (!url || !isDirectVideo(url) || !key) return;
+            // نفحص أيضًا روابط سينمانا حتى نأخذ المدة الحقيقية بالثواني قبل الضغط على تشغيل.
+            // TMDB يعطي المدة بالدقائق فقط، لذلك لا نعتمد عليه عندما يكون رابط الفيديو نفسه قابلًا لقراءة metadata.
+            const probeable = isDirectVideo(url) || /cinemana/i.test(String(url || ''));
+            if (!url || !probeable || !key) return;
             try {
                 const video = document.createElement('video');
                 video.preload = 'metadata';
@@ -4462,13 +4522,24 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     };
     const openSeason = (i) => { setActiveSeason(i); setSeasonView(true); setShowAllEpisodes(false); };
     const openAllEpisodes = () => { setShowAllEpisodes(true); setSeasonView(false); };
+    const getNextEpisodeInfo = () => {
+        if (title.type === 'movie') return null;
+        const currentSeasonNumber = Number(playingSeasonNumber);
+        const currentEpisodeNumber = Number(playingMeta && playingMeta.number);
+        const si = seasons.findIndex(s => Number(s.number) === currentSeasonNumber);
+        if (si < 0) return null;
+        const eps = Array.isArray(seasons[si].episodes) ? seasons[si].episodes : [];
+        const ei = eps.findIndex(e => Number(e.number) === currentEpisodeNumber);
+        if (ei >= 0 && ei < eps.length - 1) return { ep: eps[ei + 1], seasonNumber: seasons[si].number };
+        for (let j = si + 1; j < seasons.length; j++) {
+            const nextEps = Array.isArray(seasons[j].episodes) ? seasons[j].episodes : [];
+            if (nextEps.length) return { ep: nextEps[0], seasonNumber: seasons[j].number };
+        }
+        return null;
+    };
     const playNextEpisode = () => {
-        const season = seasons[activeSeason];
-        if (!season)
-            return;
-        const idx = season.episodes.findIndex(e => e.videoUrl === playingMeta.videoUrl && e.number === playingMeta.number);
-        if (idx > -1 && idx < season.episodes.length - 1)
-            playEpisode(season.episodes[idx + 1], season.number);
+        const next = getNextEpisodeInfo();
+        if (next) playEpisode(next.ep, next.seasonNumber);
     };
     const playingQualities = normalizeVideoSources(playingMeta && playingMeta.videoSources ? playingMeta.videoSources : (title.type === 'movie' ? title.videoSources : []));
     const activeSubtitleUrl = (playingMeta && playingMeta.subtitleUrl) || (playingQualities[0] && playingQualities[0].subtitleUrl) || (title.type === 'movie' ? title.subtitleUrl : '');
@@ -4551,7 +4622,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         React.createElement("div", { onClick: e => e.stopPropagation(), className: `${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl` },
             React.createElement("div", { className: "relative" },
                 playingUrl ? (React.createElement("div", { className: "relative" },
-                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: playingUrl + '|' + (playingMeta.subtitleUrl || '') + '|' + activeSubtitleOffset, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: () => setVideoError(true), onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: playingMeta.introStart, introEnd: playingMeta.introEnd, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onComplete: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
+                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: playingUrl + '|' + (playingMeta.subtitleUrl || '') + '|' + activeSubtitleOffset, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: () => setVideoError(true), onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: playingMeta.introStart, introEnd: playingMeta.introEnd, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onComplete: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete, skipImdbId: title.imdbId || title.sourceId || title.imdb || '', skipSeason: title.type === 'movie' ? null : playingSeasonNumber, skipEpisode: title.type === 'movie' ? null : playingMeta.number, hasNextEpisode: !!getNextEpisodeInfo(), onNextEpisode: playNextEpisode })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
                     videoError && (React.createElement("div", { className: "absolute inset-0 bg-black/90 flex flex-col items-center justify-center gap-3 p-6 text-center" },
                         React.createElement("p", { className: "text-sm text-slate-200 font-bold" }, "\u062A\u0639\u0630\u0651\u0631 \u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u0639\u0644\u0649 \u0647\u0630\u0627 \u0627\u0644\u062C\u0647\u0627\u0632."),
                         isIOS && (React.createElement("p", { className: "text-xs text-slate-400 max-w-xs leading-relaxed" }, "\u063A\u0627\u0644\u0628\u064B\u0627 \u0627\u0644\u0633\u0628\u0628 \u0623\u0646 \u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u063A\u064A\u0631 \u0645\u0631\u0641\u0648\u0639 \u0628\u0635\u064A\u063A\u0629 \u064A\u062F\u0639\u0645\u0647\u0627 \u0627\u0644\u0622\u064A\u0641\u0648\u0646 \u0645\u0628\u0627\u0634\u0631\u0629. \u0627\u0644\u0623\u0639\u0645\u0627\u0644 \u0627\u0644\u062A\u064A \u062A\u064F\u0631\u0641\u0639 \u0645\u0646 \u0644\u0648\u062D\u0629 \u0627\u0644\u062A\u062D\u0643\u0645 \u0639\u0628\u0631 \u0632\u0631 \"\u0631\u0641\u0639 \u0645\u0646 \u0627\u0644\u062C\u0647\u0627\u0632\" \u062A\u0639\u0645\u0644 \u0628\u0634\u0643\u0644 \u0635\u062D\u064A\u062D \u0639\u0644\u0649 \u0643\u0644 \u0627\u0644\u0623\u062C\u0647\u0632\u0629.")),
