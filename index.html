@@ -4298,6 +4298,58 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         return () => { cancelled = true; };
     }, [title.id, title.type, title.tmdbId, title.sourceId, title.imdbId, title.imdb, activeSeason, JSON.stringify(seasons.map(s => ({ n: s.number, e: (s.episodes || []).map(ep => [ep.number, getRuntimeSeconds(ep)]) })))]);
 
+    // Probe the actual video file metadata so the UI can show real minutes:seconds
+    // (for example 90:12) before the user presses Play. TMDB only supplies whole
+    // minutes, so it cannot provide the seconds by itself.
+    useEffect(() => {
+        let cancelled = false;
+        const cleanups = [];
+        const probe = (url, key) => {
+            if (!url || !isDirectVideo(url) || !key) return;
+            try {
+                const video = document.createElement('video');
+                video.preload = 'metadata';
+                video.muted = true;
+                const done = () => {
+                    const sec = Number(video.duration);
+                    if (Number.isFinite(sec) && sec > 0 && !cancelled)
+                        setRuntimeOverrides(prev => ({ ...prev, [key]: sec }));
+                    cleanup();
+                };
+                const fail = () => cleanup();
+                const cleanup = () => {
+                    video.removeEventListener('loadedmetadata', done);
+                    video.removeEventListener('durationchange', done);
+                    video.removeEventListener('error', fail);
+                    try { video.removeAttribute('src'); video.load(); } catch (e) {}
+                };
+                video.addEventListener('loadedmetadata', done, { once: true });
+                video.addEventListener('durationchange', done, { once: true });
+                video.addEventListener('error', fail, { once: true });
+                video.src = normalizeVideoUrl(url);
+                video.load();
+                cleanups.push(cleanup);
+            } catch (e) {}
+        };
+
+        if (title.type === 'movie') {
+            const movieUrl = getSavedVideoUrl(title);
+            probe(movieUrl, title.id);
+        } else {
+            seasons.forEach(season => {
+                (season.episodes || []).forEach(ep => {
+                    const url = getSavedVideoUrl(ep);
+                    if (url) probe(url, `${title.id}:${season.number}:${ep.number}`);
+                });
+            });
+        }
+
+        return () => {
+            cancelled = true;
+            cleanups.forEach(fn => fn());
+        };
+    }, [title.id, title.type, title.videoUrl, JSON.stringify(title.videoSources || []), activeSeason, JSON.stringify(seasons.map(s => ({ n: s.number, e: (s.episodes || []).map(ep => [ep.number, ep.videoUrl, ep.videoSources]) })))]);
+
     const getDisplayRuntime = (item, key) => runtimeOverrides[key] || getRuntimeSeconds(item);
     const titleDisplayRuntime = runtimeOverrides[title.id] || getRuntimeSeconds(title);
     const allEpisodesFlat = React.useMemo(() => {
