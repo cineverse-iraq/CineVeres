@@ -3913,23 +3913,25 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
             return React.createElement('button', { type: 'button', onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); onNextEpisode && onNextEpisode(); showBarTemporarily(); }, className: 'absolute right-3 md:right-5 z-30 flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-accent-red hover:bg-accent-redHover text-white text-xs md:text-sm font-black border border-white/20 backdrop-blur-md shadow-[0_0_20px_rgba(255,51,75,0.45)] transition-all', style: { bottom: barVisible ? 76 : 20 } }, React.createElement(Icon, { name: 'skipForward', className: 'w-4 h-4' }), React.createElement('span', null, nextEpisodeLabel || 'الحلقة التالية'));
         })(),
         (() => {
+            const now = Number(ctrl.current) || 0;
             const iEnd = Number(introEnd) || 0, iStart = Math.max(0, Number(introStart) || 0);
             const rEnd = Number(recapEnd) || 0, rStart = Math.max(0, Number(recapStart) || 0);
-            const hasRecap = rEnd > rStart;
-            const hasIntro = iEnd > iStart;
-            const inRecap = hasRecap && ctrl.current >= Math.max(0, rStart - 0.75) && ctrl.current < rEnd - 0.15;
-            const inIntro = hasIntro && ctrl.current >= Math.max(0, iStart - 0.75) && ctrl.current < iEnd - 0.15;
-            if ((!inIntro && !inRecap) || loading)
-                return null;
-            // زر واحد فقط: يظهر أثناء Previously وكذلك أثناء المقدمة، والضغط عليه يتجاوز الاثنين معًا.
+            const hasRecap = rEnd > rStart + 0.05;
+            const hasIntro = iEnd > iStart + 0.05;
+
+            // نعتبر Previously + المقدمة كتلة تخطٍ واحدة. إذا كانت بينهما فجوة صغيرة
+            // نستمر بإظهار الزر حتى نهاية المقدمة بدل ما يختفي للحظات.
+            const blockStart = hasRecap ? Math.max(0, rStart - 0.9) : (hasIntro ? Math.max(0, iStart - 0.9) : 0);
             const targetEnd = hasIntro ? iEnd : rEnd;
+            const blockEnd = targetEnd > 0 ? targetEnd - 0.15 : 0;
+            const bridgeEnd = hasRecap && hasIntro ? Math.max(rEnd, iStart) : blockEnd;
+            const inSkipBlock = targetEnd > blockStart && now >= blockStart && now < bridgeEnd;
+            if (!inSkipBlock) return null;
+
+            // زر واحد فقط: نفس زر "تخطي المقدمة" أثناء Previously وأثناء المقدمة،
+            // ويقفز مباشرة إلى ما بعد المقدمة، أي يتجاوز الاثنين معًا.
             const skipLabel = "تخطي المقدمة";
-            return (React.createElement("button", { type: "button", "data-skip-intro": "1", onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); const v = videoRef.current; if (!v)
-                    return; try {
-                    v.currentTime = targetEnd;
-                }
-                catch (err) { } const p = v.play(); if (p && p.catch)
-                    p.catch(() => { }); showBarTemporarily(); }, className: "absolute right-3 md:right-5 z-30 flex items-center gap-2 px-4 py-2 rounded-xl bg-black/70 hover:bg-white hover:text-black text-white text-xs md:text-sm font-black border border-white/40 backdrop-blur-md shadow-lg transition-all duration-200", style: { bottom: barVisible ? 76 : 20 } },
+            return (React.createElement("button", { type: "button", "data-skip-intro": "1", onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); const v = videoRef.current; if (!v) return; try { v.currentTime = targetEnd; } catch (err) {} const p = v.play(); if (p && p.catch) p.catch(() => {}); showBarTemporarily(); }, className: "absolute right-3 md:right-5 z-30 flex items-center gap-2 px-4 py-2 rounded-xl bg-black/70 hover:bg-white hover:text-black text-white text-xs md:text-sm font-black border border-white/40 backdrop-blur-md shadow-lg transition-all duration-200", style: { bottom: barVisible ? 76 : 20 } },
                 React.createElement("span", null, skipLabel),
                 React.createElement("svg", { viewBox: "0 0 24 24", className: "w-4 h-4 fill-current", "aria-hidden": "true" },
                     React.createElement("path", { d: "M5 5l9 7-9 7V5zm10 0h3v14h-3V5z" }))));
@@ -4159,6 +4161,13 @@ function computeSimilarTitles(title, all, recs) {
     return scored.filter(x => x.score >= 3 && (x.strong || x.shared >= 2)).sort((a, b) => b.score - a.score || (b.t.createdAt || 0) - (a.t.createdAt || 0)).slice(0, 30).map(x => ({ t: x.t, why: x.why[0] || '' }));
 }
 const SKIPDB_SEGMENT_CACHE = new Map();
+function normalizeSkipDbSegment(seg) {
+    if (!seg || typeof seg !== 'object') return null;
+    const start = Number(seg.start_ms);
+    const end = Number(seg.end_ms);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || start < 0) return null;
+    return { ...seg, start_ms: start, end_ms: end };
+}
 async function resolveSkipDbImdbId(title) {
     if (!title) return '';
     const direct = String(title.imdbId || title.imdb_id || '').trim();
@@ -4174,25 +4183,69 @@ async function resolveSkipDbImdbId(title) {
         return '';
     }
 }
-async function fetchSkipDbSegments(title, season, episode, durationSec) {
-    const imdbId = await resolveSkipDbImdbId(title);
-    if (!imdbId || !Number.isFinite(Number(durationSec)) || Number(durationSec) <= 0) return null;
-    const params = new URLSearchParams({ imdb_id: imdbId, duration: String(Math.round(Number(durationSec))), adjust: 'conservative' });
-    if (title.type !== 'movie') {
-        params.set('season', String(Number(season) || 1));
-        params.set('episode', String(Number(episode) || 1));
-    }
-    const key = `${imdbId}|${title.type}|${season || ''}|${episode || ''}|${Math.round(Number(durationSec))}`;
-    if (SKIPDB_SEGMENT_CACHE.has(key)) return SKIPDB_SEGMENT_CACHE.get(key);
+async function skipDbRequest(params) {
     try {
         const res = await fetch(`https://api.skipdb.tv/api/segments?${params.toString()}`, { cache: 'no-store' });
-        if (!res.ok) throw new Error(`SkipDB ${res.status}`);
-        const data = await res.json();
-        SKIPDB_SEGMENT_CACHE.set(key, data);
-        return data;
+        if (!res.ok) return null;
+        return await res.json();
     } catch (e) {
         return null;
     }
+}
+async function fetchSkipDbSegments(title, season, episode, durationSec) {
+    const imdbId = await resolveSkipDbImdbId(title);
+    if (!imdbId) return null;
+    const dur = Number(durationSec);
+    const durKey = Number.isFinite(dur) && dur > 0 ? Math.round(dur) : 0;
+    const key = `${imdbId}|${title.type}|${season || ''}|${episode || ''}|${durKey}`;
+    if (SKIPDB_SEGMENT_CACHE.has(key)) return SKIPDB_SEGMENT_CACHE.get(key);
+
+    const base = new URLSearchParams({ imdb_id: imdbId });
+    if (title.type !== 'movie') {
+        base.set('season', String(Number(season) || 1));
+        base.set('episode', String(Number(episode) || 1));
+    }
+
+    // المحاولة الأولى: مطابقة واعية لمدة فيديو سينمانا. greedy يسمح بتحريك التوقيت
+    // باتجاهين عندما يكون الإصدار مختلفًا قليلًا (شعار/لقطة إضافية/حذف).
+    const merged = { segments: { intro: null, recap: null, outro: null, preview: null }, intro_length_estimate_ms: null };
+    const merge = (data) => {
+        if (!data || !data.segments) return;
+        ['intro', 'recap', 'outro', 'preview'].forEach(type => {
+            const seg = normalizeSkipDbSegment(data.segments[type]);
+            if (seg) {
+                const cur = normalizeSkipDbSegment(merged.segments[type]);
+                // نفضّل المطابقة ذات confidence الأعلى، ثم exact/shifted على out-of-range.
+                const rank = x => {
+                    const m = String(x.match || '').toLowerCase();
+                    const mr = m === 'exact' ? 3 : (m === 'shifted' ? 2 : (m === 'agnostic' ? 1 : 0));
+                    return (Number(x.confidence) || 0) * 10 + mr;
+                };
+                if (!cur || rank(seg) >= rank(cur)) merged.segments[type] = seg;
+            }
+        });
+        if (Number(data.intro_length_estimate_ms) > 0) merged.intro_length_estimate_ms = Number(data.intro_length_estimate_ms);
+    };
+
+    if (durKey > 0) {
+        const p1 = new URLSearchParams(base);
+        p1.set('duration', String(durKey));
+        p1.set('adjust', 'greedy');
+        merge(await skipDbRequest(p1));
+    }
+
+    // إذا نوع معيّن بقي مفقودًا، نطلب التوقيت الأصلي بدون ربط بالمدة.
+    // هذا مهم لأن بعض نسخ البث تختلف مدتها عن النسخة التي سُجلت عليها البيانات.
+    if (!merged.segments.intro || !merged.segments.recap || !merged.segments.outro) {
+        const p2 = new URLSearchParams(base);
+        p2.set('adjust', 'none');
+        merge(await skipDbRequest(p2));
+    }
+
+    const hasAny = ['intro', 'recap', 'outro'].some(k => merged.segments[k]);
+    const result = hasAny ? merged : null;
+    SKIPDB_SEGMENT_CACHE.set(key, result);
+    return result;
 }
 function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onOpenAuth, getRole, onOpenProfile, onOpen, watched, onMarkEpisodeWatched, onMarkMovieWatched, isEpisodeWatched }) {
     const [closing, requestClose] = useClosable(onClose);
@@ -4575,10 +4628,13 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     useEffect(() => {
         let cancelled = false;
         const loadSkipDb = async () => {
-            if (!isSeries || playingSeasonNumber == null || !playingMeta || playingMeta.number == null || playingDurationSec <= 0) {
+            if (!isSeries || playingSeasonNumber == null || !playingMeta || playingMeta.number == null) {
                 if (!cancelled) setSkipDbSegments({ intro: null, recap: null, outro: null });
                 return;
             }
+            // لا ننتظر مدة الفيديو حتى نطلب SkipDB. هذه هي النقطة المهمة للـ Previously:
+            // نطلب التوقيت الأصلي فور اختيار الحلقة، ثم نعيد الطلب مع مدة سينمانا عندما
+            // تصبح metadata جاهزة حتى نحصل على matching/shift أدق.
             const data = await fetchSkipDbSegments(title, playingSeasonNumber, playingMeta.number, playingDurationSec);
             if (cancelled) return;
             setSkipDbSegments({
