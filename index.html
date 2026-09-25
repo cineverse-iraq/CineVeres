@@ -1150,7 +1150,7 @@ function VidApiHelper({ kind, season, episode, onGenerate, defaultId, defaultTit
                     setSubMsg(`✓ ترجمة عربية من ${r.sourceLabel} — ${r.cues} سطر${publicUrl ? ' · مرتبطة بـ VidAPI' : ''}`);
                 }
                 catch (e) {
-                    setSubMsg('لم تكتمل مطابقة الترجمة العربية: ' + (e && e.message ? e.message : ''));
+                    setSubMsg('تعذرت الترجمة التلقائية: ' + (e && e.message ? e.message : ''));
                 }
             }
         }
@@ -1371,7 +1371,7 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
             setSubMsg(`✓ ترجمة عربية من ${r.sourceLabel} — ${r.cues} سطر`);
         }
         catch (e) {
-            setSubMsg('لم تكتمل مطابقة الترجمة العربية: ' + (e && e.message ? e.message : ''));
+            setSubMsg('تعذرت الترجمة التلقائية: ' + (e && e.message ? e.message : ''));
         }
     };
     const search = async (auto) => {
@@ -1660,19 +1660,28 @@ async function findAndStoreSubtitle({ cinemanaId, sourceId, altSourceIds = [], t
     const tmdb = ids.find(x => /^\d+$/.test(x)) || '';
     const isMovie = type === 'movie';
     const usp = new URLSearchParams();
-    if (cinemanaId) usp.set('nb', String(cinemanaId));
-    if (title) usp.set('title', String(title));
-    if (year) usp.set('year', String(year));
+    if (cinemanaId)
+        usp.set('nb', String(cinemanaId));
+    if (title)
+        usp.set('title', String(title));
+    if (year)
+        usp.set('year', String(year));
     usp.set('type', isMovie ? 'movie' : 'series');
     if (!isMovie) {
         usp.set('season', String(Number(season) || 1));
         usp.set('episode', String(Number(episode) || 1));
     }
-    if (imdb) usp.set('imdb', imdb);
-    if (tmdb) usp.set('tmdb', tmdb);
+    if (imdb)
+        usp.set('imdb', imdb);
+    if (tmdb)
+        usp.set('tmdb', tmdb);
     if (!cinemanaId && !title && !imdb && !tmdb)
         throw new Error('لا يوجد عنوان أو معرّف للبحث عن الترجمة.');
-
+    if (onProgress)
+        onProgress('جاري البحث الذكي (سينمانا ثم SubDL)...');
+    // البحث عن الترجمة يجب أن يستخدم نفس آلية fallback الخاصة ببروكسي الفيديو.
+    // سابقًا كان /sub/resolve يذهب فقط إلى CINEMANA_PROXY، فإذا كان Worker
+    // العام متوقفًا يفشل حتى لو كان server.js المحلي يعمل والاعتماد موجود.
     const proxyCandidates = [];
     const addProxyCandidate = (base) => {
         const b = String(base || '').trim().replace(/\/+$/, '');
@@ -1680,30 +1689,32 @@ async function findAndStoreSubtitle({ cinemanaId, sourceId, altSourceIds = [], t
     };
     addProxyCandidate(CINEMANA_PROXY);
     addProxyCandidate('http://localhost:8787');
-
-    let lastError = null;
-    // نعيد المحاولة مرتين عند أخطاء الشبكة أو ضغط المصادر.
-    for (let round = 1; round <= 2; round++) {
-        if (onProgress) onProgress(round === 1 ? 'جاري مطابقة الترجمة العربية من المصدر الأصلي ثم المصادر الاحتياطية...' : 'جاري إعادة المحاولة ومطابقة نسخة أخرى...');
-        for (const base of proxyCandidates) {
-            try {
-                const res = await fetchWithTimeout(`${base}/sub/resolve?${usp.toString()}`, { headers: { Accept: 'application/json' } }, 60000);
-                const data = await res.json().catch(() => ({}));
-                if (res.ok && data && data.ok) {
-                    const sourceLabel = data.source === 'cinemana' ? 'سينمانا' : (data.source === 'opensubtitles' ? 'OpenSubtitles' : 'SubDL');
-                    if (onProgress) onProgress(`تمت مطابقة ترجمة عربية من ${sourceLabel} (${data.cues} سطر) — جاري الحفظ...`);
-                    const url = await subSave({ cinemanaId, title, type: isMovie ? 'movie' : 'series', season, episode }, data.vtt, { source: data.source, label: data.label, cues: data.cues });
-                    return { url, source: data.source, sourceLabel, cues: data.cues, lastEndSec: data.lastEndSec, durationSec: data.durationSec, label: data.label };
-                }
-                // 404 يعني أن البحث اكتمل ولم توجد مطابقة موثوقة، نجرّب الجولة/المصدر التالي.
-                lastError = new Error((data && data.error) || `فشل مطابقة الترجمة (رمز ${res.status})`);
-            } catch (e) {
-                lastError = e;
-            }
+    let res = null, data = {};
+    let lastNetworkError = null;
+    for (const base of proxyCandidates) {
+        try {
+            res = await fetchWithTimeout(`${base}/sub/resolve?${usp.toString()}`, { headers: { Accept: 'application/json' } }, 45000);
+            data = await res.json().catch(() => ({}));
+            // 404 هنا يعني أن البروكسي اشتغل لكنه لم يجد ترجمة؛ لا نعتبره فشل اتصال
+            // ونترك الرسالة الحقيقية تظهر للمستخدم.
+            if (res.ok || (data && data.ok)) break;
+            if (res.status === 404 && data && data.tried) break;
+        } catch (e) {
+            lastNetworkError = e;
+            res = null;
+            data = {};
         }
-        if (round < 2) await new Promise(r => setTimeout(r, 900));
     }
-    throw lastError || new Error('لم تكتمل مطابقة ترجمة عربية موثوقة من المصادر المتاحة.');
+    if (!res) throw lastNetworkError || new Error('تعذر الاتصال بخدمة الترجمة.');
+    if (!res.ok || !data.ok) {
+        const why = (data.tried || []).slice(-5).map(t => `${t.source === 'cinemana' ? 'سينمانا' : 'SubDL'}${t.attempt ? ' (' + t.attempt + ')' : ''}: ${t.reason || ''}`).join(' | ');
+        throw new Error((data.error || `فشل البحث (رمز ${res.status})`) + (why ? ' — ' + why : ''));
+    }
+    const sourceLabel = data.source === 'cinemana' ? 'سينمانا' : 'SubDL';
+    if (onProgress)
+        onProgress(`وُجدت ترجمة من ${sourceLabel} (${data.cues} سطر) — جاري الحفظ...`);
+    const url = await subSave({ cinemanaId, title, type: isMovie ? 'movie' : 'series', season, episode }, data.vtt, { source: data.source, label: data.label, cues: data.cues });
+    return { url, source: data.source, sourceLabel, cues: data.cues, lastEndSec: data.lastEndSec, durationSec: data.durationSec, label: data.label };
 }
 async function findAndStoreSubdlSubtitle(args) { return (await findAndStoreSubtitle(args)).url; } // اسم قديم
 async function prepareSubtitlesForPublish(payload, sourceId, onProgress, altSourceIds = []) {
@@ -1742,7 +1753,7 @@ async function prepareSubtitlesForPublish(payload, sourceId, onProgress, altSour
             }
             catch (e) {
                 failed++;
-                failedItems.push(`${job.label}: ${e.message || 'تحتاج الحلقة إلى إعادة مطابقة'}`);
+                failedItems.push(`${job.label}: ${e.message || 'لم يتم العثور على ترجمة'}`);
             }
             done++;
             if (onProgress)
@@ -1751,7 +1762,7 @@ async function prepareSubtitlesForPublish(payload, sourceId, onProgress, altSour
     };
     await Promise.all([worker(), worker(), worker(), worker(), worker()]);
     if (onProgress)
-        onProgress(`اكتملت تهيئة الترجمة: تمت إضافة ${added}، موجودة ${skipped}، وتحتاج ${failed} حلقة إلى إعادة المحاولة.`);
+        onProgress(`اكتملت تهيئة الترجمة: تمت إضافة ${added}، موجودة ${skipped}، تعذر ${failed}.`);
     return { payload: out, added, skipped, failed, failedItems };
 }
 async function openSubtitlesSearch(params) {
@@ -6262,7 +6273,7 @@ function SubtitleHelper({ value, onChange, sourceId, title, type, season, episod
             showCoverage(r);
         }
         catch (e) {
-            setMsg(e.message || 'لم تكتمل مطابقة الترجمة العربية — ستستمر المحاولة من المصادر الاحتياطية.');
+            setMsg(e.message || 'تعذر جلب الترجمة.');
         }
         finally {
             setLoading(false);
@@ -7582,42 +7593,123 @@ function App() {
         setSearch('');
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
-    const [booted, setBooted] = useState(() => readTitleCache().length > 0);
+    // إصلاح ظهور الإصدارات الجديدة:
+    // - الكاش لا يعتبر الموقع "محمّلًا"؛ Firebase هو المصدر الأساسي.
+    // - تحديث القائمة لا يعتمد على تسجيل الدخول.
+    // - عند فشل الاستماع المباشر نستخدم إعادة محاولة، ثم fallback قراءة كاملة مع فلترة المنشور.
+    const [booted, setBooted] = useState(false);
     useEffect(() => {
         let cancelled = false;
+        let retryTimer = null;
+        let refreshTimer = null;
+
         const isAdmin = !!(currentUser && (currentUser.username === 'mavilovelife' || currentUser.isModerator));
-        const ref = isAdmin ? db.ref('titles') : db.ref('titles').orderByChild('status').equalTo('published');
-        const applySnap = snap => {
-            if (cancelled)
-                return;
+        const publicRef = db.ref('titles').orderByChild('status').equalTo('published');
+        const allRef = db.ref('titles');
+
+        const normalizeSnapshot = (snap, forcePublic = false) => {
             const data = snap.val();
-            const list = data ? Object.keys(data).map(k => normalizeTitlePlaybackData({ id: k, ...data[k] })) : [];
+            let list = data
+                ? Object.keys(data).map(k => normalizeTitlePlaybackData({ id: k, ...data[k] }))
+                : [];
+
+            // إذا استخدمنا القراءة الكاملة كـ fallback، لا نسمح بظهور draft للزوار.
+            if (!isAdmin || forcePublic)
+                list = list.filter(t => t && t.status === 'published');
+
             list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+            return list;
+        };
+
+        const applyList = (list) => {
+            if (cancelled) return;
             setTitles(list);
-            if (!isAdmin)
-                writeTitleCache(list);
+            if (!isAdmin) writeTitleCache(list);
             setActiveTitle(prev => {
-                if (!prev)
-                    return prev;
+                if (!prev) return prev;
                 const updated = list.find(x => x.id === prev.id);
                 return updated || prev;
             });
             setBooted(true);
         };
-        if (CV_LOW_POWER && !isAdmin) {
-            const refresh = () => ref.once('value').then(applySnap).catch(() => setBooted(true));
-            refresh();
-            const timer = setInterval(() => { if (!document.hidden)
-                refresh(); }, 120000);
-            const onVisible = () => { if (!document.hidden)
-                refresh(); };
-            document.addEventListener('visibilitychange', onVisible);
-            const safety = setTimeout(() => setBooted(true), 2200);
-            return () => { cancelled = true; clearInterval(timer); clearTimeout(safety); document.removeEventListener('visibilitychange', onVisible); };
-        }
-        ref.on('value', applySnap);
-        const safety = setTimeout(() => setBooted(true), CV_LOW_POWER ? 2200 : 5000);
-        return () => { cancelled = true; ref.off('value', applySnap); clearTimeout(safety); };
+
+        const fallbackRefresh = () => {
+            if (cancelled) return;
+            allRef.once('value')
+                .then(snap => applyList(normalizeSnapshot(snap, true)))
+                .catch(() => {
+                    if (cancelled) return;
+                    // لا نترك الكاش القديم هو الحقيقة الوحيدة؛ نعيد المحاولة لاحقًا.
+                    if (!retryTimer) {
+                        retryTimer = setTimeout(() => {
+                            retryTimer = null;
+                            fallbackRefresh();
+                        }, 5000);
+                    }
+                    setBooted(true);
+                });
+        };
+
+        const startLive = () => {
+            if (cancelled) return;
+            const ref = isAdmin ? allRef : publicRef;
+            const onValue = snap => applyList(normalizeSnapshot(snap, false));
+
+            try {
+                ref.on('value', onValue, () => {
+                    // إذا فشل listener، لا ننتظر تسجيل الدخول حتى يعيد التحميل.
+                    fallbackRefresh();
+                });
+
+                // أول refresh مستقل عن حالة الكاش/تسجيل الدخول.
+                ref.once('value')
+                    .then(snap => applyList(normalizeSnapshot(snap, false)))
+                    .catch(() => fallbackRefresh());
+
+                // تحديث دوري خفيف حتى على الأجهزة الضعيفة.
+                refreshTimer = setInterval(() => {
+                    if (!document.hidden && !cancelled) {
+                        ref.once('value')
+                            .then(snap => applyList(normalizeSnapshot(snap, false)))
+                            .catch(() => fallbackRefresh());
+                    }
+                }, CV_LOW_POWER ? 30000 : 120000);
+
+                const onVisible = () => {
+                    if (!document.hidden && !cancelled) {
+                        ref.once('value')
+                            .then(snap => applyList(normalizeSnapshot(snap, false)))
+                            .catch(() => fallbackRefresh());
+                    }
+                };
+                document.addEventListener('visibilitychange', onVisible);
+
+                window.__cvTitlesCleanup = () => {
+                    try { ref.off('value', onValue); } catch (e) {}
+                    document.removeEventListener('visibilitychange', onVisible);
+                };
+            } catch (e) {
+                fallbackRefresh();
+            }
+        };
+
+        startLive();
+
+        // لا نخفي التطبيق إلى أجل غير مسمى إذا تعطل Firebase.
+        const safety = setTimeout(() => {
+            if (!cancelled) setBooted(true);
+        }, 5000);
+
+        return () => {
+            cancelled = true;
+            if (retryTimer) clearTimeout(retryTimer);
+            if (refreshTimer) clearInterval(refreshTimer);
+            clearTimeout(safety);
+            if (window.__cvTitlesCleanup) {
+                try { window.__cvTitlesCleanup(); } catch (e) {}
+                window.__cvTitlesCleanup = null;
+            }
+        };
     }, [currentUser && currentUser.id, currentUser && currentUser.username, currentUser && currentUser.isModerator]);
     useEffect(() => {
         if (!booted)
