@@ -3898,15 +3898,15 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         (() => {
             const iEnd = Number(introEnd) || 0, iStart = Math.max(0, Number(introStart) || 0);
             const rEnd = Number(recapEnd) || 0, rStart = Math.max(0, Number(recapStart) || 0);
-            const inRecap = rEnd > rStart && ctrl.current >= Math.max(0, rStart - 0.75) && ctrl.current < rEnd - 0.15;
-            const inIntro = iEnd > iStart && ctrl.current >= Math.max(0, iStart - 0.75) && ctrl.current < iEnd - 0.15;
+            const hasRecap = rEnd > rStart;
+            const hasIntro = iEnd > iStart;
+            const inRecap = hasRecap && ctrl.current >= Math.max(0, rStart - 0.75) && ctrl.current < rEnd - 0.15;
+            const inIntro = hasIntro && ctrl.current >= Math.max(0, iStart - 0.75) && ctrl.current < iEnd - 0.15;
             if ((!inIntro && !inRecap) || loading)
                 return null;
-            // زر واحد: أثناء Previously يظهر كـ "تخطي الملخص"، وبعده يتحول مباشرة إلى "تخطي المقدمة".
-            // إذا تداخل التوقيتان، نعطي الجزء الذي يبدأ الآن الأولوية، ثم المقدمة بعد انتهاء الملخص.
-            const useRecap = inRecap && (!inIntro || ctrl.current < iEnd);
-            const targetEnd = useRecap ? rEnd : iEnd;
-            const skipLabel = useRecap ? "تخطي الملخص" : "تخطي المقدمة";
+            // زر واحد فقط: يظهر أثناء Previously وكذلك أثناء المقدمة، والضغط عليه يتجاوز الاثنين معًا.
+            const targetEnd = hasIntro ? iEnd : rEnd;
+            const skipLabel = "تخطي المقدمة";
             return (React.createElement("button", { type: "button", "data-skip-intro": "1", onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); const v = videoRef.current; if (!v)
                     return; try {
                     v.currentTime = targetEnd;
@@ -6535,7 +6535,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 poster: (s.poster || '').trim(),
                 episodeThumbnail: (s.episodeThumbnail || '').trim(),
                 episodes: (s.episodes || []).map(e => ({
-                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || ''), imdb: (e.imdb || '').trim(), rt: (e.rt || '').trim(),
+                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || ''), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
                     trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, introStart: Number(e.introStart) || 0, introEnd: Number(e.introEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
                 }))
             }));
@@ -6681,9 +6681,10 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                                 React.createElement(FileUploadField, { compact: true, label: "\u0627\u0644\u0635\u0648\u0631\u0629 \u0627\u0644\u0645\u0635\u063A\u0651\u0631\u0629 \u0644\u062D\u0644\u0642\u0627\u062A \u0647\u0630\u0627 \u0627\u0644\u0645\u0648\u0633\u0645 (\u062A\u064F\u0637\u0628\u064E\u0651\u0642 \u062A\u0644\u0642\u0627\u0626\u064A\u064B\u0627 \u0639\u0644\u0649 \u0643\u0644 \u062D\u0644\u0642\u0627\u062A \u0627\u0644\u0645\u0648\u0633\u0645)", value: activeSeason.episodeThumbnail || '', onChange: v => updateSeasonField(activeSeasonIdx, 'episodeThumbnail', v), folder: "season-episode-thumbs", accept: "image/*" }),
                                 React.createElement("div", null,
                                     React.createElement("div", { className: "flex items-center justify-between gap-2 mb-1.5 flex-wrap" },
-                                        React.createElement("button", { type: "button", onClick: () => setShowSeasonBannerOptions(v => !v), className: "flex items-center gap-2 text-[11px] font-black text-slate-300 hover:text-white transition" },
-                                            React.createElement(Icon, { name: showSeasonBannerOptions ? "chevronUp" : "chevronDown", className: "w-4 h-4 text-accent-cyan" }),
-                                            React.createElement("span", null, "خيارات بنر الموسم")),
+                                        React.createElement("button", { type: "button", onClick: () => setShowSeasonBannerOptions(v => !v), title: showSeasonBannerOptions ? "إخفاء البنرات" : "إظهار البنرات", className: "flex items-center gap-2 text-[11px] font-black text-slate-200 hover:text-white transition px-2 py-1 rounded-xl hover:bg-white/5" },
+                                            React.createElement("span", { className: "w-8 h-8 rounded-lg bg-accent-cyan/10 glass-card border border-accent-cyan/40 flex items-center justify-center text-accent-cyan shadow-[0_0_10px_rgba(0,240,255,0.12)]" },
+                                                React.createElement(Icon, { name: showSeasonBannerOptions ? "chevronUp" : "chevronDown", className: "w-4 h-4" })),
+                                            React.createElement("span", null, showSeasonBannerOptions ? "إخفاء البنرات" : "إظهار البنرات")),
                                         React.createElement("span", { className: "text-[10px] font-bold text-slate-500" }, "\u064A\u064F\u0637\u0628\u0651\u0642 \u0639\u0644\u0649 \u0647\u0630\u0627 \u0627\u0644\u0645\u0648\u0633\u0645 \u0641\u0642\u0637")),
                                     React.createElement("div", { className: `flex gap-1.5 mb-2 flex-wrap ${showSeasonBannerOptions ? "" : "hidden"}` }, [['tmdb', 'خلفيات TMDB'], ['stills', 'لقطات من الموسم'], ['fanart', 'Fanart.tv']].map(([k, l]) => (React.createElement("button", { type: "button", key: k, onClick: () => { setBannerSource(k); setShowAllBanners(false); }, className: `text-[11px] px-3 py-1.5 rounded-lg font-bold border transition ${bannerSource === k ? 'bg-accent-cyan text-glass-950 border-accent-cyan' : 'glass-card border-white/10 text-slate-300 hover:border-accent-cyan/50'}` }, l)))),
                                     showSeasonBannerOptions && bannerLoading && React.createElement("p", { className: "text-[11px] font-bold text-accent-cyan" }, "\u062C\u0627\u0631\u064A \u062C\u0644\u0628 \u0627\u0644\u0628\u0646\u0631\u0627\u062A..."),
@@ -6719,6 +6720,10 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                                         React.createElement("span", null, e.videoUrl ? 'يوجد ملف فيديو' : 'لم يُرفع فيديو بعد'),
                                         e.tmdbRating && React.createElement("span", { className: "text-amber-400 font-black" }, `★ ${e.tmdbRating}`),
                                         e.finality === 'season' ? ' · آخر حلقة بالموسم' : e.finality === 'series' ? ' · آخر حلقة بالمسلسل' : '')),
+                                React.createElement("div", { className: "flex items-center gap-1 shrink-0 rounded-lg bg-amber-400/5 border border-amber-400/15 px-1.5 h-8", title: "تقييم الحلقة من 10" },
+                                    React.createElement("span", { className: "text-[10px] font-black text-amber-400" }, "★"),
+                                    React.createElement("input", { type: "number", min: "0", max: "10", step: "0.1", value: e.tmdbRating || '', onChange: ev => updateEpisode(activeSeasonIdx, ei, 'tmdbRating', ev.target.value), placeholder: "-", title: "أضف تقييم الحلقة /10", className: "w-10 h-6 bg-transparent px-0 text-[10px] font-black text-white text-center outline-none focus:text-amber-300" }),
+                                    React.createElement("span", { className: "text-[8px] text-slate-500 font-bold" }, "/10")),
                                 React.createElement("button", { onClick: () => moveEpisode(activeSeasonIdx, ei, -1), disabled: ei === 0, title: "\u0646\u0642\u0644 \u0644\u0644\u0623\u0639\u0644\u0649", className: "w-8 h-8 shrink-0 rounded-lg glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-300 disabled:opacity-30 transition" },
                                     React.createElement(Icon, { name: "arrowUp", className: "w-3.5 h-3.5" })),
                                 React.createElement("button", { onClick: () => moveEpisode(activeSeasonIdx, ei, 1), disabled: ei === activeSeason.episodes.length - 1, title: "\u0646\u0642\u0644 \u0644\u0644\u0623\u0633\u0641\u0644", className: "w-8 h-8 shrink-0 rounded-lg glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-300 disabled:opacity-30 transition" },
