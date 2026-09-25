@@ -175,6 +175,20 @@
     .yt-skip-flash { animation: yt-skip-flash 0.55s ease-out forwards; }
     @keyframes yt-spin { to { transform: rotate(360deg); } }
     .yt-spinner { animation: yt-spin 0.9s linear infinite; }
+    .cv-row-dragger { display: none; }
+    @media (min-width: 768px) {
+      .cv-row-dragger { display: block; position: relative; height: 14px; margin-top: 1px; }
+      .cv-row-dragger input { -webkit-appearance: none; appearance: none; width: 100%; height: 3px; border-radius: 999px; outline: none; cursor: grab; background: rgba(255,255,255,.16); }
+      .cv-row-dragger input:active { cursor: grabbing; }
+      .cv-row-dragger input::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 30px; height: 4px; border-radius: 999px; background: #00F0FF; box-shadow: 0 0 8px rgba(0,240,255,.35); }
+      .cv-row-dragger input::-moz-range-thumb { width: 30px; height: 4px; border: 0; border-radius: 999px; background: #00F0FF; box-shadow: 0 0 8px rgba(0,240,255,.35); }
+    }
+    .cv-skip-zone { position:absolute; top:18%; bottom:18%; width:31%; z-index:21; display:flex; align-items:center; justify-content:center; pointer-events:none; }
+    .cv-skip-zone.left { left:0; } .cv-skip-zone.right { right:0; }
+    .cv-skip-circle { width:74px; height:74px; border-radius:9999px; background:rgba(0,0,0,.58); border:1px solid rgba(255,255,255,.16); backdrop-filter:blur(5px); -webkit-backdrop-filter:blur(5px); display:flex; flex-direction:column; align-items:center; justify-content:center; color:#fff; box-shadow:0 8px 24px rgba(0,0,0,.28); animation:cvSkipPop .42s ease-out forwards; }
+    .cv-skip-circle svg { width:25px; height:25px; }
+    .cv-skip-circle span { font-size:11px; font-weight:900; line-height:1; margin-top:3px; direction:ltr; }
+    @keyframes cvSkipPop { 0% { opacity:0; transform:scale(.65); } 25% { opacity:1; transform:scale(1.08); } 100% { opacity:0; transform:scale(1); } }
   </style>
   <style>
     .cv-nocursor, .cv-nocursor * { cursor: none !important; }
@@ -646,7 +660,9 @@ function decodeSubBuffer(buf) {
 }
 // يحصر كل مجموعة أقواس داخل عزل اتجاهي (عربي RLI أو لاتيني FSI) حتى يبقى القوسين مع محتواهم وما يهربون لأول/آخر السطر
 function wrapParenGroups(l) {
-    return l.replace(/\([^()]*\)|\[[^\[\]]*\]/g, g => (/[A-Za-z0-9]/.test(g) ? '\u2068' : '\u2067') + g + '\u2069');
+    const text = String(l || '');
+    // نعزل مجموعات الأقواس عن اتجاه السطر العربي حتى تبقى (النص) و[النص] بنفس الترتيب بصريًا.
+    return text.replace(/\([^()]*\)|\[[^\[\]]*\]|\{[^{}]*\}/g, g => '\u2067' + g + '\u2069');
 }
 // يصلح الأقواس المعكوسة: سطر يبدأ بـ ")" قبل أي "(" بنفس العدد => نبدّل كل الأقواس
 function fixDash(l) {
@@ -2051,6 +2067,7 @@ async function importFromTmdb(rawInput, currentType, opts) {
         director: director,
         writer: writer,
         imdbRating: '',
+        runtimeMinutes: Number(media === 'movie' ? (data.runtime || 0) : ((Array.isArray(data.episode_run_time) && data.episode_run_time[0]) || 0)) || 0,
     };
     const notes = [];
     let omdbBroken = false;
@@ -2138,6 +2155,7 @@ async function importFromTmdb(rawInput, currentType, opts) {
                     number: Number(ep.episode_number) || 1,
                     title: epTitle,
                     imdb: epImdb,
+                    runtimeMinutes: Number(ep.runtime || ((Array.isArray(data.episode_run_time) && data.episode_run_time[0]) || 0)) || 0,
                     videoUrl: '',
                     videoSources: [],
                 }));
@@ -2517,15 +2535,42 @@ function PosterCard({ title, onOpen, compact, watched }) {
         React.createElement("p", { className: "text-xs text-slate-400 font-medium" }, title.year || '')));
 }
 function Row({ label, items, onOpen, watchedMap }) {
-    if (!items.length)
-        return null;
+    const scrollerRef = useRef(null);
+    const [scrollPct, setScrollPct] = useState(0);
+    const syncScroll = () => {
+        const el = scrollerRef.current;
+        if (!el) return;
+        const max = Math.max(1, el.scrollWidth - el.clientWidth);
+        setScrollPct(Math.max(0, Math.min(100, (el.scrollLeft / max) * 100)));
+    };
+    useEffect(() => {
+        const el = scrollerRef.current;
+        if (!el) return;
+        syncScroll();
+        el.addEventListener('scroll', syncScroll, { passive: true });
+        window.addEventListener('resize', syncScroll, { passive: true });
+        return () => { el.removeEventListener('scroll', syncScroll); window.removeEventListener('resize', syncScroll); };
+    }, [items.length]);
+    const dragRow = (value) => {
+        const el = scrollerRef.current;
+        if (!el) return;
+        const max = Math.max(0, el.scrollWidth - el.clientWidth);
+        el.scrollLeft = (Number(value) / 100) * max;
+        setScrollPct(Number(value));
+    };
+    if (!items.length) return null;
+    const progress = Math.max(0, Math.min(100, scrollPct));
     return (React.createElement("section", { className: "mb-10" },
         React.createElement("div", { className: "flex items-center justify-between mb-4" },
             React.createElement("h2", { className: "text-lg md:text-xl font-black text-slate-100 flex items-center gap-2.5" },
                 React.createElement("span", { className: "w-1.5 h-5 bg-accent-red rounded-full shadow-[0_0_12px_rgba(255,51,75,0.6)]" }),
                 label)),
-        React.createElement("div", { className: "flex gap-4 overflow-x-auto pb-3 pt-1 snap-x scrollbar-hide" }, items.map(it => React.createElement(PosterCard, { key: it.id, title: it, onOpen: onOpen, compact: true, watched: watchedMap && isTitleWatched(watchedMap, it) })))));
+        React.createElement("div", { ref: scrollerRef, className: "flex gap-4 overflow-x-auto pb-3 pt-1 snap-x scrollbar-hide", style: { overscrollBehaviorX: 'contain', scrollbarGutter: 'stable' } },
+            items.map(it => React.createElement(PosterCard, { key: it.id, title: it, onOpen: onOpen, compact: true, watched: watchedMap && isTitleWatched(watchedMap, it) }))),
+        React.createElement("div", { className: "cv-row-dragger", 'aria-label': `تحريك صف ${label}` },
+            React.createElement("input", { type: "range", min: "0", max: "100", step: "0.1", value: progress, onChange: e => dragRow(e.target.value), style: { background: `linear-gradient(to right, rgba(0,240,255,.8) ${progress}%, rgba(255,255,255,.16) ${progress}%)` } }))));
 }
+
 function Hero({ items, onOpen }) {
     const [idx, setIdx] = useState(0);
     const [slide, setSlide] = useState(null);
@@ -3147,7 +3192,7 @@ function SubSlider({ label, value, unit, min, max, step, onChange }) {
                 unit)),
         React.createElement("input", { type: "range", min: min, max: max, step: step, value: value, onChange: e => onChange(Number(e.target.value)), className: "w-full mb-2", style: { accentColor: '#00F0FF' } })));
 }
-function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart, trimEnd, introStart, introEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, qualities, onQualityChange, startAt }) {
+function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration, trimStart, trimEnd, introStart, introEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, qualities, onQualityChange, startAt }) {
     const videoRef = useRef(null);
     const wrapRef = useRef(null);
     const hideTimerRef = useRef(null);
@@ -3459,7 +3504,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
         const onPlay = () => { setCtrl(c2 => ({ ...c2, playing: true })); setLoading(false); };
         const onPause = () => setCtrl(c2 => ({ ...c2, playing: false }));
         const onVolume = () => setCtrl(c2 => ({ ...c2, muted: videoEl.muted, volume: videoEl.volume }));
-        const onLoadedMeta = () => setCtrl(c2 => ({ ...c2, duration: videoEl.duration || 0 }));
+        const onLoadedMeta = () => { const d = videoEl.duration || 0; setCtrl(c2 => ({ ...c2, duration: d })); onDuration && onDuration(d); };
         const onTimeUpdate = () => {
             const now = performance.now();
             if (now - lastUiTickRef.current < 250)
@@ -3819,10 +3864,10 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
                 React.createElement("svg", { viewBox: "0 0 24 24", className: "w-4 h-4 fill-current", "aria-hidden": "true" },
                     React.createElement("path", { d: "M5 5l9 7-9 7V5zm10 0h3v14h-3V5z" }))));
         })(),
-        skipFlash && (React.createElement("div", { className: `absolute inset-y-0 ${skipFlash === 'fwd' ? 'right-0' : 'left-0'} w-1/3 flex items-center justify-center pointer-events-none z-20` },
-            React.createElement("div", { className: "w-16 h-16 rounded-full bg-black/50 flex flex-col items-center justify-center gap-0.5 yt-skip-flash" },
-                React.createElement(Icon, { name: skipFlash === 'fwd' ? 'rotateCw5' : 'rotateCcw5', className: "w-6 h-6 text-white" }),
-                React.createElement("span", { className: "text-[10px] font-bold text-white" }, "5 \u062B")))),
+        skipFlash && (React.createElement("div", { className: `cv-skip-zone ${skipFlash === 'fwd' ? 'right' : 'left'}` },
+            React.createElement("div", { className: "cv-skip-circle" },
+                React.createElement(Icon, { name: skipFlash === 'fwd' ? 'rotateCw5' : 'rotateCcw5', className: "text-white" }),
+                React.createElement("span", null, "5 ث")))),
         !ctrl.playing && !loading && (React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: (e) => { e.stopPropagation(); togglePlay(); }, className: "absolute inset-0 z-20 flex items-center justify-center" },
             React.createElement("span", { className: "w-16 h-16 rounded-full bg-accent-red/90 flex items-center justify-center shadow-[0_0_25px_rgba(255,51,75,0.6)]" },
                 React.createElement(Icon, { name: "play", className: "w-7 h-7 text-white fill-current translate-x-0.5" })))),
@@ -4059,6 +4104,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const [videoError, setVideoError] = useState(false);
     const [copied, setCopied] = useState(false);
     const [resumeAt, setResumeAt] = useState(0);
+    const [playingDurationSec, setPlayingDurationSec] = useState(0);
     const [ratings, setRatings] = useState({});
     const [myStars, setMyStars] = useState(0);
     const [reviewReplyingTo, setReviewReplyingTo] = useState(null);
@@ -4362,7 +4408,8 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     }, [title.id]);
     const similarTitles = React.useMemo(() => computeSimilarTitles(title, allTitles, tmdbRecs), [title, allTitles, tmdbRecs]);
     const [showAllSim, setShowAllSim] = useState(false);
-    useEffect(() => { setShowAllSim(false); }, [title.id]);
+    useEffect(() => { setShowAllSim(false); setPlayingDurationSec(0); }, [title.id]);
+    useEffect(() => { setPlayingDurationSec(0); }, [playingUrl]);
     const movieWatched = title.type === 'movie' && watched && watched[title.id] && watched[title.id].movie;
     const handleEpisodeComplete = () => {
         if (title.type === 'movie')
@@ -4374,7 +4421,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         React.createElement("div", { onClick: e => e.stopPropagation(), className: `${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl` },
             React.createElement("div", { className: "relative" },
                 playingUrl ? (React.createElement("div", { className: "relative" },
-                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: playingUrl + '|' + (playingMeta.subtitleUrl || '') + '|' + activeSubtitleOffset, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: () => setVideoError(true), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: playingMeta.introStart, introEnd: playingMeta.introEnd, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onComplete: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
+                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: playingUrl + '|' + (playingMeta.subtitleUrl || '') + '|' + activeSubtitleOffset, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: () => setVideoError(true), onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: playingMeta.introStart, introEnd: playingMeta.introEnd, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onComplete: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
                     videoError && (React.createElement("div", { className: "absolute inset-0 bg-black/90 flex flex-col items-center justify-center gap-3 p-6 text-center" },
                         React.createElement("p", { className: "text-sm text-slate-200 font-bold" }, "\u062A\u0639\u0630\u0651\u0631 \u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u0639\u0644\u0649 \u0647\u0630\u0627 \u0627\u0644\u062C\u0647\u0627\u0632."),
                         isIOS && (React.createElement("p", { className: "text-xs text-slate-400 max-w-xs leading-relaxed" }, "\u063A\u0627\u0644\u0628\u064B\u0627 \u0627\u0644\u0633\u0628\u0628 \u0623\u0646 \u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u063A\u064A\u0631 \u0645\u0631\u0641\u0648\u0639 \u0628\u0635\u064A\u063A\u0629 \u064A\u062F\u0639\u0645\u0647\u0627 \u0627\u0644\u0622\u064A\u0641\u0648\u0646 \u0645\u0628\u0627\u0634\u0631\u0629. \u0627\u0644\u0623\u0639\u0645\u0627\u0644 \u0627\u0644\u062A\u064A \u062A\u064F\u0631\u0641\u0639 \u0645\u0646 \u0644\u0648\u062D\u0629 \u0627\u0644\u062A\u062D\u0643\u0645 \u0639\u0628\u0631 \u0632\u0631 \"\u0631\u0641\u0639 \u0645\u0646 \u0627\u0644\u062C\u0647\u0627\u0632\" \u062A\u0639\u0645\u0644 \u0628\u0634\u0643\u0644 \u0635\u062D\u064A\u062D \u0639\u0644\u0649 \u0643\u0644 \u0627\u0644\u0623\u062C\u0647\u0632\u0629.")),
@@ -4392,6 +4439,9 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                     React.createElement("span", { className: "text-xs px-3 py-1 rounded-full bg-accent-red text-white font-bold shadow-[0_0_12px_rgba(255,51,75,0.4)]" }, TYPE_LABELS[title.type]),
                     React.createElement("span", { className: "text-xs text-slate-300 font-semibold" }, title.year),
                     React.createElement(RatingBadges, { imdb: title.imdbRating, rt: title.rtRating }),
+                    (playingDurationSec || getRuntimeSeconds(playingMeta) || getRuntimeSeconds(title)) ? (React.createElement("span", { className: "inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-black/60 text-slate-200 font-bold border border-white/10", dir: "ltr", title: "مدة العمل" },
+                        formatRuntimeMinutesSeconds(playingDurationSec || getRuntimeSeconds(playingMeta) || getRuntimeSeconds(title)),
+                        " دقيقة")) : null,
                     ratingList.length > 0 && (React.createElement("span", { className: "inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-black/60 backdrop-blur-md text-amber-400 font-bold border border-amber-400/20 shadow-sm" },
                         React.createElement(Icon, { name: "star", className: "w-3 h-3" }),
                         avgRating.toFixed(1),
@@ -5570,6 +5620,22 @@ function formatClock(sec) {
     const p = n => String(n).padStart(2, '0');
     return h > 0 ? `${p(h)}:${p(m)}:${p(s)}` : `${p(m)}:${p(s)}`;
 }
+function formatRuntimeMinutesSeconds(sec) {
+    const n = Number(sec);
+    if (!isFinite(n) || n <= 0) return '';
+    const total = Math.max(0, Math.round(n));
+    const mins = Math.floor(total / 60);
+    const secs = total % 60;
+    return `${mins}:${String(secs).padStart(2, '0')}`;
+}
+function getRuntimeSeconds(item) {
+    if (!item) return 0;
+    const exact = Number(item.runtimeSeconds || item.durationSeconds || 0);
+    if (exact > 0) return exact;
+    const mins = Number(item.runtimeMinutes || item.runtime || 0);
+    return mins > 0 ? mins * 60 : 0;
+}
+
 function resizeCropBox(handle, start, dxPct, dyPct, ratioLock) {
     const MIN = 5;
     let { x, y, w, h } = start;
@@ -5845,10 +5911,10 @@ function VideoDisplaySettings({ value, onChange }) {
         showCropStudio && (React.createElement(CropStudioModal, { videoUrl: normalizeVideoUrl(v.videoUrl), initial: crop, onCancel: () => setShowCropStudio(false), onSave: (newCrop) => { set('crop', newCrop); setShowCropStudio(false); } }))));
 }
 function emptyForm(type) {
-    return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
+    return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', runtimeMinutes: 0, rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
 }
 function emptyEpisode(num) {
-    return { number: num, title: '', videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, imdb: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
+    return { number: num, title: '', runtimeMinutes: 0, videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, imdb: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
 }
 function SubtitleHelper({ value, onChange, sourceId, title, type, season, episode, year, cinemanaId, offset = 0, onOffsetChange }) {
     const [loading, setLoading] = useState(false);
