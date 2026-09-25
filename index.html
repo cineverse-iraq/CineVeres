@@ -227,9 +227,12 @@
     /* لا نريد أي خط تركيز/إطار متصفح يبقى بعد الضغط على أزرار المشغل. */
     button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
     button:focus:not(:focus-visible), a:focus:not(:focus-visible), [role="button"]:focus:not(:focus-visible) { outline: none !important; box-shadow: none !important; }
-    .cv-player-menu { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
-    .cv-player-menu button, .cv-player-menu input { touch-action: manipulation; }
-    .cv-subtitle-overlay { pointer-events: none !important; user-select: none !important; -webkit-user-select: none !important; }
+    .cv-player-menu { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; user-select: none; -webkit-user-select: none; }
+    .cv-player-menu button, .cv-player-menu label { touch-action: manipulation; user-select: none !important; -webkit-user-select: none !important; caret-color: transparent !important; }
+    .cv-player-menu input, .cv-player-menu select { user-select: auto; -webkit-user-select: auto; caret-color: auto; }
+    /* أزرار المشغل ليست حقول كتابة؛ لا نريد ظهور مؤشر نص/خط تركيز بعد النقر. */
+    .yt-btn, .yt-btn *, [data-skip-intro], [data-skip-intro] *, .cv-player-menu button, .cv-player-menu button * { caret-color: transparent !important; }
+    .cv-subtitle-overlay { pointer-events: none !important; user-select: none !important; -webkit-user-select: none !important; caret-color: transparent !important; }
     </style>
 </head>
 <body class="bg-glass-950 text-slate-100 min-h-screen selection:bg-accent-red selection:text-white">
@@ -3786,6 +3789,12 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
             onQualityChange(q.url, at, q);
     };
     const RATE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+    const blurPlayerButton = (e) => {
+        const el = e && e.currentTarget;
+        if (!el || typeof el.blur !== 'function') return;
+        requestAnimationFrame(() => { try { el.blur(); } catch (_) {} });
+    };
+    const playerButtonProps = { onPointerDown: blurPlayerButton };
     return (React.createElement("div", { ref: wrapRef, className: `video-crop-wrap ${fakeFullscreen ? 'ios-fake-fullscreen' : 'aspect-video'}${!barVisible ? ' cv-nocursor' : ''}`, onMouseMove: showBarTemporarily, onClick: onStageClick },
         loading && (React.createElement("div", { className: "absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none z-10" },
             React.createElement("div", { className: "w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan yt-spinner" }))),
@@ -3814,7 +3823,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
             React.createElement("div", { className: "w-16 h-16 rounded-full bg-black/50 flex flex-col items-center justify-center gap-0.5 yt-skip-flash" },
                 React.createElement(Icon, { name: skipFlash === 'fwd' ? 'rotateCw5' : 'rotateCcw5', className: "w-6 h-6 text-white" }),
                 React.createElement("span", { className: "text-[10px] font-bold text-white" }, "5 \u062B")))),
-        !ctrl.playing && !loading && (React.createElement("button", { type: "button", onClick: (e) => { e.stopPropagation(); togglePlay(); }, className: "absolute inset-0 z-20 flex items-center justify-center" },
+        !ctrl.playing && !loading && (React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: (e) => { e.stopPropagation(); togglePlay(); }, className: "absolute inset-0 z-20 flex items-center justify-center" },
             React.createElement("span", { className: "w-16 h-16 rounded-full bg-accent-red/90 flex items-center justify-center shadow-[0_0_25px_rgba(255,51,75,0.6)]" },
                 React.createElement(Icon, { name: "play", className: "w-7 h-7 text-white fill-current translate-x-0.5" })))),
         React.createElement("div", { className: `yt-controls-bottom ${barVisible ? '' : 'hidden-bar'}`, onClick: e => e.stopPropagation() },
@@ -3823,17 +3832,17 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
                         background: `linear-gradient(to left, #00F0FF ${(ctrl.current / (ctrl.duration || 1)) * 100}%, rgba(255,255,255,0.25) ${(ctrl.current / (ctrl.duration || 1)) * 100}%)`
                     } }),
                 React.createElement("div", { className: "flex items-center gap-1 flex-wrap" },
-                    React.createElement("button", { type: "button", onClick: togglePlay, className: "yt-btn yt-btn-main w-8 h-8 shrink-0", title: ctrl.playing ? 'إيقاف مؤقت (مسافة)' : 'تشغيل (مسافة)' },
+                    React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: togglePlay, className: "yt-btn yt-btn-main w-8 h-8 shrink-0", title: ctrl.playing ? 'إيقاف مؤقت (مسافة)' : 'تشغيل (مسافة)' },
                         React.createElement(Icon, { name: ctrl.playing ? 'pause' : 'play', className: "w-4 h-4 fill-current" })),
-                    React.createElement("button", { type: "button", onClick: () => skip(-5), className: "yt-btn w-7 h-7 shrink-0", title: "\u0631\u062C\u0648\u0639 5 \u062B\u0648\u0627\u0646\u064A (\u0627\u0644\u0633\u0647\u0645 \u0627\u0644\u0623\u064A\u0633\u0631)" },
+                    React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => skip(-5), className: "yt-btn w-7 h-7 shrink-0", title: "\u0631\u062C\u0648\u0639 5 \u062B\u0648\u0627\u0646\u064A (\u0627\u0644\u0633\u0647\u0645 \u0627\u0644\u0623\u064A\u0633\u0631)" },
                         React.createElement(Icon, { name: "rotateCcw5", className: "w-3.5 h-3.5" })),
-                    React.createElement("button", { type: "button", onClick: () => skip(5), className: "yt-btn w-7 h-7 shrink-0", title: "\u062A\u0642\u062F\u064A\u0645 5 \u062B\u0648\u0627\u0646\u064A (\u0627\u0644\u0633\u0647\u0645 \u0627\u0644\u0623\u064A\u0645\u0646)" },
+                    React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => skip(5), className: "yt-btn w-7 h-7 shrink-0", title: "\u062A\u0642\u062F\u064A\u0645 5 \u062B\u0648\u0627\u0646\u064A (\u0627\u0644\u0633\u0647\u0645 \u0627\u0644\u0623\u064A\u0645\u0646)" },
                         React.createElement(Icon, { name: "rotateCw5", className: "w-3.5 h-3.5" })),
                     React.createElement("div", { className: "hidden sm:flex items-center gap-1.5 group/vol shrink-0" },
-                        React.createElement("button", { type: "button", onClick: toggleMute, className: "yt-btn w-7 h-7", title: "\u0643\u062A\u0645/\u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0635\u0648\u062A (M)" },
+                        React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: toggleMute, className: "yt-btn w-7 h-7", title: "\u0643\u062A\u0645/\u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0635\u0648\u062A (M)" },
                             React.createElement(Icon, { name: ctrl.muted || ctrl.volume === 0 ? 'volumeX' : 'volume2', className: "w-3.5 h-3.5" })),
                         React.createElement("input", { type: "range", min: "0", max: "1", step: "0.05", value: ctrl.muted ? 0 : ctrl.volume, onChange: e => setVolume(e.target.value), className: "yt-vol w-14 md:w-16" })),
-                    React.createElement("button", { type: "button", onClick: toggleMute, className: "yt-btn w-7 h-7 shrink-0 sm:hidden", title: "\u0643\u062A\u0645/\u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0635\u0648\u062A" },
+                    React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: toggleMute, className: "yt-btn w-7 h-7 shrink-0 sm:hidden", title: "\u0643\u062A\u0645/\u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0635\u0648\u062A" },
                         React.createElement(Icon, { name: ctrl.muted || ctrl.volume === 0 ? 'volumeX' : 'volume2', className: "w-3.5 h-3.5" })),
                     React.createElement("span", { className: "text-[10px] font-mono text-white/90 shrink-0 mr-0.5" },
                         formatClock(ctrl.current),
@@ -3841,13 +3850,13 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
                         formatClock(ctrl.duration)),
                     React.createElement("span", { className: "flex-1" }),
                     React.createElement("div", { className: "relative shrink-0" },
-                        React.createElement("button", { type: "button", onClick: () => { setShowSubtitleMenu(v => !v); setShowQualityMenu(false); setShowSpeedMenu(false); }, className: `yt-btn cv-player-menu-button h-7 px-2 gap-1 text-[11px] font-bold ${subtitleOn && activeCues.length ? 'text-accent-cyan' : 'text-white/60'}`, title: "\u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u062A\u0631\u062C\u0645\u0629" },
+                        React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => { setShowSubtitleMenu(v => !v); setShowQualityMenu(false); setShowSpeedMenu(false); }, className: `yt-btn cv-player-menu-button h-7 px-2 gap-1 text-[11px] font-bold ${subtitleOn && activeCues.length ? 'text-accent-cyan' : 'text-white/60'}`, title: "\u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u062A\u0631\u062C\u0645\u0629" },
                             React.createElement(Icon, { name: "captions", className: "w-3.5 h-3.5" }),
                             React.createElement("span", { className: "hidden xs:inline" }, subtitleLoading ? '...' : 'ترجمة')),
                         showSubtitleMenu && (React.createElement("div", { className: "cv-player-menu absolute bottom-10 left-0 bg-black/95 backdrop-blur-md rounded-xl border border-white/10 p-2.5 shadow-2xl w-64 max-w-[78vw] max-h-[60vh] overflow-y-auto z-50 text-right", onPointerDown: e => e.stopPropagation(), onClick: e => e.stopPropagation() },
                             React.createElement("p", { className: "text-[10px] font-bold text-slate-300 mb-1.5" }, activeCues.length ? (localSub ? `ملف من جهازك: ${localSub.name}` : 'الترجمة العربية جاهزة') : subtitleLoading ? 'جاري تحميل الترجمة...' : (subError || 'لا توجد ترجمة لهذا العمل')),
-                            subError && !localSub && (React.createElement("button", { type: "button", onClick: () => setSubRetry(n => n + 1), className: "w-full mb-1.5 px-2 py-1.5 rounded-lg bg-accent-cyan/20 text-accent-cyan text-[10px] font-bold" }, "\u0625\u0639\u0627\u062F\u0629 \u0627\u0644\u0645\u062D\u0627\u0648\u0644\u0629")),
-                            activeCues.length > 0 && (React.createElement("button", { type: "button", onClick: () => setSubtitleOn(v => !v), className: "w-full mb-2 px-2 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10" }, subtitleOn ? 'إخفاء الترجمة' : 'إظهار الترجمة')),
+                            subError && !localSub && (React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => setSubRetry(n => n + 1), className: "w-full mb-1.5 px-2 py-1.5 rounded-lg bg-accent-cyan/20 text-accent-cyan text-[10px] font-bold" }, "\u0625\u0639\u0627\u062F\u0629 \u0627\u0644\u0645\u062D\u0627\u0648\u0644\u0629")),
+                            activeCues.length > 0 && (React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => setSubtitleOn(v => !v), className: "w-full mb-2 px-2 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10" }, subtitleOn ? 'إخفاء الترجمة' : 'إظهار الترجمة')),
                             React.createElement("div", { className: "flex items-center justify-between gap-2 mb-1" },
                                 React.createElement("span", { className: "text-[10px] text-slate-300 font-bold" }, "\u062A\u0648\u0642\u064A\u062A \u0627\u0644\u062A\u0631\u062C\u0645\u0629"),
                                 React.createElement("span", { className: "text-[10px] text-accent-cyan font-mono", dir: "ltr" },
@@ -3856,7 +3865,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
                                     "s")),
                             React.createElement("div", { className: "grid grid-cols-5 gap-1" },
                                 [[-500, '−0.5'], [-100, '−0.1']].map(([d, l]) => React.createElement("button", { key: d, type: "button", onClick: () => changeSubAdj(v => v + d), className: "px-1 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10", dir: "ltr" }, l)),
-                                React.createElement("button", { type: "button", onClick: () => changeSubAdj(() => 0), className: "px-1 py-1.5 rounded-lg bg-white/10 text-white text-[10px] font-bold hover:bg-white/20" }, "\u0635\u0641\u0631"),
+                                React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => changeSubAdj(() => 0), className: "px-1 py-1.5 rounded-lg bg-white/10 text-white text-[10px] font-bold hover:bg-white/20" }, "\u0635\u0641\u0631"),
                                 [[100, '+0.1'], [500, '+0.5']].map(([d, l]) => React.createElement("button", { key: d, type: "button", onClick: () => changeSubAdj(v => v + d), className: "px-1 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10", dir: "ltr" }, l))),
                             React.createElement("p", { className: "text-[9px] text-slate-500 mt-1 mb-2" },
                                 "\u0627\u0644\u062A\u0631\u062C\u0645\u0629 \u062A\u0638\u0647\u0631 \u0642\u0628\u0644 \u0627\u0644\u0635\u0648\u062A \u2190 \u0627\u0636\u063A\u0637 +\u060C \u0648\u0625\u0630\u0627 \u062A\u062A\u0623\u062E\u0631 \u2190 \u0627\u0636\u063A\u0637 \u2212. \u064A\u064F\u062D\u0641\u0638 \u0627\u0644\u062A\u0635\u062D\u064A\u062D \u0644\u0647\u0630\u0627 \u0627\u0644\u0639\u0645\u0644.",
@@ -3894,7 +3903,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
                             React.createElement(SubSlider, { label: "\u0627\u0633\u062A\u062F\u0627\u0631\u0629 \u0627\u0644\u062E\u0644\u0641\u064A\u0629", value: subPrefs.bgRadius == null ? 30 : subPrefs.bgRadius, unit: "%", min: 0, max: 100, step: 5, onChange: v => updSubPrefs({ bgRadius: v }) }),
                             React.createElement(SubSlider, { label: "\u062A\u0628\u0627\u0639\u062F \u0627\u0644\u062D\u0631\u0648\u0641", value: subPrefs.letterSpacing || 0, unit: "", min: 0, max: 20, step: 1, onChange: v => updSubPrefs({ letterSpacing: v }) }),
                             React.createElement(SubSlider, { label: "\u062A\u0628\u0627\u0639\u062F \u0627\u0644\u0623\u0633\u0637\u0631", value: subPrefs.lineHeight || 150, unit: "%", min: 100, max: 250, step: 10, onChange: v => updSubPrefs({ lineHeight: v }) }),
-                            React.createElement("button", { type: "button", onClick: () => updSubPrefs({ italic: !subPrefs.italic }), className: `w-full px-2 py-1.5 rounded-lg text-[10px] font-bold mb-2 ${subPrefs.italic ? 'bg-accent-cyan text-glass-950' : 'bg-white/5 text-white hover:bg-white/10'}` }, "\u062E\u0637 \u0645\u0627\u0626\u0644"),
+                            React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => updSubPrefs({ italic: !subPrefs.italic }), className: `w-full px-2 py-1.5 rounded-lg text-[10px] font-bold mb-2 ${subPrefs.italic ? 'bg-accent-cyan text-glass-950' : 'bg-white/5 text-white hover:bg-white/10'}` }, "\u062E\u0637 \u0645\u0627\u0626\u0644"),
                             React.createElement("div", { className: "flex items-center justify-between mb-0.5" },
                                 React.createElement("span", { className: "text-[10px] text-slate-300 font-bold" }, "\u0627\u0631\u062A\u0641\u0627\u0639 \u0627\u0644\u062A\u0631\u062C\u0645\u0629"),
                                 React.createElement("span", { className: "text-[10px] text-accent-cyan font-mono" },
@@ -3902,20 +3911,20 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
                                     "%")),
                             React.createElement("input", { type: "range", min: "2", max: "40", step: "1", value: subPrefs.pos, onChange: e => updSubPrefs({ pos: Number(e.target.value) }), className: "w-full mb-2", style: { accentColor: '#00F0FF' } }),
                             React.createElement("div", { className: "grid grid-cols-2 gap-1" },
-                                React.createElement("button", { type: "button", onClick: () => localFileRef.current && localFileRef.current.click(), className: "px-2 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10" }, "\u062A\u0631\u062C\u0645\u0629 \u0645\u0646 \u062C\u0647\u0627\u0632\u0643"),
-                                React.createElement("button", { type: "button", onClick: () => { setSubPrefs({ ...SUB_PREF_DEFAULTS }); try {
+                                React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => localFileRef.current && localFileRef.current.click(), className: "px-2 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10" }, "\u062A\u0631\u062C\u0645\u0629 \u0645\u0646 \u062C\u0647\u0627\u0632\u0643"),
+                                React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => { setSubPrefs({ ...SUB_PREF_DEFAULTS }); try {
                                         localStorage.removeItem(subPrefsKey());
                                     }
                                     catch (e) { } syncSubPrefsRemote({ ...SUB_PREF_DEFAULTS }); }, className: "px-2 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10" }, "\u0627\u0644\u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u0627\u0641\u062A\u0631\u0627\u0636\u064A\u0629")),
-                            localSub && React.createElement("button", { type: "button", onClick: () => { setLocalSub(null); setSubAdj(subtitleUrl ? readSubAdj(subtitleUrl) : 0); }, className: "w-full mt-1 px-2 py-1.5 rounded-lg bg-rose-500/20 text-rose-300 text-[10px] font-bold" }, "\u0625\u0632\u0627\u0644\u0629 \u0645\u0644\u0641 \u062C\u0647\u0627\u0632\u0643"),
+                            localSub && React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => { setLocalSub(null); setSubAdj(subtitleUrl ? readSubAdj(subtitleUrl) : 0); }, className: "w-full mt-1 px-2 py-1.5 rounded-lg bg-rose-500/20 text-rose-300 text-[10px] font-bold" }, "\u0625\u0632\u0627\u0644\u0629 \u0645\u0644\u0641 \u062C\u0647\u0627\u0632\u0643"),
                             React.createElement("input", { ref: localFileRef, type: "file", accept: ".srt,.vtt,text/vtt,application/x-subrip", onChange: onLocalSub, className: "hidden" })))),
                     qualityOptions.length > 1 && (React.createElement("div", { className: "relative shrink-0" },
-                        React.createElement("button", { type: "button", onClick: () => { setShowQualityMenu(v => !v); setShowSpeedMenu(false); }, className: "yt-btn h-7 px-2 gap-1 text-[11px] font-bold", title: "\u0627\u062E\u062A\u064A\u0627\u0631 \u0627\u0644\u062C\u0648\u062F\u0629" },
+                        React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => { setShowQualityMenu(v => !v); setShowSpeedMenu(false); }, className: "yt-btn h-7 px-2 gap-1 text-[11px] font-bold", title: "\u0627\u062E\u062A\u064A\u0627\u0631 \u0627\u0644\u062C\u0648\u062F\u0629" },
                             React.createElement(Icon, { name: "sliders-horizontal", className: "w-3.5 h-3.5" }),
                             React.createElement("span", null, currentQuality ? currentQuality.label : 'جودة')),
                         showQualityMenu && (React.createElement("div", { className: "cv-player-menu absolute bottom-10 left-0 bg-black/95 backdrop-blur-md rounded-xl border border-white/10 p-1.5 flex flex-col gap-0.5 shadow-2xl min-w-[88px] z-50" }, qualityOptions.map((q, i) => (React.createElement("button", { key: i, type: "button", onClick: () => changeQuality(q), className: `text-[11px] font-bold px-3 py-1.5 rounded-lg text-right transition ${currentQuality && currentQuality.url === q.url ? 'bg-accent-cyan text-glass-950' : 'text-white hover:bg-white/10'}` }, q.label))))))),
                     React.createElement("div", { className: "relative shrink-0" },
-                        React.createElement("button", { type: "button", onClick: () => { setShowSpeedMenu(v => !v); setShowQualityMenu(false); }, className: "yt-btn h-7 px-2 gap-1 text-[11px] font-bold", title: "\u0633\u0631\u0639\u0629 \u0627\u0644\u062A\u0634\u063A\u064A\u0644" },
+                        React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => { setShowSpeedMenu(v => !v); setShowQualityMenu(false); }, className: "yt-btn h-7 px-2 gap-1 text-[11px] font-bold", title: "\u0633\u0631\u0639\u0629 \u0627\u0644\u062A\u0634\u063A\u064A\u0644" },
                             React.createElement(Icon, { name: "gauge", className: "w-3.5 h-3.5" }),
                             React.createElement("span", { className: "hidden xs:inline" },
                                 ctrl.rate,
@@ -3923,7 +3932,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, trimStart,
                         showSpeedMenu && (React.createElement("div", { className: "cv-player-menu absolute bottom-10 left-0 bg-black/90 backdrop-blur-md rounded-xl border border-white/10 p-1.5 flex flex-col gap-0.5 shadow-2xl min-w-[64px] z-50" }, RATE_OPTIONS.map(r => (React.createElement("button", { key: r, type: "button", onClick: () => setRate(r), className: `text-[11px] font-bold px-3 py-1.5 rounded-lg transition ${ctrl.rate === r ? 'bg-accent-cyan text-glass-950' : 'text-white hover:bg-white/10'}` },
                             r,
                             "\u00D7")))))),
-                    React.createElement("button", { type: "button", onClick: toggleFullscreen, title: effectiveFs ? 'إنهاء ملء الشاشة (F)' : 'ملء الشاشة (F)', className: "yt-btn w-7 h-7 shrink-0" },
+                    React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: toggleFullscreen, title: effectiveFs ? 'إنهاء ملء الشاشة (F)' : 'ملء الشاشة (F)', className: "yt-btn w-7 h-7 shrink-0" },
                         React.createElement(Icon, { name: effectiveFs ? 'minimize' : 'maximize', className: "w-3.5 h-3.5" })))))));
 }
 const normName = (s) => (s || '').toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]+/g, ' ').trim();
