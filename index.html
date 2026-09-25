@@ -1325,7 +1325,19 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
             }
             if (kind === 'movie' || kind === 'anime') {
                 const nb = String(item.nb);
-                setVideos(await cinemanaVideos(nb, kind));
+                const fetchedVideos = await cinemanaVideos(nb, kind);
+                setVideos(fetchedVideos);
+                // بمجرد جلب مصادر الفيلم، خزّن أول مصدر مباشرة في نموذج الإدارة.
+                // سابقًا كان الرابط لا يُحفظ إلا إذا ضغط المستخدم على زر الجودة،
+                // فيبقى Firebase مع cinemanaId فقط ويضطر الهاتف لاستخدام البروكسي.
+                if (kind === 'movie') {
+                    const fetchedSources = cinemanaVideoSources(fetchedVideos);
+                    const firstSource = fetchedSources[0];
+                    if (firstSource) {
+                        onGenerate && onGenerate(firstSource.url, firstSource, fetchedSources);
+                        onGenerateQualities && onGenerateQualities(fetchedSources);
+                    }
+                }
                 if (onPickedNb)
                     onPickedNb(nb);
                 autoSubtitle(nb, item);
@@ -6010,6 +6022,28 @@ function AdminContentForm({ initial, defaultType, onDone }) {
         if (form.type === 'movie') {
             payload.videoUrl = normalizeVideoUrl(form.videoUrl.trim());
             payload.videoSources = normalizeVideoSources(form.videoSources);
+
+            // مهم جدًا للأفلام: لا نحفظ cinemanaId وحده ونترك videoUrl/videoSources فارغة.
+            // الهاتف لا يستطيع الوصول إلى Node المحلي حتى يسترجع الرابط، بينما الحلقات
+            // التي يكون رابطها محفوظًا تعمل طبيعيًا. إذا كان الفيلم مرتبطًا بـ Cinemana
+            // ولم يُحفظ المصدر بعد، نجلبه الآن من نفس البروكسي الموجود على جهاز الإدارة
+            // ونحفظ الرابط/الجودات داخل Firebase، حتى يعمل الهاتف مباشرة بدون بروكسي.
+            if (form.cinemanaId && !payload.videoUrl && !payload.videoSources.length) {
+                try {
+                    const fetched = cinemanaVideoSources(await cinemanaVideos(String(form.cinemanaId).trim(), 'movie'));
+                    if (fetched.length) {
+                        payload.videoSources = fetched;
+                        payload.videoUrl = fetched[0].url;
+                    } else {
+                        throw new Error('سينمانا لم تُرجع أي مصدر فيديو لهذا الفيلم.');
+                    }
+                } catch (e) {
+                    throw new Error('تعذر حفظ رابط الفيلم من سينمانا: ' + (e && e.message ? e.message : 'خطأ غير معروف'));
+                }
+            } else if (!payload.videoUrl && payload.videoSources.length) {
+                payload.videoUrl = payload.videoSources[0].url;
+            }
+
             payload.subtitleUrl = normalizeSubtitleUrl(form.subtitleUrl || '');
             payload.subtitlePublicUrl = String(form.subtitlePublicUrl || '').trim();
             payload.subtitleOffset = Number(form.subtitleOffset) || 0;
