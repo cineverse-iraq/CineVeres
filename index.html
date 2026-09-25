@@ -1498,12 +1498,17 @@ async function subdlSearch(params) {
     usp.set('languages', 'AR');
     usp.set('unpack', '1');
     usp.set('subs_per_page', '30');
-    const url = `${CINEMANA_PROXY}/subdl/search?${usp.toString()}`;
-    const res = await fetchWithTimeout(url, { headers: { Accept: 'application/json' } }, 20000);
-    if (!res.ok)
-        throw new Error('تعذر البحث في SubDL (رمز ' + res.status + ')');
-    const data = await res.json();
-    return Array.isArray(data && data.subtitles) ? data.subtitles : [];
+    const bases = [CINEMANA_PROXY, 'http://localhost:8787'].filter((v, i, a) => v && a.indexOf(v) === i);
+    let lastErr = null;
+    for (const base of bases) {
+        try {
+            const res = await fetchWithTimeout(`${String(base).replace(/\/+$/, '')}/subdl/search?${usp.toString()}`, { headers: { Accept: 'application/json' } }, 20000);
+            if (!res.ok) { lastErr = new Error('تعذر البحث في SubDL (رمز ' + res.status + ')'); continue; }
+            const data = await res.json();
+            return Array.isArray(data && data.subtitles) ? data.subtitles : [];
+        } catch (e) { lastErr = e; }
+    }
+    throw lastErr || new Error('تعذر الاتصال بخدمة SubDL.');
 }
 async function subdlDownload(url) {
     if (!url)
@@ -1564,10 +1569,35 @@ async function findAndStoreSubtitle({ cinemanaId, sourceId, altSourceIds = [], t
         throw new Error('لا يوجد عنوان أو معرّف للبحث عن الترجمة.');
     if (onProgress)
         onProgress('جاري البحث الذكي (سينمانا ثم SubDL)...');
-    const res = await fetchWithTimeout(`${CINEMANA_PROXY}/sub/resolve?${usp.toString()}`, { headers: { Accept: 'application/json' } }, 45000);
-    const data = await res.json().catch(() => ({}));
+    // البحث عن الترجمة يجب أن يستخدم نفس آلية fallback الخاصة ببروكسي الفيديو.
+    // سابقًا كان /sub/resolve يذهب فقط إلى CINEMANA_PROXY، فإذا كان Worker
+    // العام متوقفًا يفشل حتى لو كان server.js المحلي يعمل والاعتماد موجود.
+    const proxyCandidates = [];
+    const addProxyCandidate = (base) => {
+        const b = String(base || '').trim().replace(/\/+$/, '');
+        if (b && !proxyCandidates.includes(b)) proxyCandidates.push(b);
+    };
+    addProxyCandidate(CINEMANA_PROXY);
+    addProxyCandidate('http://localhost:8787');
+    let res = null, data = {};
+    let lastNetworkError = null;
+    for (const base of proxyCandidates) {
+        try {
+            res = await fetchWithTimeout(`${base}/sub/resolve?${usp.toString()}`, { headers: { Accept: 'application/json' } }, 45000);
+            data = await res.json().catch(() => ({}));
+            // 404 هنا يعني أن البروكسي اشتغل لكنه لم يجد ترجمة؛ لا نعتبره فشل اتصال
+            // ونترك الرسالة الحقيقية تظهر للمستخدم.
+            if (res.ok || (data && data.ok)) break;
+            if (res.status === 404 && data && data.tried) break;
+        } catch (e) {
+            lastNetworkError = e;
+            res = null;
+            data = {};
+        }
+    }
+    if (!res) throw lastNetworkError || new Error('تعذر الاتصال بخدمة الترجمة.');
     if (!res.ok || !data.ok) {
-        const why = (data.tried || []).slice(-3).map(t => `${t.source === 'cinemana' ? 'سينمانا' : 'SubDL'}${t.attempt ? ' (' + t.attempt + ')' : ''}: ${t.reason || ''}`).join(' | ');
+        const why = (data.tried || []).slice(-5).map(t => `${t.source === 'cinemana' ? 'سينمانا' : 'SubDL'}${t.attempt ? ' (' + t.attempt + ')' : ''}: ${t.reason || ''}`).join(' | ');
         throw new Error((data.error || `فشل البحث (رمز ${res.status})`) + (why ? ' — ' + why : ''));
     }
     const sourceLabel = data.source === 'cinemana' ? 'سينمانا' : 'SubDL';
