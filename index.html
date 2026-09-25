@@ -2069,7 +2069,7 @@ async function importFromTmdb(rawInput, currentType, opts) {
         director: director,
         writer: writer,
         imdbRating: '',
-        runtimeMinutes: Number(media === 'movie' ? (data.runtime || 0) : ((Array.isArray(data.episode_run_time) && data.episode_run_time[0]) || 0)) || 0,
+        runtimeMinutes: parseRuntimeSeconds(media === 'movie' ? (data.runtime || 0) : ((Array.isArray(data.episode_run_time) && data.episode_run_time[0]) || 0), true) / 60,
     };
     const notes = [];
     let omdbBroken = false;
@@ -2153,11 +2153,23 @@ async function importFromTmdb(rawInput, currentType, opts) {
                 if (!epTitle && match && match.Title && match.Title !== 'N/A')
                     epTitle = match.Title.trim();
                 const epImdb = match && match.imdbRating && match.imdbRating !== 'N/A' ? match.imdbRating : '';
+                let epRuntime = ep.runtime || 0;
+                // TMDB season responses may omit episode runtime. Fetch the episode details once so
+                // the duration is available before playback and can be shown beside the rating.
+                if (!epRuntime && Number(ep.episode_number) > 0) {
+                    try {
+                        const epDetails = await tmdbFetch(`tv/${tmdbId}/season/${s.season_number}/episode/${ep.episode_number}`, { language: 'en-US' });
+                        epRuntime = epDetails && epDetails.runtime || 0;
+                    }
+                    catch (e) {
+                        epRuntime = 0;
+                    }
+                }
                 episodes.push(Object.assign(emptyEpisode(Number(ep.episode_number) || 1), {
                     number: Number(ep.episode_number) || 1,
                     title: epTitle,
                     imdb: epImdb,
-                    runtimeMinutes: Number(ep.runtime || ((Array.isArray(data.episode_run_time) && data.episode_run_time[0]) || 0)) || 0,
+                    runtimeMinutes: parseRuntimeSeconds(epRuntime || ((Array.isArray(data.episode_run_time) && data.episode_run_time[0]) || 0), true) / 60,
                     videoUrl: '',
                     videoSources: [],
                 }));
@@ -2544,12 +2556,13 @@ function PosterCard({ title, onOpen, compact, watched }) {
 }
 function Row({ label, items, onOpen, watchedMap }) {
     const scrollerRef = useRef(null);
-    const scrollNext = () => {
+    const scrollByAmount = (direction) => {
         const el = scrollerRef.current;
         if (!el) return;
         const step = Math.max(220, Math.floor(el.clientWidth * 0.82));
-        const dir = getComputedStyle(el).direction === 'rtl' ? -1 : 1;
-        el.scrollBy({ left: dir * step, behavior: 'smooth' });
+        const rtl = getComputedStyle(el).direction === 'rtl';
+        const physicalDirection = rtl ? -direction : direction;
+        el.scrollBy({ left: physicalDirection * step, behavior: 'smooth' });
     };
     if (!items.length) return null;
     return (React.createElement("section", { className: "mb-10" },
@@ -2560,10 +2573,11 @@ function Row({ label, items, onOpen, watchedMap }) {
         React.createElement("div", { className: "relative" },
             React.createElement("div", { ref: scrollerRef, className: "flex gap-4 overflow-x-auto pb-3 pt-1 snap-x scrollbar-hide", style: { overscrollBehaviorX: 'contain', scrollbarGutter: 'stable' } },
                 items.map(it => React.createElement(PosterCard, { key: it.id, title: it, onOpen: onOpen, compact: true, watched: watchedMap && isTitleWatched(watchedMap, it) }))),
-            React.createElement("button", { type: "button", onClick: scrollNext, title: "التالي", "aria-label": `العناصر التالية في ${label}`, className: "absolute left-1 md:left-2 top-1/2 -translate-y-1/2 z-10 w-10 h-10 md:w-11 md:h-11 rounded-full bg-black/75 backdrop-blur-md border border-white/15 text-white hover:bg-accent-red hover:border-accent-red shadow-xl flex items-center justify-center transition" },
-                React.createElement(Icon, { name: "chevronLeft", className: "w-5 h-5 md:w-6 md:h-6" })) )));
+            React.createElement("button", { type: "button", onClick: () => scrollByAmount(1), title: "التالي", "aria-label": `العناصر التالية في ${label}`, className: "absolute left-1 md:left-2 top-1/2 -translate-y-1/2 z-10 w-10 h-10 md:w-11 md:h-11 rounded-full bg-black/75 backdrop-blur-md border border-white/15 text-white hover:bg-accent-red hover:border-accent-red shadow-xl flex items-center justify-center transition" },
+                React.createElement(Icon, { name: "chevronLeft", className: "w-5 h-5 md:w-6 md:h-6" })),
+            React.createElement("button", { type: "button", onClick: () => scrollByAmount(-1), title: "رجوع", "aria-label": `العناصر السابقة في ${label}`, className: "absolute right-1 md:right-2 top-1/2 -translate-y-1/2 z-10 w-10 h-10 md:w-11 md:h-11 rounded-full bg-black/75 backdrop-blur-md border border-white/15 text-white hover:bg-accent-red hover:border-accent-red shadow-xl flex items-center justify-center transition" },
+                React.createElement(Icon, { name: "chevronRight", className: "w-5 h-5 md:w-6 md:h-6" })) )));
 }
-
 function Hero({ items, onOpen }) {
     const [idx, setIdx] = useState(0);
     const [slide, setSlide] = useState(null);
@@ -5622,20 +5636,32 @@ function formatClock(sec) {
     const p = n => String(n).padStart(2, '0');
     return h > 0 ? `${p(h)}:${p(m)}:${p(s)}` : `${p(m)}:${p(s)}`;
 }
+function parseRuntimeSeconds(value, assumeMinutes = false) {
+    if (value == null || value === '') return 0;
+    if (typeof value === 'string' && value.includes(':')) {
+        const parts = value.trim().split(':').map(Number);
+        if (parts.every(Number.isFinite)) {
+            if (parts.length === 3) return Math.max(0, parts[0] * 3600 + parts[1] * 60 + parts[2]);
+            if (parts.length === 2) return Math.max(0, parts[0] * 60 + parts[1]);
+        }
+    }
+    const n = Number(value);
+    if (!isFinite(n) || n <= 0) return 0;
+    return assumeMinutes ? n * 60 : n;
+}
 function formatRuntimeMinutesSeconds(sec) {
-    const n = Number(sec);
-    if (!isFinite(n) || n <= 0) return '';
-    const total = Math.max(0, Math.round(n));
+    const total = Math.max(0, Math.round(Number(sec) || 0));
+    if (total <= 0) return '';
     const mins = Math.floor(total / 60);
     const secs = total % 60;
     return `${mins}:${String(secs).padStart(2, '0')}`;
 }
 function getRuntimeSeconds(item) {
     if (!item) return 0;
-    const exact = Number(item.runtimeSeconds || item.durationSeconds || 0);
+    const exact = parseRuntimeSeconds(item.runtimeSeconds || item.durationSeconds || item.videoDurationSeconds || item.lengthSeconds);
     if (exact > 0) return exact;
-    const mins = Number(item.runtimeMinutes || item.runtime || 0);
-    return mins > 0 ? mins * 60 : 0;
+    const minsOrClock = item.runtimeMinutes ?? item.runtime ?? item.duration ?? item.length;
+    return parseRuntimeSeconds(minsOrClock, true);
 }
 
 function resizeCropBox(handle, start, dxPct, dyPct, ratioLock) {
