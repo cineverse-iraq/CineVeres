@@ -3199,7 +3199,7 @@ function SubSlider({ label, value, unit, min, max, step, onChange }) {
                 unit)),
         React.createElement("input", { type: "range", min: min, max: max, step: step, value: value, onChange: e => onChange(Number(e.target.value)), className: "w-full mb-2", style: { accentColor: '#00F0FF' } })));
 }
-function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration, trimStart, trimEnd, introStart, introEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, qualities, onQualityChange, startAt }) {
+function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration, trimStart, trimEnd, introStart, introEnd, outroStart, outroEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, onEnded, onNextEpisode, hasNextEpisode, nextEpisodeLabel, qualities, onQualityChange, startAt }) {
     const videoRef = useRef(null);
     const wrapRef = useRef(null);
     const hideTimerRef = useRef(null);
@@ -3484,7 +3484,8 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         const onTime = () => {
             if (trimEnd && videoEl.currentTime >= trimEnd) {
                 videoEl.pause();
-                fireComplete();
+                if (onEnded) onEnded();
+                else fireComplete();
                 return;
             }
             const endT = trimEnd || videoEl.duration;
@@ -3494,9 +3495,11 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
                     fireComplete();
             }
         };
+        const handleEnded = () => { onEnded && onEnded(); };
         videoEl.addEventListener('loadedmetadata', onLoaded);
         videoEl.addEventListener('timeupdate', onTime);
-        return () => { videoEl.removeEventListener('loadedmetadata', onLoaded); videoEl.removeEventListener('timeupdate', onTime); };
+        videoEl.addEventListener('ended', handleEnded);
+        return () => { videoEl.removeEventListener('loadedmetadata', onLoaded); videoEl.removeEventListener('timeupdate', onTime); videoEl.removeEventListener('ended', handleEnded); };
     }, [src, trimStart, trimEnd, startAt]);
     const [ctrl, setCtrl] = useState({ playing: false, muted: false, volume: 1, current: 0, duration: 0, buffered: 0, rate: 1 });
     const [barVisible, setBarVisible] = useState(true);
@@ -3857,6 +3860,13 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
             React.createElement("p", { className: "text-white text-sm md:text-base font-bold truncate drop-shadow" },
                 React.createElement(BidiJoined, { text: episodeLabel })))),
         (() => {
+            const oStart = Number(outroStart) || 0;
+            const oEnd = Number(outroEnd) || 0;
+            const inOutro = hasNextEpisode && oStart > 0 && ctrl.current >= oStart && (!oEnd || ctrl.current < oEnd + 0.5);
+            if (!inOutro || loading) return null;
+            return React.createElement('button', { type: 'button', onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); onNextEpisode && onNextEpisode(); showBarTemporarily(); }, className: 'absolute right-3 md:right-5 z-30 flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-accent-red hover:bg-accent-redHover text-white text-xs md:text-sm font-black border border-white/20 backdrop-blur-md shadow-[0_0_20px_rgba(255,51,75,0.45)] transition-all', style: { bottom: barVisible ? 76 : 20 } }, React.createElement(Icon, { name: 'skipForward', className: 'w-4 h-4' }), React.createElement('span', null, nextEpisodeLabel || 'الحلقة التالية'));
+        })(),
+        (() => {
             const iEnd = Number(introEnd) || 0, iStart = Math.max(0, Number(introStart) || 0);
             const inIntro = iEnd > iStart && ctrl.current >= iStart && ctrl.current < iEnd - 0.5;
             if (!inIntro || loading)
@@ -4095,6 +4105,42 @@ function computeSimilarTitles(title, all, recs) {
     });
     return scored.filter(x => x.score >= 3 && (x.strong || x.shared >= 2)).sort((a, b) => b.score - a.score || (b.t.createdAt || 0) - (a.t.createdAt || 0)).slice(0, 30).map(x => ({ t: x.t, why: x.why[0] || '' }));
 }
+const SKIPDB_SEGMENT_CACHE = new Map();
+async function resolveSkipDbImdbId(title) {
+    if (!title) return '';
+    const direct = String(title.imdbId || title.imdb_id || '').trim();
+    if (/^tt\d+$/i.test(direct)) return direct.toLowerCase();
+    const source = String(title.sourceId || title.tmdbId || title.imdb || '').trim();
+    if (/^tt\d+$/i.test(source)) return source.toLowerCase();
+    if (!/^\d+$/.test(source)) return '';
+    try {
+        const kind = title.type === 'movie' ? 'movie' : 'tv';
+        const ext = await tmdbFetch(`${kind}/${source}/external_ids`, { language: 'en-US' });
+        return String(ext && ext.imdb_id || '').trim().toLowerCase();
+    } catch (e) {
+        return '';
+    }
+}
+async function fetchSkipDbSegments(title, season, episode, durationSec) {
+    const imdbId = await resolveSkipDbImdbId(title);
+    if (!imdbId || !Number.isFinite(Number(durationSec)) || Number(durationSec) <= 0) return null;
+    const params = new URLSearchParams({ imdb_id: imdbId, duration: String(Math.round(Number(durationSec))), adjust: 'conservative' });
+    if (title.type !== 'movie') {
+        params.set('season', String(Number(season) || 1));
+        params.set('episode', String(Number(episode) || 1));
+    }
+    const key = `${imdbId}|${title.type}|${season || ''}|${episode || ''}|${Math.round(Number(durationSec))}`;
+    if (SKIPDB_SEGMENT_CACHE.has(key)) return SKIPDB_SEGMENT_CACHE.get(key);
+    try {
+        const res = await fetch(`https://api.skipdb.tv/api/segments?${params.toString()}`, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`SkipDB ${res.status}`);
+        const data = await res.json();
+        SKIPDB_SEGMENT_CACHE.set(key, data);
+        return data;
+    } catch (e) {
+        return null;
+    }
+}
 function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onOpenAuth, getRole, onOpenProfile, onOpen, watched, onMarkEpisodeWatched, onMarkMovieWatched, isEpisodeWatched }) {
     const [closing, requestClose] = useClosable(onClose);
     const [playingUrl, setPlayingUrl] = useState(null);
@@ -4112,6 +4158,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const [copied, setCopied] = useState(false);
     const [resumeAt, setResumeAt] = useState(0);
     const [playingDurationSec, setPlayingDurationSec] = useState(0);
+    const [skipDbSegments, setSkipDbSegments] = useState({ intro: null, outro: null });
     const [runtimeOverrides, setRuntimeOverrides] = useState({});
     const [ratings, setRatings] = useState({});
     const [myStars, setMyStars] = useState(0);
@@ -4462,14 +4509,33 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     };
     const openSeason = (i) => { setActiveSeason(i); setSeasonView(true); setShowAllEpisodes(false); };
     const openAllEpisodes = () => { setShowAllEpisodes(true); setSeasonView(false); };
-    const playNextEpisode = () => {
-        const season = seasons[activeSeason];
-        if (!season)
-            return;
-        const idx = season.episodes.findIndex(e => e.videoUrl === playingMeta.videoUrl && e.number === playingMeta.number);
-        if (idx > -1 && idx < season.episodes.length - 1)
-            playEpisode(season.episodes[idx + 1], season.number);
+    const getNextEpisodeInfo = () => {
+        if (!isSeries || playingSeasonNumber == null || playingMeta == null || playingMeta.number == null) return null;
+        const idx = allEpisodesFlat.findIndex(e => Number(e.seasonNumber) === Number(playingSeasonNumber) && Number(e.number) === Number(playingMeta.number));
+        if (idx < 0 || idx >= allEpisodesFlat.length - 1) return null;
+        return allEpisodesFlat[idx + 1];
     };
+    const playNextEpisode = () => {
+        const next = getNextEpisodeInfo();
+        if (next) playEpisode(next, next.seasonNumber);
+    };
+    useEffect(() => {
+        let cancelled = false;
+        const loadSkipDb = async () => {
+            if (!isSeries || playingSeasonNumber == null || !playingMeta || playingMeta.number == null || playingDurationSec <= 0) {
+                if (!cancelled) setSkipDbSegments({ intro: null, outro: null });
+                return;
+            }
+            const data = await fetchSkipDbSegments(title, playingSeasonNumber, playingMeta.number, playingDurationSec);
+            if (cancelled) return;
+            setSkipDbSegments({
+                intro: data && data.segments ? data.segments.intro || null : null,
+                outro: data && data.segments ? data.segments.outro || null : null
+            });
+        };
+        loadSkipDb();
+        return () => { cancelled = true; };
+    }, [title.id, title.type, title.sourceId, title.tmdbId, title.imdbId, playingSeasonNumber, playingMeta && playingMeta.number, playingDurationSec]);
     const playingQualities = normalizeVideoSources(playingMeta && playingMeta.videoSources ? playingMeta.videoSources : (title.type === 'movie' ? title.videoSources : []));
     const activeSubtitleUrl = (playingMeta && playingMeta.subtitleUrl) || (playingQualities[0] && playingQualities[0].subtitleUrl) || (title.type === 'movie' ? title.subtitleUrl : '');
     const activeSubtitleOffset = Number((playingMeta && playingMeta.subtitleOffset) ?? (title.type === 'movie' ? title.subtitleOffset : 0)) || 0;
@@ -4538,8 +4604,8 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     }, [title.id]);
     const similarTitles = React.useMemo(() => computeSimilarTitles(title, allTitles, tmdbRecs), [title, allTitles, tmdbRecs]);
     const [showAllSim, setShowAllSim] = useState(false);
-    useEffect(() => { setShowAllSim(false); setPlayingDurationSec(0); }, [title.id]);
-    useEffect(() => { setPlayingDurationSec(0); }, [playingUrl]);
+    useEffect(() => { setShowAllSim(false); setPlayingDurationSec(0); setSkipDbSegments({ intro: null, outro: null }); }, [title.id]);
+    useEffect(() => { setPlayingDurationSec(0); setSkipDbSegments({ intro: null, outro: null }); }, [playingUrl]);
     const movieWatched = title.type === 'movie' && watched && watched[title.id] && watched[title.id].movie;
     const handleEpisodeComplete = () => {
         if (title.type === 'movie')
@@ -4551,7 +4617,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         React.createElement("div", { onClick: e => e.stopPropagation(), className: `${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl` },
             React.createElement("div", { className: "relative" },
                 playingUrl ? (React.createElement("div", { className: "relative" },
-                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: playingUrl + '|' + (playingMeta.subtitleUrl || '') + '|' + activeSubtitleOffset, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: () => setVideoError(true), onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: playingMeta.introStart, introEnd: playingMeta.introEnd, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onComplete: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
+                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: playingUrl + '|' + (playingMeta.subtitleUrl || '') + '|' + activeSubtitleOffset, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: () => setVideoError(true), onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : playingMeta.introStart, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : playingMeta.introEnd, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onNextEpisode: playNextEpisode, hasNextEpisode: !!getNextEpisodeInfo(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
                     videoError && (React.createElement("div", { className: "absolute inset-0 bg-black/90 flex flex-col items-center justify-center gap-3 p-6 text-center" },
                         React.createElement("p", { className: "text-sm text-slate-200 font-bold" }, "\u062A\u0639\u0630\u0651\u0631 \u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u0639\u0644\u0649 \u0647\u0630\u0627 \u0627\u0644\u062C\u0647\u0627\u0632."),
                         isIOS && (React.createElement("p", { className: "text-xs text-slate-400 max-w-xs leading-relaxed" }, "\u063A\u0627\u0644\u0628\u064B\u0627 \u0627\u0644\u0633\u0628\u0628 \u0623\u0646 \u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u063A\u064A\u0631 \u0645\u0631\u0641\u0648\u0639 \u0628\u0635\u064A\u063A\u0629 \u064A\u062F\u0639\u0645\u0647\u0627 \u0627\u0644\u0622\u064A\u0641\u0648\u0646 \u0645\u0628\u0627\u0634\u0631\u0629. \u0627\u0644\u0623\u0639\u0645\u0627\u0644 \u0627\u0644\u062A\u064A \u062A\u064F\u0631\u0641\u0639 \u0645\u0646 \u0644\u0648\u062D\u0629 \u0627\u0644\u062A\u062D\u0643\u0645 \u0639\u0628\u0631 \u0632\u0631 \"\u0631\u0641\u0639 \u0645\u0646 \u0627\u0644\u062C\u0647\u0627\u0632\" \u062A\u0639\u0645\u0644 \u0628\u0634\u0643\u0644 \u0635\u062D\u064A\u062D \u0639\u0644\u0649 \u0643\u0644 \u0627\u0644\u0623\u062C\u0647\u0632\u0629.")),
