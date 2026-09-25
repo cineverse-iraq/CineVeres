@@ -2529,9 +2529,9 @@ function RatingBadges({ imdb, rt, size, flat }) {
     const Wrap = flat ? React.Fragment : 'div';
     const wrapProps = flat ? {} : { className: 'flex items-center gap-1.5 flex-wrap' };
     return (React.createElement(Wrap, { ...wrapProps },
-        hasImdb && (React.createElement("span", { className: `inline-flex items-center gap-1 ${small ? 'text-[10px] px-2 py-0.5' : 'text-xs px-2.5 py-1'} rounded-md bg-black/60 backdrop-blur-md text-amber-400 font-bold border border-amber-400/20 shadow-sm` },
+        hasImdb && (React.createElement("span", { className: `inline-flex items-center gap-1 ${small ? 'text-[10px] px-2 py-0.5' : 'text-xs px-2.5 py-1'} rounded-md bg-black/60 backdrop-blur-md text-amber-400 font-bold border border-amber-400/20 shadow-sm`, title: "تقييم IMDb" },
             React.createElement(Icon, { name: "star", className: small ? 'w-2.5 h-2.5' : 'w-3 h-3' }),
-            "TMDB ",
+            "IMDb ",
             imdb)),
         hasRt && (React.createElement("span", { className: `inline-flex items-center gap-1 ${small ? 'text-[10px] px-2 py-0.5' : 'text-xs px-2.5 py-1'} rounded-md bg-black/60 backdrop-blur-md font-bold border border-white/10 ${rtGood ? 'text-emerald-400' : 'text-rose-400'}` },
             "RT ",
@@ -6326,20 +6326,37 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
             tmdbRatingMsg && React.createElement("p", { className: "sm:col-span-3 text-[10px] font-bold text-slate-400 -mt-1" }, tmdbRatingMsg)),
         React.createElement(VideoDisplaySettings, { value: e, onChange: patch => onChange({ ...e, ...patch }) })));
 }
-async function refreshSeasonTmdbRatings(sourceId, seasonNumber, episodes, onProgress) {
-    const list = Array.isArray(episodes) ? episodes : [];
-    const updated = [];
-    for (let i = 0; i < list.length; i++) {
-        const ep = list[i];
-        let rating = '';
-        try {
-            rating = await fetchTmdbEpisodeRating(sourceId, seasonNumber, ep.number);
-        } catch (e) {
-            rating = '';
-        }
-        updated.push({ ...ep, tmdbRating: rating || ep.tmdbRating || '' });
-        if (onProgress) onProgress(i + 1, list.length);
+async function resolveSeriesImdbIdForRatings(sourceId) {
+    let id = String(sourceId || '').trim();
+    if (/^tt\d+$/i.test(id)) return id.toLowerCase();
+    if (!/^\d+$/.test(id)) return '';
+    try {
+        const ext = await tmdbFetch(`tv/${id}/external_ids`, { language: 'en-US' });
+        return String(ext && ext.imdb_id || '').trim().toLowerCase();
+    } catch (e) {
+        return '';
     }
+}
+async function refreshSeasonImdbRatings(sourceId, seasonNumber, episodes, onProgress) {
+    const list = Array.isArray(episodes) ? episodes : [];
+    const imdbId = await resolveSeriesImdbIdForRatings(sourceId);
+    if (!imdbId) throw new Error('ما لكيت معرف IMDb للمسلسل.');
+    let od;
+    try {
+        od = await omdbFetch({ i: imdbId, Season: Number(seasonNumber) || 1 });
+    } catch (e) {
+        throw new Error('تعذر جلب تقييمات IMDb من OMDb.');
+    }
+    if (!od || od.Response !== 'True' || !Array.isArray(od.Episodes)) {
+        throw new Error((od && od.Error) ? `IMDb/OMDb: ${od.Error}` : 'ما رجعت تقييمات حلقات من IMDb.');
+    }
+    const byEpisode = new Map(od.Episodes.map(x => [Number(x.Episode), x]));
+    const updated = list.map((ep, i) => {
+        const hit = byEpisode.get(Number(ep.number));
+        const rating = hit && hit.imdbRating && hit.imdbRating !== 'N/A' ? String(hit.imdbRating) : '';
+        if (onProgress) onProgress(i + 1, list.length);
+        return { ...ep, imdb: rating || ep.imdb || '' };
+    });
     return updated;
 }
 function AdminContentForm({ initial, defaultType, onDone }) {
@@ -6497,14 +6514,14 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             return;
         }
         setRefreshRatingsLoading(true);
-        setRefreshRatingsMsg('جاري تحديث تقييمات الحلقات من TMDB...');
+        setRefreshRatingsMsg('جاري تحديث تقييمات الحلقات من IMDb...');
         try {
-            const updated = await refreshSeasonTmdbRatings(sourceId, activeSeason.number, activeSeason.episodes, (done, total) => {
-                setRefreshRatingsMsg(`جاري تحديث التقييمات: ${done}/${total}`);
+            const updated = await refreshSeasonImdbRatings(sourceId, activeSeason.number, activeSeason.episodes, (done, total) => {
+                setRefreshRatingsMsg(`جاري تحديث تقييمات IMDb: ${done}/${total}`);
             });
             setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i === activeSeasonIdx ? { ...s, episodes: updated } : s) }));
-            const found = updated.filter(e => Number(e.tmdbRating) > 0).length;
-            setRefreshRatingsMsg(`تم تحديث تقييمات TMDB — ${found}/${updated.length} حلقة لديها تقييم.`);
+            const found = updated.filter(e => Number(e.imdb) > 0).length;
+            setRefreshRatingsMsg(`تم تحديث تقييمات IMDb — ${found}/${updated.length} حلقة لديها تقييم.`);
         } catch (e) {
             setRefreshRatingsMsg(e && e.message ? e.message : 'تعذر تحديث تقييمات TMDB.');
         } finally {
@@ -6716,9 +6733,9 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                                     React.createElement("input", { type: "number", value: activeSeason.number, onChange: e => updateSeasonNumber(activeSeasonIdx, e.target.value), className: "w-16 bg-glass-950 border border-white/10 rounded-xl px-2 py-1.5 text-xs font-bold text-white text-center" }),
                                     React.createElement("span", { className: "text-xs font-bold text-slate-300 shrink-0 mr-1" }, "\u0633\u0646\u0629 \u0627\u0644\u0625\u0635\u062F\u0627\u0631"),
                                     React.createElement("input", { type: "number", value: activeSeason.year || '', onChange: e => updateSeasonField(activeSeasonIdx, 'year', e.target.value), placeholder: "\u0645\u062B\u0627\u0644 2023", className: "w-24 bg-glass-950 border border-white/10 rounded-xl px-2 py-1.5 text-xs font-bold text-white text-center" }),
-                                    React.createElement("button", { type: "button", onClick: refreshActiveSeasonRatings, disabled: refreshRatingsLoading, title: "تحديث كل تقييمات حلقات هذا الموسم من TMDB", className: "flex items-center gap-1.5 text-[10px] px-2.5 py-1.5 rounded-lg bg-accent-cyan/10 border border-accent-cyan/30 text-accent-cyan font-black hover:bg-accent-cyan/20 disabled:opacity-50 transition" },
+                                    React.createElement("button", { type: "button", onClick: refreshActiveSeasonRatings, disabled: refreshRatingsLoading, title: "تحديث كل تقييمات حلقات هذا الموسم من IMDb", className: "flex items-center gap-1.5 text-[10px] px-2.5 py-1.5 rounded-lg bg-accent-cyan/10 border border-accent-cyan/30 text-accent-cyan font-black hover:bg-accent-cyan/20 disabled:opacity-50 transition" },
                                         React.createElement(Icon, { name: "refreshCw", className: `w-3.5 h-3.5 ${refreshRatingsLoading ? 'animate-spin' : ''}` }),
-                                        refreshRatingsLoading ? 'جاري التحديث...' : 'تحديث التقييمات'),
+                                        refreshRatingsLoading ? 'جاري التحديث...' : 'تحديث تقييمات IMDb'),
                                     React.createElement("div", { className: "flex items-center gap-1 mr-auto" },
                                         React.createElement("button", { onClick: () => moveSeason(activeSeasonIdx, -1), disabled: activeSeasonIdx === 0, title: "\u0646\u0642\u0644 \u0644\u0644\u0623\u0639\u0644\u0649", className: "w-7 h-7 rounded-lg glass-panel border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-300 disabled:opacity-30 transition" },
                                             React.createElement(Icon, { name: "arrowUp", className: "w-3.5 h-3.5" })),
