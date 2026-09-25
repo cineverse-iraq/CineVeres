@@ -1098,24 +1098,38 @@ const SUBTITLE_PUBLIC_BASE = (() => {
 async function cinemanaFetch(path) {
     if (!CINEMANA_PROXY)
         throw new Error('لم يتم ضبط رابط بروكسي سينمانا. استخدم window.CINEMANA_PROXY_URL أو المسار /api/cinemana.');
-    let res;
-    try {
-        res = await fetch(`${CINEMANA_PROXY}${path}`, { headers: { 'Accept': 'application/json' } });
+
+    // على جهاز الإدارة قد يكون البروكسي العام غير متاح، بينما Node المحلي يعمل أصلًا.
+    // لذلك نجرب الرابط المضبوط أولًا، ثم localhost كاحتياط. هذا لا يغيّر روابط الموقع
+    // المنشور؛ فقط يمنع فشل البحث/الرفع من لوحة الإدارة بسبب Worker أو DNS متوقف.
+    const candidates = [];
+    const addCandidate = (base) => {
+        const b = String(base || '').trim().replace(/\/+$/, '');
+        if (b && !candidates.includes(b)) candidates.push(b);
+    };
+    addCandidate(CINEMANA_PROXY);
+    addCandidate('http://localhost:8787');
+
+    let lastError = null;
+    for (const base of candidates) {
+        try {
+            const res = await fetch(`${base}${path}`, { headers: { 'Accept': 'application/json' } });
+            if (!res.ok) {
+                lastError = new Error('HTTP ' + res.status);
+                continue;
+            }
+            const text = await res.text();
+            if (!text) return [];
+            try {
+                return JSON.parse(text);
+            } catch (e) {
+                lastError = new Error('JSON');
+            }
+        } catch (e) {
+            lastError = e;
+        }
     }
-    catch (e) {
-        throw new Error('تعذر الاتصال ببروكسي سينمانا — تحقق من رابط الـWorker وCORS.');
-    }
-    if (!res.ok)
-        throw new Error('خطأ من بروكسي سينمانا (رمز ' + res.status + ')');
-    const text = await res.text();
-    if (!text)
-        return [];
-    try {
-        return JSON.parse(text);
-    }
-    catch (e) {
-        throw new Error('استجابة سينمانا غير صالحة JSON');
-    }
+    throw new Error('تعذر الاتصال ببروكسي سينمانا — تحقق من تشغيل السيرفر المحلي أو رابط الـWorker وCORS.');
 }
 function cinemanaApiType(kind) {
     if (kind === 'tv')
