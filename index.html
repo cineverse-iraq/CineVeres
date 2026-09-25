@@ -177,11 +177,12 @@
     .yt-spinner { animation: yt-spin 0.9s linear infinite; }
     .cv-row-dragger { display: none; }
     @media (min-width: 768px) {
-      .cv-row-dragger { display: block; position: relative; height: 14px; margin-top: 1px; }
-      .cv-row-dragger input { -webkit-appearance: none; appearance: none; width: 100%; height: 3px; border-radius: 999px; outline: none; cursor: grab; background: rgba(255,255,255,.16); }
-      .cv-row-dragger input:active { cursor: grabbing; }
-      .cv-row-dragger input::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 30px; height: 4px; border-radius: 999px; background: #00F0FF; box-shadow: 0 0 8px rgba(0,240,255,.35); }
-      .cv-row-dragger input::-moz-range-thumb { width: 30px; height: 4px; border: 0; border-radius: 999px; background: #00F0FF; box-shadow: 0 0 8px rgba(0,240,255,.35); }
+      .cv-row-dragger { display: block; position: relative; height: 14px; margin-top: 1px; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; outline: none; direction: ltr; }
+      .cv-row-dragger:active { cursor: grabbing; }
+      .cv-row-dragger:focus-visible .cv-row-thumb { box-shadow: 0 0 0 3px rgba(0,240,255,.16), 0 0 10px rgba(0,240,255,.35); }
+      .cv-row-track { position: absolute; left: 0; right: 0; top: 5px; height: 4px; border-radius: 999px; background: rgba(255,255,255,.14); }
+      .cv-row-fill { position: absolute; left: 0; top: 0; height: 100%; border-radius: inherit; background: rgba(0,240,255,.85); pointer-events: none; }
+      .cv-row-thumb { position: absolute; top: 50%; width: 30px; height: 6px; border-radius: 999px; background: #00F0FF; transform: translate(-50%,-50%); box-shadow: 0 0 8px rgba(0,240,255,.35); pointer-events: none; }
     }
     .cv-skip-zone { position:absolute; top:18%; bottom:18%; width:31%; z-index:21; display:flex; align-items:center; justify-content:center; pointer-events:none; }
     .cv-skip-zone.left { left:0; } .cv-skip-zone.right { right:0; }
@@ -661,8 +662,9 @@ function decodeSubBuffer(buf) {
 // يحصر كل مجموعة أقواس داخل عزل اتجاهي (عربي RLI أو لاتيني FSI) حتى يبقى القوسين مع محتواهم وما يهربون لأول/آخر السطر
 function wrapParenGroups(l) {
     const text = String(l || '');
-    // نعزل مجموعات الأقواس عن اتجاه السطر العربي حتى تبقى (النص) و[النص] بنفس الترتيب بصريًا.
-    return text.replace(/\([^()]*\)|\[[^\[\]]*\]|\{[^{}]*\}/g, g => '\u2067' + g + '\u2069');
+    // عزل تلقائي لاتجاه كل مجموعة بين أقواس: FSI/PDI أفضل من فرض RTL،
+    // لأن محتوى القوس قد يكون عربيًا أو إنجليزيًا أو رقمًا، ويمنع انقلاب الأقواس في سطر RTL.
+    return text.replace(/\([^()]*\)|\[[^\[\]]*\]|\{[^{}]*\}/g, g => '\u2068' + g + '\u2069');
 }
 // يصلح الأقواس المعكوسة: سطر يبدأ بـ ")" قبل أي "(" بنفس العدد => نبدّل كل الأقواس
 function fixDash(l) {
@@ -2536,12 +2538,64 @@ function PosterCard({ title, onOpen, compact, watched }) {
 }
 function Row({ label, items, onOpen, watchedMap }) {
     const scrollerRef = useRef(null);
+    const draggerRef = useRef(null);
     const [scrollPct, setScrollPct] = useState(0);
-    const syncScroll = () => {
+    const getMetrics = () => {
+        const el = scrollerRef.current;
+        if (!el) return { max: 0, rtl: false };
+        return { max: Math.max(0, el.scrollWidth - el.clientWidth), rtl: getComputedStyle(el).direction === 'rtl' };
+    };
+    const getPct = () => {
+        const el = scrollerRef.current;
+        if (!el) return 0;
+        const { max, rtl } = getMetrics();
+        if (!max) return 0;
+        let pos;
+        if (!rtl) pos = el.scrollLeft;
+        else {
+            const raw = el.scrollLeft;
+            // Chromium/Safari: RTL scrollLeft غالبًا سالب، وبعض المحركات تمثله موجبًا.
+            pos = raw < 0 ? -raw : max - raw;
+        }
+        return Math.max(0, Math.min(100, (pos / max) * 100));
+    };
+    const syncScroll = () => setScrollPct(getPct());
+    const setScrollPercent = (value) => {
         const el = scrollerRef.current;
         if (!el) return;
-        const max = Math.max(1, el.scrollWidth - el.clientWidth);
-        setScrollPct(Math.max(0, Math.min(100, (el.scrollLeft / max) * 100)));
+        const { max, rtl } = getMetrics();
+        const pct = Math.max(0, Math.min(100, Number(value) || 0));
+        if (!rtl) {
+            el.scrollLeft = (pct / 100) * max;
+        } else {
+            const target = (pct / 100) * max;
+            // نستخدم سلوك RTL الأصلي: إذا كان المحرك يدعم القيم السالبة فهذه هي الصيغة الصحيحة.
+            el.scrollLeft = -target;
+            // إذا لم يقبل المحرك القيمة السالبة، نحاول تمثيل RTL الموجب.
+            if (pct > 0 && Math.abs(el.scrollLeft) < 0.5) el.scrollLeft = max - target;
+        }
+        setScrollPct(pct);
+    };
+    const updateFromPointer = (clientX) => {
+        const bar = draggerRef.current;
+        if (!bar) return;
+        const rect = bar.getBoundingClientRect();
+        const pct = Math.max(0, Math.min(100, ((clientX - rect.left) / Math.max(1, rect.width)) * 100));
+        setScrollPercent(pct);
+    };
+    const onPointerDown = (e) => {
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        const bar = draggerRef.current;
+        if (!bar) return;
+        try { bar.setPointerCapture(e.pointerId); } catch (_) {}
+        updateFromPointer(e.clientX);
+        const move = ev => updateFromPointer(ev.clientX);
+        const up = () => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', up);
+        };
+        window.addEventListener('pointermove', move, { passive: true });
+        window.addEventListener('pointerup', up, { passive: true, once: true });
     };
     useEffect(() => {
         const el = scrollerRef.current;
@@ -2549,15 +2603,14 @@ function Row({ label, items, onOpen, watchedMap }) {
         syncScroll();
         el.addEventListener('scroll', syncScroll, { passive: true });
         window.addEventListener('resize', syncScroll, { passive: true });
-        return () => { el.removeEventListener('scroll', syncScroll); window.removeEventListener('resize', syncScroll); };
+        const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(syncScroll) : null;
+        if (ro) ro.observe(el);
+        return () => {
+            el.removeEventListener('scroll', syncScroll);
+            window.removeEventListener('resize', syncScroll);
+            if (ro) ro.disconnect();
+        };
     }, [items.length]);
-    const dragRow = (value) => {
-        const el = scrollerRef.current;
-        if (!el) return;
-        const max = Math.max(0, el.scrollWidth - el.clientWidth);
-        el.scrollLeft = (Number(value) / 100) * max;
-        setScrollPct(Number(value));
-    };
     if (!items.length) return null;
     const progress = Math.max(0, Math.min(100, scrollPct));
     return (React.createElement("section", { className: "mb-10" },
@@ -2567,8 +2620,15 @@ function Row({ label, items, onOpen, watchedMap }) {
                 label)),
         React.createElement("div", { ref: scrollerRef, className: "flex gap-4 overflow-x-auto pb-3 pt-1 snap-x scrollbar-hide", style: { overscrollBehaviorX: 'contain', scrollbarGutter: 'stable' } },
             items.map(it => React.createElement(PosterCard, { key: it.id, title: it, onOpen: onOpen, compact: true, watched: watchedMap && isTitleWatched(watchedMap, it) }))),
-        React.createElement("div", { className: "cv-row-dragger", 'aria-label': `تحريك صف ${label}` },
-            React.createElement("input", { type: "range", min: "0", max: "100", step: "0.1", value: progress, onChange: e => dragRow(e.target.value), style: { background: `linear-gradient(to right, rgba(0,240,255,.8) ${progress}%, rgba(255,255,255,.16) ${progress}%)` } }))));
+        React.createElement("div", { ref: draggerRef, className: "cv-row-dragger", role: "slider", tabIndex: 0, 'aria-label': `تحريك صف ${label}`, 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': Math.round(progress), onPointerDown: onPointerDown, onKeyDown: e => {
+            if (e.key === 'ArrowLeft') { e.preventDefault(); setScrollPercent(progress + 5); }
+            if (e.key === 'ArrowRight') { e.preventDefault(); setScrollPercent(progress - 5); }
+            if (e.key === 'Home') { e.preventDefault(); setScrollPercent(0); }
+            if (e.key === 'End') { e.preventDefault(); setScrollPercent(100); }
+        } },
+            React.createElement("div", { className: "cv-row-track" },
+                React.createElement("div", { className: "cv-row-fill", style: { width: `${progress}%` } }),
+                React.createElement("div", { className: "cv-row-thumb", style: { left: `${progress}%` } }))));
 }
 
 function Hero({ items, onOpen }) {
@@ -4565,7 +4625,11 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                                                     "(",
                                                     episodeAutoLabel(ep),
                                                     ")")))) : episodeAutoLabel(ep)),
-                                        React.createElement(RatingBadges, { imdb: ep.imdb, rt: ep.rt, size: "xs" })),
+                                        React.createElement("div", { className: "flex items-center gap-1.5 flex-wrap" },
+                                            React.createElement(RatingBadges, { imdb: ep.imdb, rt: ep.rt, size: "xs", flat: true }),
+                                            getRuntimeSeconds(ep) > 0 && React.createElement("span", { className: "inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-black/60 text-slate-300 font-bold border border-white/10", dir: "ltr", title: "مدة الحلقة" },
+                                                formatRuntimeMinutesSeconds(getRuntimeSeconds(ep)),
+                                                " دقيقة"))),
                                     done && React.createElement(Icon, { name: "check", className: "w-4 h-4 text-emerald-400 shrink-0 hidden xs:block" }),
                                     isCurrent && React.createElement("span", { className: "text-[10px] px-2 py-1 rounded-lg bg-accent-cyan/15 text-accent-cyan font-bold shrink-0" }, "\u0642\u064A\u062F \u0627\u0644\u062A\u0634\u063A\u064A\u0644"),
                                     React.createElement("button", { onClick: () => playEpisode(ep, seasons[activeSeason].number), className: "w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition" },
