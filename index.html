@@ -2190,10 +2190,21 @@ async function importFromTmdb(rawInput, currentType, opts) {
                         // نترك القيم التي حصلنا عليها من استجابة الموسم كما هي.
                     }
                 }
+                let finalEpImdb = epImdb;
+                if (!finalEpImdb && imdbId) {
+                    try {
+                        const batchMap = omdbEpisodes ? new Map(omdbEpisodes.map(x => [Number(x.Episode), x])) : new Map();
+                        const tmdbSeriesIdForEp = String(tmdbId || '');
+                        finalEpImdb = await getImdbEpisodeRatingFromSeason(imdbId, s.season_number, ep.episode_number, batchMap, tmdbSeriesIdForEp, epTitle, (ep.air_date || '').slice(0, 4));
+                    } catch (e) {
+                        finalEpImdb = epImdb;
+                    }
+                }
                 episodes.push(Object.assign(emptyEpisode(Number(ep.episode_number) || 1), {
                     number: Number(ep.episode_number) || 1,
                     title: epTitle,
-                    imdb: epImdb,
+                    imdb: finalEpImdb,
+                    airDate: ep.air_date || '',
                     runtimeMinutes: parseRuntimeSeconds(epRuntime || ((Array.isArray(data.episode_run_time) && data.episode_run_time[0]) || 0), true) / 60,
                     tmdbRating: epTmdbRating ? epTmdbRating.toFixed(1) : '',
                     videoUrl: '',
@@ -6337,49 +6348,104 @@ async function resolveSeriesImdbIdForRatings(sourceId) {
         return '';
     }
 }
-async function getImdbEpisodeRatingFromSeason(imdbSeriesId, seasonNumber, episodeNumber, seasonMap) {
-    const n = Number(episodeNumber);
-    const hit = seasonMap && seasonMap.get(n);
-    const seasonRating = hit && hit.imdbRating && hit.imdbRating !== 'N/A' ? String(hit.imdbRating).trim() : '';
-    if (seasonRating && /^\d+(?:\.\d+)?$/.test(seasonRating)) return seasonRating;
-    const episodeImdbId = hit && /^tt\d+$/i.test(String(hit.imdbID || '')) ? String(hit.imdbID).toLowerCase() : '';
-    if (!episodeImdbId) return '';
+function normalizeImdbRatingValue(value) {
+    const r = String(value == null ? '' : value).trim();
+    if (!r || r === 'N/A') return '';
+    const n = Number(r);
+    return Number.isFinite(n) && n > 0 && n <= 10 ? n.toFixed(1) : '';
+}
+async function fetchTmdbEpisodeImdbIdForRatings(tmdbSeriesId, seasonNumber, episodeNumber) {
+    const id = String(tmdbSeriesId || '').trim();
+    if (!/^\d+$/.test(id)) return '';
     try {
-        const direct = await omdbFetch({ i: episodeImdbId });
-        const r = direct && direct.imdbRating && direct.imdbRating !== 'N/A' ? String(direct.imdbRating).trim() : '';
-        return /^\d+(?:\.\d+)?$/.test(r) ? r : '';
+        const ext = await tmdbFetch(`tv/${id}/season/${Number(seasonNumber) || 1}/episode/${Number(episodeNumber) || 1}/external_ids`, { language: 'en-US' });
+        return String(ext && ext.imdb_id || '').trim().toLowerCase();
     } catch (e) {
         return '';
     }
 }
+async function fetchImdbEpisodeRatingById(episodeImdbId, imdbSeriesId, seasonNumber, episodeNumber) {
+    const id = String(episodeImdbId || '').trim().toLowerCase();
+    if (!/^tt\d+$/i.test(id)) return '';
+    try {
+        const od = await omdbFetch({ i: id });
+        if (!od || od.Response !== 'True') return '';
+        // لا نأخذ نتيجة خاطئة لو صادف IMDb ID لعمل آخر.
+        if (od.seriesID && imdbSeriesId && String(od.seriesID).toLowerCase() !== String(imdbSeriesId).toLowerCase()) return '';
+        if (od.Season && Number(od.Season) !== Number(seasonNumber)) return '';
+        if (od.Episode && Number(od.Episode) !== Number(episodeNumber)) return '';
+        return normalizeImdbRatingValue(od.imdbRating);
+    } catch (e) {
+        return '';
+    }
+}
+async function fetchImdbEpisodeRatingByTitle(title, year, imdbSeriesId, seasonNumber, episodeNumber) {
+    const t = String(title || '').trim();
+    if (!t) return '';
+    try {
+        const params = { t, type: 'episode' };
+        if (/^\d{4}$/.test(String(year || ''))) params.y = String(year);
+        const od = await omdbFetch(params);
+        if (!od || od.Response !== 'True') return '';
+        if (od.seriesID && imdbSeriesId && String(od.seriesID).toLowerCase() !== String(imdbSeriesId).toLowerCase()) return '';
+        if (od.Season && Number(od.Season) !== Number(seasonNumber)) return '';
+        if (od.Episode && Number(od.Episode) !== Number(episodeNumber)) return '';
+        return normalizeImdbRatingValue(od.imdbRating);
+    } catch (e) {
+        return '';
+    }
+}
+async function getImdbEpisodeRatingFromSeason(imdbSeriesId, seasonNumber, episodeNumber, seasonMap, tmdbSeriesId, episodeTitle, episodeYear) {
+    const n = Number(episodeNumber);
+    const hit = seasonMap && seasonMap.get(n);
+    const seasonRating = normalizeImdbRatingValue(hit && hit.imdbRating);
+    if (seasonRating) return seasonRating;
+
+    // 1) IMDb ID للحلقة من OMDb batch.
+    let episodeImdbId = hit && /^tt\d+$/i.test(String(hit.imdbID || '')) ? String(hit.imdbID).toLowerCase() : '';
+    if (episodeImdbId) {
+        const direct = await fetchImdbEpisodeRatingById(episodeImdbId, imdbSeriesId, seasonNumber, episodeNumber);
+        if (direct) return direct;
+    }
+
+    // 2) إذا OMDb ما رجع IMDb ID للحلقة، نطلبه من TMDB ثم نرجع لـ OMDb.
+    if (tmdbSeriesId) {
+        episodeImdbId = await fetchTmdbEpisodeImdbIdForRatings(tmdbSeriesId, seasonNumber, episodeNumber);
+        if (episodeImdbId) {
+            const direct = await fetchImdbEpisodeRatingById(episodeImdbId, imdbSeriesId, seasonNumber, episodeNumber);
+            if (direct) return direct;
+        }
+    }
+
+    // 3) آخر محاولة آمنة نسبيًا: بحث OMDb بعنوان الحلقة مع التحقق من المسلسل/الموسم/الحلقة.
+    return fetchImdbEpisodeRatingByTitle(episodeTitle, episodeYear, imdbSeriesId, seasonNumber, episodeNumber);
+}
 async function refreshSeasonImdbRatings(sourceId, seasonNumber, episodes, onProgress) {
     const list = Array.isArray(episodes) ? episodes : [];
+    if (!list.length) return [];
     const imdbId = await resolveSeriesImdbIdForRatings(sourceId);
     if (!imdbId) throw new Error('ما لكيت معرف IMDb للمسلسل.');
-    let od;
+    let od = null;
     try {
         od = await omdbFetch({ i: imdbId, Season: Number(seasonNumber) || 1 });
     } catch (e) {
-        throw new Error('تعذر جلب تقييمات IMDb من OMDb.');
+        od = null;
     }
-    if (!od || od.Response !== 'True' || !Array.isArray(od.Episodes)) {
-        throw new Error((od && od.Error) ? `IMDb/OMDb: ${od.Error}` : 'ما رجعت بيانات حلقات الموسم من IMDb.');
-    }
-    const byEpisode = new Map(od.Episodes.map(x => [Number(x.Episode), x]));
+    const byEpisode = new Map(od && od.Response === 'True' && Array.isArray(od.Episodes) ? od.Episodes.map(x => [Number(x.Episode), x]) : []);
+    const tmdbId = await resolveSeriesTmdbIdForRatings(sourceId);
     const updated = [];
-    let done = 0;
-    const worker = async (ep) => {
+    for (let i = 0; i < list.length; i++) {
+        const ep = list[i];
         let rating = '';
-        try { rating = await getImdbEpisodeRatingFromSeason(imdbId, seasonNumber, ep.number, byEpisode); } catch (e) { rating = ''; }
-        updated.push({ index: list.indexOf(ep), ep: { ...ep, imdb: rating || ep.imdb || '' } });
-        done++;
-        if (onProgress) onProgress(done, list.length);
-    };
-    const concurrency = 4;
-    for (let i = 0; i < list.length; i += concurrency) {
-        await Promise.all(list.slice(i, i + concurrency).map(worker));
+        try {
+            rating = await getImdbEpisodeRatingFromSeason(imdbId, seasonNumber, ep.number, byEpisode, tmdbId, ep.title, (ep.airDate || '').slice(0, 4));
+        } catch (e) {
+            rating = '';
+        }
+        updated.push({ ...ep, imdb: rating || ep.imdb || '' });
+        if (onProgress) onProgress(i + 1, list.length);
     }
-    return updated.sort((a, b) => a.index - b.index).map(x => x.ep);
+    return updated;
 }
 function AdminContentForm({ initial, defaultType, onDone }) {
     const [form, setForm] = useState(() => {
@@ -6536,14 +6602,14 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             return;
         }
         setRefreshRatingsLoading(true);
-        setRefreshRatingsMsg('جاري تحديث تقييمات الحلقات من IMDb...');
+        setRefreshRatingsMsg('جاري الاسترداد الكامل لتقييمات IMDb...');
         try {
             const updated = await refreshSeasonImdbRatings(sourceId, activeSeason.number, activeSeason.episodes, (done, total) => {
                 setRefreshRatingsMsg(`جاري تحديث تقييمات IMDb: ${done}/${total}`);
             });
             setForm(prev => ({ ...prev, seasons: prev.seasons.map((s, i) => i === activeSeasonIdx ? { ...s, episodes: updated } : s) }));
             const found = updated.filter(e => Number(e.imdb) > 0).length;
-            setRefreshRatingsMsg(`تم تحديث تقييمات IMDb — ${found}/${updated.length} حلقة لديها تقييم.`);
+            setRefreshRatingsMsg(`اكتمل الاسترداد — ${found}/${updated.length} حلقة لديها تقييم IMDb.`);
         } catch (e) {
             setRefreshRatingsMsg(e && e.message ? e.message : 'تعذر تحديث تقييمات IMDb.');
         } finally {
