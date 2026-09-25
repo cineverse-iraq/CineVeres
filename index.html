@@ -1068,10 +1068,13 @@ function VidApiHelper({ kind, season, episode, onGenerate, defaultId, defaultTit
 // http://localhost:8787/episodes/:id
 // http://localhost:8787/videos/:id
 const CINEMANA_PROXY = (() => {
-    const configured = (typeof window !== 'undefined' && (window.CINEMANA_PROXY_URL || window.CINEMANA_PROXY)) ||
-        (typeof localStorage !== 'undefined' ? localStorage.getItem('cinemana_proxy_url') : '') ||
-        'http://localhost:8787';
-    return String(configured || '').trim().replace(/\/+$/, '');
+    const host = String((typeof location !== 'undefined' && location.hostname) || '').toLowerCase();
+    const isLocalPage = host === 'localhost' || host === '127.0.0.1';
+    const explicit = (typeof window !== 'undefined' && (window.CINEMANA_PROXY_URL || window.CINEMANA_PROXY)) || '';
+    const stored = (typeof localStorage !== 'undefined' ? localStorage.getItem('cinemana_proxy_url') : '') || '';
+    const configured = String(explicit || stored || '').trim().replace(/\/+$/, '');
+    if (configured && (isLocalPage || !/^https?:\/\/localhost(?::\d+)?$/i.test(configured))) return configured;
+    return isLocalPage ? 'http://localhost:8787' : 'https://cinemana-proxy-pa5l.onrender.com';
 })();
 const SUBTITLE_PUBLIC_BASE = (() => {
     const configured = (typeof window !== 'undefined' && (window.SUBTITLE_PUBLIC_BASE_URL || window.CINEMANA_SUBTITLE_PUBLIC_BASE)) ||
@@ -1148,9 +1151,48 @@ async function cinemanaEpisodes(id) {
     const data = await cinemanaFetch(`/episodes/${encodeURIComponent(id)}`);
     return cinemanaArray(data, ['episodes', 'results', 'items', 'data', 'list']);
 }
-async function cinemanaVideos(id) {
-    const data = await cinemanaFetch(`/videos/${encodeURIComponent(id)}`);
-    return cinemanaArray(data, ['videos', 'files', 'results', 'items', 'data', 'list']);
+async function cinemanaVideos(id, kind = '') {
+    const enc = encodeURIComponent(id);
+    let firstError = null;
+    try {
+        const data = await cinemanaFetch(`/videos/${enc}`);
+        const list = cinemanaArray(data, ['videos', 'files', 'results', 'items', 'data', 'list']);
+        if (list.length) return list;
+    } catch (e) {
+        firstError = e;
+    }
+    // بعض سجلات الأفلام في Cinemana تُرجع مصدر الفيديو داخل /info بدل /videos.
+    // نستخدمه كمسار احتياطي للأفلام فقط، حتى لا يتأثر مسار الحلقات الذي يعمل أصلًا.
+    if (kind === 'movie') {
+        try {
+            const info = await cinemanaFetch(`/info/${enc}`);
+            const found = [];
+            const seen = new Set();
+            const visit = value => {
+                if (!value) return;
+                if (Array.isArray(value)) { value.forEach(visit); return; }
+                if (typeof value !== 'object') return;
+                const url = value.videoUrl || value.video_url || value.src || value.file || value.fileUrl || value.file_url || value.streamUrl || value.stream_url;
+                if (typeof url === 'string' && /^https?:\/\//i.test(url) && !seen.has(url)) {
+                    const low = url.toLowerCase();
+                    if (/\.(m3u8|mp4|mkv|webm)(?:$|[?#])/.test(low) || /(?:m3u8|manifest|stream|video)/.test(low)) {
+                        seen.add(url);
+                        found.push({ url, resolution: value.resolution || value.quality || value.label || '' });
+                    }
+                }
+                Object.keys(value).forEach(k => {
+                    if (/^(img|image|poster|backdrop|thumbnail|logo|subtitle)/i.test(k)) return;
+                    visit(value[k]);
+                });
+            };
+            visit(info);
+            if (found.length) return found;
+        } catch (e) {
+            if (!firstError) firstError = e;
+        }
+    }
+    if (firstError) throw firstError;
+    return [];
 }
 function cinemanaVideoSources(videos) {
     const out = normalizeVideoSources((videos || []).map(v => ({
@@ -1254,7 +1296,7 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
             }
             if (kind === 'movie' || kind === 'anime') {
                 const nb = String(item.nb);
-                setVideos(await cinemanaVideos(nb));
+                setVideos(await cinemanaVideos(nb, kind));
                 if (onPickedNb)
                     onPickedNb(nb);
                 autoSubtitle(nb, item);
@@ -1266,7 +1308,7 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
                     setError(`لم يُعثر تلقائيًا على الموسم ${Number(season) || 1} الحلقة ${Number(episode) || 1} بهذا العنوان على سينمانا`);
                 else {
                     const nb = String(match.nb);
-                    setVideos(await cinemanaVideos(nb));
+                    setVideos(await cinemanaVideos(nb, kind));
                     if (onPickedNb)
                         onPickedNb(nb);
                     autoSubtitle(nb, item);
