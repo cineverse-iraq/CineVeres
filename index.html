@@ -162,7 +162,7 @@
     }
     .yt-controls-bottom.hidden-bar { opacity: 0; pointer-events: none; transform: translateY(6px); }
     .yt-progress:focus, .yt-vol:focus { outline: none !important; box-shadow: none !important; }
-    .yt-progress { -webkit-appearance: none; appearance: none; height: 4px; border-radius: 999px; background: rgba(255,255,255,0.25); outline: none; cursor: pointer; }
+    .yt-progress { -webkit-appearance: none; appearance: none; display:block; width:calc(100% + 20px) !important; height: 4px; margin-left:-10px; margin-right:-10px; border-radius: 999px; background: rgba(255,255,255,0.25); outline: none; cursor: pointer; }
     .yt-progress::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 13px; height: 13px; border-radius: 50%; background: #00F0FF; box-shadow: 0 0 8px rgba(0,240,255,0.8); cursor: pointer; margin-top: -4.5px; }
     .yt-progress::-moz-range-thumb { width: 13px; height: 13px; border-radius: 50%; background: #00F0FF; border: none; box-shadow: 0 0 8px rgba(0,240,255,0.8); cursor: pointer; }
     .yt-progress::-moz-range-track { height: 4px; border-radius: 999px; background: rgba(255,255,255,0.25); }
@@ -4706,6 +4706,14 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         .map(s => ({ ...s, episodes: (s.episodes || []).slice().sort((a, b) => (a.number || 0) - (b.number || 0)) }))
         .sort((a, b) => (a.number || 0) - (b.number || 0));
     const isSeries = title.type !== 'movie';
+    const seasonsSectionRef = useRef(null);
+    useEffect(() => {
+        if (!isSeries || !seasons.length) return;
+        const timer = setTimeout(() => {
+            try { seasonsSectionRef.current && seasonsSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) {}
+        }, 90);
+        return () => clearTimeout(timer);
+    }, [title.id, isSeries, seasons.length]);
 
     // Keep duration visible in the metadata row even when the saved title/episode
     // does not already contain runtime data. Fetch it from TMDB before playback.
@@ -4884,10 +4892,10 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         if (publicUrl) setPlayingMeta(prev => ({ ...prev, subtitlePublicUrl: publicUrl }));
         return publicUrl;
     };
-    const handlePlay = async () => {
+    const handlePlay = async (forceStart = false) => {
         const requestId = ++playRequestRef.current;
         setVideoError(false);
-        const target = continueTarget;
+        const target = forceStart ? null : continueTarget;
         const movieResume = target && target.kind === 'movie' && target.progress ? Number(target.progress.position)||0 : 0;
         setResumeAt(movieResume);
         try {
@@ -5147,12 +5155,12 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                         "\u0627\u0644\u0643\u062A\u0627\u0628\u0629: ",
                         React.createElement("span", { className: "text-slate-200" }, title.writer)))),
                 React.createElement("div", { className: "flex items-center gap-3 flex-wrap mb-6" },
-                    React.createElement("button", { onClick: handlePlay, className: "flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover text-sm font-bold text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition" },
-                        React.createElement(Icon, { name: "play", className: "w-4 h-4 fill-current" }),
-                        (continueTarget && continueTarget.kind === 'movie') ? `متابعة من ${formatWatchTime(continueTarget.progress.position)}` : (continueTarget && continueTarget.kind === 'episode') ? `متابعة · ح${continueTarget.progress.episode} من ${formatWatchTime(continueTarget.progress.position)}` : (continueTarget && continueTarget.kind === 'episode-complete') ? 'الحلقة التالية' : 'تشغيل'),
-                    isSeries && playingUrl && (React.createElement("button", { onClick: playNextEpisode, className: "flex items-center gap-2.5 px-5 py-3 rounded-2xl glass-card border border-white/10 hover:border-accent-cyan text-sm font-bold text-slate-200 transition" },
-                        React.createElement(Icon, { name: "skipForward", className: "w-4 h-4" }),
-                        "\u0627\u0644\u062D\u0644\u0642\u0629 \u0627\u0644\u062A\u0627\u0644\u064A\u0629")),
+                    React.createElement("button", { onClick: () => (isSeries && playingUrl && getNextEpisodeInfo()) ? playNextEpisode() : handlePlay(!!continueTarget), className: "flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover text-sm font-bold text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition" },
+                        React.createElement(Icon, { name: (isSeries && playingUrl && getNextEpisodeInfo()) ? 'skipForward' : 'play', className: "w-4 h-4 fill-current" }),
+                        (isSeries && playingUrl && getNextEpisodeInfo()) ? 'الحلقة التالية' : (continueTarget ? 'تشغيل من البداية' : 'تشغيل')),
+                    continueTarget && !playingUrl && (React.createElement("button", { onClick: () => handlePlay(false), className: "flex items-center gap-2.5 px-5 py-3 rounded-2xl glass-card border border-accent-cyan/40 bg-accent-cyan/10 hover:bg-accent-cyan/15 text-sm font-black text-accent-cyan transition" },
+                        React.createElement(Icon, { name: "clock", className: "w-4 h-4" }),
+                        continueTarget.kind === 'movie' ? `متابعة من ${formatWatchTime(continueTarget.progress.position)}` : continueTarget.kind === 'episode' ? `متابعة من ${formatWatchTime(continueTarget.progress.position)} · ح${continueTarget.progress.episode}` : 'متابعة الحلقة التالية')),
                     React.createElement("button", { onClick: onLike, className: `flex items-center gap-2.5 px-5 py-3 rounded-2xl text-sm font-bold border transition ${liked ? 'bg-rose-500 text-white border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.4)]' : 'glass-card border-white/10 text-slate-200 hover:border-white/20'}` },
                         React.createElement(Icon, { name: "heart", className: "w-4 h-4" }),
                         title.likes || 0),
@@ -5163,7 +5171,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                         React.createElement(Icon, { name: "list", className: "w-4 h-4 text-accent-cyan" }),
                         "\u0623\u0636\u0641 \u0644\u0642\u0627\u0626\u0645\u062A\u064A")),
                 showAddToList && React.createElement(AddToListModal, { currentUser: currentUser, title: title, onClose: () => setShowAddToList(false) }),
-                isSeries && seasons.length > 0 && (React.createElement("div", { className: "mt-8 border-t border-white/10 pt-6" },
+                isSeries && seasons.length > 0 && (React.createElement("div", { ref: seasonsSectionRef, className: "mt-8 border-t border-white/10 pt-6 scroll-mt-4" },
                     React.createElement("div", { className: "flex items-center gap-2.5 mb-4 flex-wrap" },
                         (seasonView || showAllEpisodes) && (React.createElement("button", { onClick: () => { setSeasonView(false); setShowAllEpisodes(false); }, title: "\u0627\u0644\u0631\u062C\u0648\u0639 \u0644\u062C\u0645\u064A\u0639 \u0627\u0644\u0645\u0648\u0627\u0633\u0645", className: "w-8 h-8 shrink-0 rounded-xl glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-accent-cyan transition" },
                             React.createElement(Icon, { name: "chevronRight", className: "w-4 h-4" }))),
