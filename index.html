@@ -1657,52 +1657,6 @@ async function withTimeout(promise, timeoutMs, message) {
         clearTimeout(timer);
     }
 }
-/* ───────────── Source Router: سينمانا أولاً ثم FaselHD كمصدر بديل ─────────────
-   الفكرة: بعض المستخدمين (خارج شبكة إيرثلنك) ما يوصلون لروابط سينمانا.
-   نجرب سينمانا أولاً دائمًا (أو المصدر المفضّل المحفوظ لهذا المستخدم/الجهاز)،
-   وإذا فشل التشغيل فعليًا بالمتصفح، نطلب من السيرفر رابطًا بديلًا من FaselHD
-   ونحفظ أي مصدر نجح كتفضيل لهذا المستخدم حتى لا نكرر نفس المحاولة الفاشلة لاحقًا. */
-function sourcePrefUser() {
-    try {
-        const u = JSON.parse(localStorage.getItem('cv_user') || 'null');
-        return u && u.username ? u.username : '';
-    } catch (e) { return ''; }
-}
-function sourcePrefKey() { const u = sourcePrefUser(); return 'cinadam_source_pref' + (u ? '_' + u : ''); }
-function readSourcePref() {
-    try { return localStorage.getItem(sourcePrefKey()) || ''; } catch (e) { return ''; }
-}
-function saveSourcePref(provider) {
-    try { localStorage.setItem(sourcePrefKey(), provider); } catch (e) { }
-    const u = sourcePrefUser();
-    if (!u || !provider) return;
-    try { db.ref('sourcePrefs/' + sanitizeKey(u)).set({ provider, date: Date.now() }).catch(() => { }); } catch (e) { }
-}
-async function resolveAlternateSource({ title, year, type, season, episode }) {
-    if (!title) throw new Error('لا يوجد عنوان للبحث عن مصدر بديل.');
-    const usp = new URLSearchParams();
-    usp.set('title', String(title));
-    if (year) usp.set('year', String(year));
-    usp.set('type', type === 'movie' ? 'movie' : 'tv');
-    if (type !== 'movie') {
-        usp.set('season', String(Number(season) || 1));
-        usp.set('episode', String(Number(episode) || 1));
-    }
-    const bases = [CINEMANA_PROXY, 'http://localhost:8787'].filter((v, i, a) => v && a.indexOf(v) === i);
-    let lastError = null;
-    for (const base of bases) {
-        try {
-            // خدمة FaselHD مستضافة مجانًا وقد "تنام" بعد فترة سكون، فنمنحها مهلة أطول من الطلبات العادية.
-            const res = await fetchWithTimeout(`${base}/source/faselhd/resolve?${usp.toString()}`, { headers: { Accept: 'application/json' } }, 45000);
-            const data = await res.json().catch(() => ({}));
-            if (res.ok && data && data.ok && Array.isArray(data.sources) && data.sources.length) {
-                return { provider: 'faselhd', url: data.sources[0].url, sources: data.sources };
-            }
-            lastError = new Error((data && data.error) || `المصدر البديل رجّع رمز ${res.status}`);
-        } catch (e) { lastError = e; }
-    }
-    throw lastError || new Error('تعذّر الوصول إلى المصدر البديل.');
-}
 async function subFindFile(file, meta) {
     if (!file)
         throw new Error('لم يتم اختيار ملف ترجمة.');
@@ -4325,9 +4279,6 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const [replyingTo, setReplyingTo] = useState(null);
     const [replyText, setReplyText] = useState('');
     const [videoError, setVideoError] = useState(false);
-    const [switchingSource, setSwitchingSource] = useState(false);
-    const [activeSourceProvider, setActiveSourceProvider] = useState('cinemana');
-    const fallbackTriedRef = useRef(false);
     const [copied, setCopied] = useState(false);
     const [resumeAt, setResumeAt] = useState(0);
     const [playingDurationSec, setPlayingDurationSec] = useState(0);
@@ -4363,9 +4314,6 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         setCommentText('');
         setReplyingTo(null);
         setVideoError(false);
-        setSwitchingSource(false);
-        setActiveSourceProvider('cinemana');
-        fallbackTriedRef.current = false;
         setResumeAt(0);
         const ref = db.ref(`comments/${title.id}`);
         const cb = snap => {
@@ -4633,8 +4581,6 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     };
     const handlePlay = async () => {
         setVideoError(false);
-        setSwitchingSource(false);
-        fallbackTriedRef.current = false;
         setResumeAt(0);
         try {
             if (title.type === 'movie') {
@@ -4645,15 +4591,6 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                     url = recovered.url;
                     sources = recovered.sources;
                 }
-                let provider = 'cinemana';
-                // إذا سبق ونجح المصدر البديل مع هذا المستخدم/الجهاز، نبدأ فيه مباشرة لتوفير وقت الانتظار.
-                if (readSourcePref() === 'faselhd') {
-                    try {
-                        const alt = await resolveAlternateSource({ title: title.name, year: title.year, type: 'movie' });
-                        url = alt.url; sources = alt.sources; provider = 'faselhd'; fallbackTriedRef.current = true;
-                    } catch (e) { /* المصدر المفضّل فشل لهذا العمل بالذات — نكمل بسينمانا كخطة بديلة */ }
-                }
-                setActiveSourceProvider(provider);
                 setPlayingUrl(url);
                 setPlayingMeta({ ...title, videoUrl: url, videoSources: sources, subtitleUrl: title.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: title.subtitlePublicUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
                 setPlayingLabel(title.name);
@@ -4674,25 +4611,15 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     };
     const playEpisode = async (ep, seasonNumber) => {
         setVideoError(false);
-        setSwitchingSource(false);
-        fallbackTriedRef.current = false;
         setResumeAt(0);
         try {
             let url = getSavedVideoUrl(ep);
             let sources = normalizeVideoSources(ep.videoSources);
-            let provider = 'cinemana';
-            if (readSourcePref() === 'faselhd') {
-                try {
-                    const alt = await resolveAlternateSource({ title: title.name, year: title.year, type: 'tv', season: seasonNumber, episode: ep.number });
-                    url = alt.url; sources = alt.sources; provider = 'faselhd'; fallbackTriedRef.current = true;
-                } catch (e) { /* المصدر المفضّل فشل لهذه الحلقة بالذات — نكمل بسينمانا كخطة بديلة */ }
-            }
             if (!url) {
                 const recovered = await recoverEpisodeVideo(ep, seasonNumber);
                 url = recovered.url;
                 sources = recovered.sources;
             }
-            setActiveSourceProvider(provider);
             setPlayingUrl(url);
             setPlayingMeta({ ...ep, videoUrl: url, videoSources: sources, subtitleUrl: ep.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: ep.subtitlePublicUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
             setPlayingSeasonNumber(seasonNumber != null ? seasonNumber : null);
@@ -4702,28 +4629,6 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         catch (e) {
             setVideoError(true);
             showToast(e.message || 'تعذّر تشغيل الحلقة', 'error');
-        }
-    };
-    const handleVideoError = async () => {
-        // أول فشل: نجرّب المصدر البديل (FaselHD) تلقائيًا قبل ما نعرض خطأ نهائي للمستخدم.
-        if (fallbackTriedRef.current) { setVideoError(true); return; }
-        fallbackTriedRef.current = true;
-        setSwitchingSource(true);
-        try {
-            const isMovie = title.type === 'movie';
-            const seasonNum = isMovie ? null : playingSeasonNumber;
-            const epNum = isMovie ? null : (playingMeta && playingMeta.number);
-            const alt = await resolveAlternateSource({ title: title.name, year: title.year, type: isMovie ? 'movie' : 'tv', season: seasonNum, episode: epNum });
-            setActiveSourceProvider('faselhd');
-            saveSourcePref('faselhd');
-            setPlayingMeta(prev => ({ ...prev, videoUrl: alt.url, videoSources: alt.sources }));
-            setPlayingUrl(normalizeVideoUrl(alt.url));
-            setVideoError(false);
-            showToast('تعذّر تشغيل الرابط الأصلي — تم التحويل تلقائيًا لمصدر بديل.');
-        } catch (e) {
-            setVideoError(true);
-        } finally {
-            setSwitchingSource(false);
         }
     };
     const openSeason = (i) => { setActiveSeason(i); setSeasonView(true); setShowAllEpisodes(false); };
@@ -4844,11 +4749,8 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         React.createElement("div", { onClick: e => e.stopPropagation(), className: `${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl` },
             React.createElement("div", { className: "relative" },
                 playingUrl ? (React.createElement("div", { className: "relative" },
-                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: 'cinadam-player-' + title.id, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: handleVideoError, onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : Number(playingMeta.introStart) || 0, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : Number(playingMeta.introEnd) || 0, recapStart: skipDbSegments.recap ? Number(skipDbSegments.recap.start_ms) / 1000 : Number(playingMeta.recapStart) || 0, recapEnd: skipDbSegments.recap ? Number(skipDbSegments.recap.end_ms) / 1000 : Number(playingMeta.recapEnd) || 0, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : Number(playingMeta.outroStart) || 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : Number(playingMeta.outroEnd) || 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onOutroStart: handleEpisodeComplete, onNextEpisode: playNextEpisode, hasNextEpisode: !!getNextEpisodeInfo(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
-                    switchingSource && (React.createElement("div", { className: "absolute inset-0 bg-black/90 flex flex-col items-center justify-center gap-3 p-6 text-center" },
-                        React.createElement("div", { className: "w-8 h-8 border-2 border-white/20 border-t-accent-cyan rounded-full animate-spin" }),
-                        React.createElement("p", { className: "text-sm text-slate-200 font-bold" }, "\u062A\u0639\u0630\u0651\u0631 \u0627\u0644\u0631\u0627\u0628\u0637 \u0627\u0644\u0623\u0635\u0644\u064A \u2014 \u062C\u0627\u0631\u064A \u062A\u062C\u0631\u0628\u0629 \u0645\u0635\u062F\u0631 \u0628\u062F\u064A\u0644..."))),
-                    videoError && !switchingSource && (React.createElement("div", { className: "absolute inset-0 bg-black/90 flex flex-col items-center justify-center gap-3 p-6 text-center" },
+                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: 'cinadam-player-' + title.id, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: () => setVideoError(true), onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : Number(playingMeta.introStart) || 0, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : Number(playingMeta.introEnd) || 0, recapStart: skipDbSegments.recap ? Number(skipDbSegments.recap.start_ms) / 1000 : Number(playingMeta.recapStart) || 0, recapEnd: skipDbSegments.recap ? Number(skipDbSegments.recap.end_ms) / 1000 : Number(playingMeta.recapEnd) || 0, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : Number(playingMeta.outroStart) || 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : Number(playingMeta.outroEnd) || 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onOutroStart: handleEpisodeComplete, onNextEpisode: playNextEpisode, hasNextEpisode: !!getNextEpisodeInfo(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
+                    videoError && (React.createElement("div", { className: "absolute inset-0 bg-black/90 flex flex-col items-center justify-center gap-3 p-6 text-center" },
                         React.createElement("p", { className: "text-sm text-slate-200 font-bold" }, "\u062A\u0639\u0630\u0651\u0631 \u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u0639\u0644\u0649 \u0647\u0630\u0627 \u0627\u0644\u062C\u0647\u0627\u0632."),
                         isIOS && (React.createElement("p", { className: "text-xs text-slate-400 max-w-xs leading-relaxed" }, "\u063A\u0627\u0644\u0628\u064B\u0627 \u0627\u0644\u0633\u0628\u0628 \u0623\u0646 \u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u063A\u064A\u0631 \u0645\u0631\u0641\u0648\u0639 \u0628\u0635\u064A\u063A\u0629 \u064A\u062F\u0639\u0645\u0647\u0627 \u0627\u0644\u0622\u064A\u0641\u0648\u0646 \u0645\u0628\u0627\u0634\u0631\u0629. \u0627\u0644\u0623\u0639\u0645\u0627\u0644 \u0627\u0644\u062A\u064A \u062A\u064F\u0631\u0641\u0639 \u0645\u0646 \u0644\u0648\u062D\u0629 \u0627\u0644\u062A\u062D\u0643\u0645 \u0639\u0628\u0631 \u0632\u0631 \"\u0631\u0641\u0639 \u0645\u0646 \u0627\u0644\u062C\u0647\u0627\u0632\" \u062A\u0639\u0645\u0644 \u0628\u0634\u0643\u0644 \u0635\u062D\u064A\u062D \u0639\u0644\u0649 \u0643\u0644 \u0627\u0644\u0623\u062C\u0647\u0632\u0629.")),
                         React.createElement("button", { onClick: () => window.open(normalizeVideoUrl(playingUrl), '_blank', 'noopener,noreferrer'), className: "px-5 py-2.5 rounded-xl bg-accent-red hover:bg-accent-redHover text-xs font-bold text-white transition" }, "\u0645\u062D\u0627\u0648\u0644\u0629 \u0641\u062A\u062D \u0627\u0644\u0631\u0627\u0628\u0637 \u0645\u0628\u0627\u0634\u0631\u0629"))))) : (React.createElement("div", { className: "relative w-full aspect-video bg-glass-900" },
