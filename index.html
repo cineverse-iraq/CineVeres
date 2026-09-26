@@ -2361,6 +2361,21 @@ function useClosable(onClose, duration = 260) {
     };
     return [closing, requestClose];
 }
+let CV_BODY_LOCK_COUNT = 0;
+function useBodyScrollLock(enabled = true) {
+    useEffect(() => {
+        if (!enabled)
+            return;
+        CV_BODY_LOCK_COUNT++;
+        const previous = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => {
+            CV_BODY_LOCK_COUNT = Math.max(0, CV_BODY_LOCK_COUNT - 1);
+            if (CV_BODY_LOCK_COUNT === 0)
+                document.body.style.overflow = previous || '';
+        };
+    }, [enabled]);
+}
 function Icon({ name, className = "w-4 h-4" }) {
     const icons = {
         film: React.createElement("path", { d: "M2 6.5A2.5 2.5 0 0 1 4.5 4h15A2.5 2.5 0 0 1 22 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-15A2.5 2.5 0 0 1 2 17.5v-11zM7 4v16M17 4v16M2 12h20M2 8h5M17 8h5M2 16h5" }),
@@ -2775,7 +2790,11 @@ function HomeView({ items, onOpen, watchedMap }) {
         return React.createElement(EmptyState, { text: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0645\u0646\u0634\u0648\u0631\u0629 \u0628\u0639\u062F. \u062A\u0627\u0628\u0639\u0646\u0627 \u0642\u0631\u064A\u0628\u064B\u0627!" });
     const featured = items.filter(t => t.featured === true);
     const rowLimit = CV_LOW_POWER ? 8 : 12;
-    const latest = [...items].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, rowLimit);
+    const latest = [...items].sort((a, b) => (
+        ((b.createdAt || 0) - (a.createdAt || 0)) ||
+        ((b.publishedAt || 0) - (a.publishedAt || 0)) ||
+        ((b.updatedAt || 0) - (a.updatedAt || 0))
+    )).slice(0, rowLimit);
     const genreCounts = {};
     items.forEach(t => (t.genres || []).forEach(g => genreCounts[g] = (genreCounts[g] || 0) + 1));
     const topGenres = Object.keys(genreCounts).sort((a, b) => genreCounts[b] - genreCounts[a]).slice(0, CV_LOW_POWER ? 3 : 6);
@@ -2805,7 +2824,11 @@ function sortTitles(items, sortKey) {
     else if (sortKey === 'popular')
         arr.sort((a, b) => (b.views || 0) - (a.views || 0));
     else
-        arr.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        arr.sort((a, b) => (
+            ((b.createdAt || 0) - (a.createdAt || 0)) ||
+            ((b.publishedAt || 0) - (a.publishedAt || 0)) ||
+            ((b.updatedAt || 0) - (a.updatedAt || 0))
+        ));
     return arr;
 }
 function TypeGrid({ title, items, onOpen, showGenreFilter, emptyText, watchedMap }) {
@@ -4267,6 +4290,25 @@ async function fetchSkipDbSegments(title, season, episode, durationSec) {
 }
 function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onOpenAuth, getRole, onOpenProfile, onOpen, watched, onMarkEpisodeWatched, onMarkMovieWatched, isEpisodeWatched }) {
     const [closing, requestClose] = useClosable(onClose);
+    const modalScrollRef = useRef(null);
+    useBodyScrollLock(true);
+    useEffect(() => {
+        const onKeyDown = e => {
+            if (e.key === 'Escape')
+                requestClose();
+        };
+        document.addEventListener('keydown', onKeyDown);
+        return () => document.removeEventListener('keydown', onKeyDown);
+    }, []);
+    useEffect(() => {
+        const el = modalScrollRef.current;
+        if (!el)
+            return;
+        requestAnimationFrame(() => {
+            try { el.scrollTo({ top: 0, left: 0, behavior: 'auto' }); }
+            catch (e) { el.scrollTop = 0; }
+        });
+    }, [title.id]);
     const [playingUrl, setPlayingUrl] = useState(null);
     const [playingMeta, setPlayingMeta] = useState({});
     const [playingLabel, setPlayingLabel] = useState('');
@@ -4746,7 +4788,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     };
     const handleMovieComplete = () => { onMarkMovieWatched && onMarkMovieWatched(title.id); };
     return (React.createElement("div", { className: `${closing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-50 bg-black/90 md:p-6 md:flex md:items-center md:justify-center overflow-y-auto`, onClick: requestClose },
-        React.createElement("div", { onClick: e => e.stopPropagation(), className: `${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl` },
+        React.createElement("div", { ref: modalScrollRef, onClick: e => e.stopPropagation(), className: `${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl` },
             React.createElement("div", { className: "relative" },
                 playingUrl ? (React.createElement("div", { className: "relative" },
                     (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: 'cinadam-player-' + title.id, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: () => setVideoError(true), onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : Number(playingMeta.introStart) || 0, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : Number(playingMeta.introEnd) || 0, recapStart: skipDbSegments.recap ? Number(skipDbSegments.recap.start_ms) / 1000 : Number(playingMeta.recapStart) || 0, recapEnd: skipDbSegments.recap ? Number(skipDbSegments.recap.end_ms) / 1000 : Number(playingMeta.recapEnd) || 0, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : Number(playingMeta.outroStart) || 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : Number(playingMeta.outroEnd) || 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onOutroStart: handleEpisodeComplete, onNextEpisode: playNextEpisode, hasNextEpisode: !!getNextEpisodeInfo(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
@@ -6710,100 +6752,157 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             return;
         }
         setSaving(true);
-        let payload = {
-            name: form.name.trim(),
-            type: form.type,
-            year: Number(form.year) || null,
-            genres: form.genresText.split(',').map(s => s.trim()).filter(Boolean),
-            poster: form.poster.trim(),
-            backdrop: form.backdrop.trim(),
-            description: form.description.trim(),
-            director: form.director.trim(),
-            writer: form.writer.trim(),
-            imdbRating: form.imdbRating.trim(),
-            rtRating: form.rtRating.trim(),
-            featured: form.featured === true,
-            status: form.status === 'published' ? 'published' : 'draft',
-            sourceId: sourceId || '',
-            createdAt: initial ? (initial.createdAt || Date.now()) : Date.now(),
-            likes: initial ? (initial.likes || 0) : 0,
-            views: initial ? (initial.views || 0) : 0,
-        };
-        if (form.type === 'movie') {
-            payload.videoUrl = normalizeVideoUrl(form.videoUrl.trim());
-            payload.videoSources = normalizeVideoSources(form.videoSources);
 
-            // مهم جدًا للأفلام: لا نحفظ cinemanaId وحده ونترك videoUrl/videoSources فارغة.
-            // الهاتف لا يستطيع الوصول إلى Node المحلي حتى يسترجع الرابط، بينما الحلقات
-            // التي يكون رابطها محفوظًا تعمل طبيعيًا. إذا كان الفيلم مرتبطًا بـ Cinemana
-            // ولم يُحفظ المصدر بعد، نجلبه الآن من نفس البروكسي الموجود على جهاز الإدارة
-            // ونحفظ الرابط/الجودات داخل Firebase، حتى يعمل الهاتف مباشرة بدون بروكسي.
-            if (form.cinemanaId && !payload.videoUrl && !payload.videoSources.length) {
-                try {
-                    const fetched = cinemanaVideoSources(await cinemanaVideos(String(form.cinemanaId).trim(), 'movie'));
-                    if (fetched.length) {
-                        payload.videoSources = fetched;
-                        payload.videoUrl = fetched[0].url;
-                    } else {
-                        throw new Error('سينمانا لم تُرجع أي مصدر فيديو لهذا الفيلم.');
-                    }
-                } catch (e) {
-                    throw new Error('تعذر حفظ رابط الفيلم من سينمانا: ' + (e && e.message ? e.message : 'خطأ غير معروف'));
-                }
-            } else if (!payload.videoUrl && payload.videoSources.length) {
-                payload.videoUrl = payload.videoSources[0].url;
-            }
-
-            payload.subtitleUrl = normalizeSubtitleUrl(form.subtitleUrl || '');
-            payload.subtitlePublicUrl = String(form.subtitlePublicUrl || '').trim();
-            payload.subtitleOffset = Number(form.subtitleOffset) || 0;
-            payload.cinemanaId = String(form.cinemanaId || '');
-            payload.playbackProvider = form.cinemanaId ? 'cinemana' : (isVidApiUrl(form.videoUrl) ? 'vidapi' : (form.playbackProvider || ''));
-            payload.trimStart = Number(form.trimStart) || 0;
-            payload.trimEnd = Number(form.trimEnd) || 0;
-            payload.introStart = Number(form.introStart) || 0;
-            payload.introEnd = Number(form.introEnd) || 0;
-            payload.fitMobile = form.fitMobile || 'contain';
-            payload.fitDesktop = form.fitDesktop || 'contain';
-            payload.crop = form.crop || {};
-            payload.seasons = [];
-        }
-        else {
-            payload.seasons = form.seasons.map(s => ({
-                number: Number(s.number) || 1,
-                year: Number(s.year) || null,
-                poster: (s.poster || '').trim(),
-                episodeThumbnail: (s.episodeThumbnail || '').trim(),
-                episodes: (s.episodes || []).map(e => ({
-                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || ''), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
-                    trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, introStart: Number(e.introStart) || 0, introEnd: Number(e.introEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
-                }))
-            }));
-            payload.videoUrl = '';
-        }
-        if (payload.status === 'published') {
-            try {
-                const prepared = await prepareSubtitlesForPublish(payload, sourceId, msg => setError(msg), subtitleSourceIds);
-                payload = prepared.payload;
-                setError(prepared.failed ? `تم تجهيز العمل، لكن تعذر جلب ${prepared.failed} ترجمة. ${prepared.failedItems.slice(0, 4).join(' | ')}` : '');
-            }
-            catch (e) {
-                setError('تعذر تجهيز الترجمة تلقائيًا، سيتم حفظ العمل بدونها.');
-            }
-        }
         try {
-            if (initial && initial.id)
-                await db.ref(`titles/${initial.id}`).set(payload);
-            else
-                await db.ref('titles').push(payload);
-            showToast(initial && initial.id ? 'تم حفظ التعديلات بنجاح' : 'تم إضافة العمل بنجاح');
+            let payload = {
+                name: form.name.trim(),
+                type: form.type,
+                year: Number(form.year) || null,
+                genres: form.genresText.split(',').map(s => s.trim()).filter(Boolean),
+                poster: form.poster.trim(),
+                backdrop: form.backdrop.trim(),
+                description: form.description.trim(),
+                director: form.director.trim(),
+                writer: form.writer.trim(),
+                imdbRating: form.imdbRating.trim(),
+                rtRating: form.rtRating.trim(),
+                featured: form.featured === true,
+                status: form.status === 'published' ? 'published' : 'draft',
+                sourceId: sourceId || '',
+                createdAt: initial ? (initial.createdAt || Date.now()) : Date.now(),
+                likes: initial ? (initial.likes || 0) : 0,
+                views: initial ? (initial.views || 0) : 0,
+                updatedAt: Date.now()
+            };
+
+            if (payload.status === 'published') {
+                payload.publishedAt = initial && initial.status === 'published'
+                    ? (initial.publishedAt || Date.now())
+                    : Date.now();
+            } else if (initial && initial.publishedAt) {
+                payload.publishedAt = initial.publishedAt;
+            }
+
+            if (form.type === 'movie') {
+                payload.videoUrl = normalizeVideoUrl(form.videoUrl.trim());
+                payload.videoSources = normalizeVideoSources(form.videoSources);
+
+                if (form.cinemanaId && !payload.videoUrl && !payload.videoSources.length) {
+                    try {
+                        const fetched = cinemanaVideoSources(await cinemanaVideos(String(form.cinemanaId).trim(), 'movie'));
+                        if (fetched.length) {
+                            payload.videoSources = fetched;
+                            payload.videoUrl = fetched[0].url;
+                        } else {
+                            throw new Error('سينمانا لم تُرجع أي مصدر فيديو لهذا الفيلم.');
+                        }
+                    } catch (e) {
+                        throw new Error('تعذر حفظ رابط الفيلم من سينمانا: ' + (e && e.message ? e.message : 'خطأ غير معروف'));
+                    }
+                } else if (!payload.videoUrl && payload.videoSources.length) {
+                    payload.videoUrl = payload.videoSources[0].url;
+                }
+
+                payload.subtitleUrl = normalizeSubtitleUrl(form.subtitleUrl || '');
+                payload.subtitlePublicUrl = String(form.subtitlePublicUrl || '').trim();
+                payload.subtitleOffset = Number(form.subtitleOffset) || 0;
+                payload.cinemanaId = String(form.cinemanaId || '');
+                payload.playbackProvider = form.cinemanaId ? 'cinemana' : (isVidApiUrl(form.videoUrl) ? 'vidapi' : (form.playbackProvider || ''));
+                payload.trimStart = Number(form.trimStart) || 0;
+                payload.trimEnd = Number(form.trimEnd) || 0;
+                payload.introStart = Number(form.introStart) || 0;
+                payload.introEnd = Number(form.introEnd) || 0;
+                payload.fitMobile = form.fitMobile || 'contain';
+                payload.fitDesktop = form.fitDesktop || 'contain';
+                payload.crop = form.crop || {};
+                payload.seasons = [];
+            } else {
+                payload.seasons = form.seasons.map(s => ({
+                    number: Number(s.number) || 1,
+                    year: Number(s.year) || null,
+                    poster: (s.poster || '').trim(),
+                    episodeThumbnail: (s.episodeThumbnail || '').trim(),
+                    episodes: (s.episodes || []).map(e => ({
+                        number: Number(e.number) || 1,
+                        title: (e.title || '').trim(),
+                        runtimeMinutes: Number(e.runtimeMinutes) || 0,
+                        videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()),
+                        videoSources: normalizeVideoSources(e.videoSources),
+                        playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')),
+                        subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''),
+                        subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(),
+                        subtitleOffset: Number(e.subtitleOffset) || 0,
+                        cinemanaId: String(e.cinemanaId || ''),
+                        imdb: (e.imdb || '').trim(),
+                        tmdbRating: (e.tmdbRating || '').trim(),
+                        rt: (e.rt || '').trim(),
+                        trimStart: Number(e.trimStart) || 0,
+                        trimEnd: Number(e.trimEnd) || 0,
+                        introStart: Number(e.introStart) || 0,
+                        introEnd: Number(e.introEnd) || 0,
+                        fitMobile: e.fitMobile || 'contain',
+                        fitDesktop: e.fitDesktop || 'contain',
+                        crop: e.crop || {},
+                        finality: e.finality || 'none'
+                    }))
+                }));
+                payload.videoUrl = '';
+            }
+
+            // احفظ العمل أولًا. تجهيز الترجمة قد يحتاج عدة مصادر ومحاولات وشبكة خارجية،
+            // لذلك لا يجب أن يمنع ظهور العمل المنشور للزوار.
+            let titleId = initial && initial.id;
+            const titleRef = titleId ? db.ref(`titles/${titleId}`) : db.ref('titles').push();
+            if (!titleId)
+                titleId = titleRef.key;
+
+            await titleRef.set(payload);
+
+            const isPublished = payload.status === 'published';
+            showToast(isPublished
+                ? 'تم نشر العمل فورًا — جاري تجهيز الترجمة بالخلفية.'
+                : (initial && initial.id ? 'تم حفظ التعديلات بنجاح' : 'تم إضافة العمل بنجاح'));
+
             onDone();
+
+            // الترجمة تجهّز بعد النشر، وتُكتب إلى نفس السجل عند اكتمالها.
+            // هذا يلغي التأخير الذي كان يجعل العمل الجديد ينتظر البحث الخارجي قبل ظهوره.
+            if (isPublished && titleId) {
+                const subtitlePayload = JSON.parse(JSON.stringify(payload));
+                Promise.resolve().then(async () => {
+                    try {
+                        const prepared = await prepareSubtitlesForPublish(
+                            subtitlePayload,
+                            sourceId,
+                            null,
+                            subtitleSourceIds
+                        );
+                        if (!prepared || !prepared.payload)
+                            return;
+                        await db.ref(`titles/${titleId}`).update({
+                            ...prepared.payload,
+                            status: 'published',
+                            updatedAt: Date.now(),
+                            publishedAt: payload.publishedAt || Date.now()
+                        });
+                        showToast(
+                            prepared.failed
+                                ? `اكتملت تهيئة العمل، مع تعذر ${prepared.failed} ترجمة — يمكن إعادة المحاولة من الإدارة.`
+                                : 'اكتملت تهيئة الترجمة العربية للعمل.'
+                        );
+                    } catch (e) {
+                        console.warn('Background subtitle preparation failed:', e);
+                        showToast('تم نشر العمل، لكن تعذر إكمال الترجمة تلقائيًا. يمكن إعادة المحاولة لاحقًا.', 'error');
+                    }
+                });
+            }
+        } catch (e) {
+            const message = e && e.message ? e.message : 'حدث خطأ أثناء الحفظ.';
+            setError(message);
+            showToast(message, 'error');
+        } finally {
+            setSaving(false);
         }
-        catch (e) {
-            setError('حدث خطأ أثناء الحفظ.');
-            showToast('حدث خطأ أثناء الحفظ', 'error');
-        }
-        setSaving(false);
     };
     const inputCls = "w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition shadow-inner";
     const labelCls = "text-xs font-bold text-slate-300 mb-1.5 block";
@@ -7502,151 +7601,121 @@ function App() {
     const [moderators, setModerators] = useState({});
     const [profileTarget, setProfileTarget] = useState(null);
     const [watched, setWatched] = useState(() => loadWatched(currentUser && currentUser.username));
-    useEffect(() => { setWatched(loadWatched(currentUser && currentUser.username)); }, [currentUser && currentUser.username]);
-    const openProfile = (uname) => { setProfileTarget(uname || null); setActiveTitle(null); setAccountSheet(false); setViewRaw('profile'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
-    const markEpisodeWatched = (titleId, seasonNumber, episodeNumber) => {
-        if (!currentUser || seasonNumber == null || episodeNumber == null)
-            return;
-        setWatched(prev => {
-            const key = `s${seasonNumber}e${episodeNumber}`;
-            const entry = { ...(prev[titleId] || {}) };
-            entry.episodes = { ...(entry.episodes || {}), [key]: true };
-            const next = { ...prev, [titleId]: entry };
-            saveWatchedToStorage(next, currentUser && currentUser.username);
-            return next;
-        });
-    };
-    const markMovieWatched = (titleId) => {
-        if (!currentUser)
-            return;
-        setWatched(prev => {
-            const entry = { ...(prev[titleId] || {}), movie: true };
-            const next = { ...prev, [titleId]: entry };
-            saveWatchedToStorage(next, currentUser && currentUser.username);
-            return next;
-        });
-    };
-    const isEpisodeWatched = (titleId, seasonNumber, episodeNumber) => {
-        if (seasonNumber == null || episodeNumber == null)
-            return false;
-        const entry = watched[titleId];
-        if (!entry || !entry.episodes)
-            return false;
-        return !!entry.episodes[`s${seasonNumber}e${episodeNumber}`];
-    };
-    useEffect(() => {
-        const ref = db.ref('moderators');
-        const cb = snap => setModerators(snap.val() || {});
-        ref.on('value', cb);
-        return () => ref.off('value', cb);
-    }, []);
-    const getRole = (username) => {
-        if (!username)
-            return null;
-        if (username === 'mavilovelife')
-            return 'admin';
-        return moderators[sanitizeKey(username)] ? 'moderator' : null;
-    };
-    const [accountNotice, setAccountNotice] = useState(null);
-    useEffect(() => {
-        if (!currentUser)
-            return;
-        const ref = db.ref(`users/${currentUser.id}`);
-        const cb = snap => {
-            const u = snap.val();
-            if (!u || u.deleted) {
-                setCurrentUser(null);
-                localStorage.removeItem('cv_user');
-                localStorage.setItem('cv_watch_username', currentUser.username);
-                setAccountNotice({ username: currentUser.username, type: 'deleted', message: 'عذرًا، تم حذف حسابك من قِبل الإدارة.' });
-                return;
-            }
-            if (u.banned) {
-                if (u.banUntil && u.banUntil <= Date.now()) {
-                    db.ref(`users/${currentUser.id}`).update({ banned: false, banReason: null, banUntil: null });
-                }
-                else {
-                    const untilTxt = u.banUntil ? ` إلى غاية ${fmtDateTime(u.banUntil)}` : '';
-                    setCurrentUser(null);
-                    localStorage.removeItem('cv_user');
-                    localStorage.setItem('cv_watch_username', currentUser.username);
-                    setAccountNotice({ username: currentUser.username, type: 'banned', message: `حسابك محظور من قِبل الإدارة${untilTxt}.${u.banReason ? ' السبب: ' + u.banReason : ''}` });
-                    return;
-                }
-            }
-            if (u.isModerator !== currentUser.isModerator) {
-                const updated = { ...currentUser, isModerator: u.isModerator };
-                setCurrentUser(updated);
-                localStorage.setItem('cv_user', JSON.stringify(updated));
-            }
-        };
-        ref.on('value', cb);
-        return () => ref.off('value', cb);
-    }, [currentUser && currentUser.id]);
-    useEffect(() => {
-        if (currentUser)
-            return;
-        const watchUsername = localStorage.getItem('cv_watch_username');
-        if (!watchUsername)
-            return;
-        checkAppealNotice(watchUsername).then(res => {
-            if (res) {
-                setAccountNotice({ username: watchUsername, type: null, message: res.message, outcomeOnly: true });
-                localStorage.removeItem('cv_watch_username');
-            }
-        });
-    }, []);
-    const setView = (v) => {
-        if (v === 'admin') {
-            if (!currentUser || !(currentUser.username === 'mavilovelife' || currentUser.isModerator)) {
-                setAuthModal('login');
-                return;
-            }
-            setViewRaw('admin');
-            setSearch('');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            return;
-        }
-        setViewRaw(v);
-        setSearch('');
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
-    const [booted, setBooted] = useState(() => readTitleCache().length > 0);
     useEffect(() => {
         let cancelled = false;
         const isAdmin = !!(currentUser && (currentUser.username === 'mavilovelife' || currentUser.isModerator));
-        const ref = isAdmin ? db.ref('titles') : db.ref('titles').orderByChild('status').equalTo('published');
-        const applySnap = snap => {
+        const ref = isAdmin
+            ? db.ref('titles')
+            : db.ref('titles').orderByChild('status').equalTo('published');
+
+        const liveMap = {};
+        const cached = !isAdmin ? readTitleCache() : [];
+        cached.forEach(t => {
+            if (t && t.id)
+                liveMap[t.id] = t;
+        });
+
+        let syncTimer = null;
+        const buildList = () => {
             if (cancelled)
                 return;
-            const data = snap.val();
-            const list = data ? Object.keys(data).map(k => normalizeTitlePlaybackData({ id: k, ...data[k] })) : [];
-            list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+            const list = Object.values(liveMap)
+                .filter(t => isAdmin || t.status === 'published')
+                .map(t => normalizeTitlePlaybackData(t))
+                .sort((a, b) => (
+                    ((b.createdAt || 0) - (a.createdAt || 0)) ||
+                    ((b.publishedAt || 0) - (a.publishedAt || 0)) ||
+                    ((b.updatedAt || 0) - (a.updatedAt || 0))
+                ));
+
             setTitles(list);
             if (!isAdmin)
                 writeTitleCache(list);
+
             setActiveTitle(prev => {
                 if (!prev)
                     return prev;
                 const updated = list.find(x => x.id === prev.id);
-                return updated || prev;
+                return updated || (prev.status === 'published' && !isAdmin ? prev : null);
             });
             setBooted(true);
         };
-        if (CV_LOW_POWER && !isAdmin) {
-            const refresh = () => ref.once('value').then(applySnap).catch(() => setBooted(true));
-            refresh();
-            const timer = setInterval(() => { if (!document.hidden)
-                refresh(); }, 120000);
-            const onVisible = () => { if (!document.hidden)
-                refresh(); };
-            document.addEventListener('visibilitychange', onVisible);
-            const safety = setTimeout(() => setBooted(true), 2200);
-            return () => { cancelled = true; clearInterval(timer); clearTimeout(safety); document.removeEventListener('visibilitychange', onVisible); };
+
+        const scheduleBuild = () => {
+            if (syncTimer)
+                clearTimeout(syncTimer);
+            syncTimer = setTimeout(buildList, 30);
+        };
+
+        const onChild = snap => {
+            if (cancelled || !snap.key)
+                return;
+            liveMap[snap.key] = normalizeTitlePlaybackData({
+                id: snap.key,
+                ...(snap.val() || {})
+            });
+            scheduleBuild();
+        };
+
+        const onRemoved = snap => {
+            if (cancelled || !snap.key)
+                return;
+            delete liveMap[snap.key];
+            scheduleBuild();
+        };
+
+        if (isAdmin) {
+            const onValue = snap => {
+                if (cancelled)
+                    return;
+                const data = snap.val() || {};
+                Object.keys(liveMap).forEach(k => delete liveMap[k]);
+                Object.keys(data).forEach(k => {
+                    liveMap[k] = normalizeTitlePlaybackData({ id: k, ...data[k] });
+                });
+                buildList();
+            };
+            ref.on('value', onValue);
+        } else {
+            // listeners تفصيلية: الإضافة/التعديل/الحذف تصل فورًا، بدون polling كل دقيقتين للأجهزة الضعيفة.
+            ref.on('child_added', onChild);
+            ref.on('child_changed', onChild);
+            ref.on('child_removed', onRemoved);
+
+            // مزامنة واحدة لإزالة أي عنصر قديم من الكاش المحلي.
+            ref.once('value').then(snap => {
+                if (cancelled)
+                    return;
+                const data = snap.val() || {};
+                Object.keys(liveMap).forEach(k => delete liveMap[k]);
+                Object.keys(data).forEach(k => {
+                    liveMap[k] = normalizeTitlePlaybackData({ id: k, ...data[k] });
+                });
+                buildList();
+            }).catch(() => {
+                if (!cancelled)
+                    setBooted(true);
+            });
         }
-        ref.on('value', applySnap);
-        const safety = setTimeout(() => setBooted(true), CV_LOW_POWER ? 2200 : 5000);
-        return () => { cancelled = true; ref.off('value', applySnap); clearTimeout(safety); };
+
+        const safety = setTimeout(() => {
+            if (!cancelled)
+                setBooted(true);
+        }, isAdmin ? 5000 : 2200);
+
+        return () => {
+            cancelled = true;
+            if (syncTimer)
+                clearTimeout(syncTimer);
+            if (isAdmin) {
+                ref.off('value');
+            } else {
+                ref.off('child_added', onChild);
+                ref.off('child_changed', onChild);
+                ref.off('child_removed', onRemoved);
+            }
+            clearTimeout(safety);
+        };
     }, [currentUser && currentUser.id, currentUser && currentUser.username, currentUser && currentUser.isModerator]);
     useEffect(() => {
         if (!booted)
@@ -7721,8 +7790,35 @@ function App() {
                 setProfileTarget(null); setView(v); setAccountSheet(false); } })),
         accountNotice && (React.createElement(AppealModal, { username: accountNotice.username, type: accountNotice.type, message: accountNotice.message, outcomeOnly: accountNotice.outcomeOnly, onClose: () => setAccountNotice(null) }))));
 }
+class AppErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { hasError: false, message: '' };
+    }
+    static getDerivedStateFromError(error) {
+        return { hasError: true, message: error && error.message ? error.message : '' };
+    }
+    componentDidCatch(error) {
+        console.error('Cinadam render error:', error);
+    }
+    render() {
+        if (this.state.hasError) {
+            return React.createElement("div", { className: "min-h-screen bg-glass-950 text-white flex items-center justify-center p-6 text-center", dir: "rtl" },
+                React.createElement("div", { className: "max-w-md glass-panel rounded-3xl p-7 border border-rose-500/20" },
+                    React.createElement("div", { className: "w-12 h-12 mx-auto mb-4 rounded-2xl bg-rose-500/10 text-rose-400 flex items-center justify-center" },
+                        React.createElement(Icon, { name: "x", className: "w-6 h-6" })),
+                    React.createElement("h1", { className: "text-lg font-black mb-2" }, "حدث خطأ في تشغيل الواجهة"),
+                    React.createElement("p", { className: "text-sm text-slate-400 leading-relaxed mb-5" }, "يمكنك إعادة تحميل الصفحة. بيانات Firebase لا تتأثر بهذا الخطأ."),
+                    React.createElement("button", { type: "button", onClick: () => location.reload(), className: "px-5 py-2.5 rounded-xl bg-accent-red text-sm font-bold" }, "إعادة التحميل"),
+                    this.state.message && React.createElement("p", { className: "text-[10px] text-slate-600 mt-3 break-all", dir: "ltr" }, this.state.message)
+                )
+            );
+        }
+        return this.props.children;
+    }
+}
 const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(React.createElement(App, null));
+root.render(React.createElement(AppErrorBoundary, null, React.createElement(App, null)));
   </script>
 </body>
 </html>
