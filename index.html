@@ -1705,7 +1705,7 @@ async function findAndStoreSubtitle({ cinemanaId, sourceId, altSourceIds = [], t
                 const res = await fetchWithTimeout(`${base}/sub/resolve?${usp.toString()}`, { headers: { Accept: 'application/json' } }, 60000);
                 const data = await res.json().catch(() => ({}));
                 if (res.ok && data && data.ok) {
-                    const sourceLabel = data.source === 'cinemana' ? 'سينمانا' : (data.source === 'opensubtitles' ? 'OpenSubtitles' : 'SubDL');
+                    const sourceLabel = data.source === 'cinemana' ? 'سينمانا' : (data.source === 'opensubtitles' ? 'OpenSubtitles' : (data.source === 'subscene' ? 'Subscene' : 'SubDL'));
                     if (onProgress) onProgress(`تمت مطابقة ترجمة عربية من ${sourceLabel} (${data.cues} سطر) — جاري الحفظ...`);
                     const url = await subSave({ cinemanaId, title, type: isMovie ? 'movie' : 'series', season, episode }, data.vtt, { source: data.source, label: data.label, cues: data.cues });
                     return { url, source: data.source, sourceLabel, cues: data.cues, lastEndSec: data.lastEndSec, durationSec: data.durationSec, label: data.label };
