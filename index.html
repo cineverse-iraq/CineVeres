@@ -616,24 +616,60 @@ function normalizeVideoSources(value) {
         .filter(Boolean)
         .filter((x, i, a) => a.findIndex(y => y.url === x.url) === i);
 }
+function asSafeArray(value, { splitString = false } = {}) {
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === 'object') {
+        const keys = Object.keys(value);
+        if (!keys.length) return [];
+        const numeric = keys.every(k => /^\d+$/.test(k));
+        if (numeric) return keys.sort((a,b) => Number(a)-Number(b)).map(k => value[k]).filter(v => v != null);
+        return Object.values(value).filter(v => v != null);
+    }
+    if (splitString && typeof value === 'string') return value.split(/[,،]/).map(v => v.trim()).filter(Boolean);
+    return [];
+}
+function normalizeGenresValue(value) {
+    return asSafeArray(value, { splitString: true }).map(v => String(v ?? '').trim()).filter(Boolean);
+}
+function normalizeSeasonsValue(value) {
+    return asSafeArray(value).map((season, i) => {
+        if (!season || typeof season !== 'object') return null;
+        const episodes = asSafeArray(season.episodes).map((ep, j) => {
+            if (!ep || typeof ep !== 'object') return null;
+            return { ...ep, number: Number(ep.number ?? ep.episodeNumber ?? ep.episode ?? (j + 1)) || (j + 1) };
+        }).filter(Boolean);
+        return { ...season, number: Number(season.number ?? season.seasonNumber ?? season.season ?? (i + 1)) || (i + 1), episodes };
+    }).filter(Boolean).sort((a,b) => (Number(a.number)||0) - (Number(b.number)||0));
+}
 function normalizeTitlePlaybackData(title) {
-    if (!title || typeof title !== 'object')
-        return title;
+    if (!title || typeof title !== 'object') return null;
     const clean = { ...title };
+    clean.id = String(clean.id || '').trim();
+    clean.name = String(clean.name || 'بدون اسم').trim();
+    clean.type = ['movie', 'series', 'anime'].includes(clean.type) ? clean.type : 'movie';
+    clean.status = clean.status === 'published' ? 'published' : (clean.status || 'draft');
+    clean.year = Number(clean.year) || 0;
+    clean.createdAt = Number(clean.createdAt) || 0;
+    clean.updatedAt = Number(clean.updatedAt) || 0;
+    clean.publishedAt = Number(clean.publishedAt) || 0;
+    clean.genres = normalizeGenresValue(clean.genres);
     clean.videoUrl = normalizeVideoUrl(clean.videoUrl || '');
     clean.videoSources = normalizeVideoSources(clean.videoSources);
     clean.subtitleUrl = normalizeSubtitleUrl(clean.subtitleUrl || clean.subtitleURL || '');
     clean.subtitleOffset = Number(clean.subtitleOffset) || 0;
-    clean.seasons = Array.isArray(clean.seasons) ? clean.seasons.map(season => ({
+    clean.seasons = normalizeSeasonsValue(clean.seasons).map(season => ({
         ...season,
-        episodes: Array.isArray(season.episodes) ? season.episodes.map(ep => ({
+        episodes: season.episodes.map(ep => ({
             ...ep,
+            title: String(ep.title || ep.name || '').trim(),
+            runtimeMinutes: Number(ep.runtimeMinutes ?? ep.runtime) || 0,
             videoUrl: normalizeVideoUrl(ep.videoUrl || ''),
             videoSources: normalizeVideoSources(ep.videoSources),
             subtitleUrl: normalizeSubtitleUrl(ep.subtitleUrl || ep.subtitleURL || ''),
-            subtitleOffset: Number(ep.subtitleOffset) || 0
-        })) : []
-    })) : [];
+            subtitleOffset: Number(ep.subtitleOffset) || 0,
+            number: Number(ep.number) || 1
+        }))
+    }));
     return clean;
 }
 function normalizeSubtitleUrl(url) {
@@ -2623,6 +2659,7 @@ function EmptyState({ text }) {
         React.createElement("p", { className: "text-base font-medium" }, text)));
 }
 function PosterCard({ title, onOpen, compact, watched }) {
+    if (!title || typeof title !== 'object') return null;
     const runtime = getRuntimeSeconds(title);
     return (React.createElement("button", { onClick: () => onOpen(title), className: `group text-right ${compact ? 'shrink-0 w-32 sm:w-38 md:w-44 snap-start' : 'w-full'}` },
         React.createElement("div", { className: "relative aspect-[2/3] rounded-xl overflow-hidden glass-card shadow-lg group-hover:scale-[1.02] transition duration-300" },
@@ -2640,6 +2677,7 @@ function PosterCard({ title, onOpen, compact, watched }) {
                 formatRuntimeMinutesSeconds(runtime), " دقيقة"))));
 }
 function Row({ label, items, onOpen, watchedMap }) {
+    items = Array.isArray(items) ? items.filter(Boolean) : [];
     const scrollerRef = useRef(null);
     const scrollByAmount = (direction) => {
         const el = scrollerRef.current;
@@ -2825,13 +2863,14 @@ function ContinueWatchingRow({ items, watchProgress, onOpen }) {
                 React.createElement("p", { className: "text-[10px] md:text-xs text-accent-cyan font-bold mt-0.5 truncate" }, c.subLabel)))));
 }
 function HomeView({ items, onOpen, watchedMap, watchProgress }) {
+    items = Array.isArray(items) ? items.filter(t => t && typeof t === 'object') : [];
     if (!items.length)
         return React.createElement(EmptyState, { text: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0645\u0646\u0634\u0648\u0631\u0629 \u0628\u0639\u062F. \u062A\u0627\u0628\u0639\u0646\u0627 \u0642\u0631\u064A\u0628\u064B\u0627!" });
     const featured = items.filter(t => t.featured === true);
     const rowLimit = CV_LOW_POWER ? 8 : 12;
     const latest = [...items].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, rowLimit);
     const genreCounts = {};
-    items.forEach(t => (t.genres || []).forEach(g => genreCounts[g] = (genreCounts[g] || 0) + 1));
+    items.forEach(t => normalizeGenresValue(t.genres).forEach(g => genreCounts[g] = (genreCounts[g] || 0) + 1));
     const topGenres = Object.keys(genreCounts).sort((a, b) => genreCounts[b] - genreCounts[a]).slice(0, CV_LOW_POWER ? 3 : 6);
     return (React.createElement("div", null,
         featured.length > 0 && React.createElement(Hero, { items: CV_LOW_POWER ? featured.slice(0, 3) : featured, onOpen: onOpen }),
@@ -2840,7 +2879,7 @@ function HomeView({ items, onOpen, watchedMap, watchProgress }) {
         React.createElement(Row, { label: "\u0623\u0641\u0644\u0627\u0645", items: items.filter(t => t.type === 'movie').slice(0, rowLimit), onOpen: onOpen, watchedMap: watchedMap }),
         React.createElement(Row, { label: "\u0645\u0633\u0644\u0633\u0644\u0627\u062A", items: items.filter(t => t.type === 'series').slice(0, rowLimit), onOpen: onOpen, watchedMap: watchedMap }),
         React.createElement(Row, { label: "\u0623\u0646\u0645\u064A", items: items.filter(t => t.type === 'anime').slice(0, rowLimit), onOpen: onOpen, watchedMap: watchedMap }),
-        topGenres.map(g => (React.createElement(Row, { key: g, label: `تصنيف: ${g}`, items: items.filter(t => (t.genres || []).includes(g)).slice(0, rowLimit), onOpen: onOpen, watchedMap: watchedMap })))));
+        topGenres.map(g => (React.createElement(Row, { key: g, label: `تصنيف: ${g}`, items: items.filter(t => normalizeGenresValue(t.genres).includes(g)).slice(0, rowLimit), onOpen: onOpen, watchedMap: watchedMap })))));
 }
 const SORT_OPTIONS = [
     ['newest', 'الأحدث إضافةً'],
@@ -2864,12 +2903,13 @@ function sortTitles(items, sortKey) {
     return arr;
 }
 function TypeGrid({ title, items, onOpen, showGenreFilter, emptyText, watchedMap }) {
+    items = Array.isArray(items) ? items.filter(t => t && typeof t === 'object') : [];
     const [genre, setGenre] = useState('');
     const [year, setYear] = useState('');
     const [sortKey, setSortKey] = useState('newest');
-    const genres = showGenreFilter ? Array.from(new Set(items.flatMap(t => t.genres || []))) : [];
+    const genres = showGenreFilter ? Array.from(new Set(items.flatMap(t => normalizeGenresValue(t.genres)))) : [];
     const years = Array.from(new Set(items.map(t => t.year).filter(Boolean))).sort((a, b) => b - a);
-    let filteredByGenre = genre ? items.filter(t => (t.genres || []).includes(genre)) : items;
+    let filteredByGenre = genre ? items.filter(t => normalizeGenresValue(t.genres).includes(genre)) : items;
     if (year)
         filteredByGenre = filteredByGenre.filter(t => String(t.year) === String(year));
     const filtered = sortTitles(filteredByGenre, sortKey);
@@ -3894,7 +3934,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
             const root = wrapRef.current;
             if (!root) return;
             const insideMenu = e.target && e.target.closest && e.target.closest('.cv-player-menu');
-            const menuButton = e.target && e.target.closest && e.target.closest('.cv-player-menu-button');
+            const menuButton = e.target && e.target.closest && e.target.closest('.cv-player-menu-button, [data-player-menu-trigger]');
             const menuTrigger = e.target && e.target.closest && e.target.closest('[data-player-menu-trigger]');
             if (insideMenu || menuButton || menuTrigger) return;
             setShowSubtitleMenu(false);
@@ -7978,6 +8018,8 @@ function App() {
         });
     }, []);
     const setView = (v) => {
+        const allowedViews = new Set(['home','movie','series','anime','lists','requests','settings','profile','admin']);
+        if (!allowedViews.has(v)) v = 'home';
         if (v === 'admin') {
             if (!currentUser || !(currentUser.username === 'mavilovelife' || currentUser.isModerator)) {
                 setAuthModal('login');
@@ -8001,8 +8043,8 @@ function App() {
             if (cancelled)
                 return;
             const data = snap.val();
-            const list = data ? Object.keys(data).map(k => normalizeTitlePlaybackData({ id: k, ...data[k] })) : [];
-            list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+            const list = data ? Object.keys(data).map(k => normalizeTitlePlaybackData({ id: k, ...data[k] })).filter(Boolean) : [];
+            list.sort((a, b) => ((b.publishedAt || b.createdAt || b.updatedAt || 0) - (a.publishedAt || a.createdAt || a.updatedAt || 0)));
             setTitles(list);
             if (!isAdmin)
                 writeTitleCache(list);
@@ -8102,8 +8144,31 @@ function App() {
                 setProfileTarget(null); setView(v); setAccountSheet(false); } })),
         accountNotice && (React.createElement(AppealModal, { username: accountNotice.username, type: accountNotice.type, message: accountNotice.message, outcomeOnly: accountNotice.outcomeOnly, onClose: () => setAccountNotice(null) }))));
 }
+class AppErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { failed: false, message: '' };
+    }
+    static getDerivedStateFromError(error) {
+        return { failed: true, message: error && error.message ? String(error.message).slice(0, 180) : '' };
+    }
+    componentDidCatch(error) {
+        try { console.error('[Cinadam] UI error', error); } catch (_) {}
+    }
+    render() {
+        if (!this.state.failed) return this.props.children;
+        return React.createElement('div', { className: 'min-h-screen bg-glass-950 text-white flex items-center justify-center p-6' },
+            React.createElement('div', { className: 'glass-panel max-w-md w-full rounded-3xl p-7 text-center border border-white/10' },
+                React.createElement('div', { className: 'w-14 h-14 mx-auto mb-4 rounded-2xl bg-accent-red/15 border border-accent-red/30 flex items-center justify-center text-accent-red font-black' }, '!'),
+                React.createElement('h1', { className: 'text-xl font-black mb-2' }, 'تعذر عرض هذا القسم مؤقتًا'),
+                React.createElement('p', { className: 'text-sm text-slate-400 leading-relaxed mb-5' }, 'حدث خطأ في بيانات العرض أو في واجهة هذا القسم. أعد المحاولة لإعادة بناء الواجهة بدون فقدان بيانات حسابك.'),
+                React.createElement('button', { type: 'button', onClick: () => location.reload(), className: 'w-full py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover text-white font-bold' }, 'إعادة المحاولة')
+            )
+        );
+    }
+}
 const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(React.createElement(App, null));
+root.render(React.createElement(AppErrorBoundary, null, React.createElement(App, null)));
   </script>
 </body>
 </html>
