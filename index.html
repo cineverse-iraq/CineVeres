@@ -250,6 +250,18 @@
     /* أزرار المشغل ليست حقول كتابة؛ لا نريد ظهور مؤشر نص/خط تركيز بعد النقر. */
     .yt-btn, .yt-btn *, [data-skip-intro], [data-skip-intro] *, .cv-player-menu button, .cv-player-menu button * { caret-color: transparent !important; }
     .cv-subtitle-overlay { pointer-events: none !important; user-select: none !important; -webkit-user-select: none !important; caret-color: transparent !important; }
+    /* Cinadam responsive player: touch gestures + aspect/fit controls */
+    .cv-player-stage { touch-action: manipulation; }
+    .cv-player-stage.cv-gesture-active { touch-action: none; }
+    .cv-display-menu { min-width: 190px; max-width: min(280px, 82vw); }
+    .cv-display-option { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; padding:8px 10px; border-radius:10px; color:#fff; font-size:11px; font-weight:800; text-align:right; }
+    .cv-display-option:hover { background:rgba(255,255,255,.08); }
+    .cv-display-option.active { background:rgba(0,240,255,.14); color:#00F0FF; }
+    .cv-gesture-hint { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:31; pointer-events:none; padding:8px 12px; border-radius:999px; background:rgba(0,0,0,.68); border:1px solid rgba(255,255,255,.14); color:#fff; font-size:11px; font-weight:900; backdrop-filter:blur(7px); -webkit-backdrop-filter:blur(7px); white-space:nowrap; }
+    @media (max-width:767px) {
+      .cv-display-option { padding:10px 11px; font-size:12px; }
+      .yt-controls-bottom { padding-left:8px; padding-right:8px; }
+    }
     </style>
 </head>
 <body class="bg-glass-950 text-slate-100 min-h-screen selection:bg-accent-red selection:text-white">
@@ -3368,7 +3380,7 @@ function SubSlider({ label, value, unit, min, max, step, onChange }) {
                 unit)),
         React.createElement("input", { type: "range", min: min, max: max, step: step, value: value, onChange: e => onChange(Number(e.target.value)), className: "w-full mb-2", style: { accentColor: '#00F0FF' } })));
 }
-function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration, trimStart, trimEnd, introStart, introEnd, recapStart, recapEnd, outroStart, outroEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, onEnded, onOutroStart, onNextEpisode, hasNextEpisode, nextEpisodeLabel, qualities, onQualityChange, startAt, onProgressSave }) {
+function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration, trimStart, trimEnd, introStart, introEnd, recapStart, recapEnd, outroStart, outroEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, onEnded, onOutroStart, onPreviousEpisode, onNextEpisode, hasPreviousEpisode, hasNextEpisode, previousEpisodeLabel, nextEpisodeLabel, qualities, onQualityChange, startAt, onProgressSave }) {
     const videoRef = useRef(null);
     const wrapRef = useRef(null);
     const hideTimerRef = useRef(null);
@@ -3732,7 +3744,49 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
     const [skipFlash, setSkipFlash] = useState(null);
     const [showSpeedMenu, setShowSpeedMenu] = useState(false);
     const [showQualityMenu, setShowQualityMenu] = useState(false);
+    const [showDisplayMenu, setShowDisplayMenu] = useState(false);
     const [fakeFullscreen, setFakeFullscreen] = useState(false);
+    const [playerDisplay, setPlayerDisplay] = useState(() => {
+        try {
+            const saved = localStorage.getItem('cinadam_player_display_mode');
+            return ['contain','cover','fill'].includes(saved) ? saved : 'contain';
+        } catch (_) { return 'contain'; }
+    });
+    const [gestureZoom, setGestureZoom] = useState(() => {
+        try { const n = Number(localStorage.getItem('cinadam_player_zoom')); return Number.isFinite(n) ? Math.max(1, Math.min(3, n)) : 1; } catch (_) { return 1; }
+    });
+    const [gesturePan, setGesturePan] = useState(() => {
+        try { const v = JSON.parse(localStorage.getItem('cinadam_player_pan') || '{}'); return { x: Number(v.x)||0, y: Number(v.y)||0 }; } catch (_) { return { x:0, y:0 }; }
+    });
+    const [gestureHint, setGestureHint] = useState('');
+    const gesturePointersRef = useRef(new Map());
+    const pinchRef = useRef(null);
+    const gestureWasUsedRef = useRef(false);
+    const gestureHintTimerRef = useRef(null);
+    const showGestureHint = (msg) => {
+        setGestureHint(msg);
+        if (gestureHintTimerRef.current) clearTimeout(gestureHintTimerRef.current);
+        gestureHintTimerRef.current = setTimeout(() => setGestureHint(''), 850);
+    };
+    const savePlayerView = (mode, zoom, pan) => {
+        try {
+            localStorage.setItem('cinadam_player_display_mode', mode);
+            localStorage.setItem('cinadam_player_zoom', String(zoom));
+            localStorage.setItem('cinadam_player_pan', JSON.stringify(pan));
+        } catch (_) {}
+    };
+    const setPlayerDisplayMode = (mode) => {
+        const next = ['contain','cover','fill'].includes(mode) ? mode : 'contain';
+        setPlayerDisplay(next);
+        savePlayerView(next, gestureZoom, gesturePan);
+        setShowDisplayMenu(false);
+        showBarTemporarily();
+    };
+    const resetPlayerView = () => {
+        setPlayerDisplay('contain'); setGestureZoom(1); setGesturePan({x:0,y:0});
+        savePlayerView('contain', 1, {x:0,y:0});
+        setShowDisplayMenu(false); showGestureHint('تمت إعادة ضبط أبعاد المشغل'); showBarTemporarily();
+    };
     useEffect(() => {
         const videoEl = videoRef.current;
         if (!videoEl)
@@ -3921,6 +3975,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
             setShowSubtitleMenu(false);
             setShowQualityMenu(false);
             setShowSpeedMenu(false);
+            setShowDisplayMenu(false);
         }
         if (!ctrl.playing) {
             setBarVisible(true);
@@ -3948,6 +4003,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
                 setShowSubtitleMenu(false);
                 setShowQualityMenu(false);
                 setShowSpeedMenu(false);
+                setShowDisplayMenu(false);
             }
         };
         document.addEventListener('pointerdown', closeMenus, true);
@@ -3959,11 +4015,11 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
     }, []);
 
     useEffect(() => {
-        if (showSubtitleMenu || showQualityMenu || showSpeedMenu) {
+        if (showSubtitleMenu || showQualityMenu || showSpeedMenu || showDisplayMenu) {
             setBarVisible(true);
             if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
         }
-    }, [showSubtitleMenu, showQualityMenu, showSpeedMenu]);
+    }, [showSubtitleMenu, showQualityMenu, showSpeedMenu, showDisplayMenu]);
     useEffect(() => () => { if (hideTimerRef.current)
         clearTimeout(hideTimerRef.current); }, []);
     useEffect(() => {
@@ -4006,6 +4062,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
     }, [fakeFullscreen]);
     const clickState = useRef({ count: 0, timer: null });
     const onStageClick = (e) => {
+        if (gestureWasUsedRef.current) return;
         if (e.target.closest && e.target.closest('.yt-controls-bottom'))
             return;
         const rect = wrapRef.current.getBoundingClientRect();
@@ -4030,9 +4087,9 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
             clearTimeout(clickState.current.timer);
         clickState.current.timer = setTimeout(() => {
             if (clickState.current.count === 1) {
-                setBarVisible(v => !v);
-                if (!barVisible)
-                    showBarTemporarily();
+                // لمسة واحدة على الفيديو = تشغيل/إيقاف مؤقت، مع إظهار الشريط مؤقتًا.
+                togglePlay();
+                showBarTemporarily();
             }
             clickState.current.count = 0;
         }, 260);
@@ -4048,7 +4105,51 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
                 togglePlay();
         }
     };
-    let videoStyle = { objectFit: 'contain' };
+    const updateGesturePoint = (e) => {
+        if (e && e.pointerType === 'touch') gesturePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    };
+    const onPlayerPointerDown = (e) => {
+        if (!e || e.pointerType !== 'touch') return;
+        if (e.target && e.target.closest && e.target.closest('.yt-controls-bottom,button,input,select,.cv-player-menu')) return;
+        gesturePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        const pts = [...gesturePointersRef.current.values()];
+        if (pts.length === 2) {
+            gestureWasUsedRef.current = true;
+            const dx = pts[1].x - pts[0].x, dy = pts[1].y - pts[0].y;
+            pinchRef.current = { distance: Math.hypot(dx, dy), zoom: gestureZoom, pan: { ...gesturePan }, center: { x:(pts[0].x+pts[1].x)/2, y:(pts[0].y+pts[1].y)/2 } };
+            try { e.currentTarget.classList.add('cv-gesture-active'); } catch (_) {}
+        }
+    };
+    const onPlayerPointerMove = (e) => {
+        if (!e || e.pointerType !== 'touch') return;
+        if (!gesturePointersRef.current.has(e.pointerId)) return;
+        updateGesturePoint(e);
+        const pts = [...gesturePointersRef.current.values()];
+        if (pts.length !== 2 || !pinchRef.current) return;
+        const dx = pts[1].x - pts[0].x, dy = pts[1].y - pts[0].y;
+        const dist = Math.max(20, Math.hypot(dx, dy));
+        const p = pinchRef.current;
+        const nextZoom = Math.max(1, Math.min(3, p.zoom * (dist / p.distance)));
+        const center = { x:(pts[0].x+pts[1].x)/2, y:(pts[0].y+pts[1].y)/2 };
+        const nextPan = { x: Math.max(-45, Math.min(45, p.pan.x + (center.x - p.center.x) / 6)), y: Math.max(-45, Math.min(45, p.pan.y + (center.y - p.center.y) / 6)) };
+        setGestureZoom(nextZoom); setGesturePan(nextPan);
+        savePlayerView(playerDisplay, nextZoom, nextPan);
+        showGestureHint(`تكبير ${Math.round(nextZoom * 100)}%`);
+        try { e.preventDefault(); } catch (_) {}
+    };
+    const onPlayerPointerUp = (e) => {
+        if (!e || e.pointerType !== 'touch') return;
+        gesturePointersRef.current.delete(e.pointerId);
+        if (gesturePointersRef.current.size < 2) pinchRef.current = null;
+        if (gesturePointersRef.current.size === 0) {
+            try { e.currentTarget.classList.remove('cv-gesture-active'); } catch (_) {}
+            setTimeout(() => { gestureWasUsedRef.current = false; }, 350);
+        }
+    };
+    useEffect(() => () => { if (gestureHintTimerRef.current) clearTimeout(gestureHintTimerRef.current); }, []);
+
+    const effectivePlayerFit = playerDisplay === 'fill' ? 'fill' : (playerDisplay === 'cover' ? 'cover' : 'contain');
+    let videoStyle = { objectFit: effectivePlayerFit };
     if (cropReady) {
         const rotation = c.rotation || 0;
         const rad = Math.abs(rotation) * Math.PI / 180;
@@ -4073,7 +4174,13 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         };
     }
     else if (fit === 'cover') {
-        videoStyle = { objectFit: 'cover' };
+        // وضع الإدارة القديم يبقى متوافقًا، لكن اختيار المشاهد من إعدادات المشغل له الأولوية.
+        videoStyle = { ...videoStyle };
+    }
+    if (!cropReady) {
+        videoStyle = { ...videoStyle, transform: `translate(${gesturePan.x}%, ${gesturePan.y}%) scale(${gestureZoom})`, transformOrigin: 'center center' };
+    } else {
+        videoStyle = { ...videoStyle, transform: `${videoStyle.transform || ''} translate(${gesturePan.x}px, ${gesturePan.y}px) scale(${gestureZoom})` };
     }
     const qualityOptions = normalizeVideoSources(qualities);
     const currentQuality = qualityOptions.find(q => q.url === src) || qualityOptions[0] || null;
@@ -4092,7 +4199,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         requestAnimationFrame(() => { try { el.blur(); } catch (_) {} });
     };
     const playerButtonProps = { onPointerDown: blurPlayerButton };
-    return (React.createElement("div", { ref: wrapRef, className: `video-crop-wrap ${fakeFullscreen ? 'ios-fake-fullscreen' : 'aspect-video'}${!barVisible ? ' cv-nocursor' : ''}`, onMouseMove: showBarTemporarily, onClick: onStageClick },
+    return (React.createElement("div", { ref: wrapRef, className: `video-crop-wrap cv-player-stage ${fakeFullscreen ? 'ios-fake-fullscreen' : 'aspect-video'}${!barVisible ? ' cv-nocursor' : ''}`, onMouseMove: showBarTemporarily, onPointerDown: onPlayerPointerDown, onPointerMove: onPlayerPointerMove, onPointerUp: onPlayerPointerUp, onPointerCancel: onPlayerPointerUp, onClick: onStageClick },
         loading && (React.createElement("div", { className: "absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none z-10" },
             React.createElement("div", { className: "w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan yt-spinner" }))),
         React.createElement("video", { ref: videoRef, controls: false, autoPlay: true, playsInline: true, "webkit-playsinline": "true", "x5-playsinline": "true", preload: "metadata", onCanPlay: () => setLoading(false), onPlaying: () => setLoading(false), onLoadedData: () => setLoading(false), onError: () => { setLoading(false); onError && onError(); }, style: videoStyle }, subtitleSrc && React.createElement("track", { key: subtitleSrc, kind: "subtitles", src: subtitleSrc, srcLang: "ar", label: "\u0627\u0644\u0639\u0631\u0628\u064A\u0629", default: true, ref: node => { if (node && node.track)
@@ -4136,6 +4243,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
             React.createElement("div", { className: "cv-skip-circle" },
                 React.createElement(Icon, { name: skipFlash === 'fwd' ? 'rotateCw5' : 'rotateCcw5', className: "text-white" }),
                 React.createElement("span", null, "5 ث")))),
+        gestureHint && React.createElement("div", { className: "cv-gesture-hint" }, gestureHint),
         !ctrl.playing && !loading && (React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: (e) => { e.stopPropagation(); togglePlay(); }, className: "absolute inset-0 z-20 flex items-center justify-center" },
             React.createElement("span", { className: "w-16 h-16 rounded-full bg-accent-red/90 flex items-center justify-center shadow-[0_0_25px_rgba(255,51,75,0.6)]" },
                 React.createElement(Icon, { name: "play", className: "w-7 h-7 text-white fill-current translate-x-0.5" })))),
@@ -4145,12 +4253,16 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
                         background: `linear-gradient(to left, #00F0FF ${(ctrl.current / (ctrl.duration || 1)) * 100}%, rgba(255,255,255,0.25) ${(ctrl.current / (ctrl.duration || 1)) * 100}%)`
                     } }),
                 React.createElement("div", { className: "flex items-center gap-1 flex-wrap" },
+                    hasPreviousEpisode && React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => { onPreviousEpisode && onPreviousEpisode(); showBarTemporarily(); }, className: "yt-btn w-7 h-7 shrink-0", title: previousEpisodeLabel || 'الحلقة السابقة' },
+                        React.createElement(Icon, { name: "chevronRight", className: "w-4 h-4" })),
                     React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: togglePlay, className: "yt-btn yt-btn-main w-8 h-8 shrink-0", title: ctrl.playing ? 'إيقاف مؤقت (مسافة)' : 'تشغيل (مسافة)' },
                         React.createElement(Icon, { name: ctrl.playing ? 'pause' : 'play', className: "w-4 h-4 fill-current" })),
                     React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => skip(-5), className: "yt-btn w-7 h-7 shrink-0", title: "\u0631\u062C\u0648\u0639 5 \u062B\u0648\u0627\u0646\u064A (\u0627\u0644\u0633\u0647\u0645 \u0627\u0644\u0623\u064A\u0633\u0631)" },
                         React.createElement(Icon, { name: "rotateCcw5", className: "w-3.5 h-3.5" })),
                     React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => skip(5), className: "yt-btn w-7 h-7 shrink-0", title: "\u062A\u0642\u062F\u064A\u0645 5 \u062B\u0648\u0627\u0646\u064A (\u0627\u0644\u0633\u0647\u0645 \u0627\u0644\u0623\u064A\u0645\u0646)" },
                         React.createElement(Icon, { name: "rotateCw5", className: "w-3.5 h-3.5" })),
+                    hasNextEpisode && React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => { onNextEpisode && onNextEpisode(); showBarTemporarily(); }, className: "yt-btn w-7 h-7 shrink-0", title: nextEpisodeLabel || 'الحلقة التالية' },
+                        React.createElement(Icon, { name: "chevronLeft", className: "w-4 h-4" })),
                     React.createElement("div", { className: "hidden sm:flex items-center gap-1.5 group/vol shrink-0" },
                         React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: toggleMute, className: "yt-btn w-7 h-7", title: "\u0643\u062A\u0645/\u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0635\u0648\u062A (M)" },
                             React.createElement(Icon, { name: ctrl.muted || ctrl.volume === 0 ? 'volumeX' : 'volume2', className: "w-3.5 h-3.5" })),
@@ -4245,6 +4357,16 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
                         showSpeedMenu && (React.createElement("div", { className: "cv-player-menu absolute bottom-10 left-0 bg-black/90 backdrop-blur-md rounded-xl border border-white/10 p-1.5 flex flex-col gap-0.5 shadow-2xl min-w-[64px] z-50" }, RATE_OPTIONS.map(r => (React.createElement("button", { key: r, type: "button", onClick: () => setRate(r), className: `text-[11px] font-bold px-3 py-1.5 rounded-lg transition ${ctrl.rate === r ? 'bg-accent-cyan text-glass-950' : 'text-white hover:bg-white/10'}` },
                             r,
                             "\u00D7")))))),
+                    React.createElement("div", { className: "relative shrink-0" },
+                        React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => { setShowDisplayMenu(v => !v); setShowSubtitleMenu(false); setShowQualityMenu(false); setShowSpeedMenu(false); }, className: "yt-btn cv-player-menu-button w-7 h-7 shrink-0", "data-player-menu-trigger": true, title: "أبعاد/ملاءمة الشاشة" },
+                            React.createElement(Icon, { name: "crop", className: "w-3.5 h-3.5" })),
+                        showDisplayMenu && React.createElement("div", { className: "cv-player-menu cv-display-menu absolute bottom-10 left-0 bg-black/95 backdrop-blur-md rounded-xl border border-white/10 p-1.5 shadow-2xl z-50 text-right", onPointerDown: e => e.stopPropagation(), onClick: e => e.stopPropagation() },
+                            React.createElement("div", { className: "px-2 py-1.5 text-[10px] font-black text-slate-400" }, "أبعاد المشغل"),
+                            [['contain','احتواء كامل (بدون قص)'],['cover','ملء الشاشة (قص الأطراف)'],['fill','تمديد لملء الشاشة']].map(([k,l]) => React.createElement("button", { key:k, type:"button", onClick: () => setPlayerDisplayMode(k), className:`cv-display-option ${playerDisplay === k ? 'active' : ''}` }, React.createElement("span", null, l), playerDisplay === k && React.createElement(Icon, { name:'check', className:'w-3.5 h-3.5' }))),
+                            React.createElement("div", { className: "my-1 border-t border-white/10" }),
+                            React.createElement("button", { type:"button", onClick: resetPlayerView, className:"cv-display-option text-slate-300" }, React.createElement("span", null, "إعادة ضبط التكبير/الأبعاد")),
+                            React.createElement("div", { className: "px-2 pt-1 pb-1.5 text-[9px] text-slate-500 leading-relaxed" }, "حرّك بإصبعين أو قرّب/باعد بإصبعين لتكبير الصورة وتحريكها.")
+                        )),
                     React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: toggleFullscreen, title: effectiveFs ? 'إنهاء ملء الشاشة (F)' : 'ملء الشاشة (F)', className: "yt-btn w-7 h-7 shrink-0" },
                         React.createElement(Icon, { name: effectiveFs ? 'minimize' : 'maximize', className: "w-3.5 h-3.5" })))))));
 }
@@ -4841,6 +4963,16 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         if (idx < 0 || idx >= allEpisodesFlat.length - 1) return null;
         return allEpisodesFlat[idx + 1];
     };
+    const getPreviousEpisodeInfo = () => {
+        if (!isSeries || playingSeasonNumber == null || playingMeta == null || playingMeta.number == null) return null;
+        const idx = allEpisodesFlat.findIndex(e => Number(e.seasonNumber) === Number(playingSeasonNumber) && Number(e.number) === Number(playingMeta.number));
+        if (idx <= 0) return null;
+        return allEpisodesFlat[idx - 1];
+    };
+    const playPreviousEpisode = () => {
+        const prev = getPreviousEpisodeInfo();
+        if (prev) playEpisode(prev, prev.seasonNumber);
+    };
     const playNextEpisode = () => {
         const next = getNextEpisodeInfo();
         if (next) playEpisode(next, next.seasonNumber);
@@ -4970,7 +5102,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         React.createElement("div", { onClick: e => e.stopPropagation(), className: `${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl` },
             React.createElement("div", { className: "relative" },
                 playingUrl ? (React.createElement("div", { className: "relative" },
-                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: 'cinadam-player-' + title.id, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: () => setVideoError(true), onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : Number(playingMeta.introStart) || 0, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : Number(playingMeta.introEnd) || 0, recapStart: skipDbSegments.recap ? Number(skipDbSegments.recap.start_ms) / 1000 : Number(playingMeta.recapStart) || 0, recapEnd: skipDbSegments.recap ? Number(skipDbSegments.recap.end_ms) / 1000 : Number(playingMeta.recapEnd) || 0, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : Number(playingMeta.outroStart) || 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : Number(playingMeta.outroEnd) || 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onOutroStart: handleEpisodeComplete, onNextEpisode: playNextEpisode, hasNextEpisode: !!getNextEpisodeInfo(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete, onProgressSave: onSaveWatchProgress ? (r => onSaveWatchProgress(title.id, title.type === 'movie' ? { kind: 'movie', ...r, titleName: title.name, poster: title.poster } : { kind: 'episode', season: playingSeasonNumber, episode: playingMeta && playingMeta.number, ...r, titleName: title.name, poster: title.poster, label: playingLabel })) : null })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
+                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: 'cinadam-player-' + title.id, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: () => setVideoError(true), onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : Number(playingMeta.introStart) || 0, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : Number(playingMeta.introEnd) || 0, recapStart: skipDbSegments.recap ? Number(skipDbSegments.recap.start_ms) / 1000 : Number(playingMeta.recapStart) || 0, recapEnd: skipDbSegments.recap ? Number(skipDbSegments.recap.end_ms) / 1000 : Number(playingMeta.recapEnd) || 0, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : Number(playingMeta.outroStart) || 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : Number(playingMeta.outroEnd) || 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onOutroStart: handleEpisodeComplete, onPreviousEpisode: playPreviousEpisode, onNextEpisode: playNextEpisode, hasPreviousEpisode: !!getPreviousEpisodeInfo(), hasNextEpisode: !!getNextEpisodeInfo(), previousEpisodeLabel: (() => { const p = getPreviousEpisodeInfo(); return p ? `الحلقة السابقة · ${p.title || `الحلقة ${p.number}`}` : 'الحلقة السابقة'; })(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete, onProgressSave: onSaveWatchProgress ? (r => onSaveWatchProgress(title.id, title.type === 'movie' ? { kind: 'movie', ...r, titleName: title.name, poster: title.poster } : { kind: 'episode', season: playingSeasonNumber, episode: playingMeta && playingMeta.number, ...r, titleName: title.name, poster: title.poster, label: playingLabel })) : null })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
                     videoError && (React.createElement("div", { className: "absolute inset-0 bg-black/90 flex flex-col items-center justify-center gap-3 p-6 text-center" },
                         React.createElement("p", { className: "text-sm text-slate-200 font-bold" }, "\u062A\u0639\u0630\u0651\u0631 \u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u0639\u0644\u0649 \u0647\u0630\u0627 \u0627\u0644\u062C\u0647\u0627\u0632."),
                         isIOS && (React.createElement("p", { className: "text-xs text-slate-400 max-w-xs leading-relaxed" }, "\u063A\u0627\u0644\u0628\u064B\u0627 \u0627\u0644\u0633\u0628\u0628 \u0623\u0646 \u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u063A\u064A\u0631 \u0645\u0631\u0641\u0648\u0639 \u0628\u0635\u064A\u063A\u0629 \u064A\u062F\u0639\u0645\u0647\u0627 \u0627\u0644\u0622\u064A\u0641\u0648\u0646 \u0645\u0628\u0627\u0634\u0631\u0629. \u0627\u0644\u0623\u0639\u0645\u0627\u0644 \u0627\u0644\u062A\u064A \u062A\u064F\u0631\u0641\u0639 \u0645\u0646 \u0644\u0648\u062D\u0629 \u0627\u0644\u062A\u062D\u0643\u0645 \u0639\u0628\u0631 \u0632\u0631 \"\u0631\u0641\u0639 \u0645\u0646 \u0627\u0644\u062C\u0647\u0627\u0632\" \u062A\u0639\u0645\u0644 \u0628\u0634\u0643\u0644 \u0635\u062D\u064A\u062D \u0639\u0644\u0649 \u0643\u0644 \u0627\u0644\u0623\u062C\u0647\u0632\u0629.")),
