@@ -8171,78 +8171,43 @@ function App() {
     const [booted, setBooted] = useState(false);
     useEffect(() => {
         let cancelled = false;
-        let gotFreshData = false;
+        // Catalog startup intentionally uses the same direct Firebase realtime
+        // path as the older working version. No localStorage catalog and no
+        // separate REST request are used here, so an old catalog cannot flash
+        // before the current Firebase snapshot arrives.
         const isAdmin = !!(currentUser && (currentUser.username === 'mavilovelife' || currentUser.isModerator));
-        const ref = isAdmin ? db.ref('titles') : db.ref('titles').orderByChild('status').equalTo('published');
+        const ref = db.ref('titles');
 
-        const applyList = (data) => {
-            if (cancelled || !data || typeof data !== 'object')
-                return false;
-            const list = Object.keys(data)
-                .map(k => normalizeTitlePlaybackData({ id: k, ...data[k] }))
-                .filter(Boolean)
-                .filter(t => isAdmin || t.status === 'published');
-            // Never replace the catalog with an empty/invalid response.
-            if (!list.length)
-                return false;
-            list.sort((a, b) => ((b.publishedAt || b.createdAt || b.updatedAt || 0) - (a.publishedAt || a.createdAt || a.updatedAt || 0)));
-            gotFreshData = true;
+        const cb = snap => {
+            if (cancelled) return;
+            const data = snap.val();
+            const list = data && typeof data === 'object'
+                ? Object.keys(data)
+                    .map(k => normalizeTitlePlaybackData({ id: k, ...data[k] }))
+                    .filter(Boolean)
+                    .filter(t => isAdmin || t.status === 'published')
+                : [];
+
+            list.sort((a, b) =>
+                ((b.publishedAt || b.createdAt || b.updatedAt || 0) -
+                 (a.publishedAt || a.createdAt || a.updatedAt || 0))
+            );
+
             setTitles(list);
-            if (!isAdmin)
-                writeTitleCache(list);
+            if (!isAdmin && list.length) writeTitleCache(list);
             setActiveTitle(prev => {
                 if (!prev) return prev;
                 const updated = list.find(x => x.id === prev.id);
                 return updated || prev;
             });
             setBooted(true);
-            return true;
         };
 
-        // Fresh catalog first. The old localStorage catalog is NOT rendered at startup,
-        // so an old list cannot flash on screen before Firebase delivers the current one.
-        const applySnap = snap => {
-            if (!cancelled)
-                applyList(snap.val());
-        };
-        ref.on('value', applySnap);
-
-        // Direct REST request is a fast initial path on phones where the realtime
-        // Firebase connection takes longer to complete its first handshake.
-        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        const restTimer = setTimeout(() => {
-            try { controller && controller.abort(); } catch (e) {}
-        }, 3500);
-        const restUrl = 'https://mnste-36ca4-default-rtdb.europe-west1.firebasedatabase.app/titles.json?cb=' + Date.now();
-        fetch(restUrl, { cache: 'no-store', credentials: 'omit', signal: controller ? controller.signal : undefined })
-            .then(r => r.ok ? r.json() : null)
-            .then(data => {
-                if (!cancelled)
-                    applyList(data);
-            })
-            .catch(() => {})
-            .finally(() => clearTimeout(restTimer));
-
-        // Cache is now a FALLBACK only. It is used only when no fresh Firebase/REST
-        // catalog arrived after a short wait, so the normal path always shows fresh data.
-        const cacheFallbackTimer = setTimeout(() => {
-            if (cancelled || gotFreshData) return;
-            const cached = readTitleCache();
-            if (cached && cached.length) {
-                setTitles(cached);
-                setBooted(true);
-            } else {
-                // Keep the loader visible rather than inventing an empty catalog.
-                setBooted(true);
-            }
-        }, 4000);
+        ref.on('value', cb);
 
         return () => {
             cancelled = true;
-            ref.off('value', applySnap);
-            try { controller && controller.abort(); } catch (e) {}
-            clearTimeout(restTimer);
-            clearTimeout(cacheFallbackTimer);
+            ref.off('value', cb);
         };
     }, [currentUser && currentUser.id, currentUser && currentUser.username, currentUser && currentUser.isModerator]);
     useEffect(() => {
