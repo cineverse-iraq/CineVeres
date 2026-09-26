@@ -8056,19 +8056,8 @@ function App() {
             });
             setBooted(true);
         };
-        if (CV_LOW_POWER && !isAdmin) {
-            const refresh = () => ref.once('value').then(applySnap).catch(() => setBooted(true));
-            refresh();
-            const timer = setInterval(() => { if (!document.hidden)
-                refresh(); }, 120000);
-            const onVisible = () => { if (!document.hidden)
-                refresh(); };
-            document.addEventListener('visibilitychange', onVisible);
-            const safety = setTimeout(() => setBooted(true), 2200);
-            return () => { cancelled = true; clearInterval(timer); clearTimeout(safety); document.removeEventListener('visibilitychange', onVisible); };
-        }
         ref.on('value', applySnap);
-        const safety = setTimeout(() => setBooted(true), CV_LOW_POWER ? 2200 : 5000);
+        const safety = setTimeout(() => setBooted(true), 5000);
         return () => { cancelled = true; ref.off('value', applySnap); clearTimeout(safety); };
     }, [currentUser && currentUser.id, currentUser && currentUser.username, currentUser && currentUser.isModerator]);
     useEffect(() => {
