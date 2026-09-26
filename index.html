@@ -8175,19 +8175,18 @@ function App() {
         const ref = isAdmin ? db.ref('titles') : db.ref('titles').orderByChild('status').equalTo('published');
         let appliedFreshData = false;
 
-        // Apply one normalized list through a single path so the player changes are
-        // completely independent from the initial catalog loading.
-        const applyList = (data, source = 'firebase') => {
-            if (cancelled || !data || typeof data !== 'object')
-                return false;
+        const applyList = (data) => {
+            if (cancelled || !data || typeof data !== 'object') return false;
             const list = Object.keys(data)
                 .map(k => normalizeTitlePlaybackData({ id: k, ...data[k] }))
-                .filter(Boolean);
+                .filter(Boolean)
+                .filter(t => isAdmin || t.status === 'published');
             list.sort((a, b) => ((b.publishedAt || b.createdAt || b.updatedAt || 0) - (a.publishedAt || a.createdAt || a.updatedAt || 0)));
+            // An empty/invalid REST response must never replace the working catalog.
+            if (!list.length) return false;
             appliedFreshData = true;
             setTitles(list);
-            if (!isAdmin)
-                writeTitleCache(list);
+            if (!isAdmin) writeTitleCache(list);
             setActiveTitle(prev => {
                 if (!prev) return prev;
                 const updated = list.find(x => x.id === prev.id);
@@ -8197,33 +8196,31 @@ function App() {
             return true;
         };
 
-        const applySnap = snap => {
-            if (cancelled) return;
-            applyList(snap.val(), 'sdk');
-        };
-
-        // Start the SDK listener and a direct REST read at the same time.
-        // On mobile networks the REST request can return before the Firebase
-        // realtime connection finishes its initial handshake, removing the
-        // noticeable 5-10 second catalog delay without touching the video player.
-        ref.on('value', applySnap);
-
+        // IMPORTANT: start the plain HTTPS catalog request first. On some phones
+        // the Firebase realtime SDK waits several seconds before its first
+        // connection/handshake. REST does not need that realtime handshake, so
+        // it becomes the fast initial source.
         const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        const restTimer = setTimeout(() => { try { controller && controller.abort(); } catch (e) {} }, 4000);
-        const restUrl = isAdmin
-            ? 'https://mnste-36ca4-default-rtdb.europe-west1.firebasedatabase.app/titles.json'
-            : 'https://mnste-36ca4-default-rtdb.europe-west1.firebasedatabase.app/titles.json?orderBy=%22status%22&equalTo=%22published%22';
-        fetch(restUrl, { cache: 'no-store', signal: controller ? controller.signal : undefined })
+        const restTimer = setTimeout(() => { try { controller && controller.abort(); } catch (e) {} }, 3500);
+        const restUrl = 'https://mnste-36ca4-default-rtdb.europe-west1.firebasedatabase.app/titles.json?cb=' + Date.now();
+        fetch(restUrl, { cache: 'no-store', credentials: 'omit', signal: controller ? controller.signal : undefined })
             .then(r => r.ok ? r.json() : null)
             .then(data => {
-                if (!cancelled && data && !appliedFreshData) applyList(data, 'rest');
+                if (!cancelled) applyList(data);
             })
             .catch(() => {})
             .finally(() => clearTimeout(restTimer));
 
-        // If a cache exists, the UI is already usable. If there is no cache,
-        // don't keep a fixed 5-second artificial wait: the first fresh response
-        // above controls when the loader disappears.
+        // Keep the realtime listener only for live updates after the initial
+        // catalog. It is no longer responsible for making the first screen wait.
+        const applySnap = snap => {
+            if (!cancelled) applyList(snap.val());
+        };
+        ref.on('value', applySnap);
+
+        // If REST fails, the realtime listener remains the fallback. If there is
+        // an old cache, it can stay visible while that fallback connects; once
+        // fresh data arrives it replaces the cache immediately.
         return () => {
             cancelled = true;
             ref.off('value', applySnap);
