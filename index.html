@@ -2812,8 +2812,8 @@ function ContinueWatchingRow({ items, watchProgress, onOpen }) {
         React.createElement("div", { className: "flex items-center justify-between gap-3 mb-3.5" },
             React.createElement("h2", { className: "text-lg md:text-xl font-black text-white flex items-center gap-2" },
                 React.createElement(Icon, { name: "play", className: "w-4.5 h-4.5 text-accent-cyan fill-current" }),
-                "متابعة المشاهدة"),
-            React.createElement("span", { className: "text-[10px] md:text-xs text-slate-500 font-bold" }, "مزامنة مع حسابك")),
+                "أكمل المشاهدة"),
+            React.createElement("span", { className: "text-[10px] md:text-xs text-slate-500 font-bold" }, "آخر ما توقفت عنده")),
         React.createElement("div", { className: "flex gap-3 md:gap-4 overflow-x-auto scrollbar-hide pb-1 snap-x" },
             cards.map((c, i) => React.createElement("button", { key: `${c.title.id}-${i}`, type: "button", onClick: () => onOpen(c.title), className: "group shrink-0 w-40 sm:w-44 md:w-52 text-right snap-start" },
                 React.createElement("div", { className: "relative aspect-video rounded-2xl overflow-hidden glass-card border border-white/10 mb-2" },
@@ -2834,8 +2834,8 @@ function HomeView({ items, onOpen, watchedMap, watchProgress }) {
     items.forEach(t => (t.genres || []).forEach(g => genreCounts[g] = (genreCounts[g] || 0) + 1));
     const topGenres = Object.keys(genreCounts).sort((a, b) => genreCounts[b] - genreCounts[a]).slice(0, CV_LOW_POWER ? 3 : 6);
     return (React.createElement("div", null,
-        React.createElement(ContinueWatchingRow, { items: items, watchProgress: watchProgress, onOpen: onOpen }),
         featured.length > 0 && React.createElement(Hero, { items: CV_LOW_POWER ? featured.slice(0, 3) : featured, onOpen: onOpen }),
+        React.createElement(ContinueWatchingRow, { items: items, watchProgress: watchProgress, onOpen: onOpen }),
         React.createElement(Row, { label: "\u0623\u064F\u0636\u064A\u0641 \u062D\u062F\u064A\u062B\u064B\u0627", items: latest, onOpen: onOpen, watchedMap: watchedMap }),
         React.createElement(Row, { label: "\u0623\u0641\u0644\u0627\u0645", items: items.filter(t => t.type === 'movie').slice(0, rowLimit), onOpen: onOpen, watchedMap: watchedMap }),
         React.createElement(Row, { label: "\u0645\u0633\u0644\u0633\u0644\u0627\u062A", items: items.filter(t => t.type === 'series').slice(0, rowLimit), onOpen: onOpen, watchedMap: watchedMap }),
@@ -3466,7 +3466,17 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         if (completedRef.current)
             return;
         completedRef.current = true;
-        onComplete && onComplete();
+        const v = videoRef.current;
+        const position = v ? Math.max(0, Number(v.currentTime) || 0) : 0;
+        const duration = v ? Math.max(0, Number(v.duration) || 0) : 0;
+        const now = Date.now();
+        onComplete && onComplete({
+            position,
+            duration,
+            percent: duration > 0 ? Math.min(100, (position / duration) * 100) : 100,
+            completed: true,
+            updatedAt: now
+        });
     };
     useEffect(() => {
         const videoEl = videoRef.current;
@@ -3636,7 +3646,15 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
             const inOutro = hasNextEpisode && oStart > 0 && videoEl.currentTime >= oStart && (!oEnd || videoEl.currentTime < oEnd + 0.5);
             if (inOutro && !outroTriggeredRef.current) {
                 outroTriggeredRef.current = true;
-                onOutroStart && onOutroStart();
+                const position = Math.max(0, Number(videoEl.currentTime) || 0);
+                const duration = Math.max(0, Number(videoEl.duration) || 0);
+                onOutroStart && onOutroStart({
+                    position,
+                    duration,
+                    percent: duration > 0 ? Math.min(100, (position / duration) * 100) : 0,
+                    completed: true,
+                    updatedAt: Date.now()
+                });
             }
             if (trimEnd && videoEl.currentTime >= trimEnd) {
                 videoEl.pause();
@@ -3651,7 +3669,17 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
                     fireComplete();
             }
         };
-        const handleEnded = () => { onEnded && onEnded(); };
+        const handleEnded = () => {
+            const position = Math.max(0, Number(videoEl.currentTime) || 0);
+            const duration = Math.max(0, Number(videoEl.duration) || 0);
+            onEnded && onEnded({
+                position,
+                duration,
+                percent: duration > 0 ? Math.min(100, (position / duration) * 100) : 100,
+                completed: true,
+                updatedAt: Date.now()
+            });
+        };
         videoEl.addEventListener('loadedmetadata', onLoaded);
         videoEl.addEventListener('timeupdate', onTime);
         videoEl.addEventListener('ended', handleEnded);
@@ -3867,7 +3895,8 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
             if (!root) return;
             const insideMenu = e.target && e.target.closest && e.target.closest('.cv-player-menu');
             const menuButton = e.target && e.target.closest && e.target.closest('.cv-player-menu-button');
-            if (insideMenu || menuButton) return;
+            const menuTrigger = e.target && e.target.closest && e.target.closest('[data-player-menu-trigger]');
+            if (insideMenu || menuButton || menuTrigger) return;
             setShowSubtitleMenu(false);
             setShowQualityMenu(false);
             setShowSpeedMenu(false);
@@ -4161,12 +4190,12 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
                             localSub && React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => { setLocalSub(null); setSubAdj(subtitleUrl ? readSubAdj(subtitleUrl) : 0); }, className: "w-full mt-1 px-2 py-1.5 rounded-lg bg-rose-500/20 text-rose-300 text-[10px] font-bold" }, "\u0625\u0632\u0627\u0644\u0629 \u0645\u0644\u0641 \u062C\u0647\u0627\u0632\u0643"),
                             React.createElement("input", { ref: localFileRef, type: "file", accept: ".srt,.vtt,text/vtt,application/x-subrip", onChange: onLocalSub, className: "hidden" })))),
                     qualityOptions.length > 1 && (React.createElement("div", { className: "relative shrink-0" },
-                        React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => { setShowQualityMenu(v => !v); setShowSpeedMenu(false); }, className: "yt-btn h-7 px-2 gap-1 text-[11px] font-bold", title: "\u0627\u062E\u062A\u064A\u0627\u0631 \u0627\u0644\u062C\u0648\u062F\u0629" },
+                        React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => { setShowQualityMenu(v => !v); setShowSpeedMenu(false); }, className: "yt-btn cv-player-menu-button h-7 px-2 gap-1 text-[11px] font-bold", "data-player-menu-trigger": true, title: "\u0627\u062E\u062A\u064A\u0627\u0631 \u0627\u0644\u062C\u0648\u062F\u0629" },
                             React.createElement(Icon, { name: "sliders-horizontal", className: "w-3.5 h-3.5" }),
                             React.createElement("span", null, currentQuality ? currentQuality.label : 'جودة')),
                         showQualityMenu && (React.createElement("div", { className: "cv-player-menu absolute bottom-10 left-0 bg-black/95 backdrop-blur-md rounded-xl border border-white/10 p-1.5 flex flex-col gap-0.5 shadow-2xl min-w-[88px] z-50" }, qualityOptions.map((q, i) => (React.createElement("button", { key: i, type: "button", onClick: () => changeQuality(q), className: `text-[11px] font-bold px-3 py-1.5 rounded-lg text-right transition ${currentQuality && currentQuality.url === q.url ? 'bg-accent-cyan text-glass-950' : 'text-white hover:bg-white/10'}` }, q.label))))))),
                     React.createElement("div", { className: "relative shrink-0" },
-                        React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => { setShowSpeedMenu(v => !v); setShowQualityMenu(false); }, className: "yt-btn h-7 px-2 gap-1 text-[11px] font-bold", title: "\u0633\u0631\u0639\u0629 \u0627\u0644\u062A\u0634\u063A\u064A\u0644" },
+                        React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => { setShowSpeedMenu(v => !v); setShowQualityMenu(false); }, className: "yt-btn cv-player-menu-button h-7 px-2 gap-1 text-[11px] font-bold", "data-player-menu-trigger": true, title: "\u0633\u0631\u0639\u0629 \u0627\u0644\u062A\u0634\u063A\u064A\u0644" },
                             React.createElement(Icon, { name: "gauge", className: "w-3.5 h-3.5" }),
                             React.createElement("span", { className: "hidden xs:inline" },
                                 ctrl.rate,
@@ -4866,19 +4895,35 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const similarTitles = React.useMemo(() => computeSimilarTitles(title, allTitles, tmdbRecs), [title, allTitles, tmdbRecs]);
     const [showAllSim, setShowAllSim] = useState(false);
     const [locallyCompletedEpisodeKey, setLocallyCompletedEpisodeKey] = useState('');
-    useEffect(() => { setShowAllSim(false); setPlayingDurationSec(0); setSkipDbSegments({ intro: null, recap: null, outro: null }); setLocallyCompletedEpisodeKey(''); }, [title.id]);
+    const completionSaveRef = useRef('');
+    useEffect(() => { setShowAllSim(false); setPlayingDurationSec(0); setSkipDbSegments({ intro: null, recap: null, outro: null }); setLocallyCompletedEpisodeKey(''); completionSaveRef.current = ''; }, [title.id]);
+    useEffect(() => {
+        if (title.type === 'movie') return;
+        if (playingSeasonNumber == null || playingMeta == null || playingMeta.number == null) return;
+        completionSaveRef.current = '';
+    }, [title.id, playingSeasonNumber, playingMeta && playingMeta.number]);
     useEffect(() => { setPlayingDurationSec(0); setSkipDbSegments({ intro: null, recap: null, outro: null }); }, [playingUrl]);
     const movieWatched = title.type === 'movie' && ((watched && watched[title.id] && watched[title.id].movie) || (currentMovieProgress() && currentMovieProgress().completed));
-    const handleEpisodeComplete = () => {
+    const handleEpisodeComplete = (record = {}) => {
         if (title.type === 'movie' || playingSeasonNumber == null || !playingMeta || playingMeta.number == null)
             return;
-        if (onSaveWatchProgress) onSaveWatchProgress(title.id, { kind: 'episode', season: playingSeasonNumber, episode: playingMeta.number, position: Math.max(Number(resumeAt)||0, Number(playingDurationSec)||0), duration: Number(playingDurationSec)||0, completed: true, updatedAt: Date.now(), titleName: title.name, poster: title.poster, label: playingLabel });
-        // اعرض علامة الصح فور ظهور زر الحلقة التالية، حتى لو لم يكن المستخدم مسجلاً.
         const key = `s${playingSeasonNumber}e${playingMeta.number}`;
+        if (onSaveWatchProgress && completionSaveRef.current !== key) {
+            completionSaveRef.current = key;
+            onSaveWatchProgress(title.id, { kind: 'episode', season: playingSeasonNumber, episode: playingMeta.number, position: Math.max(0, Number(record.position) || Number(playingDurationSec) || 0), duration: Math.max(0, Number(record.duration) || Number(playingDurationSec) || 0), completed: true, updatedAt: Number(record.updatedAt) || Date.now(), titleName: title.name, poster: title.poster, label: playingLabel });
+        }
+        // اعرض علامة الصح فور ظهور زر الحلقة التالية، حتى لو لم يكن المستخدم مسجلاً.
         setLocallyCompletedEpisodeKey(key);
         onMarkEpisodeWatched && onMarkEpisodeWatched(title.id, playingSeasonNumber, playingMeta.number);
     };
-    const handleMovieComplete = () => { onSaveWatchProgress && onSaveWatchProgress(title.id, { kind: 'movie', position: Number(playingDurationSec)||0, duration: Number(playingDurationSec)||0, completed: true, updatedAt: Date.now(), titleName: title.name, poster: title.poster }); onMarkMovieWatched && onMarkMovieWatched(title.id); };
+    const handleMovieComplete = (record = {}) => {
+        const key = `movie:${title.id}`;
+        if (onSaveWatchProgress && completionSaveRef.current !== key) {
+            completionSaveRef.current = key;
+            onSaveWatchProgress(title.id, { kind: 'movie', position: Math.max(0, Number(record.position) || Number(playingDurationSec) || 0), duration: Math.max(0, Number(record.duration) || Number(playingDurationSec) || 0), completed: true, updatedAt: Number(record.updatedAt) || Date.now(), titleName: title.name, poster: title.poster });
+        }
+        onMarkMovieWatched && onMarkMovieWatched(title.id);
+    };
     return (React.createElement("div", { className: `${closing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-50 bg-black/90 md:p-6 md:flex md:items-center md:justify-center overflow-y-auto`, onClick: requestClose },
         React.createElement("div", { onClick: e => e.stopPropagation(), className: `${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl` },
             React.createElement("div", { className: "relative" },
