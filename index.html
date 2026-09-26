@@ -190,10 +190,6 @@
     .cv-skip-circle svg { width:25px; height:25px; }
     .cv-skip-circle span { font-size:11px; font-weight:900; line-height:1; margin-top:3px; direction:ltr; }
     @keyframes cvSkipPop { 0% { opacity:0; transform:scale(.65); } 25% { opacity:1; transform:scale(1.08); } 100% { opacity:0; transform:scale(1); } }
-
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
-    }
   </style>
   <style>
     .cv-nocursor, .cv-nocursor * { cursor: none !important; }
@@ -436,52 +432,41 @@ function compressImageToDataUrl(file, maxSize = 300, maxBytes = 260000) {
 }
 const isIOS = /iP(hone|od|ad)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const sanitizeKey = (s) => (s || '').replace(/[.#$\/\[\]]/g, '_');
-const PASSWORD_KDF_ITERATIONS = 120000;
-const PASSWORD_HASH_VERSION = 1;
-function bytesToBase64(bytes) {
-    let binary = '';
-    const chunk = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunk)
-        binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-    return btoa(binary);
+const PASSWORD_HASH_VERSION = 2;
+const PASSWORD_HASH_ITERATIONS = 150000;
+function bytesToB64(bytes) {
+    let bin = '';
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin);
 }
-function base64ToBytes(value) {
-    const binary = atob(String(value || ''));
-    const out = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+function b64ToBytes(value) {
+    const bin = atob(String(value || ''));
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
     return out;
 }
-async function hashPassword(password, saltB64, iterations = PASSWORD_KDF_ITERATIONS) {
-    if (!(window.crypto && crypto.subtle)) throw new Error('هذا المتصفح لا يدعم تشفير كلمات المرور الحديث.');
-    const salt = saltB64 ? base64ToBytes(saltB64) : crypto.getRandomValues(new Uint8Array(16));
-    const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(String(password)), 'PBKDF2', false, ['deriveBits']);
-    const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: Number(iterations) || PASSWORD_KDF_ITERATIONS, hash: 'SHA-256' }, material, 256);
-    return { hash: bytesToBase64(new Uint8Array(bits)), salt: saltB64 || bytesToBase64(salt), iterations: Number(iterations) || PASSWORD_KDF_ITERATIONS, version: PASSWORD_HASH_VERSION };
+async function createPasswordRecord(password) {
+    if (!window.crypto || !window.crypto.subtle) throw new Error('المتصفح لا يدعم تشفير كلمة المرور الحديث. استخدم اتصال HTTPS أو متصفحًا حديثًا.');
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(String(password || '')), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: PASSWORD_HASH_ITERATIONS, hash: 'SHA-256' }, key, 256);
+    return { passwordHash: bytesToB64(new Uint8Array(bits)), passwordSalt: bytesToB64(salt), passwordIterations: PASSWORD_HASH_ITERATIONS, passwordVersion: PASSWORD_HASH_VERSION };
 }
-function safeStringEqual(a, b) {
-    const x = String(a || ''), y = String(b || '');
-    if (x.length !== y.length) return false;
-    let diff = 0;
-    for (let i = 0; i < x.length; i++) diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
-    return diff === 0;
-}
-async function createPasswordRecord(password) { return await hashPassword(password); }
-async function verifyStoredPassword(user, password) {
-    if (!user) return { valid: false, legacy: false };
-    if (user.passwordHash && user.passwordSalt) {
-        const rec = await hashPassword(password, user.passwordSalt, Number(user.passwordIterations) || PASSWORD_KDF_ITERATIONS);
-        return { valid: safeStringEqual(rec.hash, String(user.passwordHash)), legacy: false };
-    }
-    return { valid: safeStringEqual(String(user.password || ''), String(password)), legacy: !!user.password };
-}
-async function upgradeLegacyPassword(userId, password) {
-    if (!userId) return false;
+async function verifyPasswordRecord(password, user) {
+    if (!user || !user.passwordHash || !user.passwordSalt) return false;
     try {
-        const rec = await createPasswordRecord(password);
-        await db.ref(`users/${userId}`).update({ passwordHash: rec.hash, passwordSalt: rec.salt, passwordIterations: rec.iterations, passwordVersion: rec.version, password: null, passwordMigratedAt: Date.now() });
-        return true;
+        const iterations = Math.max(100000, Number(user.passwordIterations) || PASSWORD_HASH_ITERATIONS);
+        const salt = b64ToBytes(user.passwordSalt);
+        const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(String(password || '')), 'PBKDF2', false, ['deriveBits']);
+        const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations, hash: 'SHA-256' }, key, 256);
+        const actual = bytesToB64(new Uint8Array(bits));
+        if (actual.length !== String(user.passwordHash).length) return false;
+        let diff = 0;
+        for (let i = 0; i < actual.length; i++) diff |= actual.charCodeAt(i) ^ String(user.passwordHash).charCodeAt(i);
+        return diff === 0;
     } catch (e) { return false; }
 }
+
 // وضع الأجهزة الضعيفة: يقلل المؤثرات، حجم الـDOM، وطلبات الخلفية الثقيلة تلقائيًا.
 const CV_DEVICE_INFO = (() => {
     try {
@@ -2820,61 +2805,26 @@ function Hero({ items, onOpen }) {
         items.length > 1 && (React.createElement("div", { className: "absolute bottom-3 md:bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 md:gap-2 px-2.5 py-1.5 rounded-full bg-black/60 backdrop-blur-xl border border-white/10 z-30 shadow-lg", onPointerDown: e => e.stopPropagation() }, items.map((_, i) => (React.createElement("button", { type: "button", key: i, "aria-label": `انتقل إلى العرض ${i + 1}`, onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); if (!slide)
                 goRef.current(i, i === (idx + 1) % items.length ? 'next' : 'prev'); }, className: `h-1.5 md:h-2 rounded-full transition-all duration-300 ${i === idx ? 'bg-accent-cyan w-5 md:w-6 shadow-[0_0_8px_rgba(0,240,255,0.8)]' : 'bg-white/35 w-1.5 md:w-2 hover:bg-white/60'}` })))))));
 }
-function ContinueWatchingRow({ items, watchProgress, onOpenContinue }) {
-    if (!watchProgress || !items || !items.length) return null;
-    const entries = [];
-    items.forEach(title => {
-        const p = watchProgress[title.id];
-        if (!p) return;
-        if (title.type === 'movie') {
-            if (isResumableProgress(p.movie)) entries.push({ title, progress: p.movie, type: 'movie', season: null, episode: null, updatedAt: Number(p.movie.updatedAt) || 0 });
-            return;
-        }
-        let latest = null;
-        if (p.episodes) Object.keys(p.episodes).forEach(key => {
-            const epP = p.episodes[key];
-            const m = key.match(/^s(\d+)e(\d+)$/i);
-            if (!m || !isResumableProgress(epP)) return;
-            const season = Number(m[1]), episode = Number(m[2]);
-            const se = (title.seasons || []).find(x => Number(x.number) === season);
-            const ep = se && (se.episodes || []).find(x => Number(x.number) === episode);
-            if (!ep) return;
-            const item = { title, progress: epP, type: 'episode', season, episode, ep, updatedAt: Number(epP.updatedAt) || 0 };
-            if (!latest || item.updatedAt > latest.updatedAt) latest = item;
-        });
-        if (latest) entries.push(latest);
-    });
-    entries.sort((a, b) => b.updatedAt - a.updatedAt);
-    const shown = entries.slice(0, CV_LOW_POWER ? 8 : 12);
-    if (!shown.length) return null;
-    return React.createElement('section', { className: 'mb-10' },
-        React.createElement('div', { className: 'flex items-center justify-between mb-4' },
-            React.createElement('h2', { className: 'text-lg md:text-xl font-black text-slate-100 flex items-center gap-2.5' },
-                React.createElement('span', { className: 'w-1.5 h-5 bg-accent-cyan rounded-full shadow-[0_0_12px_rgba(0,240,255,0.45)]' }),
-                'متابعة المشاهدة')),
-        React.createElement('div', { className: 'flex gap-4 overflow-x-auto pb-3 pt-1 snap-x scrollbar-hide', style: { overscrollBehaviorX: 'contain' } },
-            shown.map(entry => React.createElement('button', {
-                type: 'button',
-                key: `${entry.title.id}-${entry.type}-${entry.season || ''}-${entry.episode || ''}`,
-                onClick: () => onOpenContinue && onOpenContinue(entry.title, { season: entry.season, episode: entry.episode }),
-                className: 'w-[180px] sm:w-[210px] md:w-[230px] shrink-0 text-right snap-start group'
-            },
-                React.createElement('div', { className: 'relative aspect-video rounded-2xl overflow-hidden bg-glass-900 border border-white/10 group-hover:border-accent-cyan/40 shadow-xl' },
-                    entry.title.backdrop ? React.createElement('img', { src: tmdbAdaptive(entry.title.backdrop), alt: '', loading: 'lazy', decoding: 'async', className: 'absolute inset-0 w-full h-full object-cover opacity-80 group-hover:opacity-95 transition-opacity' }) : (entry.title.poster ? React.createElement('img', { src: entry.title.poster, alt: '', loading: 'lazy', decoding: 'async', className: 'absolute inset-0 w-full h-full object-cover opacity-80 group-hover:opacity-95 transition-opacity' }) : null),
-                    React.createElement('div', { className: 'absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent' }),
-                    React.createElement('div', { className: 'absolute inset-x-0 bottom-0 p-3' },
-                        React.createElement('div', { className: 'flex items-center gap-2 mb-1.5' },
-                            React.createElement('span', { className: 'inline-flex w-8 h-8 items-center justify-center rounded-full bg-accent-red text-white shadow-lg' }, React.createElement(Icon, { name: 'play', className: 'w-4 h-4 fill-current' })),
-                            React.createElement('span', { className: 'text-[10px] font-black text-white' }, `متابعة من ${formatRuntimeMinutesSeconds(entry.progress.position)}`))),
-                    React.createElement('div', { className: 'absolute left-0 right-0 bottom-0 h-1 bg-white/15' },
-                        React.createElement('div', { className: 'h-full bg-accent-cyan shadow-[0_0_8px_rgba(0,240,255,.65)]', style: { width: `${watchProgressPercent(entry.progress.position, entry.progress.duration)}%` } }))),
-                React.createElement('p', { className: 'text-sm font-black text-white truncate mt-2' }, entry.title.name),
-                React.createElement('p', { className: 'text-[10px] text-slate-400 mt-0.5 truncate' },
-                    entry.type === 'episode' ? `الموسم ${entry.season} · الحلقة ${entry.episode}` : 'فيلم',
-                    ' · ',
-                    progressLabel(entry.progress))))));
+function ContinueWatchingRow({ items, watchProgress, onOpen }) {
+    const cards = buildWatchProgressCardItems(items, watchProgress).slice(0, 12);
+    if (!cards.length) return null;
+    return React.createElement("section", { className: "mb-8 md:mb-10" },
+        React.createElement("div", { className: "flex items-center justify-between gap-3 mb-3.5" },
+            React.createElement("h2", { className: "text-lg md:text-xl font-black text-white flex items-center gap-2" },
+                React.createElement(Icon, { name: "play", className: "w-4.5 h-4.5 text-accent-cyan fill-current" }),
+                "متابعة المشاهدة"),
+            React.createElement("span", { className: "text-[10px] md:text-xs text-slate-500 font-bold" }, "مزامنة مع حسابك")),
+        React.createElement("div", { className: "flex gap-3 md:gap-4 overflow-x-auto scrollbar-hide pb-1 snap-x" },
+            cards.map((c, i) => React.createElement("button", { key: `${c.title.id}-${i}`, type: "button", onClick: () => onOpen(c.title), className: "group shrink-0 w-40 sm:w-44 md:w-52 text-right snap-start" },
+                React.createElement("div", { className: "relative aspect-video rounded-2xl overflow-hidden glass-card border border-white/10 mb-2" },
+                    c.title.backdrop ? React.createElement("img", { src: tmdbAdaptive(c.title.backdrop), alt: "", loading: "lazy", decoding: "async", className: "w-full h-full object-cover" }) : c.title.poster ? React.createElement("img", { src: c.title.poster, alt: "", loading: "lazy", decoding: "async", className: "w-full h-full object-cover" }) : React.createElement("div", { className: "w-full h-full bg-glass-800" }),
+                    React.createElement("div", { className: "absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent" }),
+                    c.progress && c.progress.duration > 0 && React.createElement("div", { className: "absolute left-0 right-0 bottom-0 h-1 bg-white/15" }, React.createElement("div", { className: "h-full bg-accent-cyan", style: { width: `${Math.max(0, Math.min(100, c.progress.percent || 0))}%` } })),
+                    React.createElement("span", { className: "absolute bottom-2 right-2 flex items-center gap-1 px-2 py-1 rounded-lg bg-black/65 text-white text-[10px] font-black" }, React.createElement(Icon, { name: "play", className: "w-2.5 h-2.5 fill-current" }), "متابعة")),
+                React.createElement("p", { className: "text-xs md:text-sm font-black text-white truncate" }, c.label),
+                React.createElement("p", { className: "text-[10px] md:text-xs text-accent-cyan font-bold mt-0.5 truncate" }, c.subLabel)))));
 }
-function HomeView({ items, onOpen, watchedMap, watchProgress, onOpenContinue }) {
+function HomeView({ items, onOpen, watchedMap, watchProgress }) {
     if (!items.length)
         return React.createElement(EmptyState, { text: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0645\u0646\u0634\u0648\u0631\u0629 \u0628\u0639\u062F. \u062A\u0627\u0628\u0639\u0646\u0627 \u0642\u0631\u064A\u0628\u064B\u0627!" });
     const featured = items.filter(t => t.featured === true);
@@ -2884,8 +2834,8 @@ function HomeView({ items, onOpen, watchedMap, watchProgress, onOpenContinue }) 
     items.forEach(t => (t.genres || []).forEach(g => genreCounts[g] = (genreCounts[g] || 0) + 1));
     const topGenres = Object.keys(genreCounts).sort((a, b) => genreCounts[b] - genreCounts[a]).slice(0, CV_LOW_POWER ? 3 : 6);
     return (React.createElement("div", null,
+        React.createElement(ContinueWatchingRow, { items: items, watchProgress: watchProgress, onOpen: onOpen }),
         featured.length > 0 && React.createElement(Hero, { items: CV_LOW_POWER ? featured.slice(0, 3) : featured, onOpen: onOpen }),
-        React.createElement(ContinueWatchingRow, { items, watchProgress, onOpen, onOpenContinue }),
         React.createElement(Row, { label: "\u0623\u064F\u0636\u064A\u0641 \u062D\u062F\u064A\u062B\u064B\u0627", items: latest, onOpen: onOpen, watchedMap: watchedMap }),
         React.createElement(Row, { label: "\u0623\u0641\u0644\u0627\u0645", items: items.filter(t => t.type === 'movie').slice(0, rowLimit), onOpen: onOpen, watchedMap: watchedMap }),
         React.createElement(Row, { label: "\u0645\u0633\u0644\u0633\u0644\u0627\u062A", items: items.filter(t => t.type === 'series').slice(0, rowLimit), onOpen: onOpen, watchedMap: watchedMap }),
@@ -3198,15 +3148,20 @@ function AuthModal({ tab: initialTab, onClose, onSuccess }) {
                     setLoading(false);
                     return;
                 }
-                const passwordRecord = await createPasswordRecord(cleanPass);
-                const newUser = { name: cleanName, username: cleanUser, ...passwordRecord, avatar: cleanAvatar, isModerator: false, banned: false, createdAt: Date.now() };
+                const passRecord = await createPasswordRecord(cleanPass);
+                const newUser = { name: cleanName, username: cleanUser, ...passRecord, avatar: cleanAvatar, isModerator: false, banned: false, createdAt: Date.now() };
                 const ref = await db.ref('users').push(newUser);
-                onSuccess({ id: ref.key, name: newUser.name, username: newUser.username, avatar: newUser.avatar || '', isModerator: false });
+                onSuccess({ ...newUser, id: ref.key });
             }
             else {
-                let matchedKey = '';
-                for (const key of Object.keys(users)) {
-                    try { const check = await verifyStoredPassword(users[key], cleanPass); if (check.valid) { matchedKey = key; if (check.legacy) await upgradeLegacyPassword(key, cleanPass); break; } } catch (e) { }
+                let matchedKey = null;
+                for (const k of Object.keys(users)) {
+                    const u = users[k];
+                    if (u && u.passwordHash) {
+                        if (await verifyPasswordRecord(cleanPass, u)) { matchedKey = k; break; }
+                    } else if (u && u.password === cleanPass) {
+                        matchedKey = k; break;
+                    }
                 }
                 if (!matchedKey) {
                     const delSnap = await db.ref(`deletedUsernames/${sanitizeKey(cleanUser)}`).once('value');
@@ -3229,6 +3184,14 @@ function AuthModal({ tab: initialTab, onClose, onSuccess }) {
                     showToast(outcome.message);
                 }
                 const u = users[matchedKey];
+                if (u && !u.passwordHash && u.password === cleanPass) {
+                    try {
+                        const upgraded = await createPasswordRecord(cleanPass);
+                        await db.ref(`users/${matchedKey}`).update({ ...upgraded, password: null });
+                        Object.assign(u, upgraded);
+                        delete u.password;
+                    } catch (e) {}
+                }
                 if (u.banned) {
                     if (u.banUntil && u.banUntil <= Date.now()) {
                         await db.ref(`users/${matchedKey}`).update({ banned: false, banReason: null, banUntil: null });
@@ -3363,7 +3326,7 @@ function SubSlider({ label, value, unit, min, max, step, onChange }) {
                 unit)),
         React.createElement("input", { type: "range", min: min, max: max, step: step, value: value, onChange: e => onChange(Number(e.target.value)), className: "w-full mb-2", style: { accentColor: '#00F0FF' } })));
 }
-function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration, onWatchProgress, onNextEpisodeVisible, trimStart, trimEnd, introStart, introEnd, recapStart, recapEnd, outroStart, outroEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, onEnded, onOutroStart, onNextEpisode, hasNextEpisode, nextEpisodeLabel, qualities, onQualityChange, startAt }) {
+function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration, trimStart, trimEnd, introStart, introEnd, recapStart, recapEnd, outroStart, outroEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, onEnded, onOutroStart, onNextEpisode, hasNextEpisode, nextEpisodeLabel, qualities, onQualityChange, startAt, onProgressSave }) {
     const videoRef = useRef(null);
     const wrapRef = useRef(null);
     const hideTimerRef = useRef(null);
@@ -3372,24 +3335,27 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
     const lastProgressTickRef = useRef(0);
     const completedRef = useRef(false);
     const outroTriggeredRef = useRef(false);
-    const watchProgressRef = useRef(onWatchProgress);
-    const lastSavedWatchProgressRef = useRef({ position: -999, at: 0 });
-    useEffect(() => { watchProgressRef.current = onWatchProgress; }, [onWatchProgress]);
-    const saveWatchProgressNow = (completed = false) => {
-        const v = videoRef.current;
-        if (!v || !watchProgressRef.current) return;
-        const position = Number(v.currentTime) || 0;
-        const duration = Number(v.duration) || 0;
-        const now = Date.now();
-        if (!completed && now - lastSavedWatchProgressRef.current.at < 1200 && Math.abs(position - lastSavedWatchProgressRef.current.position) < 1) return;
-        lastSavedWatchProgressRef.current = { position, at: now };
-        watchProgressRef.current(position, duration, completed);
-    };
+    const progressSaveRef = useRef(onProgressSave);
+    const lastSavedProgressRef = useRef(0);
+    const latestProgressRef = useRef({ position: 0, duration: 0 });
     const clearBufferingTimer = () => {
         if (bufferingTimerRef.current) {
             clearTimeout(bufferingTimerRef.current);
             bufferingTimerRef.current = null;
         }
+    };
+    useEffect(() => { progressSaveRef.current = onProgressSave; }, [onProgressSave]);
+    const persistCurrentProgress = (force = false) => {
+        const v = videoRef.current;
+        if (!v || !progressSaveRef.current) return;
+        const position = Math.max(0, Number(v.currentTime) || 0);
+        const duration = Math.max(0, Number(v.duration) || 0);
+        if (!duration || position < WATCH_PROGRESS_MIN_SAVE_SECONDS) return;
+        const now = Date.now();
+        if (!force && now - lastSavedProgressRef.current < WATCH_PROGRESS_SAVE_INTERVAL) return;
+        lastSavedProgressRef.current = now;
+        latestProgressRef.current = { position, duration };
+        try { progressSaveRef.current({ position, duration, completed: false, updatedAt: now }); } catch (e) {}
     };
     const [loading, setLoading] = useState(true);
     const [subtitleSrc, setSubtitleSrc] = useState(''); // لمسار iOS الأصلي فقط
@@ -3463,7 +3429,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
     const c = crop || {};
     const fit = (isMobile ? fitMobile : fitDesktop) || 'contain';
     const cropReady = fit === 'crop' && c.active && c.width > 0 && c.height > 0 && stage.w > 0 && stage.h > 0 && natural.w > 0 && natural.h > 0;
-    useEffect(() => { completedRef.current = false; outroTriggeredRef.current = false; lastSavedWatchProgressRef.current = { position: -999, at: 0 }; }, [src]);
+    useEffect(() => { completedRef.current = false; outroTriggeredRef.current = false; }, [src]);
     useEffect(() => {
         let cancelled = false;
         setSubError('');
@@ -3647,11 +3613,15 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
     }, [src]);
     useEffect(() => {
         outroTriggeredRef.current = false;
+        lastSavedProgressRef.current = 0;
+        latestProgressRef.current = { position: 0, duration: 0 };
         const videoEl = videoRef.current;
         if (!videoEl)
             return;
         const onLoaded = () => {
-            const initialTime = Math.max(Number(trimStart) || 0, Number(startAt) || 0);
+            const rawStart = Math.max(Number(trimStart) || 0, Number(startAt) || 0);
+            const safeDuration = Number(videoEl.duration) || 0;
+            const initialTime = safeDuration > 0 ? Math.min(rawStart, Math.max(0, safeDuration - 1)) : rawStart;
             if (initialTime > 0) {
                 try {
                     videoEl.currentTime = initialTime;
@@ -3666,13 +3636,10 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
             const inOutro = hasNextEpisode && oStart > 0 && videoEl.currentTime >= oStart && (!oEnd || videoEl.currentTime < oEnd + 0.5);
             if (inOutro && !outroTriggeredRef.current) {
                 outroTriggeredRef.current = true;
-                const info = { position: Number(videoEl.currentTime) || 0, duration: Number(videoEl.duration) || 0 };
-                onNextEpisodeVisible && onNextEpisodeVisible(info);
-                onOutroStart && onOutroStart(info);
+                onOutroStart && onOutroStart();
             }
             if (trimEnd && videoEl.currentTime >= trimEnd) {
                 videoEl.pause();
-                saveWatchProgressNow(true);
                 if (onEnded) onEnded();
                 else fireComplete();
                 return;
@@ -3701,7 +3668,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         if (!videoEl)
             return;
         const onPlay = () => { setCtrl(c2 => ({ ...c2, playing: true })); setLoading(false); };
-        const onPause = () => { saveWatchProgressNow(false); setCtrl(c2 => ({ ...c2, playing: false })); };
+        const onPause = () => { setCtrl(c2 => ({ ...c2, playing: false })); persistCurrentProgress(true); };
         const onVolume = () => setCtrl(c2 => ({ ...c2, muted: videoEl.muted, volume: videoEl.volume }));
         const onLoadedMeta = () => { const d = videoEl.duration || 0; setCtrl(c2 => ({ ...c2, duration: d })); onDuration && onDuration(d); };
         const onTimeUpdate = () => {
@@ -3711,9 +3678,9 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
             lastUiTickRef.current = now;
             if (!videoEl.paused && videoEl.readyState >= 2)
                 setLoading(false);
-            const current = videoEl.currentTime || 0;
-            setCtrl(c2 => ({ ...c2, current }));
-            if (now - (lastSavedWatchProgressRef.current.at || 0) >= WATCH_PROGRESS_SAVE_MS) saveWatchProgressNow(false);
+            setCtrl(c2 => ({ ...c2, current: videoEl.currentTime || 0 }));
+            latestProgressRef.current = { position: Number(videoEl.currentTime)||0, duration: Number(videoEl.duration)||0 };
+            persistCurrentProgress(false);
         };
         const onProgress = () => {
             const now = performance.now();
@@ -3748,7 +3715,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         };
         const onPlaying = () => { clearBufferingTimer(); setLoading(false); };
         const onLoadedData = () => { clearBufferingTimer(); setLoading(false); };
-        const onEnded = () => { clearBufferingTimer(); setLoading(false); saveWatchProgressNow(true); fireComplete(); };
+        const onEnded = () => { clearBufferingTimer(); setLoading(false); if (progressSaveRef.current) { try { progressSaveRef.current({ position: Number(videoEl.duration)||0, duration: Number(videoEl.duration)||0, completed: true, updatedAt: Date.now() }); } catch (e) {} } fireComplete(); };
         videoEl.addEventListener('play', onPlay);
         videoEl.addEventListener('pause', onPause);
         videoEl.addEventListener('volumechange', onVolume);
@@ -3762,7 +3729,6 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         videoEl.addEventListener('loadeddata', onLoadedData);
         videoEl.addEventListener('ended', onEnded);
         return () => {
-            saveWatchProgressNow(false);
             videoEl.removeEventListener('play', onPlay);
             videoEl.removeEventListener('pause', onPause);
             videoEl.removeEventListener('volumechange', onVolume);
@@ -3778,6 +3744,19 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
             clearBufferingTimer();
         };
     }, [src]);
+    useEffect(() => {
+        const saveNow = () => persistCurrentProgress(true);
+        const onVis = () => { if (document.visibilityState === 'hidden') saveNow(); };
+        document.addEventListener('visibilitychange', onVis);
+        window.addEventListener('pagehide', saveNow);
+        window.addEventListener('beforeunload', saveNow);
+        return () => {
+            document.removeEventListener('visibilitychange', onVis);
+            window.removeEventListener('pagehide', saveNow);
+            window.removeEventListener('beforeunload', saveNow);
+            saveNow();
+        };
+    }, []);
     const togglePlay = () => {
         const v = videoRef.current;
         if (!v)
@@ -4393,7 +4372,7 @@ async function fetchSkipDbSegments(title, season, episode, durationSec) {
     SKIPDB_SEGMENT_CACHE.set(key, result);
     return result;
 }
-function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onOpenAuth, getRole, onOpenProfile, onOpen, watched, watchProgress, resumeTarget, onMarkEpisodeWatched, onMarkMovieWatched, isEpisodeWatched }) {
+function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onOpenAuth, getRole, onOpenProfile, onOpen, watched, onMarkEpisodeWatched, onMarkMovieWatched, isEpisodeWatched, watchProgress, onSaveWatchProgress }) {
     const [closing, requestClose] = useClosable(onClose);
     const [playingUrl, setPlayingUrl] = useState(null);
     const [playingMeta, setPlayingMeta] = useState({});
@@ -4418,25 +4397,11 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const [reviewReplyText, setReviewReplyText] = useState('');
     const [myFollowingSet, setMyFollowingSet] = useState({});
     const [showAddToList, setShowAddToList] = useState(false);
-    const getProgressEntry = (seasonNumber, episodeNumber) => {
-        if (!watchProgress || !title || !title.id) return null;
-        if (title.type === 'movie') return watchProgress[title.id] && watchProgress[title.id].movie || null;
-        const key = `s${Number(seasonNumber) || 1}e${Number(episodeNumber) || 1}`;
-        return watchProgress[title.id] && watchProgress[title.id].episodes && watchProgress[title.id].episodes[key] || null;
-    };
-    const getSafeResumeAt = (entry) => {
-        if (!isResumableProgress(entry)) return 0;
-        const p = Number(entry.position) || 0, d = Number(entry.duration) || 0;
-        return d ? Math.max(0, Math.min(p, Math.max(0, d - WATCH_PROGRESS_END_GUARD_SECONDS))) : p;
-    };
-    const latestSeriesResume = () => {
-        if (title.type === 'movie') return null;
-        const candidates = [];
-        const p = watchProgress && watchProgress[title.id];
-        if (p && p.episodes) Object.keys(p.episodes).forEach(k => { const m = k.match(/^s(\d+)e(\d+)$/); if (m && isResumableProgress(p.episodes[k])) candidates.push({ season: Number(m[1]), episode: Number(m[2]), ...p.episodes[k] }); });
-        candidates.sort((a,b) => (Number(b.updatedAt)||0) - (Number(a.updatedAt)||0));
-        return candidates[0] || null;
-    };
+    const playRequestRef = useRef(0);
+    const continueTarget = getTitleContinueProgress(title, watchProgress);
+    const currentEpisodeProgress = (season, episode) => getEpisodeWatchProgress(watchProgress, title.id, season, episode);
+    const currentMovieProgress = getMovieWatchProgress(watchProgress, title.id);
+
     useEffect(() => {
         if (!currentUser) {
             setMyFollowingSet({});
@@ -4452,11 +4417,6 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const [ratingMsg, setRatingMsg] = useState('');
     const [deleteCommentTarget, setDeleteCommentTarget] = useState(null);
     const [deleteMyRating, setDeleteMyRating] = useState(false);
-    useEffect(() => {
-        if (!resumeTarget || title.type === 'movie') return;
-        const si = seasons.findIndex(s => Number(s.number) === Number(resumeTarget.season));
-        if (si >= 0) { setActiveSeason(si); setSeasonView(true); }
-    }, [title.id, resumeTarget && resumeTarget.season, resumeTarget && resumeTarget.episode]);
     useEffect(() => {
         setPlayingUrl(null);
         setPlayingLabel('');
@@ -4732,32 +4692,42 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         return publicUrl;
     };
     const handlePlay = async () => {
+        const requestId = ++playRequestRef.current;
         setVideoError(false);
-        setResumeAt(0);
+        const target = continueTarget;
+        const movieResume = target && target.kind === 'movie' && target.progress ? Number(target.progress.position)||0 : 0;
+        setResumeAt(movieResume);
         try {
             if (title.type === 'movie') {
-                const movieResume = getSafeResumeAt(getProgressEntry());
-                setResumeAt(movieResume);
                 let url = getSavedVideoUrl(title);
                 let sources = normalizeVideoSources(title.videoSources);
                 if (!url) {
                     const recovered = await recoverMovieVideo();
+                    if (requestId !== playRequestRef.current) return;
                     url = recovered.url;
                     sources = recovered.sources;
                 }
+                if (requestId !== playRequestRef.current) return;
                 setPlayingUrl(url);
                 setPlayingMeta({ ...title, videoUrl: url, videoSources: sources, subtitleUrl: title.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: title.subtitlePublicUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
                 setPlayingLabel(title.name);
-                ensureVidApiSubtitlePublic({ ...title, videoUrl: url });
+                ensureVidApiSubtitlePublic({ ...title, videoUrl: url }).catch(() => {});
             }
             else {
-                const target = resumeTarget && resumeTarget.season != null && resumeTarget.episode != null ? { seasonNumber: Number(resumeTarget.season), ep: seasons.find(s => Number(s.number) === Number(resumeTarget.season))?.episodes?.find(e => Number(e.number) === Number(resumeTarget.episode)) } : null;
-                const fallback = latestSeriesResume();
-                const found = target && target.ep ? target : (fallback ? { seasonNumber: fallback.season, ep: seasons.find(s => Number(s.number) === fallback.season)?.episodes?.find(e => Number(e.number) === fallback.episode) } : firstEpisode());
+                let found = firstEpisode();
+                if (target && (target.kind === 'episode' || target.kind === 'episode-complete') && target.progress) {
+                    const resumeEp = allEpisodesFlat.find(e => Number(e.seasonNumber) === Number(target.progress.season) && Number(e.number) === Number(target.progress.episode));
+                    if (resumeEp) found = { ep: resumeEp, seasonNumber: resumeEp.seasonNumber };
+                    if (target.kind === 'episode-complete' && resumeEp) {
+                        const idx = allEpisodesFlat.indexOf(resumeEp);
+                        const next = idx >= 0 ? allEpisodesFlat[idx + 1] : null;
+                        if (next) found = { ep: next, seasonNumber: next.seasonNumber };
+                    }
+                }
                 const ep = found ? found.ep : null;
-                if (!ep)
-                    throw new Error('ماكو حلقات قابلة للتشغيل بهذا العمل.');
-                await playEpisode(ep, found.seasonNumber);
+                if (!ep) throw new Error('ماكو حلقات قابلة للتشغيل بهذا العمل.');
+                const progress = target && target.kind === 'episode' && target.progress && Number(target.progress.season) === Number(found.seasonNumber) && Number(target.progress.episode) === Number(ep.number) ? target.progress : null;
+                await playEpisode(ep, found.seasonNumber, progress ? Number(progress.position)||0 : 0);
             }
         }
         catch (e) {
@@ -4765,23 +4735,27 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             showToast(e.message || 'تعذّر تشغيل الفيديو', 'error');
         }
     };
-    const playEpisode = async (ep, seasonNumber) => {
+    const playEpisode = async (ep, seasonNumber, resumeOverride = null) => {
+        const requestId = ++playRequestRef.current;
         setVideoError(false);
-        const episodeResume = getSafeResumeAt(getProgressEntry(seasonNumber, ep && ep.number));
-        setResumeAt(episodeResume);
+        const savedProgress = currentEpisodeProgress(seasonNumber, ep && ep.number);
+        const requestedResume = resumeOverride != null ? Number(resumeOverride)||0 : (savedProgress && !savedProgress.completed ? Number(savedProgress.position)||0 : 0);
+        setResumeAt(requestedResume);
         try {
             let url = getSavedVideoUrl(ep);
             let sources = normalizeVideoSources(ep.videoSources);
             if (!url) {
                 const recovered = await recoverEpisodeVideo(ep, seasonNumber);
+                if (requestId !== playRequestRef.current) return;
                 url = recovered.url;
                 sources = recovered.sources;
             }
+            if (requestId !== playRequestRef.current) return;
             setPlayingUrl(url);
             setPlayingMeta({ ...ep, videoUrl: url, videoSources: sources, subtitleUrl: ep.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: ep.subtitlePublicUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
             setPlayingSeasonNumber(seasonNumber != null ? seasonNumber : null);
             setPlayingLabel(`${title.name} · ${ep.title || `الحلقة ${ep.number != null ? ep.number : ''}`}`);
-                ensureVidApiSubtitlePublic({ ...ep, videoUrl: url });
+                ensureVidApiSubtitlePublic({ ...ep, videoUrl: url }).catch(() => {});
         }
         catch (e) {
             setVideoError(true);
@@ -4828,6 +4802,8 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const handleQualityChange = (url, at, quality) => {
         if (!url || url === playingUrl)
             return;
+        if (onSaveWatchProgress && title.type === 'movie') onSaveWatchProgress(title.id, { kind: 'movie', position: Number(at)||0, duration: Number(playingDurationSec)||0, completed: false, updatedAt: Date.now(), titleName: title.name, poster: title.poster });
+        else if (onSaveWatchProgress && title.type !== 'movie' && playingSeasonNumber != null && playingMeta && playingMeta.number != null) onSaveWatchProgress(title.id, { kind: 'episode', season: playingSeasonNumber, episode: playingMeta.number, position: Number(at)||0, duration: Number(playingDurationSec)||0, completed: false, updatedAt: Date.now(), titleName: title.name, poster: title.poster, label: playingLabel });
         setVideoError(false);
         setResumeAt(Number(at) || 0);
         setPlayingMeta(prev => ({ ...prev, videoUrl: url, subtitleUrl: normalizeSubtitleUrl((quality && quality.subtitleUrl) || prev.subtitleUrl || '') }));
@@ -4892,21 +4868,22 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const [locallyCompletedEpisodeKey, setLocallyCompletedEpisodeKey] = useState('');
     useEffect(() => { setShowAllSim(false); setPlayingDurationSec(0); setSkipDbSegments({ intro: null, recap: null, outro: null }); setLocallyCompletedEpisodeKey(''); }, [title.id]);
     useEffect(() => { setPlayingDurationSec(0); setSkipDbSegments({ intro: null, recap: null, outro: null }); }, [playingUrl]);
-    const movieWatched = title.type === 'movie' && ((watched && watched[title.id] && watched[title.id].movie) || (watchProgress && watchProgress[title.id] && watchProgress[title.id].movie && watchProgress[title.id].movie.completed));
-    const handleEpisodeComplete = (info = {}) => {
+    const movieWatched = title.type === 'movie' && ((watched && watched[title.id] && watched[title.id].movie) || (currentMovieProgress() && currentMovieProgress().completed));
+    const handleEpisodeComplete = () => {
         if (title.type === 'movie' || playingSeasonNumber == null || !playingMeta || playingMeta.number == null)
             return;
-        // بمجرد ظهور زر "الحلقة التالية" تعتبر الحلقة الحالية مكتملة، حتى لو لم يضغط المستخدم على الزر.
+        if (onSaveWatchProgress) onSaveWatchProgress(title.id, { kind: 'episode', season: playingSeasonNumber, episode: playingMeta.number, position: Math.max(Number(resumeAt)||0, Number(playingDurationSec)||0), duration: Number(playingDurationSec)||0, completed: true, updatedAt: Date.now(), titleName: title.name, poster: title.poster, label: playingLabel });
+        // اعرض علامة الصح فور ظهور زر الحلقة التالية، حتى لو لم يكن المستخدم مسجلاً.
         const key = `s${playingSeasonNumber}e${playingMeta.number}`;
         setLocallyCompletedEpisodeKey(key);
-        onMarkEpisodeWatched && onMarkEpisodeWatched(title.id, playingSeasonNumber, playingMeta.number, info.position, info.duration);
+        onMarkEpisodeWatched && onMarkEpisodeWatched(title.id, playingSeasonNumber, playingMeta.number);
     };
-    const handleMovieComplete = () => { onMarkMovieWatched && onMarkMovieWatched(title.id); };
+    const handleMovieComplete = () => { onSaveWatchProgress && onSaveWatchProgress(title.id, { kind: 'movie', position: Number(playingDurationSec)||0, duration: Number(playingDurationSec)||0, completed: true, updatedAt: Date.now(), titleName: title.name, poster: title.poster }); onMarkMovieWatched && onMarkMovieWatched(title.id); };
     return (React.createElement("div", { className: `${closing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-50 bg-black/90 md:p-6 md:flex md:items-center md:justify-center overflow-y-auto`, onClick: requestClose },
         React.createElement("div", { onClick: e => e.stopPropagation(), className: `${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl` },
             React.createElement("div", { className: "relative" },
                 playingUrl ? (React.createElement("div", { className: "relative" },
-                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: 'cinadam-player-' + title.id, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: () => setVideoError(true), onDuration: d => setPlayingDurationSec(d), onWatchProgress: (position, duration, completed) => onSaveWatchProgress && onSaveWatchProgress(title.id, title.type === 'movie' ? null : playingSeasonNumber, title.type === 'movie' ? null : (playingMeta && playingMeta.number), position, duration, completed), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : Number(playingMeta.introStart) || 0, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : Number(playingMeta.introEnd) || 0, recapStart: skipDbSegments.recap ? Number(skipDbSegments.recap.start_ms) / 1000 : Number(playingMeta.recapStart) || 0, recapEnd: skipDbSegments.recap ? Number(skipDbSegments.recap.end_ms) / 1000 : Number(playingMeta.recapEnd) || 0, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : Number(playingMeta.outroStart) || 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : Number(playingMeta.outroEnd) || 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onNextEpisodeVisible: handleEpisodeComplete, onNextEpisode: playNextEpisode, hasNextEpisode: !!getNextEpisodeInfo(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
+                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: 'cinadam-player-' + title.id, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: () => setVideoError(true), onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : Number(playingMeta.introStart) || 0, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : Number(playingMeta.introEnd) || 0, recapStart: skipDbSegments.recap ? Number(skipDbSegments.recap.start_ms) / 1000 : Number(playingMeta.recapStart) || 0, recapEnd: skipDbSegments.recap ? Number(skipDbSegments.recap.end_ms) / 1000 : Number(playingMeta.recapEnd) || 0, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : Number(playingMeta.outroStart) || 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : Number(playingMeta.outroEnd) || 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onOutroStart: handleEpisodeComplete, onNextEpisode: playNextEpisode, hasNextEpisode: !!getNextEpisodeInfo(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete, onProgressSave: onSaveWatchProgress ? (r => onSaveWatchProgress(title.id, title.type === 'movie' ? { kind: 'movie', ...r, titleName: title.name, poster: title.poster } : { kind: 'episode', season: playingSeasonNumber, episode: playingMeta && playingMeta.number, ...r, titleName: title.name, poster: title.poster, label: playingLabel })) : null })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
                     videoError && (React.createElement("div", { className: "absolute inset-0 bg-black/90 flex flex-col items-center justify-center gap-3 p-6 text-center" },
                         React.createElement("p", { className: "text-sm text-slate-200 font-bold" }, "\u062A\u0639\u0630\u0651\u0631 \u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u0639\u0644\u0649 \u0647\u0630\u0627 \u0627\u0644\u062C\u0647\u0627\u0632."),
                         isIOS && (React.createElement("p", { className: "text-xs text-slate-400 max-w-xs leading-relaxed" }, "\u063A\u0627\u0644\u0628\u064B\u0627 \u0627\u0644\u0633\u0628\u0628 \u0623\u0646 \u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u063A\u064A\u0631 \u0645\u0631\u0641\u0648\u0639 \u0628\u0635\u064A\u063A\u0629 \u064A\u062F\u0639\u0645\u0647\u0627 \u0627\u0644\u0622\u064A\u0641\u0648\u0646 \u0645\u0628\u0627\u0634\u0631\u0629. \u0627\u0644\u0623\u0639\u0645\u0627\u0644 \u0627\u0644\u062A\u064A \u062A\u064F\u0631\u0641\u0639 \u0645\u0646 \u0644\u0648\u062D\u0629 \u0627\u0644\u062A\u062D\u0643\u0645 \u0639\u0628\u0631 \u0632\u0631 \"\u0631\u0641\u0639 \u0645\u0646 \u0627\u0644\u062C\u0647\u0627\u0632\" \u062A\u0639\u0645\u0644 \u0628\u0634\u0643\u0644 \u0635\u062D\u064A\u062D \u0639\u0644\u0649 \u0643\u0644 \u0627\u0644\u0623\u062C\u0647\u0632\u0629.")),
@@ -4953,7 +4930,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 React.createElement("div", { className: "flex items-center gap-3 flex-wrap mb-6" },
                     React.createElement("button", { onClick: handlePlay, className: "flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover text-sm font-bold text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition" },
                         React.createElement(Icon, { name: "play", className: "w-4 h-4 fill-current" }),
-                        "\u062A\u0634\u063A\u064A\u0644"),
+                        (continueTarget && continueTarget.kind === 'movie') ? `متابعة من ${formatWatchTime(continueTarget.progress.position)}` : (continueTarget && continueTarget.kind === 'episode') ? `متابعة · ح${continueTarget.progress.episode} من ${formatWatchTime(continueTarget.progress.position)}` : (continueTarget && continueTarget.kind === 'episode-complete') ? 'الحلقة التالية' : 'تشغيل'),
                     isSeries && playingUrl && (React.createElement("button", { onClick: playNextEpisode, className: "flex items-center gap-2.5 px-5 py-3 rounded-2xl glass-card border border-white/10 hover:border-accent-cyan text-sm font-bold text-slate-200 transition" },
                         React.createElement(Icon, { name: "skipForward", className: "w-4 h-4" }),
                         "\u0627\u0644\u062D\u0644\u0642\u0629 \u0627\u0644\u062A\u0627\u0644\u064A\u0629")),
@@ -4979,7 +4956,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                     showAllEpisodes ? (React.createElement("div", { className: "space-y-2 md:space-y-2.5" },
                         allEpisodesFlat.map((ep, idx) => {
                             const isCurrent = playingMeta && playingMeta.videoUrl === ep.videoUrl && playingMeta.number === ep.number && playingSeasonNumber === ep.seasonNumber;
-                            const done = (isEpisodeWatched && isEpisodeWatched(title.id, ep.seasonNumber, ep.number)) || locallyCompletedEpisodeKey === `s${ep.seasonNumber}e${ep.number}`;
+                            const done = (isEpisodeWatched && isEpisodeWatched(title.id, ep.seasonNumber, ep.number)) || (currentEpisodeProgress(ep.seasonNumber, ep.number) && currentEpisodeProgress(ep.seasonNumber, ep.number).completed) || locallyCompletedEpisodeKey === `s${ep.seasonNumber}e${ep.number}`;
                             return (React.createElement("div", { key: `${ep.seasonNumber}-${ep.number}-${idx}`, className: `flex items-center gap-2.5 md:gap-3 glass-card rounded-2xl p-2.5 md:p-3.5 border transition ${isCurrent ? 'border-accent-cyan/50 shadow-[0_0_15px_rgba(0,240,255,0.15)]' : 'border-white/5 hover:border-white/10'}` },
                                 ep.episodeThumbnail ? (React.createElement("div", { className: "relative w-14 h-9 sm:w-20 sm:h-12 shrink-0 rounded-lg overflow-hidden bg-glass-950" },
                                     React.createElement("img", { src: ep.episodeThumbnail, alt: "", className: "w-full h-full object-cover" }),
@@ -5010,7 +4987,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                                             formatRuntimeMinutesSeconds(getDisplayRuntime(ep, `${title.id}:${ep.seasonNumber}:${ep.number}`)), " دقيقة"))),
                                 done && React.createElement(Icon, { name: "check", className: "w-4 h-4 text-emerald-400 shrink-0 hidden xs:block" }),
                                 isCurrent && React.createElement("span", { className: "text-[10px] px-2 py-1 rounded-lg bg-accent-cyan/15 text-accent-cyan font-bold shrink-0 hidden sm:inline" }, "\u0642\u064A\u062F \u0627\u0644\u062A\u0634\u063A\u064A\u0644"),
-                                React.createElement("button", { onClick: () => playEpisode(ep, ep.seasonNumber), className: "w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition" },
+                                React.createElement("button", { onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); playEpisode(ep, ep.seasonNumber); }, className: "w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition" },
                                     React.createElement(Icon, { name: "play", className: "w-4 h-4 text-white fill-current translate-x-0.5" }))));
                         }),
                         allEpisodesFlat.length === 0 && React.createElement("p", { className: "text-sm text-slate-500 font-medium" }, "\u0644\u0627 \u062A\u0648\u062C\u062F \u062D\u0644\u0642\u0627\u062A \u0628\u0639\u062F."))) : !seasonView ? (React.createElement("div", { className: "grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3.5" }, seasons.map((s, i) => {
@@ -5064,7 +5041,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                                                 " دقيقة"))),
                                     done && React.createElement(Icon, { name: "check", className: "w-4 h-4 text-emerald-400 shrink-0 hidden xs:block" }),
                                     isCurrent && React.createElement("span", { className: "text-[10px] px-2 py-1 rounded-lg bg-accent-cyan/15 text-accent-cyan font-bold shrink-0" }, "\u0642\u064A\u062F \u0627\u0644\u062A\u0634\u063A\u064A\u0644"),
-                                    React.createElement("button", { onClick: () => playEpisode(ep, seasons[activeSeason].number), className: "w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition" },
+                                    React.createElement("button", { onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); playEpisode(ep, seasons[activeSeason].number); }, className: "w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition" },
                                         React.createElement(Icon, { name: "play", className: "w-4 h-4 text-white fill-current translate-x-0.5" }))));
                             }),
                             (!seasons[activeSeason] || !seasons[activeSeason].episodes || !seasons[activeSeason].episodes.length) && (React.createElement("p", { className: "text-sm text-slate-500 font-medium" }, "\u0644\u0627 \u062A\u0648\u062C\u062F \u062D\u0644\u0642\u0627\u062A \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0645\u0648\u0633\u0645 \u0628\u0639\u062F."))))))),
@@ -5360,8 +5337,8 @@ function SettingsView({ currentUser, onUpdateName, onUpdateAvatar, onOpenAuth })
         const handle = setTimeout(async () => {
             try {
                 const snap = await db.ref(`users/${currentUser.id}`).once('value');
-                const check = await verifyStoredPassword(snap.val() || {}, oldPass.trim());
-                setOldPassValid(!!check.valid);
+                const user = snap.val() || {};
+                setOldPassValid(user.passwordHash ? await verifyPasswordRecord(oldPass.trim(), user) : user.password === oldPass.trim());
             }
             catch (e) {
                 setOldPassValid(null);
@@ -5396,20 +5373,15 @@ function SettingsView({ currentUser, onUpdateName, onUpdateAvatar, onOpenAuth })
         setChangingPass(true);
         try {
             const snap = await db.ref(`users/${currentUser.id}`).once('value');
-            const userRecord = snap.val() || {};
-            if (!snap.exists()) {
-                setPassMsg({ text: 'تعذر العثور على الحساب، حاول تسجيل الدخول من جديد.', ok: false });
-                setChangingPass(false);
-                return;
-            }
-            const oldCheck = await verifyStoredPassword(userRecord, oldTrim);
-            if (!oldCheck.valid) {
+            const storedUser = snap.val() || {};
+            const oldValid = storedUser.passwordHash ? await verifyPasswordRecord(oldTrim, storedUser) : String(storedUser.password || '') === oldTrim;
+            if (!oldValid) {
                 setPassMsg({ text: 'كلمة المرور الحالية غير صحيحة.', ok: false });
                 setChangingPass(false);
                 return;
             }
-            const newRecord = await createPasswordRecord(newTrim);
-            await db.ref(`users/${currentUser.id}`).update({ passwordHash: newRecord.hash, passwordSalt: newRecord.salt, passwordIterations: newRecord.iterations, passwordVersion: newRecord.version, password: null, passwordChangedAt: Date.now(), passwordMigratedAt: Date.now() });
+            const newPassRecord = await createPasswordRecord(newTrim);
+            await db.ref(`users/${currentUser.id}`).update({ ...newPassRecord, password: null, passwordChangedAt: Date.now() });
             logAuditAction(currentUser, 'تغيير كلمة المرور', 'قام المستخدم بتغيير كلمة مروره بنفسه');
             setOldPass('');
             setNewPass('');
@@ -7621,50 +7593,154 @@ function isTitleWatched(watchedMap, title) {
     const doneCount = seasons.reduce((s, se) => s + (se.episodes || []).filter(ep => entry.episodes && entry.episodes[`s${se.number}e${ep.number}`]).length, 0);
     return doneCount >= totalEpisodes;
 }
-const WATCH_PROGRESS_LOCAL_PREFIX = 'cv_watch_progress_v2_';
-const WATCH_PROGRESS_SAVE_MS = 5000;
-const WATCH_PROGRESS_MIN_RESUME_SECONDS = 8;
-const WATCH_PROGRESS_END_GUARD_SECONDS = 30;
-function watchProgressLocalKey(userId) { return WATCH_PROGRESS_LOCAL_PREFIX + sanitizeKey(userId || 'guest'); }
-function normalizeWatchProgress(value) {
-    const src = value && typeof value === 'object' ? value : {};
+
+// ==== WATCH PROGRESS ENGINE START ====
+const WATCH_PROGRESS_SCHEMA = 2;
+const WATCH_PROGRESS_SAVE_INTERVAL = 5000;
+const WATCH_PROGRESS_MIN_SAVE_SECONDS = 3;
+const WATCH_PROGRESS_MIN_RESUME_SECONDS = 10;
+const WATCH_PROGRESS_COMPLETE_RATIO = 0.96;
+const WATCH_PROGRESS_CACHE_PREFIX = 'cinadam_watch_progress_v2_';
+
+function watchProgressRootKey(titleId) {
+    return sanitizeKey(String(titleId || '') || 'unknown');
+}
+function watchProgressEpisodeKey(season, episode) {
+    return `s${Number(season) || 1}e${Number(episode) || 1}`;
+}
+function normalizeProgressRecord(v) {
+    if (!v || typeof v !== 'object') return null;
+    const position = Math.max(0, Number(v.position) || 0);
+    const duration = Math.max(0, Number(v.duration) || 0);
+    const percent = duration > 0 ? Math.max(0, Math.min(100, Number(v.percent) || ((position / duration) * 100))) : 0;
+    return {
+        schema: WATCH_PROGRESS_SCHEMA,
+        titleId: String(v.titleId || ''),
+        kind: v.kind === 'movie' ? 'movie' : 'episode',
+        season: v.season == null ? null : Number(v.season),
+        episode: v.episode == null ? null : Number(v.episode),
+        position,
+        duration,
+        percent,
+        completed: v.completed === true,
+        updatedAt: Number(v.updatedAt) || 0,
+        titleName: String(v.titleName || ''),
+        poster: String(v.poster || ''),
+        label: String(v.label || '')
+    };
+}
+function normalizeWatchProgressTree(raw) {
     const out = {};
-    Object.keys(src).forEach(titleId => {
-        const item = src[titleId];
-        if (!item || typeof item !== 'object') return;
-        const clean = {};
-        if (item.movie && typeof item.movie === 'object') clean.movie = { ...item.movie, position: Math.max(0, Number(item.movie.position) || 0), duration: Math.max(0, Number(item.movie.duration) || 0) };
-        if (item.episodes && typeof item.episodes === 'object') {
-            clean.episodes = {};
-            Object.keys(item.episodes).forEach(k => {
-                const e = item.episodes[k];
-                if (!e || typeof e !== 'object') return;
-                clean.episodes[k] = { ...e, position: Math.max(0, Number(e.position) || 0), duration: Math.max(0, Number(e.duration) || 0) };
+    if (!raw || typeof raw !== 'object') return out;
+    Object.keys(raw).forEach(titleKey => {
+        const src = raw[titleKey];
+        if (!src || typeof src !== 'object') return;
+        const entry = {};
+        if (src.movie) {
+            const movie = normalizeProgressRecord(src.movie);
+            if (movie) entry.movie = movie;
+        }
+        if (src.episodes && typeof src.episodes === 'object') {
+            entry.episodes = {};
+            Object.keys(src.episodes).forEach(epKey => {
+                const ep = normalizeProgressRecord(src.episodes[epKey]);
+                if (ep) entry.episodes[epKey] = ep;
             });
         }
-        if (item.last && typeof item.last === 'object') clean.last = { ...item.last };
-        if (clean.movie || (clean.episodes && Object.keys(clean.episodes).length) || clean.last) out[titleId] = clean;
+        if (src.last) {
+            const last = normalizeProgressRecord(src.last);
+            if (last) entry.last = last;
+        }
+        if (Object.keys(entry).length) out[titleKey] = entry;
     });
     return out;
 }
-function loadWatchProgressLocal(userId) {
+function loadWatchProgressCache(userId) {
     if (!userId) return {};
-    try { return normalizeWatchProgress(JSON.parse(localStorage.getItem(watchProgressLocalKey(userId)) || '{}')); } catch (e) { return {}; }
+    try {
+        const raw = localStorage.getItem(WATCH_PROGRESS_CACHE_PREFIX + sanitizeKey(userId));
+        return raw ? normalizeWatchProgressTree(JSON.parse(raw)) : {};
+    } catch (e) { return {}; }
 }
-function saveWatchProgressLocal(data, userId) {
+function saveWatchProgressCache(tree, userId) {
     if (!userId) return;
-    try { localStorage.setItem(watchProgressLocalKey(userId), JSON.stringify(data)); } catch (e) { }
+    try {
+        const raw = JSON.stringify(normalizeWatchProgressTree(tree));
+        if (raw.length <= 1500000)
+            localStorage.setItem(WATCH_PROGRESS_CACHE_PREFIX + sanitizeKey(userId), raw);
+    } catch (e) {}
 }
-function watchProgressPercent(position, duration) {
-    const p = Math.max(0, Number(position) || 0), d = Math.max(0, Number(duration) || 0);
-    return d > 0 ? Math.max(0, Math.min(100, (p / d) * 100)) : 0;
+function getTitleWatchEntry(tree, titleId) {
+    return (tree && tree[watchProgressRootKey(titleId)]) || null;
 }
-function isResumableProgress(entry) {
-    if (!entry || entry.completed) return false;
-    const p = Number(entry.position) || 0, d = Number(entry.duration) || 0;
-    return p >= WATCH_PROGRESS_MIN_RESUME_SECONDS && (!d || p < Math.max(0, d - WATCH_PROGRESS_END_GUARD_SECONDS));
+function getEpisodeWatchProgress(tree, titleId, season, episode) {
+    const entry = getTitleWatchEntry(tree, titleId);
+    return entry && entry.episodes ? (entry.episodes[watchProgressEpisodeKey(season, episode)] || null) : null;
 }
-function progressLabel(entry) { return entry && entry.duration ? `${formatRuntimeMinutesSeconds(entry.position)} / ${formatRuntimeMinutesSeconds(entry.duration)}` : formatRuntimeMinutesSeconds(entry && entry.position || 0); }
+function getMovieWatchProgress(tree, titleId) {
+    const entry = getTitleWatchEntry(tree, titleId);
+    return entry ? (entry.movie || null) : null;
+}
+function getTitleContinueProgress(title, tree) {
+    if (!title) return null;
+    const entry = getTitleWatchEntry(tree, title.id);
+    if (!entry) return null;
+    if (title.type === 'movie') {
+        const p = entry.movie;
+        return p && !p.completed && p.position >= WATCH_PROGRESS_MIN_RESUME_SECONDS ? { kind: 'movie', progress: p } : null;
+    }
+    const eps = entry.episodes ? Object.values(entry.episodes).filter(Boolean) : [];
+    const resumable = eps.filter(p => !p.completed && p.position >= WATCH_PROGRESS_MIN_RESUME_SECONDS).sort((a,b) => (b.updatedAt||0) - (a.updatedAt||0));
+    if (resumable.length) return { kind: 'episode', progress: resumable[0] };
+    const latestCompleted = eps.filter(p => p.completed).sort((a,b) => (b.updatedAt||0) - (a.updatedAt||0))[0];
+    if (latestCompleted) return { kind: 'episode-complete', progress: latestCompleted };
+    return null;
+}
+function buildWatchProgressCardItems(titles, tree) {
+    const arr = [];
+    for (const title of (titles || [])) {
+        const c = getTitleContinueProgress(title, tree);
+        if (!c) continue;
+        if (c.kind === 'movie') {
+            arr.push({ title, progress: c.progress, label: title.name, subLabel: `متابعة من ${formatWatchTime(c.progress.position)}`, updatedAt: c.progress.updatedAt || 0 });
+        } else if (c.kind === 'episode') {
+            arr.push({ title, progress: c.progress, label: title.name, subLabel: `الموسم ${c.progress.season} · الحلقة ${c.progress.episode} · متابعة من ${formatWatchTime(c.progress.position)}`, updatedAt: c.progress.updatedAt || 0 });
+        } else if (c.kind === 'episode-complete') {
+            const seasons = (title.seasons || []).slice().sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0));
+            const flat = [];
+            seasons.forEach(se => (se.episodes||[]).slice().sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0)).forEach(ep => flat.push({ ...ep, seasonNumber: se.number })));
+            const idx = flat.findIndex(ep => Number(ep.seasonNumber)===Number(c.progress.season) && Number(ep.number)===Number(c.progress.episode));
+            const next = idx >= 0 ? flat[idx+1] : null;
+            if (next) {
+                arr.push({ title, progress: null, label: title.name, subLabel: `متابعة الحلقة التالية · الموسم ${next.seasonNumber} · الحلقة ${next.number}`, updatedAt: c.progress.updatedAt || 0, nextEpisode: next });
+            }
+        }
+    }
+    return arr.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+}
+function formatWatchTime(sec) {
+    const s = Math.max(0, Math.floor(Number(sec) || 0));
+    const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), ss = s%60;
+    return h > 0 ? `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}` : `${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
+}
+function mergeWatchProgressTrees(base, incoming) {
+    const out = normalizeWatchProgressTree(base);
+    const src = normalizeWatchProgressTree(incoming);
+    Object.keys(src).forEach(tk => {
+        const b = out[tk] || {};
+        const s = src[tk] || {};
+        const newer = (a,b) => (Number(a && a.updatedAt)||0) >= (Number(b && b.updatedAt)||0) ? a : b;
+        if (s.movie) b.movie = newer(s.movie, b.movie);
+        if (s.episodes) {
+            b.episodes = { ...(b.episodes||{}) };
+            Object.keys(s.episodes).forEach(k => b.episodes[k] = newer(s.episodes[k], b.episodes[k]));
+        }
+        if (s.last) b.last = newer(s.last, b.last);
+        out[tk] = b;
+    });
+    return out;
+}
+// ==== WATCH PROGRESS ENGINE END ====
 function loadWatched(username) {
     if (!username)
         return {};
@@ -7706,115 +7782,65 @@ function App() {
     const [moderators, setModerators] = useState({});
     const [profileTarget, setProfileTarget] = useState(null);
     const [watched, setWatched] = useState(() => loadWatched(currentUser && currentUser.username));
-    const [watchProgress, setWatchProgress] = useState(() => loadWatchProgressLocal(currentUser && currentUser.id));
-    const progressWriteTimers = useRef(new Map());
-    const progressPending = useRef(new Map());
-    const [activeResumeTarget, setActiveResumeTarget] = useState(null);
+    const [watchProgress, setWatchProgress] = useState(() => loadWatchProgressCache(currentUser && currentUser.id));
+    const [watchProgressReady, setWatchProgressReady] = useState(false);
     useEffect(() => { setWatched(loadWatched(currentUser && currentUser.username)); }, [currentUser && currentUser.username]);
-    const openProfile = (uname) => { setProfileTarget(uname || null); setActiveTitle(null); setAccountSheet(false); setViewRaw('profile'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
     useEffect(() => {
-        if (!currentUser || !currentUser.id) { setWatchProgress({}); return; }
-        const local = loadWatchProgressLocal(currentUser.id);
-        setWatchProgress(local);
-        const ref = db.ref(`watchProgress/${currentUser.id}`);
+        const uid = currentUser && currentUser.id;
+        if (!uid) {
+            setWatchProgress({});
+            setWatchProgressReady(false);
+            return;
+        }
+        const ref = db.ref(`users/${uid}/watchProgress`);
+        let cancelled = false;
         const cb = snap => {
-            const remote = normalizeWatchProgress(snap.val() || {});
+            if (cancelled) return;
+            const remote = normalizeWatchProgressTree(snap.val() || {});
             setWatchProgress(prev => {
-                const merged = { ...local, ...prev };
-                Object.keys(remote).forEach(titleId => {
-                    const rp = remote[titleId], lp = merged[titleId] || {};
-                    const out = { ...lp, ...rp };
-                    if (lp.movie && rp.movie) out.movie = (Number(rp.movie.updatedAt)||0) >= (Number(lp.movie.updatedAt)||0) ? rp.movie : lp.movie;
-                    if (rp.episodes) {
-                        out.episodes = { ...(lp.episodes || {}), ...(rp.episodes || {}) };
-                        Object.keys(lp.episodes || {}).forEach(k => { if (!rp.episodes[k] || (Number(lp.episodes[k].updatedAt)||0) > (Number(rp.episodes[k].updatedAt)||0)) out.episodes[k] = lp.episodes[k]; });
-                    }
-                    if (lp.last && rp.last) out.last = (Number(rp.last.updatedAt)||0) >= (Number(lp.last.updatedAt)||0) ? rp.last : lp.last;
-                    merged[titleId] = out;
-                });
-                saveWatchProgressLocal(merged, currentUser.id);
+                const merged = mergeWatchProgressTrees(prev, remote);
+                saveWatchProgressCache(merged, uid);
                 return merged;
             });
+            setWatchProgressReady(true);
         };
         ref.on('value', cb);
-        return () => ref.off('value', cb);
+        return () => { cancelled = true; ref.off('value', cb); };
     }, [currentUser && currentUser.id]);
-    useEffect(() => () => {
-        progressWriteTimers.current.forEach(t => clearTimeout(t));
-    }, []);
-    const writeWatchProgressEntry = (userId, titleId, partPath, entry) => {
-        if (!userId || !titleId || !partPath || !entry) return Promise.resolve();
-        return db.ref(`watchProgress/${userId}/${titleId}/${partPath}`).transaction(current => {
-            const curTs = Number(current && current.updatedAt) || 0;
-            const nextTs = Number(entry.updatedAt) || 0;
-            return !current || nextTs >= curTs ? entry : current;
-        }).catch(() => {});
-    };
-    const persistWatchProgress = (titleId, seasonNumber, episodeNumber, position, duration, completed = false) => {
-        if (!currentUser || !titleId) return;
-        const p = Math.max(0, Number(position) || 0), d = Math.max(0, Number(duration) || 0);
-        const entry = { position: p, duration: d, percent: watchProgressPercent(p, d), updatedAt: Date.now(), completed: !!completed };
-        const isMovie = seasonNumber == null || episodeNumber == null;
-        const partPath = isMovie ? 'movie' : `episodes/s${Number(seasonNumber)}e${Number(episodeNumber)}`;
+    const saveWatchProgress = (titleId, payload) => {
+        const uid = currentUser && currentUser.id;
+        if (!uid || !titleId || !payload) return Promise.resolve();
+        const now = Number(payload.updatedAt) || Date.now();
+        const kind = payload.kind === 'movie' ? 'movie' : 'episode';
+        const safeTitleKey = watchProgressRootKey(titleId);
+        const epKey = kind === 'episode' ? watchProgressEpisodeKey(payload.season, payload.episode) : null;
+        const record = normalizeProgressRecord({ ...payload, schema: WATCH_PROGRESS_SCHEMA, titleId: String(titleId), kind, updatedAt: now });
+        if (!record) return Promise.resolve();
         setWatchProgress(prev => {
-            const next = { ...prev, [titleId]: { ...(prev[titleId] || {}) } };
-            if (isMovie) next[titleId].movie = entry;
-            else next[titleId].episodes = { ...(next[titleId].episodes || {}), [`s${Number(seasonNumber)}e${Number(episodeNumber)}`]: entry };
-            if (!isMovie) next[titleId].last = { season: Number(seasonNumber), episode: Number(episodeNumber), updatedAt: entry.updatedAt };
-            saveWatchProgressLocal(next, currentUser.id);
+            const next = normalizeWatchProgressTree(prev);
+            const entry = { ...(next[safeTitleKey] || {}) };
+            if (kind === 'movie') entry.movie = mergeWatchProgressTrees({ x: { movie: entry.movie } }, { x: { movie: record } }).x.movie;
+            else entry.episodes = mergeWatchProgressTrees({ x: { episodes: { [epKey]: entry.episodes && entry.episodes[epKey] } } }, { x: { episodes: { [epKey]: record } } }).x.episodes;
+            entry.last = record;
+            next[safeTitleKey] = entry;
+            saveWatchProgressCache(next, uid);
             return next;
         });
-        const timerKey = `${titleId}|${partPath}`;
-        progressPending.current.set(timerKey, { userId: currentUser.id, titleId, partPath, entry });
-        const oldTimer = progressWriteTimers.current.get(timerKey);
-        if (oldTimer) clearTimeout(oldTimer);
-        const delay = completed ? 0 : WATCH_PROGRESS_SAVE_MS;
-        const timer = setTimeout(() => {
-            const pending = progressPending.current.get(timerKey);
-            if (!pending) return;
-            progressPending.current.delete(timerKey);
-            progressWriteTimers.current.delete(timerKey);
-            writeWatchProgressEntry(pending.userId, pending.titleId, pending.partPath, pending.entry);
-        }, delay);
-        progressWriteTimers.current.set(timerKey, timer);
+        const base = db.ref(`users/${uid}/watchProgress/${safeTitleKey}`);
+        const path = kind === 'movie' ? base.child('movie') : base.child(`episodes/${epKey}`);
+        return path.transaction(current => {
+            const existing = normalizeProgressRecord(current);
+            if (existing && (existing.updatedAt || 0) > now) return;
+            return record;
+        }).then(() => base.child('last').transaction(current => {
+            const existing = normalizeProgressRecord(current);
+            if (existing && (existing.updatedAt || 0) > now) return;
+            return record;
+        })).catch(() => {});
     };
-    const saveWatchProgressBeforeClose = () => {
-        progressPending.current.forEach((pending, timerKey) => {
-            const timer = progressWriteTimers.current.get(timerKey);
-            if (timer) clearTimeout(timer);
-            writeWatchProgressEntry(pending.userId, pending.titleId, pending.partPath, pending.entry);
-            progressPending.current.delete(timerKey);
-            progressWriteTimers.current.delete(timerKey);
-        });
-    };
-    useEffect(() => {
-        const flush = () => saveWatchProgressBeforeClose();
-        const onVisibility = () => { if (document.visibilityState === 'hidden') flush(); };
-        window.addEventListener('pagehide', flush);
-        document.addEventListener('visibilitychange', onVisibility);
-        return () => {
-            window.removeEventListener('pagehide', flush);
-            document.removeEventListener('visibilitychange', onVisibility);
-        };
-    }, [currentUser && currentUser.id]);
-    const openTitle = (title, resumeTarget = null) => { setActiveResumeTarget(resumeTarget); setActiveTitle(title); };
-    const watchedForUi = React.useMemo(() => {
-        const out = { ...(watched || {}) };
-        Object.keys(watchProgress || {}).forEach(titleId => {
-            const p = watchProgress[titleId];
-            const current = { ...(out[titleId] || {}) };
-            if (p && p.movie && p.movie.completed) current.movie = true;
-            if (p && p.episodes) {
-                const episodes = { ...(current.episodes || {}) };
-                Object.keys(p.episodes).forEach(k => { if (p.episodes[k] && p.episodes[k].completed) episodes[k] = true; });
-                if (Object.keys(episodes).length) current.episodes = episodes;
-            }
-            if (current.movie || (current.episodes && Object.keys(current.episodes).length)) out[titleId] = current;
-        });
-        return out;
-    }, [watched, watchProgress]);
-    const getProgressEntryForApp = (titleId, seasonNumber, episodeNumber) => { const p = watchProgress[titleId]; if (!p) return null; if (seasonNumber == null || episodeNumber == null) return p.movie || null; return p.episodes && p.episodes[`s${Number(seasonNumber)}e${Number(episodeNumber)}`] || null; };
-    const markEpisodeWatched = (titleId, seasonNumber, episodeNumber, position, duration) => {
+
+    const openProfile = (uname) => { setProfileTarget(uname || null); setActiveTitle(null); setAccountSheet(false); setViewRaw('profile'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+    const markEpisodeWatched = (titleId, seasonNumber, episodeNumber) => {
         if (!currentUser || seasonNumber == null || episodeNumber == null)
             return;
         setWatched(prev => {
@@ -7825,10 +7851,6 @@ function App() {
             saveWatchedToStorage(next, currentUser && currentUser.username);
             return next;
         });
-        const existing = getProgressEntryForApp(titleId, seasonNumber, episodeNumber) || {};
-        const d = Math.max(Number(duration) || 0, Number(existing.duration) || 0);
-        const p = Math.max(Number(position) || 0, d);
-        persistWatchProgress(titleId, seasonNumber, episodeNumber, p, d, true);
     };
     const markMovieWatched = (titleId) => {
         if (!currentUser)
@@ -7839,16 +7861,14 @@ function App() {
             saveWatchedToStorage(next, currentUser && currentUser.username);
             return next;
         });
-        const existing = getProgressEntryForApp(titleId, null, null);
-        persistWatchProgress(titleId, null, null, existing && existing.duration || 0, existing && existing.duration || 0, true);
     };
     const isEpisodeWatched = (titleId, seasonNumber, episodeNumber) => {
         if (seasonNumber == null || episodeNumber == null)
             return false;
-        const key = `s${seasonNumber}e${episodeNumber}`;
-        const localDone = !!(watched[titleId] && watched[titleId].episodes && watched[titleId].episodes[key]);
-        const remoteDone = !!(watchProgress[titleId] && watchProgress[titleId].episodes && watchProgress[titleId].episodes[key] && watchProgress[titleId].episodes[key].completed);
-        return localDone || remoteDone;
+        const entry = watched[titleId];
+        if (!entry || !entry.episodes)
+            return false;
+        return !!entry.episodes[`s${seasonNumber}e${episodeNumber}`];
     };
     useEffect(() => {
         const ref = db.ref('moderators');
@@ -8024,13 +8044,14 @@ function App() {
         mainList = published.filter(t => t.name && t.name.toLowerCase().includes(q));
     }
     return (React.createElement("div", { className: "min-h-screen flex flex-col mobile-safe-bottom md:pb-0" },
-        React.createElement(Header, { currentUser: currentUser, view: view, setView: setView, search: search, setSearch: setSearch, onOpenAccount: () => setAccountSheet(true), onOpenProfile: openProfile, onOpenTitleFromNotif: (id) => { const t = titles.find(x => x.id === id && x.status === 'published'); if (t) openTitle(t); } }),
+        React.createElement(Header, { currentUser: currentUser, view: view, setView: setView, search: search, setSearch: setSearch, onOpenAccount: () => setAccountSheet(true), onOpenProfile: openProfile, onOpenTitleFromNotif: (id) => { const t = titles.find(x => x.id === id && x.status === 'published'); if (t)
+                setActiveTitle(t); } }),
         React.createElement("main", { className: "flex-1 max-w-7xl w-full mx-auto px-4 py-6 md:py-8" },
-            React.createElement("div", { key: searching ? 'search' : view, className: "page-fade-in" }, searching ? (React.createElement(TypeGrid, { title: `نتائج البحث عن "${search}"`, items: mainList, onOpen: openTitle, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0646\u062A\u0627\u0626\u062C \u0645\u0637\u0627\u0628\u0642\u0629.", watchedMap: watchedForUi })) : view === 'home' ? (React.createElement(HomeView, { items: published, onOpen: openTitle, onOpenContinue: openTitle, watchedMap: watchedForUi, watchProgress: watchProgress })) : (view === 'movie' || view === 'series' || view === 'anime') ? (React.createElement(TypeGrid, { title: TYPE_PLURAL[view], items: published.filter(t => t.type === view), onOpen: openTitle, showGenreFilter: true, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u0628\u0639\u062F.", watchedMap: watchedForUi })) : view === 'lists' ? (React.createElement(ListsView, { currentUser: currentUser, titles: published, onOpen: openTitle, onOpenAuth: setAuthModal })) : view === 'requests' ? (React.createElement(RequestsView, { currentUser: currentUser, onOpenAuth: setAuthModal })) : view === 'settings' ? (React.createElement(SettingsView, { currentUser: currentUser, onUpdateName: handleUpdateName, onUpdateAvatar: handleUpdateAvatar, onOpenAuth: setAuthModal })) : view === 'profile' ? (React.createElement(ProfileView, { username: profileTarget, currentUser: currentUser, titles: published, onOpen: openTitle, onOpenAuth: setAuthModal, onOpenProfile: openProfile })) : view === 'admin' ? (React.createElement(AdminPanel, { currentUser: currentUser, titles: titles, onOpenAuth: setAuthModal, moderators: moderators })) : null)),
+            React.createElement("div", { key: searching ? 'search' : view, className: "page-fade-in" }, searching ? (React.createElement(TypeGrid, { title: `نتائج البحث عن "${search}"`, items: mainList, onOpen: setActiveTitle, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0646\u062A\u0627\u0626\u062C \u0645\u0637\u0627\u0628\u0642\u0629.", watchedMap: watched })) : view === 'home' ? (React.createElement(HomeView, { items: published, onOpen: setActiveTitle, watchedMap: watched, watchProgress: watchProgress })) : (view === 'movie' || view === 'series' || view === 'anime') ? (React.createElement(TypeGrid, { title: TYPE_PLURAL[view], items: published.filter(t => t.type === view), onOpen: setActiveTitle, showGenreFilter: true, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u0628\u0639\u062F.", watchedMap: watched })) : view === 'lists' ? (React.createElement(ListsView, { currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal })) : view === 'requests' ? (React.createElement(RequestsView, { currentUser: currentUser, onOpenAuth: setAuthModal })) : view === 'settings' ? (React.createElement(SettingsView, { currentUser: currentUser, onUpdateName: handleUpdateName, onUpdateAvatar: handleUpdateAvatar, onOpenAuth: setAuthModal })) : view === 'profile' ? (React.createElement(ProfileView, { username: profileTarget, currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal, onOpenProfile: openProfile })) : view === 'admin' ? (React.createElement(AdminPanel, { currentUser: currentUser, titles: titles, onOpenAuth: setAuthModal, moderators: moderators })) : null)),
         React.createElement(MobileBottomNav, { view: view, setView: setView }),
         React.createElement(ToastHost, null),
-        activeTitle && (React.createElement(TitleModal, { title: activeTitle, allTitles: published, currentUser: currentUser, liked: likedIds.includes(activeTitle.id), getRole: getRole, onLike: () => toggleLike(activeTitle), onClose: () => { setActiveTitle(null); setActiveResumeTarget(null); if (new URLSearchParams(location.search).get('t'))
-                history.replaceState(null, '', location.pathname); }, onOpenAuth: setAuthModal, onOpenProfile: openProfile, onOpen: openTitle, watched: watchedForUi, watchProgress: watchProgress, resumeTarget: activeResumeTarget, onSaveWatchProgress: persistWatchProgress, onMarkEpisodeWatched: markEpisodeWatched, onMarkMovieWatched: markMovieWatched, isEpisodeWatched: isEpisodeWatched })),
+        activeTitle && (React.createElement(TitleModal, { title: activeTitle, allTitles: published, currentUser: currentUser, liked: likedIds.includes(activeTitle.id), getRole: getRole, onLike: () => toggleLike(activeTitle), onClose: () => { setActiveTitle(null); if (new URLSearchParams(location.search).get('t'))
+                history.replaceState(null, '', location.pathname); }, onOpenAuth: setAuthModal, onOpenProfile: openProfile, onOpen: setActiveTitle, watched: watched, onMarkEpisodeWatched: markEpisodeWatched, onMarkMovieWatched: markMovieWatched, isEpisodeWatched: isEpisodeWatched, watchProgress: watchProgress, onSaveWatchProgress: saveWatchProgress })),
         authModal && React.createElement(AuthModal, { tab: authModal, onClose: () => setAuthModal(null), onSuccess: handleAuthSuccess }),
         accountSheet && (React.createElement(AccountSheet, { currentUser: currentUser, onClose: () => setAccountSheet(false), onLogin: () => { setAccountSheet(false); setAuthModal('login'); }, onRegister: () => { setAccountSheet(false); setAuthModal('register'); }, onLogout: handleLogout, onNavigate: (v) => { if (v === 'profile')
                 setProfileTarget(null); setView(v); setAccountSheet(false); } })),
