@@ -8173,26 +8173,63 @@ function App() {
         let cancelled = false;
         const isAdmin = !!(currentUser && (currentUser.username === 'mavilovelife' || currentUser.isModerator));
         const ref = isAdmin ? db.ref('titles') : db.ref('titles').orderByChild('status').equalTo('published');
-        const applySnap = snap => {
-            if (cancelled)
-                return;
-            const data = snap.val();
-            const list = data ? Object.keys(data).map(k => normalizeTitlePlaybackData({ id: k, ...data[k] })).filter(Boolean) : [];
+        let appliedFreshData = false;
+
+        // Apply one normalized list through a single path so the player changes are
+        // completely independent from the initial catalog loading.
+        const applyList = (data, source = 'firebase') => {
+            if (cancelled || !data || typeof data !== 'object')
+                return false;
+            const list = Object.keys(data)
+                .map(k => normalizeTitlePlaybackData({ id: k, ...data[k] }))
+                .filter(Boolean);
             list.sort((a, b) => ((b.publishedAt || b.createdAt || b.updatedAt || 0) - (a.publishedAt || a.createdAt || a.updatedAt || 0)));
+            appliedFreshData = true;
             setTitles(list);
             if (!isAdmin)
                 writeTitleCache(list);
             setActiveTitle(prev => {
-                if (!prev)
-                    return prev;
+                if (!prev) return prev;
                 const updated = list.find(x => x.id === prev.id);
                 return updated || prev;
             });
             setBooted(true);
+            return true;
         };
+
+        const applySnap = snap => {
+            if (cancelled) return;
+            applyList(snap.val(), 'sdk');
+        };
+
+        // Start the SDK listener and a direct REST read at the same time.
+        // On mobile networks the REST request can return before the Firebase
+        // realtime connection finishes its initial handshake, removing the
+        // noticeable 5-10 second catalog delay without touching the video player.
         ref.on('value', applySnap);
-        const safety = setTimeout(() => setBooted(true), 5000);
-        return () => { cancelled = true; ref.off('value', applySnap); clearTimeout(safety); };
+
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const restTimer = setTimeout(() => { try { controller && controller.abort(); } catch (e) {} }, 4000);
+        const restUrl = isAdmin
+            ? 'https://mnste-36ca4-default-rtdb.europe-west1.firebasedatabase.app/titles.json'
+            : 'https://mnste-36ca4-default-rtdb.europe-west1.firebasedatabase.app/titles.json?orderBy=%22status%22&equalTo=%22published%22';
+        fetch(restUrl, { cache: 'no-store', signal: controller ? controller.signal : undefined })
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (!cancelled && data && !appliedFreshData) applyList(data, 'rest');
+            })
+            .catch(() => {})
+            .finally(() => clearTimeout(restTimer));
+
+        // If a cache exists, the UI is already usable. If there is no cache,
+        // don't keep a fixed 5-second artificial wait: the first fresh response
+        // above controls when the loader disappears.
+        return () => {
+            cancelled = true;
+            ref.off('value', applySnap);
+            try { controller && controller.abort(); } catch (e) {}
+            clearTimeout(restTimer);
+        };
     }, [currentUser && currentUser.id, currentUser && currentUser.username, currentUser && currentUser.isModerator]);
     useEffect(() => {
         if (!booted)
