@@ -3,9 +3,6 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#07090E" />
-  <meta name="color-scheme" content="dark" />
-  <meta name="description" content="Cinadam - منصة لمشاهدة الأفلام والمسلسلات والأنمي." />
   <title>Cinadam - أفلام ومسلسلات وأنمي</title>
 
   <!-- تحميل خط الموقع أول شي بالصفحة (قبل أي سكربت) حتى ما تطلع شاشة التحميل بخط افتراضي ثم تتبدل -->
@@ -252,9 +249,8 @@
     .yt-btn, .yt-btn *, [data-skip-intro], [data-skip-intro] *, .cv-player-menu button, .cv-player-menu button * { caret-color: transparent !important; }
     .cv-subtitle-overlay { pointer-events: none !important; user-select: none !important; -webkit-user-select: none !important; caret-color: transparent !important; }
     @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+      *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
     }
-    :focus-visible { outline: 2px solid rgba(0,240,255,.9); outline-offset: 2px; }
     </style>
 </head>
 <body class="bg-glass-950 text-slate-100 min-h-screen selection:bg-accent-red selection:text-white">
@@ -2360,17 +2356,11 @@ function SlidingTabs({ items, active, onChange, containerClassName = '', trackCl
 }
 function useClosable(onClose, duration = 260) {
     const [closing, setClosing] = useState(false);
-    const timerRef = useRef(null);
-    useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
     const requestClose = (...args) => {
         if (closing)
             return;
         setClosing(true);
-        if (timerRef.current) clearTimeout(timerRef.current);
-        timerRef.current = setTimeout(() => {
-            timerRef.current = null;
-            onClose(...args);
-        }, duration);
+        setTimeout(() => onClose(...args), duration);
     };
     return [closing, requestClose];
 }
@@ -2802,7 +2792,7 @@ function HomeView({ items, onOpen, watchedMap }) {
 }
 const SORT_OPTIONS = [
     ['newest', 'الأحدث إضافةً'],
-    ['imdb', 'الأعلى تقييم IMDb/TMDB'],
+    ['imdb', 'الأعلى تقييم TMDB'],
     ['year', 'سنة الإصدار'],
     ['name', 'الاسم (أ-ي)'],
     ['popular', 'الأكثر مشاهدة'],
@@ -4281,25 +4271,10 @@ async function fetchSkipDbSegments(title, season, episode, durationSec) {
 function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onOpenAuth, getRole, onOpenProfile, onOpen, watched, onMarkEpisodeWatched, onMarkMovieWatched, isEpisodeWatched }) {
     const [closing, requestClose] = useClosable(onClose);
     const modalScrollRef = useRef(null);
-    useEffect(() => {
-        const prev = document.body.style.overflow;
-        document.body.style.overflow = 'hidden';
-        return () => { document.body.style.overflow = prev; };
-    }, []);
-    useEffect(() => {
+    useLayoutEffect(() => {
         const el = modalScrollRef.current;
-        if (el) el.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-        try {
-            document.documentElement.scrollTop = 0;
-        } catch (_) {}
+        if (el) el.scrollTop = 0;
     }, [title.id]);
-    useEffect(() => {
-        const onKey = e => {
-            if (e.key === 'Escape' && !closing) requestClose();
-        };
-        document.addEventListener('keydown', onKey);
-        return () => document.removeEventListener('keydown', onKey);
-    }, [closing]);
     const [playingUrl, setPlayingUrl] = useState(null);
     const [playingMeta, setPlayingMeta] = useState({});
     const [playingLabel, setPlayingLabel] = useState('');
@@ -4778,8 +4753,8 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         onMarkEpisodeWatched && onMarkEpisodeWatched(title.id, playingSeasonNumber, playingMeta.number);
     };
     const handleMovieComplete = () => { onMarkMovieWatched && onMarkMovieWatched(title.id); };
-    return (React.createElement("div", { role: "presentation", className: `${closing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-50 bg-black/90 md:p-6 md:flex md:items-center md:justify-center overflow-hidden`, onClick: requestClose },
-        React.createElement("div", { ref: modalScrollRef, role: "dialog", 'aria-modal': "true", 'aria-label': title.name || 'تفاصيل العمل', tabIndex: -1, onClick: e => e.stopPropagation(), className: `${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto overscroll-contain border border-white/10 shadow-2xl` },
+    return (React.createElement("div", { className: `${closing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-50 bg-black/90 md:p-6 md:flex md:items-center md:justify-center overflow-y-auto`, onClick: requestClose },
+        React.createElement("div", { ref: modalScrollRef, role: "dialog", 'aria-modal': "true", 'aria-label': title.name || 'تفاصيل العمل', onClick: e => e.stopPropagation(), className: `${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto overscroll-contain border border-white/10 shadow-2xl` },
             React.createElement("div", { className: "relative" },
                 playingUrl ? (React.createElement("div", { className: "relative" },
                     (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: 'cinadam-player-' + title.id, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: () => setVideoError(true), onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : Number(playingMeta.introStart) || 0, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : Number(playingMeta.introEnd) || 0, recapStart: skipDbSegments.recap ? Number(skipDbSegments.recap.start_ms) / 1000 : Number(playingMeta.recapStart) || 0, recapEnd: skipDbSegments.recap ? Number(skipDbSegments.recap.end_ms) / 1000 : Number(playingMeta.recapEnd) || 0, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : Number(playingMeta.outroStart) || 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : Number(playingMeta.outroEnd) || 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onOutroStart: handleEpisodeComplete, onNextEpisode: playNextEpisode, hasNextEpisode: !!getNextEpisodeInfo(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
@@ -6783,11 +6758,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                         throw new Error('سينمانا لم تُرجع أي مصدر فيديو لهذا الفيلم.');
                     }
                 } catch (e) {
-                    const msg = 'تعذر حفظ رابط الفيلم من سينمانا: ' + (e && e.message ? e.message : 'خطأ غير معروف');
-                    setError(msg);
-                    showToast(msg, 'error');
-                    setSaving(false);
-                    return;
+                    throw new Error('تعذر حفظ رابط الفيلم من سينمانا: ' + (e && e.message ? e.message : 'خطأ غير معروف'));
                 }
             } else if (!payload.videoUrl && payload.videoSources.length) {
                 payload.videoUrl = payload.videoSources[0].url;
@@ -6831,6 +6802,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             }
             showToast(initial && initial.id ? 'تم حفظ التعديلات بنجاح' : 'تم إضافة العمل ونشره فورًا');
             onDone();
+            // تجهيز الترجمة لا يمنع ظهور العمل؛ يتم تحديث حقول الترجمة بعد الحفظ.
             if (payload.status === 'published' && savedId) {
                 prepareSubtitlesInBackground(savedId, payload, sourceId, subtitleSourceIds);
             }
@@ -7402,10 +7374,12 @@ function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
             const snap = await db.ref(`titles/${t.id}`).once('value');
             const current = snap.val() || t;
             const publishedAt = current.publishedAt || Date.now();
+            const publishedPayload = { ...current, status: 'published', publishedAt, updatedAt: Date.now() };
+            // النشر فوري؛ الترجمة تكمل في الخلفية.
             await db.ref(`titles/${t.id}`).update({ status: 'published', publishedAt, updatedAt: Date.now() });
             logAuditAction(currentUser, 'نشر عمل', current.name || t.name);
             showToast('تم نشر العمل فورًا — جاري تجهيز الترجمة في الخلفية.');
-            prepareSubtitlesInBackground(t.id, { ...current, status: 'published', publishedAt }, current.sourceId || current.imdbId || current.imdb || current.tmdbId || '', [current.imdbId, current.tmdbId].filter(Boolean));
+            prepareSubtitlesInBackground(t.id, publishedPayload, current.sourceId || current.imdbId || current.imdb || current.tmdbId || '', [current.imdbId, current.tmdbId].filter(Boolean));
         }
         catch (e) {
             showToast((e && e.message) ? `تعذر نشر العمل: ${e.message}` : 'تعذر نشر العمل', 'error');
@@ -7515,15 +7489,7 @@ function saveWatchedToStorage(data, username) {
     }
     catch (e) { }
 }
-function sortTitlesForDisplay(list) {
-    return [...(list || [])].sort((a, b) => {
-        const aTime = Number(a && (a.publishedAt || a.createdAt || a.updatedAt)) || 0;
-        const bTime = Number(b && (b.publishedAt || b.createdAt || b.updatedAt)) || 0;
-        if (bTime !== aTime) return bTime - aTime;
-        return String(a && a.name || '').localeCompare(String(b && b.name || ''), 'ar');
-    });
-}
-function buildSubtitleTitlePatch(titleId, payload, currentTitle = null) {
+function buildSubtitleTitlePatch(titleId, payload, liveTitle) {
     const updates = {};
     if (!titleId || !payload) return updates;
     if (payload.type === 'movie') {
@@ -7532,8 +7498,8 @@ function buildSubtitleTitlePatch(titleId, payload, currentTitle = null) {
         return updates;
     }
     const preparedSeasons = Array.isArray(payload.seasons) ? payload.seasons : [];
-    const liveSeasons = currentTitle && Array.isArray(currentTitle.seasons) ? currentTitle.seasons : preparedSeasons;
-    preparedSeasons.forEach((season) => {
+    const liveSeasons = liveTitle && Array.isArray(liveTitle.seasons) ? liveTitle.seasons : [];
+    preparedSeasons.forEach(season => {
         const sNum = Number(season && season.number) || 1;
         const liveSi = liveSeasons.findIndex(s => (Number(s && s.number) || 1) === sNum);
         if (liveSi < 0) return;
@@ -7559,13 +7525,9 @@ function prepareSubtitlesInBackground(titleId, payload, sourceId, altSourceIds =
             if (!liveTitle || liveTitle.status !== 'published') return;
             const updates = buildSubtitleTitlePatch(titleId, prepared.payload, liveTitle);
             if (Object.keys(updates).length) await db.ref().update(updates);
-            if (prepared.failed) {
-                showToast(`نُشر العمل، وتحتاج ${prepared.failed} ترجمة إلى إعادة المحاولة.`, 'error');
-            } else if (prepared.added) {
-                showToast(`اكتملت الترجمة العربية للعمل (${prepared.added} عنصر).`);
-            }
         } catch (e) {
-            showToast('تم نشر العمل، لكن تجهيز الترجمة سيحتاج إلى إعادة المحاولة.', 'error');
+            // فشل الترجمة لا يلغي النشر ولا يعيد كتابة سجل العمل.
+            console.warn('Background subtitle preparation failed:', e);
         }
     });
 }
@@ -7577,19 +7539,16 @@ class CinadamErrorBoundary extends React.Component {
     static getDerivedStateFromError() {
         return { hasError: true };
     }
-    componentDidCatch(error, info) {
-        try {
-            console.error('Cinadam runtime error:', error, info);
-        } catch (_) {}
+    componentDidCatch(error) {
+        try { console.error('Cinadam runtime error:', error); } catch (_) {}
     }
     render() {
         if (!this.state.hasError) return this.props.children;
         return React.createElement('div', { className: 'min-h-screen flex items-center justify-center p-6 bg-glass-950 text-center' },
-            React.createElement('div', { className: 'glass-panel rounded-3xl p-7 max-w-md w-full border border-white/10 shadow-2xl' },
-                React.createElement('div', { className: 'w-14 h-14 rounded-2xl bg-accent-red/15 border border-accent-red/30 flex items-center justify-center mx-auto mb-4' }, React.createElement(Icon, { name: 'shield', className: 'w-7 h-7 text-accent-red' })),
+            React.createElement('div', { className: 'glass-panel rounded-3xl p-7 max-w-md w-full border border-white/10' },
                 React.createElement('h1', { className: 'text-xl font-black text-white mb-2' }, 'حدث خطأ غير متوقع'),
-                React.createElement('p', { className: 'text-sm text-slate-400 leading-relaxed mb-5' }, 'توقف جزء من الموقع بشكل غير متوقع. أعد تحميل الصفحة للمتابعة.'),
-                React.createElement('button', { type: 'button', onClick: () => location.reload(), className: 'w-full py-3 rounded-2xl bg-accent-red text-white font-bold hover:bg-accent-redHover' }, 'إعادة تحميل الموقع')
+                React.createElement('p', { className: 'text-sm text-slate-400 mb-5' }, 'أعد تحميل الموقع للمتابعة.'),
+                React.createElement('button', { type: 'button', onClick: () => location.reload(), className: 'w-full py-3 rounded-2xl bg-accent-red text-white font-bold' }, 'إعادة تحميل الموقع')
             )
         );
     }
@@ -7618,14 +7577,6 @@ function App() {
     const [profileTarget, setProfileTarget] = useState(null);
     const [watched, setWatched] = useState(() => loadWatched(currentUser && currentUser.username));
     useEffect(() => { setWatched(loadWatched(currentUser && currentUser.username)); }, [currentUser && currentUser.username]);
-    const openTitle = (title) => {
-        if (!title || !title.id) return;
-        setActiveTitle(title);
-        try {
-            history.replaceState(null, '', `${location.pathname}?t=${encodeURIComponent(title.id)}`);
-        } catch (_) {}
-        requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
-    };
     const openProfile = (uname) => { setProfileTarget(uname || null); setActiveTitle(null); setAccountSheet(false); setViewRaw('profile'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
     const markEpisodeWatched = (titleId, seasonNumber, episodeNumber) => {
         if (!currentUser || seasonNumber == null || episodeNumber == null)
@@ -7671,13 +7622,6 @@ function App() {
         return moderators[sanitizeKey(username)] ? 'moderator' : null;
     };
     const [accountNotice, setAccountNotice] = useState(null);
-    useEffect(() => {
-        const onOffline = () => showToast('انقطع الاتصال مؤقتًا — بعض الميزات ستتوقف حتى يعود الاتصال.', 'error');
-        const onOnline = () => showToast('عاد الاتصال بالإنترنت.');
-        window.addEventListener('offline', onOffline);
-        window.addEventListener('online', onOnline);
-        return () => { window.removeEventListener('offline', onOffline); window.removeEventListener('online', onOnline); };
-    }, []);
     useEffect(() => {
         if (!currentUser)
             return;
@@ -7744,56 +7688,39 @@ function App() {
     const [booted, setBooted] = useState(() => readTitleCache().length > 0);
     useEffect(() => {
         let cancelled = false;
-        let ready = false;
         const isAdmin = !!(currentUser && (currentUser.username === 'mavilovelife' || currentUser.isModerator));
         const ref = isAdmin ? db.ref('titles') : db.ref('titles').orderByChild('status').equalTo('published');
-        const live = new Map();
-        if (!isAdmin) {
-            try {
-                readTitleCache().forEach(t => { if (t && t.id && t.status === 'published') live.set(t.id, normalizeTitlePlaybackData(t)); });
-            } catch (_) {}
-        }
-        const commit = () => {
-            if (cancelled || !ready) return;
-            const list = sortTitlesForDisplay(Array.from(live.values()));
+        const applySnap = snap => {
+            if (cancelled)
+                return;
+            const data = snap.val();
+            const list = data ? Object.keys(data).map(k => normalizeTitlePlaybackData({ id: k, ...data[k] })) : [];
+            list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
             setTitles(list);
-            if (!isAdmin) writeTitleCache(list);
+            if (!isAdmin)
+                writeTitleCache(list);
             setActiveTitle(prev => {
-                if (!prev) return prev;
+                if (!prev)
+                    return prev;
                 const updated = list.find(x => x.id === prev.id);
                 return updated || prev;
             });
-        };
-        const onAdd = snap => { live.set(snap.key, normalizeTitlePlaybackData({ id: snap.key, ...(snap.val() || {}) })); commit(); };
-        const onChange = snap => { live.set(snap.key, normalizeTitlePlaybackData({ id: snap.key, ...(snap.val() || {}) })); commit(); };
-        const onRemove = snap => { live.delete(snap.key); commit(); };
-        ref.on('child_added', onAdd);
-        ref.on('child_changed', onChange);
-        ref.on('child_removed', onRemove);
-        const safety = setTimeout(() => { if (!ready && !cancelled) setBooted(true); }, isAdmin ? 5000 : 3000);
-        ref.once('value').then(snap => {
-            if (cancelled) return;
-            live.clear();
-            snap.forEach(child => live.set(child.key, normalizeTitlePlaybackData({ id: child.key, ...(child.val() || {}) })));
-            ready = true;
-            commit();
             setBooted(true);
-        }).catch(() => {
-            if (cancelled) return;
-            if (!isAdmin) {
-                ready = true;
-                commit();
-            }
-            setBooted(true);
-        });
-        return () => {
-            cancelled = true;
-            ready = false;
-            clearTimeout(safety);
-            ref.off('child_added', onAdd);
-            ref.off('child_changed', onChange);
-            ref.off('child_removed', onRemove);
         };
+        if (CV_LOW_POWER && !isAdmin) {
+            const refresh = () => ref.once('value').then(applySnap).catch(() => setBooted(true));
+            refresh();
+            const timer = setInterval(() => { if (!document.hidden)
+                refresh(); }, 120000);
+            const onVisible = () => { if (!document.hidden)
+                refresh(); };
+            document.addEventListener('visibilitychange', onVisible);
+            const safety = setTimeout(() => setBooted(true), 2200);
+            return () => { cancelled = true; clearInterval(timer); clearTimeout(safety); document.removeEventListener('visibilitychange', onVisible); };
+        }
+        ref.on('value', applySnap);
+        const safety = setTimeout(() => setBooted(true), CV_LOW_POWER ? 2200 : 5000);
+        return () => { cancelled = true; ref.off('value', applySnap); clearTimeout(safety); };
     }, [currentUser && currentUser.id, currentUser && currentUser.username, currentUser && currentUser.isModerator]);
     useEffect(() => {
         if (!booted)
@@ -7804,23 +7731,18 @@ function App() {
             setTimeout(() => loader.remove(), 350);
         }
     }, [booted]);
-    const deepLinkHandledRef = useRef(false);
     useEffect(() => {
-        if (!booted || deepLinkHandledRef.current) return;
-        const params = new URLSearchParams(location.search);
-        const t = params.get('t');
-        const u = params.get('u');
+        if (!booted || !titles.length)
+            return;
+        const t = new URLSearchParams(location.search).get('t');
         if (t) {
             const found = titles.find(x => x.id === t && x.status === 'published');
-            if (!found) return;
-            deepLinkHandledRef.current = true;
-            openTitle(found);
-            return;
+            if (found)
+                setActiveTitle(found);
         }
-        if (u) {
-            deepLinkHandledRef.current = true;
+        const u = new URLSearchParams(location.search).get('u');
+        if (u)
             openProfile(u);
-        }
     }, [booted, titles]);
     const published = titles.filter(t => t.status === 'published');
     const toggleLike = (title) => {
@@ -7861,12 +7783,13 @@ function App() {
     }
     return (React.createElement("div", { className: "min-h-screen flex flex-col mobile-safe-bottom md:pb-0" },
         React.createElement(Header, { currentUser: currentUser, view: view, setView: setView, search: search, setSearch: setSearch, onOpenAccount: () => setAccountSheet(true), onOpenProfile: openProfile, onOpenTitleFromNotif: (id) => { const t = titles.find(x => x.id === id && x.status === 'published'); if (t)
-                openTitle(t); } }),
+                setActiveTitle(t); } }),
         React.createElement("main", { className: "flex-1 max-w-7xl w-full mx-auto px-4 py-6 md:py-8" },
-            React.createElement("div", { key: searching ? 'search' : view, className: "page-fade-in" }, searching ? (React.createElement(TypeGrid, { title: `نتائج البحث عن "${search}"`, items: mainList, onOpen: openTitle, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0646\u062A\u0627\u0626\u062C \u0645\u0637\u0627\u0628\u0642\u0629.", watchedMap: watched })) : view === 'home' ? (React.createElement(HomeView, { items: published, onOpen: openTitle, watchedMap: watched })) : (view === 'movie' || view === 'series' || view === 'anime') ? (React.createElement(TypeGrid, { title: TYPE_PLURAL[view], items: published.filter(t => t.type === view), onOpen: openTitle, showGenreFilter: true, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u0628\u0639\u062F.", watchedMap: watched })) : view === 'lists' ? (React.createElement(ListsView, { currentUser: currentUser, titles: published, onOpen: openTitle, onOpenAuth: setAuthModal })) : view === 'requests' ? (React.createElement(RequestsView, { currentUser: currentUser, onOpenAuth: setAuthModal })) : view === 'settings' ? (React.createElement(SettingsView, { currentUser: currentUser, onUpdateName: handleUpdateName, onUpdateAvatar: handleUpdateAvatar, onOpenAuth: setAuthModal })) : view === 'profile' ? (React.createElement(ProfileView, { username: profileTarget, currentUser: currentUser, titles: published, onOpen: openTitle, onOpenAuth: setAuthModal, onOpenProfile: openProfile })) : view === 'admin' ? (React.createElement(AdminPanel, { currentUser: currentUser, titles: titles, onOpenAuth: setAuthModal, moderators: moderators })) : null)),
+            React.createElement("div", { key: searching ? 'search' : view, className: "page-fade-in" }, searching ? (React.createElement(TypeGrid, { title: `نتائج البحث عن "${search}"`, items: mainList, onOpen: setActiveTitle, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0646\u062A\u0627\u0626\u062C \u0645\u0637\u0627\u0628\u0642\u0629.", watchedMap: watched })) : view === 'home' ? (React.createElement(HomeView, { items: published, onOpen: setActiveTitle, watchedMap: watched })) : (view === 'movie' || view === 'series' || view === 'anime') ? (React.createElement(TypeGrid, { title: TYPE_PLURAL[view], items: published.filter(t => t.type === view), onOpen: setActiveTitle, showGenreFilter: true, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u0628\u0639\u062F.", watchedMap: watched })) : view === 'lists' ? (React.createElement(ListsView, { currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal })) : view === 'requests' ? (React.createElement(RequestsView, { currentUser: currentUser, onOpenAuth: setAuthModal })) : view === 'settings' ? (React.createElement(SettingsView, { currentUser: currentUser, onUpdateName: handleUpdateName, onUpdateAvatar: handleUpdateAvatar, onOpenAuth: setAuthModal })) : view === 'profile' ? (React.createElement(ProfileView, { username: profileTarget, currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal, onOpenProfile: openProfile })) : view === 'admin' ? (React.createElement(AdminPanel, { currentUser: currentUser, titles: titles, onOpenAuth: setAuthModal, moderators: moderators })) : null)),
         React.createElement(MobileBottomNav, { view: view, setView: setView }),
         React.createElement(ToastHost, null),
-        activeTitle && (React.createElement(TitleModal, { title: activeTitle, allTitles: published, currentUser: currentUser, liked: likedIds.includes(activeTitle.id), getRole: getRole, onLike: () => toggleLike(activeTitle), onClose: () => { setActiveTitle(null); try { history.replaceState(null, '', location.pathname); } catch (_) {} }, onOpenAuth: setAuthModal, onOpenProfile: openProfile, onOpen: openTitle, watched: watched, onMarkEpisodeWatched: markEpisodeWatched, onMarkMovieWatched: markMovieWatched, isEpisodeWatched: isEpisodeWatched })),
+        activeTitle && (React.createElement(TitleModal, { title: activeTitle, allTitles: published, currentUser: currentUser, liked: likedIds.includes(activeTitle.id), getRole: getRole, onLike: () => toggleLike(activeTitle), onClose: () => { setActiveTitle(null); if (new URLSearchParams(location.search).get('t'))
+                history.replaceState(null, '', location.pathname); }, onOpenAuth: setAuthModal, onOpenProfile: openProfile, onOpen: setActiveTitle, watched: watched, onMarkEpisodeWatched: markEpisodeWatched, onMarkMovieWatched: markMovieWatched, isEpisodeWatched: isEpisodeWatched })),
         authModal && React.createElement(AuthModal, { tab: authModal, onClose: () => setAuthModal(null), onSuccess: handleAuthSuccess }),
         accountSheet && (React.createElement(AccountSheet, { currentUser: currentUser, onClose: () => setAccountSheet(false), onLogin: () => { setAccountSheet(false); setAuthModal('login'); }, onRegister: () => { setAccountSheet(false); setAuthModal('register'); }, onLogout: handleLogout, onNavigate: (v) => { if (v === 'profile')
                 setProfileTarget(null); setView(v); setAccountSheet(false); } })),
