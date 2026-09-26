@@ -7979,7 +7979,7 @@ function saveWatchedToStorage(data, username) {
     catch (e) { }
 }
 function App() {
-    const [titles, setTitles] = useState(() => readTitleCache());
+    const [titles, setTitles] = useState([]);
     const [currentUser, setCurrentUser] = useState(() => { try {
         return JSON.parse(localStorage.getItem('cv_user') || 'null');
     }
@@ -8168,25 +8168,28 @@ function App() {
         setSearch('');
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
-    const [booted, setBooted] = useState(() => readTitleCache().length > 0);
+    const [booted, setBooted] = useState(false);
     useEffect(() => {
         let cancelled = false;
+        let gotFreshData = false;
         const isAdmin = !!(currentUser && (currentUser.username === 'mavilovelife' || currentUser.isModerator));
         const ref = isAdmin ? db.ref('titles') : db.ref('titles').orderByChild('status').equalTo('published');
-        let appliedFreshData = false;
 
         const applyList = (data) => {
-            if (cancelled || !data || typeof data !== 'object') return false;
+            if (cancelled || !data || typeof data !== 'object')
+                return false;
             const list = Object.keys(data)
                 .map(k => normalizeTitlePlaybackData({ id: k, ...data[k] }))
                 .filter(Boolean)
                 .filter(t => isAdmin || t.status === 'published');
+            // Never replace the catalog with an empty/invalid response.
+            if (!list.length)
+                return false;
             list.sort((a, b) => ((b.publishedAt || b.createdAt || b.updatedAt || 0) - (a.publishedAt || a.createdAt || a.updatedAt || 0)));
-            // An empty/invalid REST response must never replace the working catalog.
-            if (!list.length) return false;
-            appliedFreshData = true;
+            gotFreshData = true;
             setTitles(list);
-            if (!isAdmin) writeTitleCache(list);
+            if (!isAdmin)
+                writeTitleCache(list);
             setActiveTitle(prev => {
                 if (!prev) return prev;
                 const updated = list.find(x => x.id === prev.id);
@@ -8196,36 +8199,50 @@ function App() {
             return true;
         };
 
-        // IMPORTANT: start the plain HTTPS catalog request first. On some phones
-        // the Firebase realtime SDK waits several seconds before its first
-        // connection/handshake. REST does not need that realtime handshake, so
-        // it becomes the fast initial source.
+        // Fresh catalog first. The old localStorage catalog is NOT rendered at startup,
+        // so an old list cannot flash on screen before Firebase delivers the current one.
+        const applySnap = snap => {
+            if (!cancelled)
+                applyList(snap.val());
+        };
+        ref.on('value', applySnap);
+
+        // Direct REST request is a fast initial path on phones where the realtime
+        // Firebase connection takes longer to complete its first handshake.
         const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        const restTimer = setTimeout(() => { try { controller && controller.abort(); } catch (e) {} }, 3500);
+        const restTimer = setTimeout(() => {
+            try { controller && controller.abort(); } catch (e) {}
+        }, 3500);
         const restUrl = 'https://mnste-36ca4-default-rtdb.europe-west1.firebasedatabase.app/titles.json?cb=' + Date.now();
         fetch(restUrl, { cache: 'no-store', credentials: 'omit', signal: controller ? controller.signal : undefined })
             .then(r => r.ok ? r.json() : null)
             .then(data => {
-                if (!cancelled) applyList(data);
+                if (!cancelled)
+                    applyList(data);
             })
             .catch(() => {})
             .finally(() => clearTimeout(restTimer));
 
-        // Keep the realtime listener only for live updates after the initial
-        // catalog. It is no longer responsible for making the first screen wait.
-        const applySnap = snap => {
-            if (!cancelled) applyList(snap.val());
-        };
-        ref.on('value', applySnap);
+        // Cache is now a FALLBACK only. It is used only when no fresh Firebase/REST
+        // catalog arrived after a short wait, so the normal path always shows fresh data.
+        const cacheFallbackTimer = setTimeout(() => {
+            if (cancelled || gotFreshData) return;
+            const cached = readTitleCache();
+            if (cached && cached.length) {
+                setTitles(cached);
+                setBooted(true);
+            } else {
+                // Keep the loader visible rather than inventing an empty catalog.
+                setBooted(true);
+            }
+        }, 4000);
 
-        // If REST fails, the realtime listener remains the fallback. If there is
-        // an old cache, it can stay visible while that fallback connects; once
-        // fresh data arrives it replaces the cache immediately.
         return () => {
             cancelled = true;
             ref.off('value', applySnap);
             try { controller && controller.abort(); } catch (e) {}
             clearTimeout(restTimer);
+            clearTimeout(cacheFallbackTimer);
         };
     }, [currentUser && currentUser.id, currentUser && currentUser.username, currentUser && currentUser.isModerator]);
     useEffect(() => {
