@@ -1746,7 +1746,9 @@ function TheebHelper({ kind, season, episode, defaultTitle, value, onGenerate })
         error && React.createElement("p", { className: "text-[11px] font-bold text-rose-400 mb-2" }, error),
         found && React.createElement("div", { className: "flex items-center justify-between gap-2 bg-glass-900 border border-white/10 rounded-xl px-3 py-2" },
             React.createElement("p", { className: "text-[11px] text-slate-300 truncate" }, `\u0644\u0642\u064A\u0646\u0627 \u0645\u0635\u062F\u0631\u064B\u0627 \u064A\u0634\u062A\u063A\u0644${providerLabel ? ' — ' + providerLabel : ''}`),
-            React.createElement("button", { type: "button", onClick: () => onGenerate && onGenerate(found.url), className: "shrink-0 px-3 py-1.5 rounded-lg bg-accent-gold/15 border border-accent-gold/30 hover:bg-accent-gold/25 text-accent-gold text-[11px] font-bold transition" }, "\u0627\u0633\u062A\u062E\u062F\u0627\u0645 \u0647\u0630\u0627 \u0627\u0644\u0631\u0627\u0628\u0637"))));
+            React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
+                React.createElement("a", { href: found.url, target: "_blank", rel: "noopener noreferrer", className: "px-3 py-1.5 rounded-lg bg-white/5 border border-white/15 hover:border-white/30 text-slate-300 text-[11px] font-bold transition" }, "\u062A\u062C\u0631\u0628\u0629 \u0627\u0644\u062A\u0634\u063A\u064A\u0644"),
+                React.createElement("button", { type: "button", onClick: () => onGenerate && onGenerate(found.url), className: "px-3 py-1.5 rounded-lg bg-accent-gold/15 border border-accent-gold/30 hover:bg-accent-gold/25 text-accent-gold text-[11px] font-bold transition" }, "\u0627\u0633\u062A\u062E\u062F\u0627\u0645 \u0647\u0630\u0627 \u0627\u0644\u0631\u0627\u0628\u0637")))));
 }
 async function tmdbFindBestByTitle(title, currentType, year) {
     const query = String(title || '').trim();
@@ -7338,6 +7340,39 @@ function AdminContentForm({ initial, defaultType, onDone }) {
         setEditingEpisodeIdx(null);
         return { ...prev, seasons };
     });
+    // دوران دفعي على كل حلقات المسلسل/الأنمي دفعة وحدة (بدل ما تدخل كل حلقة
+    // براحها) — يبحث لكل حلقة بمحرك ذيب ويثبّت altVideoUrl لو لقى مرشح، ويتخطى
+    // أي حلقة محفوظ لها مصدر بديل مسبقًا حتى ما يعيد البحث من الصفر كل مرة.
+    const [bulkTheebLoading, setBulkTheebLoading] = useState(false);
+    const [bulkTheebProgress, setBulkTheebProgress] = useState('');
+    const bulkResolveTheebForAllEpisodes = async () => {
+        setBulkTheebLoading(true);
+        let done = 0, found = 0, skipped = 0;
+        const total = form.seasons.reduce((n, s) => n + (s.episodes || []).length, 0);
+        for (let si = 0; si < form.seasons.length; si++) {
+            const season = form.seasons[si];
+            for (let ei = 0; ei < (season.episodes || []).length; ei++) {
+                const ep = season.episodes[ei];
+                done++;
+                if (ep.altVideoUrl) { skipped++; continue; }
+                setBulkTheebProgress(`جاري (${done}/${total}) — الموسم ${season.number} الحلقة ${ep.number}...`);
+                try {
+                    const result = await theebResolveEpisode({ title: form.name, season: season.number, episode: ep.number });
+                    found++;
+                    setForm(prev => {
+                        const seasons = prev.seasons.map((s, i) => i !== si ? s : {
+                            ...s, episodes: s.episodes.map((e2, j) => j !== ei ? e2 : { ...e2, altVideoUrl: result.url })
+                        });
+                        return { ...prev, seasons };
+                    });
+                }
+                catch (e) { /* هذي الحلقة ما لكيت مطابقة — نكمل البقية */ }
+                await new Promise(r => setTimeout(r, 400)); // تهدئة بين الطلبات، محرك ذيب يشتغل بسكرايبنغ
+            }
+        }
+        setBulkTheebProgress(`خلص: ${found} حلقة لقت مصدر بديل${skipped ? `، ${skipped} كانت محفوظة مسبقًا` : ''} من أصل ${total}.`);
+        setBulkTheebLoading(false);
+    };
     const removeSeason = (si) => setForm(prev => {
         const seasons = prev.seasons.filter((_, i) => i !== si);
         setActiveSeasonIdx(idx => Math.max(0, Math.min(idx, seasons.length - 1)));
@@ -7593,11 +7628,16 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                         setEditingEpisodeIdx(null);
                     } })),
             React.createElement("div", { className: "mt-6 border-t border-white/10 pt-5" },
-                React.createElement("div", { className: "flex items-center justify-between mb-4" },
+                React.createElement("div", { className: "flex items-center justify-between mb-4 flex-wrap gap-2" },
                     React.createElement("h4", { className: "font-black text-white text-base" }, "\u0627\u0644\u0645\u0648\u0627\u0633\u0645 \u0648\u0627\u0644\u062D\u0644\u0642\u0627\u062A"),
-                    React.createElement("button", { onClick: addSeason, className: "flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 font-bold hover:brightness-110 transition shadow-sm" },
-                        React.createElement(Icon, { name: "plus", className: "w-4 h-4" }),
-                        "\u0625\u0636\u0627\u0641\u0629 \u0645\u0648\u0633\u0645")),
+                    React.createElement("div", { className: "flex items-center gap-2" },
+                        form.seasons.some(s => (s.episodes || []).length) && React.createElement("button", { type: "button", onClick: bulkResolveTheebForAllEpisodes, disabled: bulkTheebLoading, className: "flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl bg-accent-gold/15 border border-accent-gold/30 text-accent-gold font-bold hover:bg-accent-gold/25 transition disabled:opacity-50" },
+                            React.createElement(Icon, { name: "shield", className: "w-4 h-4" }),
+                            bulkTheebLoading ? 'جاري الدوران...' : 'دوّر مصادر بديلة لكل الحلقات'),
+                        React.createElement("button", { onClick: addSeason, className: "flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 font-bold hover:brightness-110 transition shadow-sm" },
+                            React.createElement(Icon, { name: "plus", className: "w-4 h-4" }),
+                            "\u0625\u0636\u0627\u0641\u0629 \u0645\u0648\u0633\u0645"))),
+                bulkTheebProgress && React.createElement("p", { className: "text-[11px] font-bold text-accent-gold mb-3 -mt-2" }, bulkTheebProgress),
                 form.seasons.length === 0 ? (React.createElement("p", { className: "text-xs text-slate-500 font-medium" }, "\u0644\u0627 \u062A\u0648\u062C\u062F \u0645\u0648\u0627\u0633\u0645 \u0628\u0639\u062F. \u0627\u0636\u063A\u0637 \"\u0625\u0636\u0627\u0641\u0629 \u0645\u0648\u0633\u0645\" \u0644\u0644\u0628\u062F\u0621.")) : (React.createElement("div", null,
                     React.createElement("p", { className: "text-[11px] font-bold text-slate-400 mb-2" }, "\u0661) \u0627\u062E\u062A\u0631 \u0627\u0644\u0645\u0648\u0633\u0645"),
                     React.createElement(SlidingTabs, { containerClassName: "flex gap-1.5 flex-wrap mb-5 bg-glass-900/80 p-1.5 rounded-2xl border border-white/5", items: form.seasons.map((s, si) => ({
