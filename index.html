@@ -258,8 +258,6 @@
     .cv-display-option:hover { background:rgba(255,255,255,.08); }
     .cv-display-option.active { background:rgba(0,240,255,.14); color:#00F0FF; }
     .cv-gesture-hint { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:31; pointer-events:none; padding:8px 12px; border-radius:999px; background:rgba(0,0,0,.68); border:1px solid rgba(255,255,255,.14); color:#fff; font-size:11px; font-weight:900; backdrop-filter:blur(7px); -webkit-backdrop-filter:blur(7px); white-space:nowrap; }
-    .cv-complete-card { box-shadow: inset 0 -80px 90px -55px rgba(16,185,129,.55); }
-    .cv-complete-card:hover { border-color: rgba(52,211,153,.5) !important; box-shadow: inset 0 -80px 90px -55px rgba(16,185,129,.6), 0 12px 34px -10px rgba(52,211,153,.18); }
     @media (max-width:767px) {
       .cv-display-option { padding:10px 11px; font-size:12px; }
       .yt-controls-bottom { padding-left:8px; padding-right:8px; }
@@ -2681,7 +2679,7 @@ function PosterCard({ title, onOpen, compact, watched }) {
         React.createElement("div", { className: "relative aspect-[2/3] rounded-xl overflow-hidden glass-card shadow-lg group-hover:scale-[1.02] transition duration-300" },
             title.poster ? (React.createElement("img", { src: title.poster, alt: title.name, loading: "lazy", decoding: "async", className: "w-full h-full object-cover group-hover:scale-105 transition duration-500" })) : (React.createElement("div", { className: "w-full h-full flex items-center justify-center text-slate-600" },
                 React.createElement(Icon, { name: "film", className: "w-8 h-8" }))),
-            watched && (React.createElement("span", { title: "تمت المشاهدة بالكامل", className: "absolute bottom-2 left-2 w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shadow-[0_0_10px_rgba(16,185,129,0.6)]" },
+            watched && (React.createElement("span", { title: "تمت المشاهدة", className: "absolute bottom-2 left-2 w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shadow-[0_0_10px_rgba(16,185,129,0.6)]" },
                 React.createElement(Icon, { name: "check", className: "w-3 h-3 text-white" })))),
         React.createElement("p", { className: "mt-2 text-sm font-bold text-slate-100 line-clamp-1 group-hover:text-accent-cyan transition" },
             React.createElement("bdi", null, title.name)),
@@ -2883,15 +2881,15 @@ function ContinueWatchingRow({ items, watchProgress, watchedMap, onOpen }) {
         React.createElement("div", { className: "flex gap-3 md:gap-4 overflow-x-auto scrollbar-hide pb-1 snap-x" },
             cards.map((c, i) => {
                 const card = React.createElement("button", { type: "button", onClick: () => onOpen(c.title, c.nextEpisode ? { season: c.nextEpisode.seasonNumber, episode: c.nextEpisode.number } : null), className: "block w-full text-right" },
-                    React.createElement("div", { className: `relative aspect-video rounded-2xl overflow-hidden glass-card border border-white/10 mb-2 ${c.kind === 'complete' ? 'cv-complete-card' : ''}` },
+                    React.createElement("div", { className: `cv-continue-card relative aspect-video rounded-2xl overflow-hidden glass-card border border-white/10 mb-2 ${c.completed ? 'is-completed' : ''}` },
                         c.title.backdrop ? React.createElement("img", { src: tmdbAdaptive(c.title.backdrop), alt: "", loading: "lazy", decoding: "async", className: "w-full h-full object-cover" }) : c.title.poster ? React.createElement("img", { src: c.title.poster, alt: "", loading: "lazy", decoding: "async", className: "w-full h-full object-cover" }) : React.createElement("div", { className: "w-full h-full bg-glass-800" }),
-                        React.createElement("div", { className: c.kind === 'complete' ? "absolute inset-0 bg-gradient-to-t from-emerald-950/95 via-emerald-900/30 to-transparent" : "absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent" }),
-                        c.progress && (c.kind === 'complete' || c.progress.duration > 0) && React.createElement("div", { className: "absolute left-0 right-0 bottom-0 h-1 bg-white/15" },
-                            React.createElement("div", { className: `h-full ${c.kind === 'complete' ? 'bg-emerald-400' : 'bg-accent-cyan'}`, style: { width: `${c.kind === 'complete' ? 100 : Math.max(0, Math.min(100, c.progress.percent || 0))}%` } })),
-                        React.createElement("span", { className: c.kind === 'complete' ? "absolute bottom-2 right-2 flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/90 text-white text-[10px] font-black shadow-[0_0_12px_rgba(52,211,153,0.35)]" : "absolute bottom-2 right-2 flex items-center gap-1 px-2 py-1 rounded-lg bg-black/65 text-white text-[10px] font-black" },
-                            React.createElement(Icon, { name: c.kind === 'complete' ? "check" : "play", className: "w-2.5 h-2.5 fill-current" }), c.kind === 'complete' ? "تمت المشاهدة بالكامل" : "متابعة")),
+                        React.createElement("div", { className: `absolute inset-0 ${c.completed ? "bg-gradient-to-t from-emerald-500/80 via-emerald-500/28 to-transparent" : "bg-gradient-to-t from-black/85 via-black/15 to-transparent"}` }),
+                        c.progress && c.progress.duration > 0 && React.createElement("div", { className: "absolute left-0 right-0 bottom-0 h-1 bg-white/15" },
+                            React.createElement("div", { className: "h-full bg-accent-cyan", style: { width: `${Math.max(0, Math.min(100, c.progress.percent || 0))}%` } })),
+                        !c.completed && React.createElement("span", { className: "absolute bottom-2 right-2 flex items-center gap-1 px-2 py-1 rounded-lg bg-black/65 text-white text-[10px] font-black" },
+                            React.createElement(Icon, { name: "play", className: "w-2.5 h-2.5 fill-current" }), "متابعة")),
                     React.createElement("p", { className: "text-xs md:text-sm font-black text-white truncate" }, c.label),
-                    React.createElement("p", { className: `text-[10px] md:text-xs ${c.kind === 'complete' ? 'text-emerald-400' : 'text-accent-cyan'} font-bold mt-0.5 truncate` }, c.subLabel));
+                    React.createElement("p", { className: `text-[10px] md:text-xs font-bold mt-0.5 truncate ${c.completed ? 'text-emerald-400' : 'text-accent-cyan'}` }, c.completed ? 'تمت المشاهدة بالكامل' : c.subLabel));
                 const remove = React.createElement("button", { type: "button", title: "إزالة من أكمل المشاهدة", "aria-label": "إزالة من أكمل المشاهدة", onClick: e => { e.stopPropagation(); dismiss(c.title.id); }, className: "mt-1.5 mr-0.5 w-5 h-5 rounded-full bg-white/10 hover:bg-red-500/80 border border-white/10 hover:border-red-400 text-slate-400 hover:text-white flex items-center justify-center transition" },
                     React.createElement(Icon, { name: "x", className: "w-3 h-3" }));
                 return React.createElement("div", { key: `${c.title.id}-${i}`, className: "group shrink-0 w-40 sm:w-44 md:w-52 text-right snap-start" }, card, remove);
@@ -3740,10 +3738,9 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
                 return;
             }
             const endT = trimEnd || videoEl.duration;
-            if (endT && isFinite(endT)) { // نعتبر الحلقة مكتملة قبل الثواني الأخيرة حتى لا تُعاد من البداية لاحقًا.
+            if (endT && isFinite(endT)) { // علامة المشاهدة عند بقاء دقيقتين (أو نهاية المقاطع القصيرة)
                 const len = endT - (Number(trimStart) || 0);
-                const lead = len > 300 ? WATCH_PROGRESS_COMPLETION_LEAD_SECONDS : 0.6;
-                if (videoEl.currentTime >= endT - lead)
+                if (videoEl.currentTime >= endT - (len > 300 ? 120 : 0.6))
                     fireComplete();
             }
         };
@@ -4606,6 +4603,8 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const [replyingTo, setReplyingTo] = useState(null);
     const [replyText, setReplyText] = useState('');
     const [videoError, setVideoError] = useState(false);
+    const [playerRetryCount, setPlayerRetryCount] = useState(0);
+    const retryPlayback = () => { setVideoError(false); setPlayerRetryCount(c => c + 1); };
     const [copied, setCopied] = useState(false);
     const [resumeAt, setResumeAt] = useState(0);
     const [playingDurationSec, setPlayingDurationSec] = useState(0);
@@ -4622,7 +4621,6 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         ? { kind: 'episode', progress: { season: Number(title.__continueTarget.season), episode: Number(title.__continueTarget.episode), position: 0, completed: false, updatedAt: Date.now() } }
         : null;
     const continueTarget = explicitContinueTarget || getTitleContinueProgress(title, watchProgress, watched);
-    const titleFullyCompleted = isTitleFullyCompleted(title, watchProgress, watched);
     const currentEpisodeProgress = (season, episode) => getEpisodeWatchProgress(watchProgress, title.id, season, episode);
     const currentMovieProgress = () => getMovieWatchProgress(watchProgress, title.id);
 
@@ -4944,24 +4942,15 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 if (target && (target.kind === 'episode' || target.kind === 'episode-complete') && target.progress) {
                     const resumeEp = allEpisodesFlat.find(e => Number(e.seasonNumber) === Number(target.progress.season) && Number(e.number) === Number(target.progress.episode));
                     if (resumeEp) found = { ep: resumeEp, seasonNumber: resumeEp.seasonNumber };
-
-                    // الحلقة المكتملة لا تُعاد من بدايتها عند الاستئناف؛ ننتقل للحلقة الفعلية التالية.
-                    const targetIsCompleted = target.kind === 'episode-complete' || target.progress.completed === true;
-                    if (targetIsCompleted && resumeEp) {
+                    if (target.kind === 'episode-complete' && resumeEp) {
                         const idx = allEpisodesFlat.indexOf(resumeEp);
                         const next = idx >= 0 ? allEpisodesFlat[idx + 1] : null;
-                        if (next) {
-                            found = { ep: next, seasonNumber: next.seasonNumber };
-                        }
-                        else if (!forceStart) {
-                            // آخر حلقة مكتملة = العمل مكتمل، ولا يوجد استئناف لهذه الحلقة.
-                            found = null;
-                        }
+                        if (next) found = { ep: next, seasonNumber: next.seasonNumber };
                     }
                 }
                 const ep = found ? found.ep : null;
                 if (!ep) throw new Error('ماكو حلقات قابلة للتشغيل بهذا العمل.');
-                const progress = target && target.kind === 'episode' && !target.progress.completed && target.progress && Number(target.progress.season) === Number(found.seasonNumber) && Number(target.progress.episode) === Number(ep.number) ? target.progress : null;
+                const progress = target && target.kind === 'episode' && target.progress && Number(target.progress.season) === Number(found.seasonNumber) && Number(target.progress.episode) === Number(ep.number) ? target.progress : null;
                 await playEpisode(ep, found.seasonNumber, progress ? Number(progress.position)||0 : 0);
             }
         }
@@ -5119,16 +5108,14 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         completionSaveRef.current = '';
     }, [title.id, playingSeasonNumber, playingMeta && playingMeta.number]);
     useEffect(() => { setPlayingDurationSec(0); setSkipDbSegments({ intro: null, recap: null, outro: null }); }, [playingUrl]);
-    const movieWatched = titleFullyCompleted;
+    const movieWatched = title.type === 'movie' && ((watched && watched[title.id] && watched[title.id].movie) || (currentMovieProgress() && currentMovieProgress().completed));
     const handleEpisodeComplete = (record = {}) => {
         if (title.type === 'movie' || playingSeasonNumber == null || !playingMeta || playingMeta.number == null)
             return;
         const key = `s${playingSeasonNumber}e${playingMeta.number}`;
         if (onSaveWatchProgress && completionSaveRef.current !== key) {
             completionSaveRef.current = key;
-            const completionDuration = Math.max(0, Number(record.duration) || Number(playingDurationSec) || 0);
-            // عند اكتمال الحلقة نحفظها كـ 100% حقيقية، لكن لا نستخدمها كنقطة استئناف مرة ثانية.
-            onSaveWatchProgress(title.id, { kind: 'episode', season: playingSeasonNumber, episode: playingMeta.number, position: completionDuration, duration: completionDuration, percent: 100, completed: true, updatedAt: Number(record.updatedAt) || Date.now(), titleName: title.name, poster: title.poster, label: playingLabel });
+            onSaveWatchProgress(title.id, { kind: 'episode', season: playingSeasonNumber, episode: playingMeta.number, position: Math.max(0, Number(record.position) || Number(playingDurationSec) || 0), duration: Math.max(0, Number(record.duration) || Number(playingDurationSec) || 0), completed: true, updatedAt: Number(record.updatedAt) || Date.now(), titleName: title.name, poster: title.poster, label: playingLabel });
         }
         // اعرض علامة الصح فور ظهور زر الحلقة التالية، حتى لو لم يكن المستخدم مسجلاً.
         setLocallyCompletedEpisodeKey(key);
@@ -5138,43 +5125,25 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         const key = `movie:${title.id}`;
         if (onSaveWatchProgress && completionSaveRef.current !== key) {
             completionSaveRef.current = key;
-            const completionDuration = Math.max(0, Number(record.duration) || Number(playingDurationSec) || 0);
-            onSaveWatchProgress(title.id, { kind: 'movie', position: completionDuration, duration: completionDuration, percent: 100, completed: true, updatedAt: Number(record.updatedAt) || Date.now(), titleName: title.name, poster: title.poster });
+            onSaveWatchProgress(title.id, { kind: 'movie', position: Math.max(0, Number(record.position) || Number(playingDurationSec) || 0), duration: Math.max(0, Number(record.duration) || Number(playingDurationSec) || 0), completed: true, updatedAt: Number(record.updatedAt) || Date.now(), titleName: title.name, poster: title.poster });
         }
         onMarkMovieWatched && onMarkMovieWatched(title.id);
     };
-    const centerResumeStarted = !!(continueTarget && continueTarget.progress && Number(continueTarget.progress.position) >= WATCH_PROGRESS_MIN_RESUME_SECONDS && !titleFullyCompleted);
-    const centerResumeLabel = centerResumeStarted
-        ? (continueTarget.kind === 'movie'
-            ? `متابعة من ${formatWatchTime(continueTarget.progress.position)}`
-            : `متابعة من الحلقة ${continueTarget.progress.episode} · الموسم ${continueTarget.progress.season}`)
-        : '';
-    const centerResumeDetails = centerResumeStarted
-        ? `${continueTarget.kind === 'movie' ? '' : formatWatchTime(continueTarget.progress.position) + ' · '}${formatWatchPercent(continueTarget.progress.percent, continueTarget.progress.position, continueTarget.progress.duration)}`
-        : '';
-    const centerUnstartedNextLabel = !centerResumeStarted && continueTarget && continueTarget.kind === 'episode' && continueTarget.nextEpisode && !titleFullyCompleted
-        ? `متابعة من الحلقة ${continueTarget.progress.episode} · الموسم ${continueTarget.progress.season}`
-        : '';
-    const centerPlayButton = React.createElement("div", { className: "flex flex-col items-center justify-center gap-2" },
-        React.createElement("button", { onClick: handlePlay, className: centerResumeStarted ? "min-h-[72px] min-w-[260px] max-w-[92%] px-5 py-3 rounded-3xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center gap-3 shadow-[0_0_30px_rgba(255,51,75,0.6)] transform hover:scale-105 transition" : "w-[72px] h-[72px] rounded-3xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shadow-[0_0_30px_rgba(255,51,75,0.6)] transform hover:scale-110 transition" },
-            React.createElement(Icon, { name: "play", className: centerResumeStarted ? "w-6 h-6 shrink-0 text-white fill-current translate-x-0.5" : "w-8 h-8 text-white fill-current translate-x-0.5" }),
-            centerResumeStarted && React.createElement("span", { className: "min-w-0 flex flex-col items-center text-center leading-tight" },
-                React.createElement("span", { className: "text-xs sm:text-sm font-black text-white", dir: "rtl" }, centerResumeLabel),
-                continueTarget.kind === 'episode' && React.createElement("span", { className: "mt-1 text-[10px] font-black text-white/85", dir: "ltr" }, centerResumeDetails),
-                continueTarget.kind === 'movie' && React.createElement("span", { className: "mt-1 text-[10px] font-black text-white/85", dir: "ltr" }, centerResumeDetails)) ),
-        centerUnstartedNextLabel && React.createElement("span", { className: "text-xs sm:text-sm font-black text-white/90 text-center leading-tight drop-shadow-md", dir: "rtl" }, centerUnstartedNextLabel)
-    );
     return (React.createElement("div", { className: `${closing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-50 bg-black/90 md:p-6 md:flex md:items-center md:justify-center overflow-y-auto`, onClick: requestClose },
         React.createElement("div", { onClick: e => e.stopPropagation(), className: `${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl` },
             React.createElement("div", { className: "relative" },
                 playingUrl ? (React.createElement("div", { className: "relative" },
-                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: 'cinadam-player-' + title.id, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: () => setVideoError(true), onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : Number(playingMeta.introStart) || 0, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : Number(playingMeta.introEnd) || 0, recapStart: skipDbSegments.recap ? Number(skipDbSegments.recap.start_ms) / 1000 : Number(playingMeta.recapStart) || 0, recapEnd: skipDbSegments.recap ? Number(skipDbSegments.recap.end_ms) / 1000 : Number(playingMeta.recapEnd) || 0, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : Number(playingMeta.outroStart) || 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : Number(playingMeta.outroEnd) || 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onOutroStart: handleEpisodeComplete, onPreviousEpisode: playPreviousEpisode, onNextEpisode: playNextEpisode, hasPreviousEpisode: !!getPreviousEpisodeInfo(), hasNextEpisode: !!getNextEpisodeInfo(), previousEpisodeLabel: (() => { const p = getPreviousEpisodeInfo(); return p ? `الحلقة السابقة · ${p.title || `الحلقة ${p.number}`}` : 'الحلقة السابقة'; })(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete, onProgressSave: onSaveWatchProgress ? (r => onSaveWatchProgress(title.id, title.type === 'movie' ? { kind: 'movie', ...r, titleName: title.name, poster: title.poster } : { kind: 'episode', season: playingSeasonNumber, episode: playingMeta && playingMeta.number, ...r, titleName: title.name, poster: title.poster, label: playingLabel })) : null })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
+                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: 'cinadam-player-' + title.id + '-' + playerRetryCount, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: () => setVideoError(true), onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : Number(playingMeta.introStart) || 0, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : Number(playingMeta.introEnd) || 0, recapStart: skipDbSegments.recap ? Number(skipDbSegments.recap.start_ms) / 1000 : Number(playingMeta.recapStart) || 0, recapEnd: skipDbSegments.recap ? Number(skipDbSegments.recap.end_ms) / 1000 : Number(playingMeta.recapEnd) || 0, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : Number(playingMeta.outroStart) || 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : Number(playingMeta.outroEnd) || 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onOutroStart: handleEpisodeComplete, onPreviousEpisode: playPreviousEpisode, onNextEpisode: playNextEpisode, hasPreviousEpisode: !!getPreviousEpisodeInfo(), hasNextEpisode: !!getNextEpisodeInfo(), previousEpisodeLabel: (() => { const p = getPreviousEpisodeInfo(); return p ? `الحلقة السابقة · ${p.title || `الحلقة ${p.number}`}` : 'الحلقة السابقة'; })(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete, onProgressSave: onSaveWatchProgress ? (r => onSaveWatchProgress(title.id, title.type === 'movie' ? { kind: 'movie', ...r, titleName: title.name, poster: title.poster } : { kind: 'episode', season: playingSeasonNumber, episode: playingMeta && playingMeta.number, ...r, titleName: title.name, poster: title.poster, label: playingLabel })) : null })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
                     videoError && (React.createElement("div", { className: "absolute inset-0 bg-black/90 flex flex-col items-center justify-center gap-3 p-6 text-center" },
                         React.createElement("p", { className: "text-sm text-slate-200 font-bold" }, "\u062A\u0639\u0630\u0651\u0631 \u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u0639\u0644\u0649 \u0647\u0630\u0627 \u0627\u0644\u062C\u0647\u0627\u0632."),
                         isIOS && (React.createElement("p", { className: "text-xs text-slate-400 max-w-xs leading-relaxed" }, "\u063A\u0627\u0644\u0628\u064B\u0627 \u0627\u0644\u0633\u0628\u0628 \u0623\u0646 \u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u063A\u064A\u0631 \u0645\u0631\u0641\u0648\u0639 \u0628\u0635\u064A\u063A\u0629 \u064A\u062F\u0639\u0645\u0647\u0627 \u0627\u0644\u0622\u064A\u0641\u0648\u0646 \u0645\u0628\u0627\u0634\u0631\u0629. \u0627\u0644\u0623\u0639\u0645\u0627\u0644 \u0627\u0644\u062A\u064A \u062A\u064F\u0631\u0641\u0639 \u0645\u0646 \u0644\u0648\u062D\u0629 \u0627\u0644\u062A\u062D\u0643\u0645 \u0639\u0628\u0631 \u0632\u0631 \"\u0631\u0641\u0639 \u0645\u0646 \u0627\u0644\u062C\u0647\u0627\u0632\" \u062A\u0639\u0645\u0644 \u0628\u0634\u0643\u0644 \u0635\u062D\u064A\u062D \u0639\u0644\u0649 \u0643\u0644 \u0627\u0644\u0623\u062C\u0647\u0632\u0629.")),
-                        React.createElement("button", { onClick: () => window.open(normalizeVideoUrl(playingUrl), '_blank', 'noopener,noreferrer'), className: "px-5 py-2.5 rounded-xl bg-accent-red hover:bg-accent-redHover text-xs font-bold text-white transition" }, "\u0645\u062D\u0627\u0648\u0644\u0629 \u0641\u062A\u062D \u0627\u0644\u0631\u0627\u0628\u0637 \u0645\u0628\u0627\u0634\u0631\u0629"))))) : (React.createElement("div", { className: "relative w-full aspect-video bg-glass-900" },
+                        React.createElement("button", { onClick: retryPlayback, className: "flex items-center gap-2 px-5 py-2.5 rounded-xl bg-accent-red hover:bg-accent-redHover text-xs font-bold text-white transition" },
+                            React.createElement(Icon, { name: "rotateCcw5", className: "w-3.5 h-3.5" }),
+                            "\u0625\u0639\u0627\u062F\u0629 \u0627\u0644\u0645\u062D\u0627\u0648\u0644\u0629"))))) : (React.createElement("div", { className: "relative w-full aspect-video bg-glass-900" },
                     title.backdrop && React.createElement("img", { src: tmdbAdaptive(title.backdrop), alt: "", decoding: "async", className: "w-full h-full object-cover" }),
-                    React.createElement("div", { className: "absolute inset-0 bg-gradient-to-t from-glass-950 via-black/40 to-transparent flex items-center justify-center" }, centerPlayButton))),
+                    React.createElement("div", { className: "absolute inset-0 bg-gradient-to-t from-glass-950 via-black/40 to-transparent flex items-center justify-center" },
+                        React.createElement("button", { onClick: handlePlay, className: "w-[72px] h-[72px] rounded-3xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shadow-[0_0_30px_rgba(255,51,75,0.6)] transform hover:scale-110 transition" },
+                            React.createElement(Icon, { name: "play", className: "w-8 h-8 text-white fill-current translate-x-0.5" }))))),
                 React.createElement("button", { onClick: requestClose, className: "absolute top-4 left-4 z-30 w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black transition" },
                     React.createElement(Icon, { name: "x", className: "w-5 h-5" })),
                 React.createElement("button", { onClick: shareLink, title: "\u0646\u0633\u062E \u0631\u0627\u0628\u0637 \u0627\u0644\u0645\u0634\u0627\u0631\u0643\u0629", className: "absolute top-4 right-4 z-30 w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black transition" },
@@ -5195,7 +5164,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                         ")")),
                     movieWatched && (React.createElement("span", { className: "inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-emerald-500/15 backdrop-blur-md text-emerald-400 font-bold border border-emerald-500/30 shadow-sm" },
                         React.createElement(Icon, { name: "check", className: "w-3 h-3" }),
-                        "\u062A\u0645\u062A \u0627\u0644\u0645\u0634\u0627\u0647\u062F\u0629 \u0628\u0627\u0644\u0643\u0627\u0645\u0644"))),
+                        "\u062A\u0645\u062A \u0627\u0644\u0645\u0634\u0627\u0647\u062F\u0629"))),
                 React.createElement("h2", { className: "text-2xl md:text-3xl font-black mb-1 text-white" },
                     React.createElement("bdi", null, title.name)),
                 playingLabel && playingLabel !== title.name && (React.createElement("p", { className: "text-sm text-accent-cyan font-bold mb-3 flex items-center gap-1.5" },
@@ -5211,9 +5180,14 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                         "\u0627\u0644\u0643\u062A\u0627\u0628\u0629: ",
                         React.createElement("span", { className: "text-slate-200" }, title.writer)))),
                 React.createElement("div", { className: "flex items-center gap-3 flex-wrap mb-6" },
-                    React.createElement("button", { onClick: () => (isSeries && playingUrl && getNextEpisodeInfo()) ? playNextEpisode() : handlePlay(!!titleFullyCompleted), className: "flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover text-sm font-bold text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition" },
+                    React.createElement("button", { onClick: () => (isSeries && playingUrl && getNextEpisodeInfo()) ? playNextEpisode() : handlePlay(!!continueTarget), className: "flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover text-sm font-bold text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition" },
                         React.createElement(Icon, { name: (isSeries && playingUrl && getNextEpisodeInfo()) ? 'skipForward' : 'play', className: "w-4 h-4 fill-current" }),
-                        (isSeries && playingUrl && getNextEpisodeInfo()) ? 'الحلقة التالية' : (titleFullyCompleted ? 'إعادة المشاهدة' : (continueTarget ? 'متابعة المشاهدة' : 'تشغيل'))),
+                        (isSeries && playingUrl && getNextEpisodeInfo()) ? 'الحلقة التالية' : (continueTarget ? 'تشغيل من البداية' : 'تشغيل')),
+                    continueTarget && !playingUrl && continueTarget.kind !== 'series-complete' && (React.createElement("button", { onClick: () => handlePlay(false), className: "flex items-center gap-2.5 px-5 py-3 rounded-2xl glass-card border border-accent-cyan/40 bg-accent-cyan/10 hover:bg-accent-cyan/15 text-sm font-black text-accent-cyan transition" },
+                        React.createElement(Icon, { name: "clock", className: "w-4 h-4" }),
+                        continueTarget.kind === 'movie' ? `متابعة من ${formatWatchTime(continueTarget.progress.position)}` : `متابعة من الحلقة ${continueTarget.progress.episode} · الموسم ${continueTarget.progress.season}${Number(continueTarget.progress.position) > 0 ? ` · ${formatWatchTime(continueTarget.progress.position)}` : ''}`)),
+                    continueTarget && !playingUrl && continueTarget.kind === 'series-complete' && (React.createElement("div", { className: "inline-flex items-center gap-2.5 px-5 py-3 rounded-2xl bg-emerald-500/15 border border-emerald-400/30 text-sm font-black text-emerald-300" },
+                        "تمت المشاهدة بالكامل")),
                     React.createElement("button", { onClick: onLike, className: `flex items-center gap-2.5 px-5 py-3 rounded-2xl text-sm font-bold border transition ${liked ? 'bg-rose-500 text-white border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.4)]' : 'glass-card border-white/10 text-slate-200 hover:border-white/20'}` },
                         React.createElement(Icon, { name: "heart", className: "w-4 h-4" }),
                         title.likes || 0),
@@ -7880,7 +7854,6 @@ const WATCH_PROGRESS_SAVE_INTERVAL = 1000;
 const WATCH_PROGRESS_MIN_SAVE_SECONDS = 0.5;
 const WATCH_PROGRESS_MIN_RESUME_SECONDS = 1;
 const WATCH_PROGRESS_COMPLETE_RATIO = 0.96;
-const WATCH_PROGRESS_COMPLETION_LEAD_SECONDS = 120;
 const WATCH_PROGRESS_CACHE_PREFIX = 'cinadam_watch_progress_v2_';
 
 function watchProgressRootKey(titleId) {
@@ -7962,97 +7935,47 @@ function getMovieWatchProgress(tree, titleId) {
     const entry = getTitleWatchEntry(tree, titleId);
     return entry ? (entry.movie || null) : null;
 }
-function flattenTitleEpisodes(title) {
-    const seasons = (title && title.seasons || []).slice().sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0));
-    const flat = [];
-    seasons.forEach(se => (se.episodes || []).slice().sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0)).forEach(ep => flat.push({ ...ep, seasonNumber: Number(se.number) || 1 })));
-    return flat;
-}
-function getTitleEpisodeStatus(title, tree, watchedMap) {
-    const flat = flattenTitleEpisodes(title);
-    const entry = getTitleWatchEntry(tree, title && title.id);
-    const progressEpisodes = entry && entry.episodes ? entry.episodes : {};
-    const legacyEntry = watchedMap && title ? watchedMap[title.id] : null;
-    const legacyEpisodes = legacyEntry && legacyEntry.episodes ? legacyEntry.episodes : {};
-    const completed = new Set();
-    const inProgress = [];
-    flat.forEach(ep => {
-        const key = watchProgressEpisodeKey(ep.seasonNumber, ep.number);
-        const p = progressEpisodes[key];
-        // سجل التقدم المرتبط بالحساب هو المصدر الأساسي للاستئناف.
-        // لكن سجلات watched القديمة تبقى صالحة كعلامات إكمال حتى لا تضيع
-        // الأعمال التي سبق للمستخدم إنهاؤها قبل ترقية نظام التقدم.
-        if (p && p.completed) completed.add(key);
-        else if (legacyEpisodes[key]) completed.add(key);
-        if (p && !p.completed && Number(p.position) >= WATCH_PROGRESS_MIN_RESUME_SECONDS) inProgress.push(p);
-    });
-    return { flat, entry, legacyEntry, progressEpisodes, legacyEpisodes, completed, inProgress };
-}
-function isTitleFullyCompleted(title, tree, watchedMap) {
-    if (!title) return false;
-    const entry = getTitleWatchEntry(tree, title.id);
-    const legacyEntry = watchedMap && watchedMap[title.id];
-    if (title.type === 'movie') {
-        return !!((entry && entry.movie && entry.movie.completed) || (legacyEntry && legacyEntry.movie));
-    }
-    const status = getTitleEpisodeStatus(title, tree, watchedMap);
-    return status.flat.length > 0 && status.completed.size >= status.flat.length;
-}
-function getTitleLastUpdatedAt(title, tree, watchedMap) {
-    const entry = getTitleWatchEntry(tree, title && title.id);
-    let latest = 0;
-    if (entry && entry.movie) latest = Math.max(latest, Number(entry.movie.updatedAt) || 0);
-    if (entry && entry.episodes) Object.values(entry.episodes).forEach(p => latest = Math.max(latest, Number(p && p.updatedAt) || 0));
-    return latest;
-}
-function makeSyntheticEpisodeProgress(title, season, episode, updatedAt = 0) {
-    return { kind: 'episode', titleId: String(title && title.id || ''), season: Number(season) || 1, episode: Number(episode) || 1, position: 0, duration: 0, percent: 0, completed: false, updatedAt: Number(updatedAt) || 0, titleName: String(title && title.name || ''), poster: String(title && title.poster || ''), label: '' };
-}
 function getTitleContinueProgress(title, tree, watchedMap) {
     if (!title) return null;
     const entry = getTitleWatchEntry(tree, title.id);
-    const legacyEntry = watchedMap && watchedMap[title.id];
     if (title.type === 'movie') {
         const p = entry && entry.movie;
-        if (p && p.completed) return { kind: 'movie-complete', progress: p };
-        // توافق خلفي: الفيلم الذي كان مسجلًا كمكتمل بالنظام القديم يبقى مكتملًا.
-        if (legacyEntry && legacyEntry.movie) {
-            return { kind: 'movie-complete', progress: { kind: 'movie', titleId: String(title.id), position: 0, duration: 0, percent: 100, completed: true, updatedAt: getTitleLastUpdatedAt(title, tree, watchedMap), titleName: title.name, poster: title.poster } };
-        }
-        if (p && !p.completed && p.position >= WATCH_PROGRESS_MIN_RESUME_SECONDS) return { kind: 'movie', progress: p };
-        return null;
+        return p && !p.completed && p.position >= WATCH_PROGRESS_MIN_RESUME_SECONDS ? { kind: 'movie', progress: p } : null;
     }
+    const episodeKey = (season, episode) => `s${Number(season) || 0}e${Number(episode) || 0}`;
 
-    const status = getTitleEpisodeStatus(title, tree, watchedMap);
-    if (!status.flat.length) return null;
+    // خريطة كل حلقات المسلسل الفعلية مرتبة عبر كل المواسم (مصدر الحقيقة الوحيد لعدد الحلقات).
+    const seasons = (title.seasons || []).slice().sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0));
+    const flat = [];
+    seasons.forEach(se => (se.episodes||[]).slice().sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0)).forEach(ep => flat.push({ ...ep, seasonNumber: se.number, key: episodeKey(se.number, ep.number) })));
+    if (!flat.length) return null;
 
-    // الاكتمال هنا للمسلسل/الأنمي كله، وليس لموسم منفرد.
-    if (status.completed.size >= status.flat.length) {
-        const completedProgress = status.flat.map(ep => status.progressEpisodes[watchProgressEpisodeKey(ep.seasonNumber, ep.number)]).filter(p => p && p.completed).sort((a,b) => (Number(b.updatedAt)||0) - (Number(a.updatedAt)||0))[0];
-        const lastEp = status.flat[status.flat.length - 1];
-        return { kind: 'series-complete', progress: completedProgress || makeSyntheticEpisodeProgress(title, lastEp.seasonNumber, lastEp.number, getTitleLastUpdatedAt(title, tree, watchedMap)), completedEpisode: lastEp };
-    }
+    const eps = entry && entry.episodes ? Object.values(entry.episodes).filter(Boolean) : [];
+    const progressByKey = {};
+    eps.forEach(p => { progressByKey[episodeKey(p.season, p.episode)] = p; });
+    const watchedEntry = watchedMap && watchedMap[title.id];
+    const watchedKeys = watchedEntry && watchedEntry.episodes ? watchedEntry.episodes : {};
 
-    // إذا عنده حلقة بدأها فعلاً، نكمل من آخر نقطة حقيقية حفظها.
-    const resumable = status.inProgress.slice().sort((a,b) => (Number(b.updatedAt)||0) - (Number(a.updatedAt)||0));
+    // حلقة "مكتملة" = إما progress.completed (فايربيس) أو علامة الصح المحلية (watched) — أيهما تحقق.
+    const isDone = (key) => !!(progressByKey[key] && progressByKey[key].completed) || !!watchedKeys[key];
+
+    const resumable = eps.filter(p => {
+        if (p.completed || p.position < WATCH_PROGRESS_MIN_RESUME_SECONDS) return false;
+        return !watchedKeys[episodeKey(p.season, p.episode)];
+    }).sort((a,b) => (b.updatedAt||0) - (a.updatedAt||0));
     if (resumable.length) return { kind: 'episode', progress: resumable[0] };
 
-    // لا نُظهر عملًا لم يبدأ به المستخدم أصلًا.
-    // إذا كانت هناك حلقات مكتملة سابقة فقط، نستخدم أول حلقة فعلية غير مكتملة كنقطة متابعة.
-    if (status.completed.size > 0) {
-        const next = status.flat.find(ep => !status.completed.has(watchProgressEpisodeKey(ep.seasonNumber, ep.number)));
-        if (next) {
-            const updatedAt = getTitleLastUpdatedAt(title, tree, watchedMap);
-            return { kind: 'episode', progress: makeSyntheticEpisodeProgress(title, next.seasonNumber, next.number, updatedAt), nextEpisode: next };
-        }
-    }
-    return null;
-}
-function formatWatchPercent(percent, position = 0, duration = 0) {
-    const raw = Number(percent);
-    const computed = duration > 0 ? (Number(position) / Number(duration)) * 100 : 0;
-    const value = Math.max(0, Math.min(100, Number.isFinite(raw) && raw > 0 ? raw : computed));
-    return `${Math.round(value)}%`;
+    const doneFlat = flat.filter(ep => isDone(ep.key));
+    if (!doneFlat.length) return null;
+
+    // اربط علامة الصح مع أكمل المشاهدة: آخر حلقة مكتملة تصبح نقطة الانتقال للحلقة التالية.
+    const latest = doneFlat.map(ep => ({ ep, order: flat.indexOf(ep), progress: progressByKey[ep.key] || null }))
+        .sort((a,b) => (Number((b.progress&&b.progress.updatedAt)||0) - Number((a.progress&&a.progress.updatedAt)||0)) || (b.order - a.order))[0];
+    const latestProgress = latest.progress || { kind: 'episode', season: latest.ep.seasonNumber, episode: latest.ep.number, completed: true, position: 0, duration: 0, percent: 100, updatedAt: 0, titleId: title.id, titleName: title.name, poster: title.poster };
+
+    const allEpisodesCompleted = flat.every(ep => isDone(ep.key));
+    if (allEpisodesCompleted) return { kind: 'series-complete', progress: latestProgress };
+    return { kind: 'episode-complete', progress: latestProgress };
 }
 function buildWatchProgressCardItems(titles, tree, watchedMap) {
     const arr = [];
@@ -8060,12 +7983,31 @@ function buildWatchProgressCardItems(titles, tree, watchedMap) {
         const c = getTitleContinueProgress(title, tree, watchedMap);
         if (!c) continue;
         if (c.kind === 'movie') {
-            arr.push({ title, kind: 'progress', progress: c.progress, label: title.name, subLabel: `متابعة من ${formatWatchTime(c.progress.position)} · ${formatWatchPercent(c.progress.percent, c.progress.position, c.progress.duration)}`, updatedAt: c.progress.updatedAt || 0 });
+            arr.push({ title, progress: c.progress, label: title.name, subLabel: `متابعة من ${formatWatchTime(c.progress.position)}`, updatedAt: c.progress.updatedAt || 0 });
         } else if (c.kind === 'episode') {
-            const started = Number(c.progress.position) >= WATCH_PROGRESS_MIN_RESUME_SECONDS;
-            arr.push({ title, kind: 'progress', progress: c.progress, label: title.name, subLabel: c.nextEpisode ? `متابعة من الحلقة ${c.progress.episode} · الموسم ${c.progress.season}` : `متابعة من الحلقة ${c.progress.episode} · الموسم ${c.progress.season}${started ? ` · ${formatWatchTime(c.progress.position)} · ${formatWatchPercent(c.progress.percent, c.progress.position, c.progress.duration)}` : ''}`, updatedAt: c.progress.updatedAt || 0, nextEpisode: c.nextEpisode || null });
-        } else if (c.kind === 'movie-complete' || c.kind === 'series-complete') {
-            arr.push({ title, kind: 'complete', progress: c.progress, label: title.name, subLabel: 'تمت المشاهدة بالكامل', updatedAt: c.progress.updatedAt || getTitleLastUpdatedAt(title, tree, watchedMap), nextEpisode: null });
+            arr.push({ title, progress: c.progress, label: title.name, subLabel: Number(c.progress.position) > 0 ? `متابعة من الحلقة ${c.progress.episode} · الموسم ${c.progress.season} · ${formatWatchTime(c.progress.position)}` : `متابعة من الحلقة ${c.progress.episode} · الموسم ${c.progress.season}`, updatedAt: c.progress.updatedAt || 0 });
+        } else if (c.kind === 'episode-complete') {
+            const seasons = (title.seasons || []).slice().sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0));
+            const flat = [];
+            seasons.forEach(se => (se.episodes||[]).slice().sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0)).forEach(ep => flat.push({ ...ep, seasonNumber: se.number })));
+            const idx = flat.findIndex(ep => Number(ep.seasonNumber)===Number(c.progress.season) && Number(ep.number)===Number(c.progress.episode));
+            let next = idx >= 0 ? flat[idx + 1] : null;
+            const watchedEntry = watchedMap && watchedMap[title.id];
+            const watchedKeys = watchedEntry && watchedEntry.episodes ? watchedEntry.episodes : {};
+            while (next) {
+                const key = `s${Number(next.seasonNumber)}e${Number(next.number)}`;
+                const p = getEpisodeWatchProgress(tree, title.id, next.seasonNumber, next.number);
+                if (!(p && p.completed) && !watchedKeys[key]) break;
+                const nidx = flat.findIndex(ep => Number(ep.seasonNumber)===Number(next.seasonNumber) && Number(ep.number)===Number(next.number));
+                next = nidx >= 0 ? flat[nidx + 1] : null;
+            }
+            if (next) {
+                arr.push({ title, progress: null, label: title.name, subLabel: `متابعة الحلقة ${next.number} · الموسم ${next.seasonNumber}`, updatedAt: c.progress.updatedAt || 0, nextEpisode: next, completed: false });
+            } else {
+                arr.push({ title, progress: null, label: title.name, subLabel: 'تمت المشاهدة بالكامل', updatedAt: c.progress.updatedAt || 0, completed: true });
+            }
+        } else if (c.kind === 'series-complete') {
+            arr.push({ title, progress: null, label: title.name, subLabel: 'تمت المشاهدة بالكامل', updatedAt: c.progress.updatedAt || 0, completed: true });
         }
     }
     return arr.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
@@ -8198,8 +8140,6 @@ function App() {
             return record;
         }).then(() => base.child('last').transaction(current => {
             const existing = normalizeProgressRecord(current);
-            const sameEpisode = existing && kind === 'episode' && record.kind === 'episode' && Number(existing.season) === Number(record.season) && Number(existing.episode) === Number(record.episode);
-            if (sameEpisode && existing.completed && !record.completed) return;
             if (existing && (existing.updatedAt || 0) > now) return;
             return record;
         })).catch(() => {});
@@ -8215,27 +8155,42 @@ function App() {
     };
     const openProfile = (uname) => { setProfileTarget(uname || null); setActiveTitle(null); setAccountSheet(false); setViewRaw('profile'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
     const markEpisodeWatched = (titleId, seasonNumber, episodeNumber) => {
-        if (!currentUser || seasonNumber == null || episodeNumber == null) return;
-        const now = Date.now();
+        if (!currentUser || seasonNumber == null || episodeNumber == null)
+            return;
         setWatched(prev => {
-            const key = watchProgressEpisodeKey(seasonNumber, episodeNumber);
+            const key = `s${seasonNumber}e${episodeNumber}`;
             const entry = { ...(prev[titleId] || {}) };
             entry.episodes = { ...(entry.episodes || {}), [key]: true };
             const next = { ...prev, [titleId]: entry };
             saveWatchedToStorage(next, currentUser && currentUser.username);
             return next;
         });
-        saveWatchProgress(titleId, { kind: 'episode', season: seasonNumber, episode: episodeNumber, position: 0, duration: 0, percent: 100, completed: true, updatedAt: now });
+        const uid = currentUser && currentUser.id;
+        if (uid) {
+            const safeTitleKey = watchProgressRootKey(titleId);
+            const epKey = watchProgressEpisodeKey(seasonNumber, episodeNumber);
+            const now = Date.now();
+            setWatchProgress(prev => {
+                const tree = normalizeWatchProgressTree(prev);
+                const entry = { ...(tree[safeTitleKey] || {}) };
+                entry.episodes = { ...(entry.episodes || {}) };
+                entry.episodes[epKey] = normalizeProgressRecord({ titleId: String(titleId), kind: 'episode', season: seasonNumber, episode: episodeNumber, position: 0, duration: 0, percent: 100, completed: true, updatedAt: now });
+                entry.last = entry.episodes[epKey];
+                tree[safeTitleKey] = entry;
+                saveWatchProgressCache(tree, uid);
+                return tree;
+            });
+        }
     };
     const markMovieWatched = (titleId) => {
-        if (!currentUser) return;
+        if (!currentUser)
+            return;
         setWatched(prev => {
             const entry = { ...(prev[titleId] || {}), movie: true };
             const next = { ...prev, [titleId]: entry };
             saveWatchedToStorage(next, currentUser && currentUser.username);
             return next;
         });
-        saveWatchProgress(titleId, { kind: 'movie', position: 0, duration: 0, percent: 100, completed: true, updatedAt: Date.now() });
     };
     const isEpisodeWatched = (titleId, seasonNumber, episodeNumber) => {
         if (seasonNumber == null || episodeNumber == null)
