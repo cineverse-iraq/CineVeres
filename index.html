@@ -1493,7 +1493,6 @@ async function theebFetch(path) {
     const isLoopback = (b) => /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(String(b || ''));
     if (isLoopback('http://localhost:8787')) add('http://localhost:8787');
     if (configured) add(configured);
-    add(CINEMANA_PROXY);
     add('http://127.0.0.1:8787');
 
     let lastError = null;
@@ -1510,7 +1509,7 @@ async function theebFetch(path) {
                     signal: ctl.signal
                 };
                 // Chromium Local Network Access: السماح بتحديد أن الوجهة loopback/local.
-                if (isLoopback(base)) fetchOptions.targetAddressSpace = 'local';
+                if (isLoopback(base)) fetchOptions.targetAddressSpace = 'loopback';
                 res = await fetch(base + path, fetchOptions);
             } finally { clearTimeout(timer); }
             const text = await res.text();
