@@ -263,15 +263,6 @@
       .yt-controls-bottom { padding-left:8px; padding-right:8px; }
     }
     </style>
-
-<style id="completed-continue-card-style">
-.cv-continue-card.is-completed {
-  position: relative;
-  overflow: hidden;
-  background: linear-gradient(to top, rgba(34,197,94,.72) 0%, rgba(34,197,94,.38) 38%, rgba(34,197,94,.12) 72%, rgba(34,197,94,0) 100%) !important;
-}
-</style>
-
 </head>
 <body class="bg-glass-950 text-slate-100 min-h-screen selection:bg-accent-red selection:text-white">
   <style>
@@ -2892,7 +2883,7 @@ function ContinueWatchingRow({ items, watchProgress, watchedMap, onOpen }) {
                 const card = React.createElement("button", { type: "button", onClick: () => onOpen(c.title, c.nextEpisode ? { season: c.nextEpisode.seasonNumber, episode: c.nextEpisode.number } : null), className: "block w-full text-right" },
                     React.createElement("div", { className: `cv-continue-card relative aspect-video rounded-2xl overflow-hidden glass-card border border-white/10 mb-2 ${c.completed ? 'is-completed' : ''}` },
                         c.title.backdrop ? React.createElement("img", { src: tmdbAdaptive(c.title.backdrop), alt: "", loading: "lazy", decoding: "async", className: "w-full h-full object-cover" }) : c.title.poster ? React.createElement("img", { src: c.title.poster, alt: "", loading: "lazy", decoding: "async", className: "w-full h-full object-cover" }) : React.createElement("div", { className: "w-full h-full bg-glass-800" }),
-                        React.createElement("div", { className: "absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent" }),
+                        React.createElement("div", { className: `absolute inset-0 ${c.completed ? "bg-gradient-to-t from-emerald-500/80 via-emerald-500/28 to-transparent" : "bg-gradient-to-t from-black/85 via-black/15 to-transparent"}` }),
                         c.progress && c.progress.duration > 0 && React.createElement("div", { className: "absolute left-0 right-0 bottom-0 h-1 bg-white/15" },
                             React.createElement("div", { className: "h-full bg-accent-cyan", style: { width: `${Math.max(0, Math.min(100, c.progress.percent || 0))}%` } })),
                         !c.completed && React.createElement("span", { className: "absolute bottom-2 right-2 flex items-center gap-1 px-2 py-1 rounded-lg bg-black/65 text-white text-[10px] font-black" },
@@ -7948,7 +7939,13 @@ function getTitleContinueProgress(title, tree, watchedMap) {
         return p && !p.completed && p.position >= WATCH_PROGRESS_MIN_RESUME_SECONDS ? { kind: 'movie', progress: p } : null;
     }
     const eps = entry && entry.episodes ? Object.values(entry.episodes).filter(Boolean) : [];
-    const resumable = eps.filter(p => !p.completed && p.position >= WATCH_PROGRESS_MIN_RESUME_SECONDS).sort((a,b) => (b.updatedAt||0) - (a.updatedAt||0));
+    const resumable = eps.filter(p => {
+        if (p.completed || p.position < WATCH_PROGRESS_MIN_RESUME_SECONDS) return false;
+        const watchedEntry = watchedMap && watchedMap[title.id];
+        const watchedKeys = watchedEntry && watchedEntry.episodes ? watchedEntry.episodes : {};
+        const key = `s${Number(p.season)}e${Number(p.episode)}`;
+        return !watchedKeys[key];
+    }).sort((a,b) => (b.updatedAt||0) - (a.updatedAt||0));
     if (resumable.length) return { kind: 'episode', progress: resumable[0] };
 
     // اربط علامة الصح مع أكمل المشاهدة: آخر حلقة مكتملة تصبح نقطة الانتقال للحلقة التالية.
@@ -7970,13 +7967,9 @@ function getTitleContinueProgress(title, tree, watchedMap) {
         return byTime || (b.order - a.order);
     })[0];
     if (!latestCompleted) return null;
-
-    // إذا كانت آخر حلقة موجودة هي فعلًا آخر حلقة بالعمل، لا نحاول إنشاء
-    // حلقة وهمية (مثل 27 بعد انتهاء Evangelion عند الحلقة 26).
     const completedOrders = new Set(completed.filter(x => x.order >= 0).map(x => x.order));
     const allEpisodesCompleted = flat.length > 0 && flat.every((_, i) => completedOrders.has(i));
     if (allEpisodesCompleted) return { kind: 'series-complete', progress: latestCompleted.progress };
-
     return { kind: 'episode-complete', progress: latestCompleted.progress };
 }
 function buildWatchProgressCardItems(titles, tree, watchedMap) {
@@ -8006,7 +7999,6 @@ function buildWatchProgressCardItems(titles, tree, watchedMap) {
             if (next) {
                 arr.push({ title, progress: null, label: title.name, subLabel: `متابعة الحلقة ${next.number} · الموسم ${next.seasonNumber}`, updatedAt: c.progress.updatedAt || 0, nextEpisode: next, completed: false });
             } else {
-                // انتهى العمل بالكامل: يبقى في "أكمل المشاهدة" كحالة مكتملة بدل أن يختفي.
                 arr.push({ title, progress: null, label: title.name, subLabel: 'تمت المشاهدة بالكامل', updatedAt: c.progress.updatedAt || 0, completed: true });
             }
         } else if (c.kind === 'series-complete') {
@@ -8143,8 +8135,6 @@ function App() {
             return record;
         }).then(() => base.child('last').transaction(current => {
             const existing = normalizeProgressRecord(current);
-            const sameEpisode = existing && kind === 'episode' && record.kind === 'episode' && Number(existing.season) === Number(record.season) && Number(existing.episode) === Number(record.episode);
-            if (sameEpisode && existing.completed && !record.completed) return;
             if (existing && (existing.updatedAt || 0) > now) return;
             return record;
         })).catch(() => {});
