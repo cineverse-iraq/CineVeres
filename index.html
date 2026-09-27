@@ -1488,7 +1488,7 @@ async function theebFetch(path) {
 
     // عند فتح الموقع من cinadam.xyz، جرّب السيرفر المحلي أولًا.
     // Chrome الحديث يحمي اتصالات المواقع العامة إلى localhost عبر Local Network Access،
-    // لذلك نضع targetAddressSpace: 'local' في طلب loopback، ويجب السماح للموقع عند ظهور نافذة الإذن.
+    // لذلك نضع targetAddressSpace: 'loopback' في طلب loopback، ويجب السماح للموقع عند ظهور نافذة الإذن.
     const host = String((typeof location !== 'undefined' && location.hostname) || '').toLowerCase();
     const isLoopback = (b) => /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(String(b || ''));
     if (isLoopback('http://localhost:8787')) add('http://localhost:8787');
