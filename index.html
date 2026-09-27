@@ -127,6 +127,15 @@
       transform: translateY(-1.5px);
     }
 
+    /* أكمل المشاهدة: لا نريد أن يرتفع البنر عند المرور بالماوس لأن الحاوية
+       أفقية وقد يقصّ الـ hover البطاقات أو يجعلها تدخل بصريًا في اللوحة. */
+    .cv-continue-card { transform: none !important; }
+    .cv-continue-card:hover {
+      transform: none !important;
+      border-color: rgba(0, 240, 255, 0.30) !important;
+      box-shadow: 0 10px 28px -12px rgba(0, 240, 255, 0.18), inset 0 1px 0 rgba(255,255,255,0.10) !important;
+    }
+
     .auth-pill-highlight { transition: inset-inline-start 0.5s var(--liquid, var(--spring)); }
 
     html { width: 100%; height: 100%; }
