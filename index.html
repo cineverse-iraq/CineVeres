@@ -1703,6 +1703,63 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
                     }, className: "px-3 py-1.5 rounded-lg bg-accent-purple/15 border border-accent-purple/30 hover:bg-accent-purple/25 text-accent-purple text-[11px] font-bold transition" }, v.label)))),
             React.createElement("button", { type: "button", onClick: () => { setVideos(null); setPicked(null); }, className: "mt-2 text-[10px] text-slate-500 hover:text-slate-300 underline" }, "\u0631\u062C\u0648\u0639 \u0644\u0644\u0646\u062A\u0627\u0626\u062C")))));
 }
+// معاينة مصغّرة داخل لوحة الإدارة نفسها (بدون فتح تبويب خارجي) — تستخدم نفس
+// آلية التشغيل الحقيقية بالموقع (ensureHlsJs + hls.js لو الرابط HLS، أو
+// <video src> مباشرة غير كذلك)، عشان الإدمن يشوف بالضبط نفس اللي راح يشوفه
+// المستخدم لو انسحب المصدر البديل فعليًا.
+function TheebPreviewPlayer({ src }) {
+    const videoRef = useRef(null);
+    const [error, setError] = useState('');
+    useEffect(() => {
+        const videoEl = videoRef.current;
+        if (!videoEl || !src)
+            return;
+        setError('');
+        let hls = null;
+        let cancelled = false;
+        const isM3u8 = /\.m3u8(\?.*)?$/i.test(src);
+        const setup = async () => {
+            if (isM3u8) {
+                let HlsClass = window.Hls;
+                if (!HlsClass) {
+                    try {
+                        HlsClass = await ensureHlsJs();
+                    }
+                    catch (e) {
+                        if (!cancelled)
+                            setError('تعذر تحميل مشغل HLS');
+                        return;
+                    }
+                }
+                if (cancelled)
+                    return;
+                if (HlsClass && HlsClass.isSupported()) {
+                    hls = new HlsClass();
+                    hls.attachMedia(videoEl);
+                    hls.once(HlsClass.Events.MEDIA_ATTACHED, () => { if (!cancelled && hls)
+                        hls.loadSource(src); });
+                    hls.on(HlsClass.Events.ERROR, (_e, data) => { if (data && data.fatal && !cancelled)
+                        setError('فشل تشغيل هذا الرابط (خطأ HLS) — المصدر ما يشتغل فعليًا'); });
+                    return;
+                }
+            }
+            videoEl.src = src;
+        };
+        const onNativeError = () => { if (!cancelled)
+            setError('فشل تشغيل هذا الرابط'); };
+        videoEl.addEventListener('error', onNativeError);
+        setup();
+        return () => {
+            cancelled = true;
+            videoEl.removeEventListener('error', onNativeError);
+            if (hls)
+                hls.destroy();
+        };
+    }, [src]);
+    return (React.createElement("div", { className: "mt-2.5" },
+        React.createElement("video", { ref: videoRef, controls: true, playsInline: true, className: "w-full max-h-56 rounded-xl bg-black" }),
+        error && React.createElement("p", { className: "text-[11px] font-bold text-rose-400 mt-1.5" }, error)));
+}
 /* مصدر بديل مُحقَّق يدويًا وقت الرفع (يُخزَّن بـaltVideoUrl): نفس منطق البحث
    الحي بالمشغل (theebResolveMovie/theebResolveEpisode) بس الإدمن يتأكد ويثبّت
    النتيجة هنا وقت الرفع بدل ما يعتمد بالكامل على بحث حي وقت المشاهدة، فيضمن
@@ -1731,24 +1788,24 @@ function TheebHelper({ kind, season, episode, defaultTitle, value, onGenerate })
         }
         setLoading(false);
     };
+    const [previewOn, setPreviewOn] = useState(false);
+    useEffect(() => { setPreviewOn(false); }, [found]);
     const providerLabel = found && theebCandidateField(found.raw, 'provider', 'source', 'provider_id', 'providerId');
     return (React.createElement("div", { className: "glass-card rounded-2xl p-3.5 border border-accent-gold/20 mt-3.5" },
-        React.createElement("p", { className: "text-[11px] font-bold text-accent-gold mb-2 flex items-center gap-1.5" },
-            React.createElement(Icon, { name: "shield", className: "w-3.5 h-3.5" }),
-            "\u0645\u0635\u062F\u0631 \u0628\u062F\u064A\u0644 (\u0645\u062D\u0631\u0643 \u0630\u064A\u0628) \u2014 \u064A\u0634\u062A\u063A\u0644 \u0641\u0642\u0637 \u0644\u0648 \u0633\u064A\u0646\u0645\u0627\u0646\u0627 \u062A\u0639\u0637\u0651\u0644 \u0639\u0646\u062F \u0627\u0644\u0645\u0634\u0627\u0647\u062F"),
-        React.createElement("p", { className: "text-[10px] text-slate-500 mb-2" }, "\u062F\u0648\u0651\u0631 \u0648\u0627\u062D\u0641\u0638 \u0631\u0627\u0628\u0637 \u0628\u062F\u064A\u0644 \u0645\u0646 \u0645\u0632\u0648\u062F\u064A\u0646 \u0622\u062E\u0631\u064A\u0646 (\u0623\u0643\u0648\u0627\u0645 \u0648\u063A\u064A\u0631\u0647\u0627) \u0642\u0628\u0644 \u0627\u0644\u0646\u0634\u0631\u060C \u062A\u0636\u0645\u0646 \u0623\u0646\u0647 \u0645\u0648\u062C\u0648\u062F \u0648\u064A\u0634\u062A\u063A\u0644 \u0641\u0639\u0644\u064B\u0627."),
-        value && React.createElement("p", { className: "text-[10px] font-bold text-emerald-400 mb-2" }, "\u2713 \u0645\u0635\u062F\u0631 \u0628\u062F\u064A\u0644 \u0645\u062D\u0641\u0648\u0638 \u062D\u0627\u0644\u064A\u064B\u0627 \u0644\u0647\u0630\u0627 \u0627\u0644\u0639\u0645\u0644"),
+        React.createElement("p", { className: "text-[10px] text-slate-500 mb-2" }, "\u062F\u0648\u0651\u0631 \u0648\u0627\u062D\u0641\u0638 \u0631\u0627\u0628\u0637 \u0628\u062F\u064A\u0644 \u0645\u0646 \u0645\u0632\u0648\u062F\u064A\u0646 \u0622\u062E\u0631\u064A\u0646 (\u0623\u0643\u0648\u0627\u0645 \u0648\u063A\u064A\u0631\u0647\u0627) \u0642\u0628\u0644 \u0627\u0644\u0646\u0634\u0631\u060C \u062A\u0636\u0645\u0646 \u0623\u0646\u0647 \u0645\u0648\u062C\u0648\u062F \u0648\u064A\u0634\u062A\u063A\u0644 \u0641\u0639\u0644\u064B\u0627. \u064A\u0634\u062A\u063A\u0644 \u062A\u0644\u0642\u0627\u0626\u064A\u064B\u0627 \u0648\u062D\u062F\u0647 \u0639\u0646\u062F \u0627\u0644\u0645\u0634\u0627\u0647\u062F\u060C \u0628\u062F\u0648\u0646 \u0623\u064A \u062A\u062F\u062E\u0644 \u0645\u0646\u0643 \u0648\u0642\u062A \u0627\u0644\u0645\u0634\u0627\u0647\u062F\u0629."),
         React.createElement("div", { className: "flex items-center gap-2 mb-2.5" },
             React.createElement("input", { value: query, onChange: ev => setQuery(ev.target.value), onKeyDown: ev => ev.key === 'Enter' && search(), placeholder: "\u0627\u0633\u0645 \u0627\u0644\u0639\u0645\u0644 \u0628\u0627\u0644\u0639\u0631\u0628\u064A \u0623\u0648 \u0627\u0644\u0625\u0646\u062C\u0644\u064A\u0632\u064A", className: "flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-gold" }),
             React.createElement("button", { type: "button", onClick: () => search(), disabled: !query.trim() || loading, className: "shrink-0 px-4 py-2 rounded-xl bg-accent-gold text-glass-950 text-xs font-bold hover:brightness-110 transition disabled:opacity-40" }, loading ? 'جاري...' : 'بحث')),
         isEpisodeMode && React.createElement("p", { className: "text-[10px] text-slate-500 mb-1.5" },
             "\u0627\u0644\u0645\u0648\u0633\u0645 ", Number(season) || 1, " \u00B7 \u0627\u0644\u062D\u0644\u0642\u0629 ", Number(episode) || 1),
         error && React.createElement("p", { className: "text-[11px] font-bold text-rose-400 mb-2" }, error),
-        found && React.createElement("div", { className: "flex items-center justify-between gap-2 bg-glass-900 border border-white/10 rounded-xl px-3 py-2" },
-            React.createElement("p", { className: "text-[11px] text-slate-300 truncate" }, `\u0644\u0642\u064A\u0646\u0627 \u0645\u0635\u062F\u0631\u064B\u0627 \u064A\u0634\u062A\u063A\u0644${providerLabel ? ' — ' + providerLabel : ''}`),
-            React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
-                React.createElement("a", { href: found.url, target: "_blank", rel: "noopener noreferrer", className: "px-3 py-1.5 rounded-lg bg-white/5 border border-white/15 hover:border-white/30 text-slate-300 text-[11px] font-bold transition" }, "\u062A\u062C\u0631\u0628\u0629 \u0627\u0644\u062A\u0634\u063A\u064A\u0644"),
-                React.createElement("button", { type: "button", onClick: () => onGenerate && onGenerate(found.url), className: "px-3 py-1.5 rounded-lg bg-accent-gold/15 border border-accent-gold/30 hover:bg-accent-gold/25 text-accent-gold text-[11px] font-bold transition" }, "\u0627\u0633\u062A\u062E\u062F\u0627\u0645 \u0647\u0630\u0627 \u0627\u0644\u0631\u0627\u0628\u0637")))));
+        found && React.createElement("div", { className: "bg-glass-900 border border-white/10 rounded-xl px-3 py-2" },
+            React.createElement("div", { className: "flex items-center justify-between gap-2" },
+                React.createElement("p", { className: "text-[11px] text-slate-300 truncate" }, `\u0644\u0642\u064A\u0646\u0627 \u0645\u0635\u062F\u0631\u064B\u0627 \u064A\u0634\u062A\u063A\u0644${providerLabel ? ' — ' + providerLabel : ''}`),
+                React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
+                    React.createElement("button", { type: "button", onClick: () => setPreviewOn(p => !p), className: "px-3 py-1.5 rounded-lg bg-white/5 border border-white/15 hover:border-white/30 text-slate-300 text-[11px] font-bold transition" }, previewOn ? "\u0625\u062E\u0641\u0627\u0621 \u0627\u0644\u0645\u0639\u0627\u064A\u0646\u0629" : "\u0645\u0639\u0627\u064A\u0646\u0629 \u062F\u0627\u062E\u0644 \u0627\u0644\u0645\u0648\u0642\u0639"),
+                    React.createElement("button", { type: "button", onClick: () => onGenerate && onGenerate(found.url), className: "px-3 py-1.5 rounded-lg bg-accent-gold/15 border border-accent-gold/30 hover:bg-accent-gold/25 text-accent-gold text-[11px] font-bold transition" }, "\u0627\u0633\u062A\u062E\u062F\u0627\u0645 \u0647\u0630\u0627 \u0627\u0644\u0631\u0627\u0628\u0637"))),
+            previewOn && React.createElement(TheebPreviewPlayer, { src: found.url }))));
 }
 async function tmdbFindBestByTitle(title, currentType, year) {
     const query = String(title || '').trim();
@@ -7098,6 +7155,8 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
         React.createElement("div", { className: "mt-3.5" },
             React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u062D\u0644\u0642\u0629 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: e.videoUrl, onChange: v => set('videoUrl', v), folder: "episodes", accept: "video/*" })),
         React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb) }),
+        React.createElement("div", { className: "mt-3.5" },
+            React.createElement(FileUploadField, { label: "\u0645\u0635\u062F\u0631 \u0628\u062F\u064A\u0644 (\u0645\u062D\u0631\u0643 \u0630\u064A\u0628) \u2014 \u064A\u0634\u062A\u063A\u0644 \u0641\u0642\u0637 \u0644\u0648 \u0633\u064A\u0646\u0645\u0627\u0646\u0627 \u062A\u0639\u0637\u0651\u0644 \u0639\u0646\u062F \u0627\u0644\u0645\u0634\u0627\u0647\u062F", value: e.altVideoUrl || '', onChange: v => set('altVideoUrl', v), folder: "episodes", accept: "video/*" })),
         React.createElement(TheebHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, value: e.altVideoUrl || '', onGenerate: (url) => set('altVideoUrl', url) }),
         React.createElement("div", { className: "mt-3.5 flex items-center gap-2" },
             React.createElement("div", { className: "h-px flex-1 bg-white/10" }),
@@ -7604,6 +7663,8 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                     setBannerData(r.bannerData || null);
                     return r;
                   } }),
+            React.createElement("div", { className: "mt-3.5" },
+                React.createElement(FileUploadField, { label: "\u0645\u0635\u062F\u0631 \u0628\u062F\u064A\u0644 (\u0645\u062D\u0631\u0643 \u0630\u064A\u0628) \u2014 \u064A\u0634\u062A\u063A\u0644 \u0641\u0642\u0637 \u0644\u0648 \u0633\u064A\u0646\u0645\u0627\u0646\u0627 \u062A\u0639\u0637\u0651\u0644 \u0639\u0646\u062F \u0627\u0644\u0645\u0634\u0627\u0647\u062F", value: form.altVideoUrl || '', onChange: v => set('altVideoUrl', v), folder: "videos", accept: "video/*" })),
             React.createElement(TheebHelper, { kind: form.type === 'anime' ? 'anime' : 'movie', defaultTitle: form.name, value: form.altVideoUrl || '', onGenerate: (url) => set('altVideoUrl', url) }),
             React.createElement("div", { className: "mt-3.5 flex items-center gap-2" },
                 React.createElement("div", { className: "h-px flex-1 bg-white/10" }),
