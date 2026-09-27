@@ -1703,6 +1703,51 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
                     }, className: "px-3 py-1.5 rounded-lg bg-accent-purple/15 border border-accent-purple/30 hover:bg-accent-purple/25 text-accent-purple text-[11px] font-bold transition" }, v.label)))),
             React.createElement("button", { type: "button", onClick: () => { setVideos(null); setPicked(null); }, className: "mt-2 text-[10px] text-slate-500 hover:text-slate-300 underline" }, "\u0631\u062C\u0648\u0639 \u0644\u0644\u0646\u062A\u0627\u0626\u062C")))));
 }
+/* مصدر بديل مُحقَّق يدويًا وقت الرفع (يُخزَّن بـaltVideoUrl): نفس منطق البحث
+   الحي بالمشغل (theebResolveMovie/theebResolveEpisode) بس الإدمن يتأكد ويثبّت
+   النتيجة هنا وقت الرفع بدل ما يعتمد بالكامل على بحث حي وقت المشاهدة، فيضمن
+   انه فعلاً موجود ويشتغل قبل النشر. */
+function TheebHelper({ kind, season, episode, defaultTitle, value, onGenerate }) {
+    const [query, setQuery] = useState(defaultTitle || '');
+    useEffect(() => { if (defaultTitle) setQuery(defaultTitle); }, [defaultTitle]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+    const [found, setFound] = useState(null);
+    const isEpisodeMode = kind === 'tv' && (season != null || episode != null);
+    const search = async () => {
+        if (!query.trim())
+            return;
+        setLoading(true);
+        setError('');
+        setFound(null);
+        try {
+            const result = isEpisodeMode
+                ? await theebResolveEpisode({ title: query.trim(), season: Number(season) || 1, episode: Number(episode) || 1 })
+                : await theebResolveMovie({ title: query.trim() });
+            setFound(result);
+        }
+        catch (e) {
+            setError(e.message || 'محرك ذيب ما لكى مصدر بديل لهذا العنوان');
+        }
+        setLoading(false);
+    };
+    const providerLabel = found && theebCandidateField(found.raw, 'provider', 'source', 'provider_id', 'providerId');
+    return (React.createElement("div", { className: "glass-card rounded-2xl p-3.5 border border-accent-gold/20 mt-3.5" },
+        React.createElement("p", { className: "text-[11px] font-bold text-accent-gold mb-2 flex items-center gap-1.5" },
+            React.createElement(Icon, { name: "shield", className: "w-3.5 h-3.5" }),
+            "\u0645\u0635\u062F\u0631 \u0628\u062F\u064A\u0644 (\u0645\u062D\u0631\u0643 \u0630\u064A\u0628) \u2014 \u064A\u0634\u062A\u063A\u0644 \u0641\u0642\u0637 \u0644\u0648 \u0633\u064A\u0646\u0645\u0627\u0646\u0627 \u062A\u0639\u0637\u0651\u0644 \u0639\u0646\u062F \u0627\u0644\u0645\u0634\u0627\u0647\u062F"),
+        React.createElement("p", { className: "text-[10px] text-slate-500 mb-2" }, "\u062F\u0648\u0651\u0631 \u0648\u0627\u062D\u0641\u0638 \u0631\u0627\u0628\u0637 \u0628\u062F\u064A\u0644 \u0645\u0646 \u0645\u0632\u0648\u062F\u064A\u0646 \u0622\u062E\u0631\u064A\u0646 (\u0623\u0643\u0648\u0627\u0645 \u0648\u063A\u064A\u0631\u0647\u0627) \u0642\u0628\u0644 \u0627\u0644\u0646\u0634\u0631\u060C \u062A\u0636\u0645\u0646 \u0623\u0646\u0647 \u0645\u0648\u062C\u0648\u062F \u0648\u064A\u0634\u062A\u063A\u0644 \u0641\u0639\u0644\u064B\u0627."),
+        value && React.createElement("p", { className: "text-[10px] font-bold text-emerald-400 mb-2" }, "\u2713 \u0645\u0635\u062F\u0631 \u0628\u062F\u064A\u0644 \u0645\u062D\u0641\u0648\u0638 \u062D\u0627\u0644\u064A\u064B\u0627 \u0644\u0647\u0630\u0627 \u0627\u0644\u0639\u0645\u0644"),
+        React.createElement("div", { className: "flex items-center gap-2 mb-2.5" },
+            React.createElement("input", { value: query, onChange: ev => setQuery(ev.target.value), onKeyDown: ev => ev.key === 'Enter' && search(), placeholder: "\u0627\u0633\u0645 \u0627\u0644\u0639\u0645\u0644 \u0628\u0627\u0644\u0639\u0631\u0628\u064A \u0623\u0648 \u0627\u0644\u0625\u0646\u062C\u0644\u064A\u0632\u064A", className: "flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-gold" }),
+            React.createElement("button", { type: "button", onClick: () => search(), disabled: !query.trim() || loading, className: "shrink-0 px-4 py-2 rounded-xl bg-accent-gold text-glass-950 text-xs font-bold hover:brightness-110 transition disabled:opacity-40" }, loading ? 'جاري...' : 'بحث')),
+        isEpisodeMode && React.createElement("p", { className: "text-[10px] text-slate-500 mb-1.5" },
+            "\u0627\u0644\u0645\u0648\u0633\u0645 ", Number(season) || 1, " \u00B7 \u0627\u0644\u062D\u0644\u0642\u0629 ", Number(episode) || 1),
+        error && React.createElement("p", { className: "text-[11px] font-bold text-rose-400 mb-2" }, error),
+        found && React.createElement("div", { className: "flex items-center justify-between gap-2 bg-glass-900 border border-white/10 rounded-xl px-3 py-2" },
+            React.createElement("p", { className: "text-[11px] text-slate-300 truncate" }, `\u0644\u0642\u064A\u0646\u0627 \u0645\u0635\u062F\u0631\u064B\u0627 \u064A\u0634\u062A\u063A\u0644${providerLabel ? ' — ' + providerLabel : ''}`),
+            React.createElement("button", { type: "button", onClick: () => onGenerate && onGenerate(found.url), className: "shrink-0 px-3 py-1.5 rounded-lg bg-accent-gold/15 border border-accent-gold/30 hover:bg-accent-gold/25 text-accent-gold text-[11px] font-bold transition" }, "\u0627\u0633\u062A\u062E\u062F\u0627\u0645 \u0647\u0630\u0627 \u0627\u0644\u0631\u0627\u0628\u0637"))));
+}
 async function tmdbFindBestByTitle(title, currentType, year) {
     const query = String(title || '').trim();
     if (!query)
@@ -5035,6 +5080,9 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         return null;
     };
     const getSavedVideoUrl = (item) => normalizeVideoUrl((item && item.videoUrl) || (((item && item.videoSources) || [])[0] || {}).url || '');
+    // رابط بديل ثُبِّت يدويًا من لوحة الإدارة (TheebHelper) — أولوية أعلى من أي
+    // بحث حي، لأنه مُتحقَّق منه مسبقًا وقت الرفع.
+    const getSavedAltVideoUrl = (item) => normalizeVideoUrl((item && item.altVideoUrl) || '');
     const recoverMovieVideo = async () => {
         // إذا كان الفيلم محفوظًا ومعه cinemanaId فلا داعي للبحث بالعنوان.
         // البحث كان سبب المشكلة الجديدة: الهاتف/الموقع يحاول أولًا /search ثم يفشل
@@ -5093,11 +5141,18 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 // محجوب بهذي الشبكة)، نجرب ذيب أولًا مباشرة بدل ما نضيّع وقت بمحاولة
                 // سينمانا نعرف مسبقًا انها راح تفشل.
                 if (getPreferredSource() === 'theeb') {
-                    try {
-                        const alt = await theebResolveMovie({ title: title.name });
-                        url = alt.url;
+                    const pinned = getSavedAltVideoUrl(title);
+                    if (pinned) {
+                        // مصدر بديل مثبَّت يدويًا بالأدمن — استخدمه مباشرة، أضمن وأسرع من بحث حي.
+                        url = pinned;
                         setActiveSource('theeb');
-                    } catch (e) { /* نتجاهل ونكمل بالمسار الطبيعي (سينمانا) */ }
+                    } else {
+                        try {
+                            const alt = await theebResolveMovie({ title: title.name });
+                            url = alt.url;
+                            setActiveSource('theeb');
+                        } catch (e) { /* نتجاهل ونكمل بالمسار الطبيعي (سينمانا) */ }
+                    }
                 }
                 if (!url) {
                     url = getSavedVideoUrl(title);
@@ -5148,11 +5203,17 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             let url = '';
             let sources = [];
             if (getPreferredSource() === 'theeb') {
-                try {
-                    const alt = await theebResolveEpisode({ title: title.name, season: seasonNumber, episode: ep && ep.number });
-                    url = alt.url;
+                const pinned = getSavedAltVideoUrl(ep);
+                if (pinned) {
+                    url = pinned;
                     setActiveSource('theeb');
-                } catch (e) { /* نتجاهل ونكمل بالمسار الطبيعي (سينمانا) */ }
+                } else {
+                    try {
+                        const alt = await theebResolveEpisode({ title: title.name, season: seasonNumber, episode: ep && ep.number });
+                        url = alt.url;
+                        setActiveSource('theeb');
+                    } catch (e) { /* نتجاهل ونكمل بالمسار الطبيعي (سينمانا) */ }
+                }
             }
             if (!url) {
                 url = getSavedVideoUrl(ep);
@@ -5241,11 +5302,17 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             let url = '';
             let nextSource = '';
             if (activeSource !== 'theeb') {
-                // كنا نلعب من سينمانا وفشل → نجرب ذيب.
-                const result = title.type === 'movie'
-                    ? await theebResolveMovie({ title: title.name })
-                    : await theebResolveEpisode({ title: title.name, season: playingSeasonNumber || 1, episode: (playingMeta && playingMeta.number) || 1 });
-                url = result.url;
+                // كنا نلعب من سينمانا وفشل → نجرب المصدر البديل. أولوية للرابط
+                // المثبَّت يدويًا بالأدمن (مضمون)، وإلا بحث حي بمحرك ذيب.
+                const pinned = getSavedAltVideoUrl(playingMeta);
+                if (pinned) {
+                    url = pinned;
+                } else {
+                    const result = title.type === 'movie'
+                        ? await theebResolveMovie({ title: title.name })
+                        : await theebResolveEpisode({ title: title.name, season: playingSeasonNumber || 1, episode: (playingMeta && playingMeta.number) || 1 });
+                    url = result.url;
+                }
                 nextSource = 'theeb';
                 setPreferredSource('theeb'); // سينمانا فاشل على هذا الجهاز/الشبكة، نتذكرها للمرة الجاية
             } else {
@@ -7029,6 +7096,7 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
         React.createElement("div", { className: "mt-3.5" },
             React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u062D\u0644\u0642\u0629 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: e.videoUrl, onChange: v => set('videoUrl', v), folder: "episodes", accept: "video/*" })),
         React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb) }),
+        React.createElement(TheebHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, value: e.altVideoUrl || '', onGenerate: (url) => set('altVideoUrl', url) }),
         React.createElement("div", { className: "mt-3.5 flex items-center gap-2" },
             React.createElement("div", { className: "h-px flex-1 bg-white/10" }),
             React.createElement("span", { className: "text-[10px] font-black text-slate-500 px-1" }, "أو استخدم VidAPI"),
@@ -7399,6 +7467,9 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.subtitlePublicUrl = String(form.subtitlePublicUrl || '').trim();
             payload.subtitleOffset = Number(form.subtitleOffset) || 0;
             payload.cinemanaId = String(form.cinemanaId || '');
+            // مصدر بديل مثبَّت وقت الرفع (محرك ذيب) — يُستخدم فورًا عند فشل سينمانا
+            // بدل بحث حي، لأنه أُكِّد وجوده مسبقًا هنا بالأدمن.
+            payload.altVideoUrl = normalizeVideoUrl(String(form.altVideoUrl || '').trim());
             payload.playbackProvider = form.cinemanaId ? 'cinemana' : (isVidApiUrl(form.videoUrl) ? 'vidapi' : (form.playbackProvider || ''));
             payload.trimStart = Number(form.trimStart) || 0;
             payload.trimEnd = Number(form.trimEnd) || 0;
@@ -7416,7 +7487,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 poster: (s.poster || '').trim(),
                 episodeThumbnail: (s.episodeThumbnail || '').trim(),
                 episodes: (s.episodes || []).map(e => ({
-                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || ''), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
+                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), altVideoUrl: normalizeVideoUrl(String(e.altVideoUrl || '').trim()), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || ''), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
                     trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, introStart: Number(e.introStart) || 0, introEnd: Number(e.introEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
                 }))
             }));
@@ -7498,6 +7569,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                     setBannerData(r.bannerData || null);
                     return r;
                   } }),
+            React.createElement(TheebHelper, { kind: form.type === 'anime' ? 'anime' : 'movie', defaultTitle: form.name, value: form.altVideoUrl || '', onGenerate: (url) => set('altVideoUrl', url) }),
             React.createElement("div", { className: "mt-3.5 flex items-center gap-2" },
                 React.createElement("div", { className: "h-px flex-1 bg-white/10" }),
                 React.createElement("span", { className: "text-[10px] font-black text-slate-500 px-1" }, "أو استخدم VidAPI"),
