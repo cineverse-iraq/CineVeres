@@ -2857,15 +2857,15 @@ function Hero({ items, onOpen }) {
         items.length > 1 && (React.createElement("div", { className: "absolute bottom-3 md:bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 md:gap-2 px-2.5 py-1.5 rounded-full bg-black/60 backdrop-blur-xl border border-white/10 z-30 shadow-lg", onPointerDown: e => e.stopPropagation() }, items.map((_, i) => (React.createElement("button", { type: "button", key: i, "aria-label": `انتقل إلى العرض ${i + 1}`, onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); if (!slide)
                 goRef.current(i, i === (idx + 1) % items.length ? 'next' : 'prev'); }, className: `h-1.5 md:h-2 rounded-full transition-all duration-300 ${i === idx ? 'bg-accent-cyan w-5 md:w-6 shadow-[0_0_8px_rgba(0,240,255,0.8)]' : 'bg-white/35 w-1.5 md:w-2 hover:bg-white/60'}` })))))));
 }
-function ContinueWatchingRow({ items, watchProgress, onOpen }) {
-    const cards = buildWatchProgressCardItems(items, watchProgress).slice(0, 12);
+function ContinueWatchingRow({ items, watchProgress, watchedMap, onOpen }) {
+    const cards = buildWatchProgressCardItems(items, watchProgress, watchedMap).slice(0, 12);
     if (!cards.length) return null;
     return React.createElement("section", { className: "mb-8 md:mb-10" },
         React.createElement("div", { className: "flex items-center justify-between gap-3 mb-3.5" },
             React.createElement("h2", { className: "text-lg md:text-xl font-black text-white flex items-center gap-2" },
                 React.createElement(Icon, { name: "play", className: "w-4.5 h-4.5 text-accent-cyan fill-current" }),
                 "أكمل المشاهدة"),
-            React.createElement("span", { className: "text-[10px] md:text-xs text-slate-500 font-bold" }, "آخر ما توقفت عنده")),
+            null),
         React.createElement("div", { className: "flex gap-3 md:gap-4 overflow-x-auto scrollbar-hide pb-1 snap-x" },
             cards.map((c, i) => React.createElement("button", { key: `${c.title.id}-${i}`, type: "button", onClick: () => onOpen(c.title), className: "group shrink-0 w-40 sm:w-44 md:w-52 text-right snap-start" },
                 React.createElement("div", { className: "relative aspect-video rounded-2xl overflow-hidden glass-card border border-white/10 mb-2" },
@@ -2888,7 +2888,7 @@ function HomeView({ items, onOpen, watchedMap, watchProgress }) {
     const topGenres = Object.keys(genreCounts).sort((a, b) => genreCounts[b] - genreCounts[a]).slice(0, CV_LOW_POWER ? 3 : 6);
     return (React.createElement("div", null,
         featured.length > 0 && React.createElement(Hero, { items: CV_LOW_POWER ? featured.slice(0, 3) : featured, onOpen: onOpen }),
-        React.createElement(ContinueWatchingRow, { items: items, watchProgress: watchProgress, onOpen: onOpen }),
+        React.createElement(ContinueWatchingRow, { items: items, watchProgress: watchProgress, watchedMap: watchedMap, onOpen: onOpen }),
         React.createElement(Row, { label: "\u0623\u064F\u0636\u064A\u0641 \u062D\u062F\u064A\u062B\u064B\u0627", items: latest, onOpen: onOpen, watchedMap: watchedMap }),
         React.createElement(Row, { label: "\u0623\u0641\u0644\u0627\u0645", items: items.filter(t => t.type === 'movie').slice(0, rowLimit), onOpen: onOpen, watchedMap: watchedMap }),
         React.createElement(Row, { label: "\u0645\u0633\u0644\u0633\u0644\u0627\u062A", items: items.filter(t => t.type === 'series').slice(0, rowLimit), onOpen: onOpen, watchedMap: watchedMap }),
@@ -5157,7 +5157,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                         (isSeries && playingUrl && getNextEpisodeInfo()) ? 'الحلقة التالية' : (continueTarget ? 'تشغيل من البداية' : 'تشغيل')),
                     continueTarget && !playingUrl && (React.createElement("button", { onClick: () => handlePlay(false), className: "flex items-center gap-2.5 px-5 py-3 rounded-2xl glass-card border border-accent-cyan/40 bg-accent-cyan/10 hover:bg-accent-cyan/15 text-sm font-black text-accent-cyan transition" },
                         React.createElement(Icon, { name: "clock", className: "w-4 h-4" }),
-                        continueTarget.kind === 'movie' ? `متابعة من ${formatWatchTime(continueTarget.progress.position)}` : continueTarget.kind === 'episode' ? `متابعة من ${formatWatchTime(continueTarget.progress.position)} · ح${continueTarget.progress.episode}` : 'متابعة الحلقة التالية')),
+                        continueTarget.kind === 'movie' ? `متابعة من ${formatWatchTime(continueTarget.progress.position)}` : continueTarget.kind === 'episode' ? `متابعة من الحلقة ${continueTarget.progress.episode} · الموسم ${continueTarget.progress.season} · ${formatWatchTime(continueTarget.progress.position)}` : `متابعة الحلقة التالية · الموسم ${continueTarget.progress.season} · الحلقة ${Number(continueTarget.progress.episode) + 1}`)),
                     React.createElement("button", { onClick: onLike, className: `flex items-center gap-2.5 px-5 py-3 rounded-2xl text-sm font-bold border transition ${liked ? 'bg-rose-500 text-white border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.4)]' : 'glass-card border-white/10 text-slate-200 hover:border-white/20'}` },
                         React.createElement(Icon, { name: "heart", className: "w-4 h-4" }),
                         title.likes || 0),
@@ -7905,30 +7905,47 @@ function getMovieWatchProgress(tree, titleId) {
     const entry = getTitleWatchEntry(tree, titleId);
     return entry ? (entry.movie || null) : null;
 }
-function getTitleContinueProgress(title, tree) {
+function getTitleContinueProgress(title, tree, watchedMap) {
     if (!title) return null;
     const entry = getTitleWatchEntry(tree, title.id);
-    if (!entry) return null;
     if (title.type === 'movie') {
-        const p = entry.movie;
+        const p = entry && entry.movie;
         return p && !p.completed && p.position >= WATCH_PROGRESS_MIN_RESUME_SECONDS ? { kind: 'movie', progress: p } : null;
     }
-    const eps = entry.episodes ? Object.values(entry.episodes).filter(Boolean) : [];
+    const eps = entry && entry.episodes ? Object.values(entry.episodes).filter(Boolean) : [];
     const resumable = eps.filter(p => !p.completed && p.position >= WATCH_PROGRESS_MIN_RESUME_SECONDS).sort((a,b) => (b.updatedAt||0) - (a.updatedAt||0));
     if (resumable.length) return { kind: 'episode', progress: resumable[0] };
-    const latestCompleted = eps.filter(p => p.completed).sort((a,b) => (b.updatedAt||0) - (a.updatedAt||0))[0];
-    if (latestCompleted) return { kind: 'episode-complete', progress: latestCompleted };
+
+    // اربط علامة الصح مع أكمل المشاهدة: آخر حلقة مكتملة تصبح نقطة الانتقال للحلقة التالية.
+    const seasons = (title.seasons || []).slice().sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0));
+    const flat = [];
+    seasons.forEach(se => (se.episodes||[]).slice().sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0)).forEach(ep => flat.push({ ...ep, seasonNumber: se.number })));
+    const watchedEntry = watchedMap && watchedMap[title.id];
+    const watchedKeys = watchedEntry && watchedEntry.episodes ? watchedEntry.episodes : {};
+    const completed = eps.filter(p => p.completed).map(p => ({ progress: p, order: flat.findIndex(ep => Number(ep.seasonNumber)===Number(p.season) && Number(ep.number)===Number(p.episode)) }));
+    Object.keys(watchedKeys).forEach(key => {
+        const m = String(key).match(/^s(\d+)e(\d+)$/);
+        if (!m) return;
+        const season = Number(m[1]), episode = Number(m[2]);
+        if (completed.some(x => Number(x.progress.season)===season && Number(x.progress.episode)===episode)) return;
+        completed.push({ progress: { kind: 'episode', season, episode, completed: true, position: 0, duration: 0, percent: 100, updatedAt: 0, titleId: title.id, titleName: title.name, poster: title.poster }, order: flat.findIndex(ep => Number(ep.seasonNumber)===season && Number(ep.number)===episode) });
+    });
+    const latestCompleted = completed.filter(x => x.order >= 0).sort((a,b) => {
+        const byTime = (Number(b.progress.updatedAt)||0) - (Number(a.progress.updatedAt)||0);
+        return byTime || (b.order - a.order);
+    })[0];
+    if (latestCompleted) return { kind: 'episode-complete', progress: latestCompleted.progress };
     return null;
 }
-function buildWatchProgressCardItems(titles, tree) {
+function buildWatchProgressCardItems(titles, tree, watchedMap) {
     const arr = [];
     for (const title of (titles || [])) {
-        const c = getTitleContinueProgress(title, tree);
+        const c = getTitleContinueProgress(title, tree, watchedMap);
         if (!c) continue;
         if (c.kind === 'movie') {
             arr.push({ title, progress: c.progress, label: title.name, subLabel: `متابعة من ${formatWatchTime(c.progress.position)}`, updatedAt: c.progress.updatedAt || 0 });
         } else if (c.kind === 'episode') {
-            arr.push({ title, progress: c.progress, label: title.name, subLabel: `الموسم ${c.progress.season} · الحلقة ${c.progress.episode} · متابعة من ${formatWatchTime(c.progress.position)}`, updatedAt: c.progress.updatedAt || 0 });
+            arr.push({ title, progress: c.progress, label: title.name, subLabel: `متابعة من الحلقة ${c.progress.episode} · الموسم ${c.progress.season} · ${formatWatchTime(c.progress.position)}`, updatedAt: c.progress.updatedAt || 0 });
         } else if (c.kind === 'episode-complete') {
             const seasons = (title.seasons || []).slice().sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0));
             const flat = [];
@@ -7936,7 +7953,7 @@ function buildWatchProgressCardItems(titles, tree) {
             const idx = flat.findIndex(ep => Number(ep.seasonNumber)===Number(c.progress.season) && Number(ep.number)===Number(c.progress.episode));
             const next = idx >= 0 ? flat[idx+1] : null;
             if (next) {
-                arr.push({ title, progress: null, label: title.name, subLabel: `متابعة الحلقة التالية · الموسم ${next.seasonNumber} · الحلقة ${next.number}`, updatedAt: c.progress.updatedAt || 0, nextEpisode: next });
+                arr.push({ title, progress: null, label: title.name, subLabel: `متابعة الحلقة ${next.number} · الموسم ${next.seasonNumber}`, updatedAt: c.progress.updatedAt || 0, nextEpisode: next });
             }
         }
     }
