@@ -5181,7 +5181,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                         (isSeries && playingUrl && getNextEpisodeInfo()) ? 'الحلقة التالية' : (continueTarget ? 'تشغيل من البداية' : 'تشغيل')),
                     continueTarget && !playingUrl && (React.createElement("button", { onClick: () => handlePlay(false), className: "flex items-center gap-2.5 px-5 py-3 rounded-2xl glass-card border border-accent-cyan/40 bg-accent-cyan/10 hover:bg-accent-cyan/15 text-sm font-black text-accent-cyan transition" },
                         React.createElement(Icon, { name: "clock", className: "w-4 h-4" }),
-                        continueTarget.kind === 'movie' ? `متابعة من ${formatWatchTime(continueTarget.progress.position)}` : continueTarget.kind === 'episode' ? `متابعة من الحلقة ${continueTarget.progress.episode} · الموسم ${continueTarget.progress.season} · ${formatWatchTime(continueTarget.progress.position)}` : `متابعة الحلقة التالية · الموسم ${continueTarget.progress.season} · الحلقة ${Number(continueTarget.progress.episode) + 1}`)),
+                        continueTarget.kind === 'movie' ? `متابعة من ${formatWatchTime(continueTarget.progress.position)}` : continueTarget.kind === 'episode' ? (Number(continueTarget.progress.position) > 0 ? `متابعة من الحلقة ${continueTarget.progress.episode} · الموسم ${continueTarget.progress.season} · ${formatWatchTime(continueTarget.progress.position)}` : `متابعة من الحلقة ${continueTarget.progress.episode} · الموسم ${continueTarget.progress.season}`) : `متابعة الحلقة التالية · الموسم ${continueTarget.progress.season} · الحلقة ${Number(continueTarget.progress.episode) + 1}`)),
                     React.createElement("button", { onClick: onLike, className: `flex items-center gap-2.5 px-5 py-3 rounded-2xl text-sm font-bold border transition ${liked ? 'bg-rose-500 text-white border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.4)]' : 'glass-card border-white/10 text-slate-200 hover:border-white/20'}` },
                         React.createElement(Icon, { name: "heart", className: "w-4 h-4" }),
                         title.likes || 0),
@@ -7969,7 +7969,7 @@ function buildWatchProgressCardItems(titles, tree, watchedMap) {
         if (c.kind === 'movie') {
             arr.push({ title, progress: c.progress, label: title.name, subLabel: `متابعة من ${formatWatchTime(c.progress.position)}`, updatedAt: c.progress.updatedAt || 0 });
         } else if (c.kind === 'episode') {
-            arr.push({ title, progress: c.progress, label: title.name, subLabel: `متابعة من الحلقة ${c.progress.episode} · الموسم ${c.progress.season} · ${formatWatchTime(c.progress.position)}`, updatedAt: c.progress.updatedAt || 0 });
+            arr.push({ title, progress: c.progress, label: title.name, subLabel: Number(c.progress.position) > 0 ? `متابعة من الحلقة ${c.progress.episode} · الموسم ${c.progress.season} · ${formatWatchTime(c.progress.position)}` : `متابعة من الحلقة ${c.progress.episode} · الموسم ${c.progress.season}`, updatedAt: c.progress.updatedAt || 0 });
         } else if (c.kind === 'episode-complete') {
             const seasons = (title.seasons || []).slice().sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0));
             const flat = [];
