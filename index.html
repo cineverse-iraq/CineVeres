@@ -1483,10 +1483,25 @@ async function theebFetch(path) {
     // الطلب تحديدًا لأنه JSON خفيف ويمر بأمان عبر بروكسي يملك CORS مضبوط أصلًا.
     if (!CINEMANA_PROXY)
         throw new Error('لم يتم ضبط رابط بروكسي سينمانا (نفسه يُستخدم لتمرير طلبات محرك ذيب).');
-    const res = await fetch(CINEMANA_PROXY + path, { headers: { 'Accept': 'application/json' } });
-    if (!res.ok)
-        throw new Error(`محرك ذيب رجّع خطأ (${res.status})`);
-    return res.json();
+    let res, text;
+    try {
+        res = await fetch(CINEMANA_PROXY + path, { headers: { 'Accept': 'application/json' } });
+        text = await res.text();
+    }
+    catch (e) {
+        throw new Error('تعذر الاتصال ببروكسي محرك ذيب — تحقق من CINEMANA_PROXY والإنترنت');
+    }
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch (e) { /* استجابة مو JSON (مثلًا صفحة خطأ HTML) */ }
+    if (!res.ok) {
+        // نظهر رسالة الخطأ الحقيقية القادمة من السيرفر (مثلًا "THEEB_ENGINE_UPSTREAM غير مضبوط")
+        // بدل رسالة عامة، حتى تعرف بالضبط وين المشكلة.
+        const serverMsg = data && (data.error || data.message);
+        throw new Error(serverMsg || `محرك ذيب رجّع خطأ (${res.status})${text ? ': ' + text.slice(0, 200) : ''}`);
+    }
+    if (!data)
+        throw new Error('استجابة غير متوقعة من محرك ذيب (مو JSON) — تحقق من رابط THEEB_ENGINE_UPSTREAM');
+    return data;
 }
 function theebArray(data, keys = ['results', 'candidates', 'items', 'data', 'list']) {
     if (Array.isArray(data))
