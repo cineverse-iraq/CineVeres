@@ -263,6 +263,29 @@
       .yt-controls-bottom { padding-left:8px; padding-right:8px; }
     }
     </style>
+
+<style id="completed-continue-card-style">
+.cv-continue-card.is-completed {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(to top, rgba(34,197,94,.72) 0%, rgba(34,197,94,.38) 38%, rgba(34,197,94,.12) 72%, rgba(34,197,94,0) 100%) !important;
+}
+.cv-continue-card.is-completed::after {
+  content: "✓  مكتمل";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 18px;
+  color: #fff;
+  text-shadow: 0 2px 8px rgba(0,0,0,.65);
+  background: linear-gradient(to top, rgba(34,197,94,.22), rgba(34,197,94,0));
+  pointer-events: none;
+}
+</style>
+
 </head>
 <body class="bg-glass-950 text-slate-100 min-h-screen selection:bg-accent-red selection:text-white">
   <style>
