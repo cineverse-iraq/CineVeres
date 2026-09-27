@@ -1479,25 +1479,46 @@ function theebBaseUrl() {
     return String((typeof window !== 'undefined' && window.THEEB_ENGINE_URL) || stored || '').replace(/\/$/, '');
 }
 async function theebFetch(path) {
-    if (!CINEMANA_PROXY) throw new Error('لم يتم ضبط البروكسي العام.');
-    try {
-        const res = await fetch(CINEMANA_PROXY + path, {
-            headers: { 'Accept': 'application/json' },
-            cache: 'no-store'
-        });
-        const text = await res.text();
-        let data = null;
-        try { data = text ? JSON.parse(text) : null; } catch (e) { }
-        if (!res.ok) {
-            const msg = data && (data.error || data.message);
-            throw new Error(msg || `مصدر التشغيل الثاني رجّع خطأ (${res.status})`);
+    // المصدر الثاني مستقل عن سينمانا. نجرب العنوان العام المخصص له، ثم
+    // api.cinadam.xyz كاحتياط، ثم السيرفر المحلي أثناء اختبار لوحة الإدارة.
+    const configured = String((typeof window !== 'undefined' && (window.THEEB_SOURCE2_URL || window.THEEB_ENGINE_PUBLIC_URL)) ||
+        (typeof localStorage !== 'undefined' ? localStorage.getItem('theeb_source2_url') : '') || '').trim().replace(/\/+$/, '');
+    const candidates = [];
+    const add = (b) => { const v = String(b || '').trim().replace(/\/+$/, ''); if (v && !candidates.includes(v)) candidates.push(v); };
+    add(configured);
+    add(CINEMANA_PROXY);
+    add('http://localhost:8787');
+
+    let lastError = null;
+    for (const base of candidates) {
+        try {
+            const timeout = /localhost|127\.0\.0\.1/i.test(base) ? 4000 : 12000;
+            const ctl = new AbortController();
+            const timer = setTimeout(() => ctl.abort(), timeout);
+            let res;
+            try {
+                res = await fetch(base + path, {
+                    headers: { 'Accept': 'application/json' },
+                    cache: 'no-store',
+                    signal: ctl.signal
+                });
+            } finally { clearTimeout(timer); }
+            const text = await res.text();
+            let data = null;
+            try { data = text ? JSON.parse(text) : null; } catch (_) {}
+            if (!res.ok) {
+                const msg = data && (data.error || data.message);
+                lastError = new Error(msg || `مصدر التشغيل الثاني رجّع خطأ (${res.status})`);
+                continue;
+            }
+            if (!data) { lastError = new Error('استجابة غير صالحة من مصدر التشغيل الثاني.'); continue; }
+            return data;
+        } catch (e) {
+            lastError = e;
         }
-        if (!data) throw new Error('استجابة غير صالحة من مصدر التشغيل الثاني.');
-        return data;
-    } catch (e) {
-        if (e && e.message && !/Failed to fetch|NetworkError|Load failed/i.test(e.message)) throw e;
-        throw new Error('تعذر الاتصال بمصدر التشغيل الثاني.');
     }
+    if (lastError && lastError.message && !/Failed to fetch|NetworkError|Load failed|aborted|AbortError/i.test(lastError.message)) throw lastError;
+    throw new Error('تعذر الاتصال بمصدر التشغيل الثاني — تأكد أن Akwam Source2 منشور على THEEB_SOURCE2_URL أو أن server.js يعمل على localhost:8787.');
 }
 function theebArray(data) {
     if (Array.isArray(data)) return data;
