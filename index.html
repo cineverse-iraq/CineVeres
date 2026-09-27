@@ -2858,8 +2858,20 @@ function Hero({ items, onOpen }) {
                 goRef.current(i, i === (idx + 1) % items.length ? 'next' : 'prev'); }, className: `h-1.5 md:h-2 rounded-full transition-all duration-300 ${i === idx ? 'bg-accent-cyan w-5 md:w-6 shadow-[0_0_8px_rgba(0,240,255,0.8)]' : 'bg-white/35 w-1.5 md:w-2 hover:bg-white/60'}` })))))));
 }
 function ContinueWatchingRow({ items, watchProgress, watchedMap, onOpen }) {
-    const cards = buildWatchProgressCardItems(items, watchProgress, watchedMap).slice(0, 12);
+    const [hidden, setHidden] = React.useState(() => {
+        try { return JSON.parse(localStorage.getItem('cinadam_continue_hidden_v1') || '{}') || {}; } catch (e) { return {}; }
+    });
+    const allCards = buildWatchProgressCardItems(items, watchProgress, watchedMap);
+    const cards = allCards.filter(c => {
+        const hiddenAt = Number(hidden[c.title.id]) || 0;
+        return !hiddenAt || (Number(c.updatedAt) || 0) > hiddenAt;
+    }).slice(0, 12);
     if (!cards.length) return null;
+    const dismiss = (titleId) => {
+        const next = { ...hidden, [titleId]: Date.now() };
+        setHidden(next);
+        try { localStorage.setItem('cinadam_continue_hidden_v1', JSON.stringify(next)); } catch (e) {}
+    };
     return React.createElement("section", { className: "mb-8 md:mb-10" },
         React.createElement("div", { className: "flex items-center justify-between gap-3 mb-3.5" },
             React.createElement("h2", { className: "text-lg md:text-xl font-black text-white flex items-center gap-2" },
@@ -2867,14 +2879,23 @@ function ContinueWatchingRow({ items, watchProgress, watchedMap, onOpen }) {
                 "أكمل المشاهدة"),
             null),
         React.createElement("div", { className: "flex gap-3 md:gap-4 overflow-x-auto scrollbar-hide pb-1 snap-x" },
-            cards.map((c, i) => React.createElement("button", { key: `${c.title.id}-${i}`, type: "button", onClick: () => onOpen(c.title), className: "group shrink-0 w-40 sm:w-44 md:w-52 text-right snap-start" },
-                React.createElement("div", { className: "relative aspect-video rounded-2xl overflow-hidden glass-card border border-white/10 mb-2" },
-                    c.title.backdrop ? React.createElement("img", { src: tmdbAdaptive(c.title.backdrop), alt: "", loading: "lazy", decoding: "async", className: "w-full h-full object-cover" }) : c.title.poster ? React.createElement("img", { src: c.title.poster, alt: "", loading: "lazy", decoding: "async", className: "w-full h-full object-cover" }) : React.createElement("div", { className: "w-full h-full bg-glass-800" }),
-                    React.createElement("div", { className: "absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent" }),
-                    c.progress && c.progress.duration > 0 && React.createElement("div", { className: "absolute left-0 right-0 bottom-0 h-1 bg-white/15" }, React.createElement("div", { className: "h-full bg-accent-cyan", style: { width: `${Math.max(0, Math.min(100, c.progress.percent || 0))}%` } })),
-                    React.createElement("span", { className: "absolute bottom-2 right-2 flex items-center gap-1 px-2 py-1 rounded-lg bg-black/65 text-white text-[10px] font-black" }, React.createElement(Icon, { name: "play", className: "w-2.5 h-2.5 fill-current" }), "متابعة")),
-                React.createElement("p", { className: "text-xs md:text-sm font-black text-white truncate" }, c.label),
-                React.createElement("p", { className: "text-[10px] md:text-xs text-accent-cyan font-bold mt-0.5 truncate" }, c.subLabel)))));
+            cards.map((c, i) => {
+                const card = React.createElement("button", { type: "button", onClick: () => onOpen(c.title), className: "block w-full text-right" },
+                    React.createElement("div", { className: "relative aspect-video rounded-2xl overflow-hidden glass-card border border-white/10 mb-2" },
+                        c.title.backdrop ? React.createElement("img", { src: tmdbAdaptive(c.title.backdrop), alt: "", loading: "lazy", decoding: "async", className: "w-full h-full object-cover" }) : c.title.poster ? React.createElement("img", { src: c.title.poster, alt: "", loading: "lazy", decoding: "async", className: "w-full h-full object-cover" }) : React.createElement("div", { className: "w-full h-full bg-glass-800" }),
+                        React.createElement("div", { className: "absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent" }),
+                        c.progress && c.progress.duration > 0 && React.createElement("div", { className: "absolute left-0 right-0 bottom-0 h-1 bg-white/15" },
+                            React.createElement("div", { className: "h-full bg-accent-cyan", style: { width: `${Math.max(0, Math.min(100, c.progress.percent || 0))}%` } })),
+                        React.createElement("span", { className: "absolute bottom-2 right-2 flex items-center gap-1 px-2 py-1 rounded-lg bg-black/65 text-white text-[10px] font-black" },
+                            React.createElement(Icon, { name: "play", className: "w-2.5 h-2.5 fill-current" }), "متابعة")),
+                    React.createElement("p", { className: "text-xs md:text-sm font-black text-white truncate" }, c.label),
+                    React.createElement("p", { className: "text-[10px] md:text-xs text-accent-cyan font-bold mt-0.5 truncate" }, c.subLabel));
+                const remove = React.createElement("button", { type: "button", title: "إزالة من أكمل المشاهدة", "aria-label": "إزالة من أكمل المشاهدة", onClick: e => { e.stopPropagation(); dismiss(c.title.id); }, className: "mt-1.5 mr-0.5 w-5 h-5 rounded-full bg-white/10 hover:bg-red-500/80 border border-white/10 hover:border-red-400 text-slate-400 hover:text-white flex items-center justify-center transition" },
+                    React.createElement(Icon, { name: "x", className: "w-3 h-3" }));
+                return React.createElement("div", { key: `${c.title.id}-${i}`, className: "group shrink-0 w-40 sm:w-44 md:w-52 text-right snap-start" }, card, remove);
+            })
+        )
+    );
 }
 function HomeView({ items, onOpen, watchedMap, watchProgress }) {
     items = Array.isArray(items) ? items.filter(t => t && typeof t === 'object') : [];
@@ -7951,7 +7972,16 @@ function buildWatchProgressCardItems(titles, tree, watchedMap) {
             const flat = [];
             seasons.forEach(se => (se.episodes||[]).slice().sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0)).forEach(ep => flat.push({ ...ep, seasonNumber: se.number })));
             const idx = flat.findIndex(ep => Number(ep.seasonNumber)===Number(c.progress.season) && Number(ep.number)===Number(c.progress.episode));
-            const next = idx >= 0 ? flat[idx+1] : null;
+            let next = idx >= 0 ? flat[idx + 1] : null;
+            const watchedEntry = watchedMap && watchedMap[title.id];
+            const watchedKeys = watchedEntry && watchedEntry.episodes ? watchedEntry.episodes : {};
+            while (next) {
+                const key = `s${Number(next.seasonNumber)}e${Number(next.number)}`;
+                const p = getEpisodeWatchProgress(tree, title.id, next.seasonNumber, next.number);
+                if (!(p && p.completed) && !watchedKeys[key]) break;
+                const nidx = flat.findIndex(ep => Number(ep.seasonNumber)===Number(next.seasonNumber) && Number(ep.number)===Number(next.number));
+                next = nidx >= 0 ? flat[nidx + 1] : null;
+            }
             if (next) {
                 arr.push({ title, progress: null, label: title.name, subLabel: `متابعة الحلقة ${next.number} · الموسم ${next.seasonNumber}`, updatedAt: c.progress.updatedAt || 0, nextEpisode: next });
             }
@@ -8092,6 +8122,22 @@ function App() {
             saveWatchedToStorage(next, currentUser && currentUser.username);
             return next;
         });
+        const uid = currentUser && currentUser.id;
+        if (uid) {
+            const safeTitleKey = watchProgressRootKey(titleId);
+            const epKey = watchProgressEpisodeKey(seasonNumber, episodeNumber);
+            const now = Date.now();
+            setWatchProgress(prev => {
+                const tree = normalizeWatchProgressTree(prev);
+                const entry = { ...(tree[safeTitleKey] || {}) };
+                entry.episodes = { ...(entry.episodes || {}) };
+                entry.episodes[epKey] = normalizeProgressRecord({ titleId: String(titleId), kind: 'episode', season: seasonNumber, episode: episodeNumber, position: 0, duration: 0, percent: 100, completed: true, updatedAt: now });
+                entry.last = entry.episodes[epKey];
+                tree[safeTitleKey] = entry;
+                saveWatchProgressCache(tree, uid);
+                return tree;
+            });
+        }
     };
     const markMovieWatched = (titleId) => {
         if (!currentUser)
