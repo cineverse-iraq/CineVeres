@@ -7938,39 +7938,40 @@ function getTitleContinueProgress(title, tree, watchedMap) {
         const p = entry && entry.movie;
         return p && !p.completed && p.position >= WATCH_PROGRESS_MIN_RESUME_SECONDS ? { kind: 'movie', progress: p } : null;
     }
+    const episodeKey = (season, episode) => `s${Number(season) || 0}e${Number(episode) || 0}`;
+
+    // خريطة كل حلقات المسلسل الفعلية مرتبة عبر كل المواسم (مصدر الحقيقة الوحيد لعدد الحلقات).
+    const seasons = (title.seasons || []).slice().sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0));
+    const flat = [];
+    seasons.forEach(se => (se.episodes||[]).slice().sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0)).forEach(ep => flat.push({ ...ep, seasonNumber: se.number, key: episodeKey(se.number, ep.number) })));
+    if (!flat.length) return null;
+
     const eps = entry && entry.episodes ? Object.values(entry.episodes).filter(Boolean) : [];
+    const progressByKey = {};
+    eps.forEach(p => { progressByKey[episodeKey(p.season, p.episode)] = p; });
+    const watchedEntry = watchedMap && watchedMap[title.id];
+    const watchedKeys = watchedEntry && watchedEntry.episodes ? watchedEntry.episodes : {};
+
+    // حلقة "مكتملة" = إما progress.completed (فايربيس) أو علامة الصح المحلية (watched) — أيهما تحقق.
+    const isDone = (key) => !!(progressByKey[key] && progressByKey[key].completed) || !!watchedKeys[key];
+
     const resumable = eps.filter(p => {
         if (p.completed || p.position < WATCH_PROGRESS_MIN_RESUME_SECONDS) return false;
-        const watchedEntry = watchedMap && watchedMap[title.id];
-        const watchedKeys = watchedEntry && watchedEntry.episodes ? watchedEntry.episodes : {};
-        const key = `s${Number(p.season)}e${Number(p.episode)}`;
-        return !watchedKeys[key];
+        return !watchedKeys[episodeKey(p.season, p.episode)];
     }).sort((a,b) => (b.updatedAt||0) - (a.updatedAt||0));
     if (resumable.length) return { kind: 'episode', progress: resumable[0] };
 
+    const doneFlat = flat.filter(ep => isDone(ep.key));
+    if (!doneFlat.length) return null;
+
     // اربط علامة الصح مع أكمل المشاهدة: آخر حلقة مكتملة تصبح نقطة الانتقال للحلقة التالية.
-    const seasons = (title.seasons || []).slice().sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0));
-    const flat = [];
-    seasons.forEach(se => (se.episodes||[]).slice().sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0)).forEach(ep => flat.push({ ...ep, seasonNumber: se.number })));
-    const watchedEntry = watchedMap && watchedMap[title.id];
-    const watchedKeys = watchedEntry && watchedEntry.episodes ? watchedEntry.episodes : {};
-    const completed = eps.filter(p => p.completed).map(p => ({ progress: p, order: flat.findIndex(ep => Number(ep.seasonNumber)===Number(p.season) && Number(ep.number)===Number(p.episode)) }));
-    Object.keys(watchedKeys).forEach(key => {
-        const m = String(key).match(/^s(\d+)e(\d+)$/);
-        if (!m) return;
-        const season = Number(m[1]), episode = Number(m[2]);
-        if (completed.some(x => Number(x.progress.season)===season && Number(x.progress.episode)===episode)) return;
-        completed.push({ progress: { kind: 'episode', season, episode, completed: true, position: 0, duration: 0, percent: 100, updatedAt: 0, titleId: title.id, titleName: title.name, poster: title.poster }, order: flat.findIndex(ep => Number(ep.seasonNumber)===season && Number(ep.number)===episode) });
-    });
-    const latestCompleted = completed.filter(x => x.order >= 0).sort((a,b) => {
-        const byTime = (Number(b.progress.updatedAt)||0) - (Number(a.progress.updatedAt)||0);
-        return byTime || (b.order - a.order);
-    })[0];
-    if (!latestCompleted) return null;
-    const completedOrders = new Set(completed.filter(x => x.order >= 0).map(x => x.order));
-    const allEpisodesCompleted = flat.length > 0 && flat.every((_, i) => completedOrders.has(i));
-    if (allEpisodesCompleted) return { kind: 'series-complete', progress: latestCompleted.progress };
-    return { kind: 'episode-complete', progress: latestCompleted.progress };
+    const latest = doneFlat.map(ep => ({ ep, order: flat.indexOf(ep), progress: progressByKey[ep.key] || null }))
+        .sort((a,b) => (Number((b.progress&&b.progress.updatedAt)||0) - Number((a.progress&&a.progress.updatedAt)||0)) || (b.order - a.order))[0];
+    const latestProgress = latest.progress || { kind: 'episode', season: latest.ep.seasonNumber, episode: latest.ep.number, completed: true, position: 0, duration: 0, percent: 100, updatedAt: 0, titleId: title.id, titleName: title.name, poster: title.poster };
+
+    const allEpisodesCompleted = flat.every(ep => isDone(ep.key));
+    if (allEpisodesCompleted) return { kind: 'series-complete', progress: latestProgress };
+    return { kind: 'episode-complete', progress: latestProgress };
 }
 function buildWatchProgressCardItems(titles, tree, watchedMap) {
     const arr = [];
