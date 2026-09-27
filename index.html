@@ -1474,100 +1474,87 @@ function cinemanaEpisodeNumber(ep) {
    توثيق API المتاح؛ إذا اختلفت أسماء الحقول الفعلية، تحتاج تعدّل
    theebCandidateField/theebArray فقط. */
 function theebBaseUrl() {
-    // للرابط المباشر القادم من الـindexer لا نحتاج هذا العنوان.
-    // يبقى احتياطًا فقط إذا أعاد المصدر provider/watch_id بدل URL مباشر.
     let stored = '';
     try { stored = localStorage.getItem('theeb_engine_url') || ''; } catch (e) { }
     return String((typeof window !== 'undefined' && window.THEEB_ENGINE_URL) || stored || '').replace(/\/$/, '');
 }
 async function theebFetch(path) {
-    if (!CINEMANA_PROXY)
-        throw new Error('لم يتم ضبط رابط البروكسي العام.');
-    let res, text;
+    if (!CINEMANA_PROXY) throw new Error('لم يتم ضبط البروكسي العام.');
     try {
-        // Accept فقط هيدر CORS-safelisted؛ لا نرسل Cache-Control هنا حتى لا نحول الطلب إلى
-        // preflight قد يمنعه الـCDN/Worker قبل وصوله إلى server.js.
-        res = await fetch(CINEMANA_PROXY + path, {
+        const res = await fetch(CINEMANA_PROXY + path, {
             headers: { 'Accept': 'application/json' },
             cache: 'no-store'
         });
-        text = await res.text();
-    }
-    catch (e) {
+        const text = await res.text();
+        let data = null;
+        try { data = text ? JSON.parse(text) : null; } catch (e) { }
+        if (!res.ok) {
+            const msg = data && (data.error || data.message);
+            throw new Error(msg || `مصدر التشغيل الثاني رجّع خطأ (${res.status})`);
+        }
+        if (!data) throw new Error('استجابة غير صالحة من مصدر التشغيل الثاني.');
+        return data;
+    } catch (e) {
+        if (e && e.message && !/Failed to fetch|NetworkError|Load failed/i.test(e.message)) throw e;
         throw new Error('تعذر الاتصال بمصدر التشغيل الثاني.');
     }
-    let data = null;
-    try { data = text ? JSON.parse(text) : null; } catch (e) { }
-    if (!res.ok) {
-        const serverMsg = data && (data.error || data.message);
-        const details = data && Array.isArray(data.details) && data.details.length ? ` (${data.details[0]})` : '';
-        throw new Error(serverMsg ? serverMsg + details : `مصدر التشغيل الثاني رجّع خطأ (${res.status})`);
-    }
-    if (!data)
-        throw new Error('استجابة غير صالحة من مصدر التشغيل الثاني.');
-    return data;
 }
-function theebArray(data, keys = ['candidates', 'streams', 'results', 'items', 'links', 'data', 'list']) {
+function theebArray(data) {
     if (Array.isArray(data)) return data;
     if (!data || typeof data !== 'object') return [];
+    const keys = ['sources','candidates','streams','results','items','links','data','list'];
     for (const k of keys) {
         if (Array.isArray(data[k])) return data[k];
-    }
-    if (data.data && typeof data.data === 'object') {
-        for (const k of keys) if (Array.isArray(data.data[k])) return data.data[k];
+        if (data[k] && typeof data[k] === 'object') {
+            for (const kk of keys) if (Array.isArray(data[k][kk])) return data[k][kk];
+        }
     }
     return [];
 }
 function theebCandidateField(c, ...names) {
-    for (const n of names)
-        if (c && c[n] != null && String(c[n]).trim()) return String(c[n]).trim();
+    for (const n of names) if (c && c[n] != null && String(c[n]).trim()) return String(c[n]).trim();
     return '';
 }
 function theebPickCandidate(list) {
-    if (!list || !list.length) return null;
-    const withDirectUrl = list.find(c => /^https?:\/\//i.test(String(c && (c.url || c.stream_url || c.streamUrl || c.playback_url || c.playbackUrl || c.video_url || c.videoUrl || c.file || c.src || c.direct_url || c.directUrl || c.link) || '')));
-    if (withDirectUrl) return withDirectUrl;
-    const direct = list.find(c => /direct/i.test(String(c && (c.kind || c.type || c.verification || c.status) || '')));
-    return direct || list[0];
+    return list.find(c => /^https?:\/\//i.test(String(c && (c.url || c.videoUrl || c.video_url || c.streamUrl || c.stream_url || c.src || c.link) || ''))) || list[0] || null;
 }
 function theebBuildPlayUrl(candidate) {
-    // أهم إصلاح: الـAkwam indexer غالبًا يعيد رابط تشغيل مباشر. استخدمه كما هو.
     const direct = theebCandidateField(candidate,
-        'url', 'stream_url', 'streamUrl', 'playback_url', 'playbackUrl',
-        'video_url', 'videoUrl', 'file', 'src', 'direct_url', 'directUrl',
-        'source_url', 'sourceUrl', 'link'
-    );
+        'url','videoUrl','video_url','streamUrl','stream_url','playbackUrl','playback_url','file','src','directUrl','direct_url','sourceUrl','source_url','link');
     if (/^https?:\/\//i.test(direct)) return direct;
-
-    // توافق خلفي مع صيغة Theeb القديمة.
     const base = theebBaseUrl();
-    const provider = theebCandidateField(candidate, 'provider', 'source', 'provider_id', 'providerId');
-    const watchId = theebCandidateField(candidate, 'watch_id', 'watchId', 'watchID');
-    const episodeId = theebCandidateField(candidate, 'episode_id', 'episodeId') || watchId;
+    const provider = theebCandidateField(candidate,'provider','source','provider_id','providerId');
+    const watchId = theebCandidateField(candidate,'watch_id','watchId','watchID');
+    const episodeId = theebCandidateField(candidate,'episode_id','episodeId') || watchId;
     if (!base || !provider || !watchId) return '';
     return `${base}/play/${encodeURIComponent(provider)}/${encodeURIComponent(watchId)}/${encodeURIComponent(episodeId)}?quality=720p`;
 }
-async function theebResolveEpisode({ title, season, episode }) {
+function theebSources(data) {
+    return theebArray(data).map(c => {
+        const url = theebBuildPlayUrl(c);
+        const quality = theebCandidateField(c,'quality','label','name') || '720p';
+        return url ? { ...c, url, quality, label: quality } : null;
+    }).filter(Boolean).sort((a,b) => Number(String(b.quality).replace(/\D/g,'')) - Number(String(a.quality).replace(/\D/g,'')));
+}
+async function theebResolveEpisode({ title, season, episode, year }) {
     const usp = new URLSearchParams();
     usp.set('q', String(title || '').trim());
     usp.set('season', String(Number(season) || 1));
     usp.set('episode', String(Number(episode) || 1));
+    if (year) usp.set('year', String(year));
     const data = await theebFetch(`/theeb/resolve/episode?${usp.toString()}`);
-    const pick = theebPickCandidate(theebArray(data));
-    if (!pick) throw new Error('المصدر الثاني لم يرجع رابطًا صالحًا لهذه الحلقة.');
-    const url = theebBuildPlayUrl(pick);
-    if (!url) throw new Error('المصدر الثاني رجع نتيجة ناقصة بدون رابط تشغيل.');
-    return { url, raw: pick };
+    const sources = theebSources(data);
+    if (!sources.length) throw new Error('المصدر الثاني لم يرجع رابطًا صالحًا لهذه الحلقة.');
+    return { url: sources[0].url, sources, raw: sources[0] };
 }
-async function theebResolveMovie({ title }) {
+async function theebResolveMovie({ title, year }) {
     const usp = new URLSearchParams();
     usp.set('q', String(title || '').trim());
+    if (year) usp.set('year', String(year));
     const data = await theebFetch(`/theeb/resolve/movie?${usp.toString()}`);
-    const pick = theebPickCandidate(theebArray(data));
-    if (!pick) throw new Error('المصدر الثاني لم يرجع رابطًا صالحًا لهذا الفيلم.');
-    const url = theebBuildPlayUrl(pick);
-    if (!url) throw new Error('المصدر الثاني رجع نتيجة ناقصة بدون رابط تشغيل.');
-    return { url, raw: pick };
+    const sources = theebSources(data);
+    if (!sources.length) throw new Error('المصدر الثاني لم يرجع رابطًا صالحًا لهذا الفيلم.');
+    return { url: sources[0].url, sources, raw: sources[0] };
 }
 // تفضيل الجهاز/الشبكة: أي مصدر اشتغل آخر مرة على هذا الجهاز، نجربه أولًا بالمرة الجاية
 // (محليًا بالمتصفح فقط — لأن مشكلة الحجب مرتبطة بالشبكة لا بالحساب).
@@ -5367,6 +5354,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         try {
             let url = '';
             let nextSource = '';
+            let altSources = [];
             if (activeSource !== 'theeb') {
                 // كنا نلعب من سينمانا وفشل → نجرب المصدر البديل. أولوية للرابط
                 // المثبَّت يدويًا بالأدمن (مضمون)، وإلا بحث حي بمحرك ذيب.
@@ -5375,9 +5363,10 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                     url = pinned;
                 } else {
                     const result = title.type === 'movie'
-                        ? await theebResolveMovie({ title: title.name })
-                        : await theebResolveEpisode({ title: title.name, season: playingSeasonNumber || 1, episode: (playingMeta && playingMeta.number) || 1 });
+                        ? await theebResolveMovie({ title: title.name, year: title.year })
+                        : await theebResolveEpisode({ title: title.name, year: title.year, season: playingSeasonNumber || 1, episode: (playingMeta && playingMeta.number) || 1 });
                     url = result.url;
+                    altSources = result.sources || [];
                 }
                 nextSource = 'theeb';
                 // لا نحفظ المصدر الثاني كاختيار دائم؛ كل تشغيل جديد يبدأ من سينمانا حسب طلبك
@@ -5389,7 +5378,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 url = recovered.url;
                 nextSource = 'cinemana';
             }
-            setPlayingMeta(prev => ({ ...prev, videoUrl: url, videoSources: [], playbackProvider: nextSource }));
+            setPlayingMeta(prev => ({ ...prev, videoUrl: url, videoSources: altSources, playbackProvider: nextSource, altVideoUrl: url }));
             setPlayingUrl(url);
             setVideoError(false);
             setActiveSource(nextSource);
