@@ -3740,9 +3740,10 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
                 return;
             }
             const endT = trimEnd || videoEl.duration;
-            if (endT && isFinite(endT)) { // علامة المشاهدة عند بقاء دقيقتين (أو نهاية المقاطع القصيرة)
+            if (endT && isFinite(endT)) { // نعتبر الحلقة مكتملة قبل الثواني الأخيرة حتى لا تُعاد من البداية لاحقًا.
                 const len = endT - (Number(trimStart) || 0);
-                if (videoEl.currentTime >= endT - (len > 300 ? 120 : 0.6))
+                const lead = len > 300 ? WATCH_PROGRESS_COMPLETION_LEAD_SECONDS : 0.6;
+                if (videoEl.currentTime >= endT - lead)
                     fireComplete();
             }
         };
@@ -4943,15 +4944,24 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 if (target && (target.kind === 'episode' || target.kind === 'episode-complete') && target.progress) {
                     const resumeEp = allEpisodesFlat.find(e => Number(e.seasonNumber) === Number(target.progress.season) && Number(e.number) === Number(target.progress.episode));
                     if (resumeEp) found = { ep: resumeEp, seasonNumber: resumeEp.seasonNumber };
-                    if (target.kind === 'episode-complete' && resumeEp) {
+
+                    // الحلقة المكتملة لا تُعاد من بدايتها عند الاستئناف؛ ننتقل للحلقة الفعلية التالية.
+                    const targetIsCompleted = target.kind === 'episode-complete' || target.progress.completed === true;
+                    if (targetIsCompleted && resumeEp) {
                         const idx = allEpisodesFlat.indexOf(resumeEp);
                         const next = idx >= 0 ? allEpisodesFlat[idx + 1] : null;
-                        if (next) found = { ep: next, seasonNumber: next.seasonNumber };
+                        if (next) {
+                            found = { ep: next, seasonNumber: next.seasonNumber };
+                        }
+                        else if (!forceStart) {
+                            // آخر حلقة مكتملة = العمل مكتمل، ولا يوجد استئناف لهذه الحلقة.
+                            found = null;
+                        }
                     }
                 }
                 const ep = found ? found.ep : null;
                 if (!ep) throw new Error('ماكو حلقات قابلة للتشغيل بهذا العمل.');
-                const progress = target && target.kind === 'episode' && target.progress && Number(target.progress.season) === Number(found.seasonNumber) && Number(target.progress.episode) === Number(ep.number) ? target.progress : null;
+                const progress = target && target.kind === 'episode' && !target.progress.completed && target.progress && Number(target.progress.season) === Number(found.seasonNumber) && Number(target.progress.episode) === Number(ep.number) ? target.progress : null;
                 await playEpisode(ep, found.seasonNumber, progress ? Number(progress.position)||0 : 0);
             }
         }
@@ -5116,7 +5126,9 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         const key = `s${playingSeasonNumber}e${playingMeta.number}`;
         if (onSaveWatchProgress && completionSaveRef.current !== key) {
             completionSaveRef.current = key;
-            onSaveWatchProgress(title.id, { kind: 'episode', season: playingSeasonNumber, episode: playingMeta.number, position: Math.max(0, Number(record.position) || Number(playingDurationSec) || 0), duration: Math.max(0, Number(record.duration) || Number(playingDurationSec) || 0), completed: true, updatedAt: Number(record.updatedAt) || Date.now(), titleName: title.name, poster: title.poster, label: playingLabel });
+            const completionDuration = Math.max(0, Number(record.duration) || Number(playingDurationSec) || 0);
+            // عند اكتمال الحلقة نحفظها كـ 100% حقيقية، لكن لا نستخدمها كنقطة استئناف مرة ثانية.
+            onSaveWatchProgress(title.id, { kind: 'episode', season: playingSeasonNumber, episode: playingMeta.number, position: completionDuration, duration: completionDuration, percent: 100, completed: true, updatedAt: Number(record.updatedAt) || Date.now(), titleName: title.name, poster: title.poster, label: playingLabel });
         }
         // اعرض علامة الصح فور ظهور زر الحلقة التالية، حتى لو لم يكن المستخدم مسجلاً.
         setLocallyCompletedEpisodeKey(key);
@@ -5126,7 +5138,8 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         const key = `movie:${title.id}`;
         if (onSaveWatchProgress && completionSaveRef.current !== key) {
             completionSaveRef.current = key;
-            onSaveWatchProgress(title.id, { kind: 'movie', position: Math.max(0, Number(record.position) || Number(playingDurationSec) || 0), duration: Math.max(0, Number(record.duration) || Number(playingDurationSec) || 0), completed: true, updatedAt: Number(record.updatedAt) || Date.now(), titleName: title.name, poster: title.poster });
+            const completionDuration = Math.max(0, Number(record.duration) || Number(playingDurationSec) || 0);
+            onSaveWatchProgress(title.id, { kind: 'movie', position: completionDuration, duration: completionDuration, percent: 100, completed: true, updatedAt: Number(record.updatedAt) || Date.now(), titleName: title.name, poster: title.poster });
         }
         onMarkMovieWatched && onMarkMovieWatched(title.id);
     };
@@ -7867,6 +7880,7 @@ const WATCH_PROGRESS_SAVE_INTERVAL = 1000;
 const WATCH_PROGRESS_MIN_SAVE_SECONDS = 0.5;
 const WATCH_PROGRESS_MIN_RESUME_SECONDS = 1;
 const WATCH_PROGRESS_COMPLETE_RATIO = 0.96;
+const WATCH_PROGRESS_COMPLETION_LEAD_SECONDS = 120;
 const WATCH_PROGRESS_CACHE_PREFIX = 'cinadam_watch_progress_v2_';
 
 function watchProgressRootKey(titleId) {
