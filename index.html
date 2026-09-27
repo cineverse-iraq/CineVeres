@@ -5133,19 +5133,24 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const centerResumeStarted = !!(continueTarget && continueTarget.progress && Number(continueTarget.progress.position) >= WATCH_PROGRESS_MIN_RESUME_SECONDS && !titleFullyCompleted);
     const centerResumeLabel = centerResumeStarted
         ? (continueTarget.kind === 'movie'
-            ? `متابعة من ${formatWatchTime(continueTarget.progress.position)} · ${formatWatchPercent(continueTarget.progress.percent, continueTarget.progress.position, continueTarget.progress.duration)}`
+            ? `متابعة من ${formatWatchTime(continueTarget.progress.position)}`
             : `متابعة من الحلقة ${continueTarget.progress.episode} · الموسم ${continueTarget.progress.season}`)
-        : (continueTarget && continueTarget.kind === 'episode' && continueTarget.nextEpisode && !titleFullyCompleted
-            ? `متابعة من الحلقة ${continueTarget.progress.episode} · الموسم ${continueTarget.progress.season}`
-            : '');
-    const centerResumeDetails = centerResumeStarted && continueTarget.kind === 'episode'
-        ? `${formatWatchTime(continueTarget.progress.position)} · ${formatWatchPercent(continueTarget.progress.percent, continueTarget.progress.position, continueTarget.progress.duration)}`
         : '';
-    const centerPlayButton = React.createElement("button", { onClick: handlePlay, className: centerResumeLabel ? "min-h-[72px] min-w-[260px] max-w-[92%] px-5 py-3 rounded-3xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center gap-3 shadow-[0_0_30px_rgba(255,51,75,0.6)] transform hover:scale-105 transition" : "w-[72px] h-[72px] rounded-3xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shadow-[0_0_30px_rgba(255,51,75,0.6)] transform hover:scale-110 transition" },
-        React.createElement(Icon, { name: "play", className: centerResumeLabel ? "w-6 h-6 shrink-0 text-white fill-current translate-x-0.5" : "w-8 h-8 text-white fill-current translate-x-0.5" }),
-        centerResumeLabel && React.createElement("span", { className: "min-w-0 flex flex-col items-center text-center leading-tight" },
-            React.createElement("span", { className: "text-xs sm:text-sm font-black text-white", dir: "rtl" }, centerResumeLabel),
-            centerResumeDetails && React.createElement("span", { className: "mt-1 text-[10px] font-black text-white/85", dir: "ltr" }, centerResumeDetails)));
+    const centerResumeDetails = centerResumeStarted
+        ? `${continueTarget.kind === 'movie' ? '' : formatWatchTime(continueTarget.progress.position) + ' · '}${formatWatchPercent(continueTarget.progress.percent, continueTarget.progress.position, continueTarget.progress.duration)}`
+        : '';
+    const centerUnstartedNextLabel = !centerResumeStarted && continueTarget && continueTarget.kind === 'episode' && continueTarget.nextEpisode && !titleFullyCompleted
+        ? `متابعة من الحلقة ${continueTarget.progress.episode} · الموسم ${continueTarget.progress.season}`
+        : '';
+    const centerPlayButton = React.createElement("div", { className: "flex flex-col items-center justify-center gap-2" },
+        React.createElement("button", { onClick: handlePlay, className: centerResumeStarted ? "min-h-[72px] min-w-[260px] max-w-[92%] px-5 py-3 rounded-3xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center gap-3 shadow-[0_0_30px_rgba(255,51,75,0.6)] transform hover:scale-105 transition" : "w-[72px] h-[72px] rounded-3xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shadow-[0_0_30px_rgba(255,51,75,0.6)] transform hover:scale-110 transition" },
+            React.createElement(Icon, { name: "play", className: centerResumeStarted ? "w-6 h-6 shrink-0 text-white fill-current translate-x-0.5" : "w-8 h-8 text-white fill-current translate-x-0.5" }),
+            centerResumeStarted && React.createElement("span", { className: "min-w-0 flex flex-col items-center text-center leading-tight" },
+                React.createElement("span", { className: "text-xs sm:text-sm font-black text-white", dir: "rtl" }, centerResumeLabel),
+                continueTarget.kind === 'episode' && React.createElement("span", { className: "mt-1 text-[10px] font-black text-white/85", dir: "ltr" }, centerResumeDetails),
+                continueTarget.kind === 'movie' && React.createElement("span", { className: "mt-1 text-[10px] font-black text-white/85", dir: "ltr" }, centerResumeDetails)) ),
+        centerUnstartedNextLabel && React.createElement("span", { className: "text-xs sm:text-sm font-black text-white/90 text-center leading-tight drop-shadow-md", dir: "rtl" }, centerUnstartedNextLabel)
+    );
     return (React.createElement("div", { className: `${closing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-50 bg-black/90 md:p-6 md:flex md:items-center md:justify-center overflow-y-auto`, onClick: requestClose },
         React.createElement("div", { onClick: e => e.stopPropagation(), className: `${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl` },
             React.createElement("div", { className: "relative" },
@@ -7960,8 +7965,9 @@ function getTitleEpisodeStatus(title, tree, watchedMap) {
     flat.forEach(ep => {
         const key = watchProgressEpisodeKey(ep.seasonNumber, ep.number);
         const p = progressEpisodes[key];
-        const legacyDone = !!legacyEpisodes[key];
-        if ((p && p.completed) || legacyDone) completed.add(key);
+        // Continue Watching يعتمد على watchProgress المرتبط بالحساب فقط.
+        // watchedMap القديم يبقى للعلامات القديمة، لكنه لا يستطيع إنشاء بطاقة متابعة.
+        if (p && p.completed) completed.add(key);
         if (p && !p.completed && Number(p.position) >= WATCH_PROGRESS_MIN_RESUME_SECONDS) inProgress.push(p);
     });
     return { flat, entry, legacyEntry, progressEpisodes, legacyEpisodes, completed, inProgress };
@@ -7969,9 +7975,8 @@ function getTitleEpisodeStatus(title, tree, watchedMap) {
 function isTitleFullyCompleted(title, tree, watchedMap) {
     if (!title) return false;
     const entry = getTitleWatchEntry(tree, title.id);
-    const legacyEntry = watchedMap && watchedMap[title.id];
     if (title.type === 'movie') {
-        return !!((entry && entry.movie && entry.movie.completed) || (legacyEntry && legacyEntry.movie));
+        return !!(entry && entry.movie && entry.movie.completed);
     }
     const status = getTitleEpisodeStatus(title, tree, watchedMap);
     return status.flat.length > 0 && status.completed.size >= status.flat.length;
@@ -7981,8 +7986,6 @@ function getTitleLastUpdatedAt(title, tree, watchedMap) {
     let latest = 0;
     if (entry && entry.movie) latest = Math.max(latest, Number(entry.movie.updatedAt) || 0);
     if (entry && entry.episodes) Object.values(entry.episodes).forEach(p => latest = Math.max(latest, Number(p && p.updatedAt) || 0));
-    const legacy = watchedMap && title ? watchedMap[title.id] : null;
-    if (legacy && legacy.movie) latest = Math.max(latest, Number(legacy.updatedAt) || 0);
     return latest;
 }
 function makeSyntheticEpisodeProgress(title, season, episode, updatedAt = 0) {
@@ -7991,11 +7994,9 @@ function makeSyntheticEpisodeProgress(title, season, episode, updatedAt = 0) {
 function getTitleContinueProgress(title, tree, watchedMap) {
     if (!title) return null;
     const entry = getTitleWatchEntry(tree, title.id);
-    const legacyEntry = watchedMap && watchedMap[title.id];
-
     if (title.type === 'movie') {
         const p = entry && entry.movie;
-        if ((p && p.completed) || (legacyEntry && legacyEntry.movie)) return { kind: 'movie-complete', progress: p || { kind: 'movie', titleId: title.id, position: 0, duration: 0, percent: 100, completed: true, updatedAt: getTitleLastUpdatedAt(title, tree, watchedMap) } };
+        if (p && p.completed) return { kind: 'movie-complete', progress: p };
         if (p && !p.completed && p.position >= WATCH_PROGRESS_MIN_RESUME_SECONDS) return { kind: 'movie', progress: p };
         return null;
     }
@@ -8014,12 +8015,14 @@ function getTitleContinueProgress(title, tree, watchedMap) {
     const resumable = status.inProgress.slice().sort((a,b) => (Number(b.updatedAt)||0) - (Number(a.updatedAt)||0));
     if (resumable.length) return { kind: 'episode', progress: resumable[0] };
 
-    // بعد إنهاء حلقات سابقة، انتقل لأول حلقة غير مكتملة بالترتيب الفعلي للمسلسل،
-    // وليس إلى رقم مبني على آخر موسم فقط. هذا يمنع ظهور حلقة 27 الوهمية عند النهاية.
-    const next = status.flat.find(ep => !status.completed.has(watchProgressEpisodeKey(ep.seasonNumber, ep.number)));
-    if (next) {
-        const updatedAt = getTitleLastUpdatedAt(title, tree, watchedMap);
-        return { kind: 'episode', progress: makeSyntheticEpisodeProgress(title, next.seasonNumber, next.number, updatedAt), nextEpisode: next };
+    // لا نُظهر عملًا لم يبدأ به المستخدم أصلًا.
+    // إذا كانت هناك حلقات مكتملة سابقة فقط، نستخدم أول حلقة فعلية غير مكتملة كنقطة متابعة.
+    if (status.completed.size > 0) {
+        const next = status.flat.find(ep => !status.completed.has(watchProgressEpisodeKey(ep.seasonNumber, ep.number)));
+        if (next) {
+            const updatedAt = getTitleLastUpdatedAt(title, tree, watchedMap);
+            return { kind: 'episode', progress: makeSyntheticEpisodeProgress(title, next.seasonNumber, next.number, updatedAt), nextEpisode: next };
+        }
     }
     return null;
 }
