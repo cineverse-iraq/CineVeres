@@ -2880,7 +2880,7 @@ function ContinueWatchingRow({ items, watchProgress, watchedMap, onOpen }) {
             null),
         React.createElement("div", { className: "flex gap-3 md:gap-4 overflow-x-auto scrollbar-hide pb-1 snap-x" },
             cards.map((c, i) => {
-                const card = React.createElement("button", { type: "button", onClick: () => onOpen(c.title), className: "block w-full text-right" },
+                const card = React.createElement("button", { type: "button", onClick: () => onOpen(c.title, c.nextEpisode ? { season: c.nextEpisode.seasonNumber, episode: c.nextEpisode.number } : null), className: "block w-full text-right" },
                     React.createElement("div", { className: "relative aspect-video rounded-2xl overflow-hidden glass-card border border-white/10 mb-2" },
                         c.title.backdrop ? React.createElement("img", { src: tmdbAdaptive(c.title.backdrop), alt: "", loading: "lazy", decoding: "async", className: "w-full h-full object-cover" }) : c.title.poster ? React.createElement("img", { src: c.title.poster, alt: "", loading: "lazy", decoding: "async", className: "w-full h-full object-cover" }) : React.createElement("div", { className: "w-full h-full bg-glass-800" }),
                         React.createElement("div", { className: "absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent" }),
@@ -4615,7 +4615,10 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const [myFollowingSet, setMyFollowingSet] = useState({});
     const [showAddToList, setShowAddToList] = useState(false);
     const playRequestRef = useRef(0);
-    const continueTarget = getTitleContinueProgress(title, watchProgress);
+    const explicitContinueTarget = title.__continueTarget && title.__continueTarget.season != null && title.__continueTarget.episode != null
+        ? { kind: 'episode', progress: { season: Number(title.__continueTarget.season), episode: Number(title.__continueTarget.episode), position: 0, completed: false, updatedAt: Date.now() } }
+        : null;
+    const continueTarget = explicitContinueTarget || getTitleContinueProgress(title, watchProgress);
     const currentEpisodeProgress = (season, episode) => getEpisodeWatchProgress(watchProgress, title.id, season, episode);
     const currentMovieProgress = () => getMovieWatchProgress(watchProgress, title.id);
 
@@ -8000,7 +8003,13 @@ function mergeWatchProgressTrees(base, incoming) {
     Object.keys(src).forEach(tk => {
         const b = out[tk] || {};
         const s = src[tk] || {};
-        const newer = (a,b) => (Number(a && a.updatedAt)||0) >= (Number(b && b.updatedAt)||0) ? a : b;
+        const newer = (a,b) => {
+            if (!a) return b;
+            if (!b) return a;
+            if (b.completed && !a.completed) return b;
+            if (a.completed && !b.completed) return a;
+            return (Number(a.updatedAt)||0) >= (Number(b.updatedAt)||0) ? a : b;
+        };
         if (s.movie) b.movie = newer(s.movie, b.movie);
         if (s.episodes) {
             b.episodes = { ...(b.episodes||{}) };
@@ -8091,7 +8100,12 @@ function App() {
             const next = normalizeWatchProgressTree(prev);
             const entry = { ...(next[safeTitleKey] || {}) };
             if (kind === 'movie') entry.movie = mergeWatchProgressTrees({ x: { movie: entry.movie } }, { x: { movie: record } }).x.movie;
-            else entry.episodes = mergeWatchProgressTrees({ x: { episodes: { [epKey]: entry.episodes && entry.episodes[epKey] } } }, { x: { episodes: { [epKey]: record } } }).x.episodes;
+            else {
+                const existingEp = entry.episodes && entry.episodes[epKey];
+                if (!(existingEp && existingEp.completed && !record.completed)) {
+                    entry.episodes = mergeWatchProgressTrees({ x: { episodes: { [epKey]: existingEp } } }, { x: { episodes: { [epKey]: record } } }).x.episodes;
+                }
+            }
             entry.last = record;
             next[safeTitleKey] = entry;
             saveWatchProgressCache(next, uid);
@@ -8101,15 +8115,26 @@ function App() {
         const path = kind === 'movie' ? base.child('movie') : base.child(`episodes/${epKey}`);
         return path.transaction(current => {
             const existing = normalizeProgressRecord(current);
+            if (existing && existing.completed && !record.completed) return;
             if (existing && (existing.updatedAt || 0) > now) return;
             return record;
         }).then(() => base.child('last').transaction(current => {
             const existing = normalizeProgressRecord(current);
+            const sameEpisode = existing && kind === 'episode' && record.kind === 'episode' && Number(existing.season) === Number(record.season) && Number(existing.episode) === Number(record.episode);
+            if (sameEpisode && existing.completed && !record.completed) return;
             if (existing && (existing.updatedAt || 0) > now) return;
             return record;
         })).catch(() => {});
     };
 
+    const openTitleFromContinue = (title, nextTarget = null) => {
+        if (!title) return;
+        if (nextTarget && nextTarget.season != null && nextTarget.episode != null) {
+            setActiveTitle({ ...title, __continueTarget: { season: Number(nextTarget.season), episode: Number(nextTarget.episode) } });
+        } else {
+            setActiveTitle(title);
+        }
+    };
     const openProfile = (uname) => { setProfileTarget(uname || null); setActiveTitle(null); setAccountSheet(false); setViewRaw('profile'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
     const markEpisodeWatched = (titleId, seasonNumber, episodeNumber) => {
         if (!currentUser || seasonNumber == null || episodeNumber == null)
@@ -8341,7 +8366,7 @@ function App() {
         React.createElement(Header, { currentUser: currentUser, view: view, setView: setView, search: search, setSearch: setSearch, onOpenAccount: () => setAccountSheet(true), onOpenProfile: openProfile, onOpenTitleFromNotif: (id) => { const t = titles.find(x => x.id === id && x.status === 'published'); if (t)
                 setActiveTitle(t); } }),
         React.createElement("main", { className: "flex-1 max-w-7xl w-full mx-auto px-4 py-6 md:py-8" },
-            React.createElement("div", { key: searching ? 'search' : view, className: "page-fade-in" }, searching ? (React.createElement(TypeGrid, { title: `نتائج البحث عن "${search}"`, items: mainList, onOpen: setActiveTitle, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0646\u062A\u0627\u0626\u062C \u0645\u0637\u0627\u0628\u0642\u0629.", watchedMap: watched })) : view === 'home' ? (React.createElement(HomeView, { items: published, onOpen: setActiveTitle, watchedMap: watched, watchProgress: watchProgress })) : (view === 'movie' || view === 'series' || view === 'anime') ? (React.createElement(TypeGrid, { title: TYPE_PLURAL[view], items: published.filter(t => t.type === view), onOpen: setActiveTitle, showGenreFilter: true, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u0628\u0639\u062F.", watchedMap: watched })) : view === 'lists' ? (React.createElement(ListsView, { currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal })) : view === 'requests' ? (React.createElement(RequestsView, { currentUser: currentUser, onOpenAuth: setAuthModal })) : view === 'settings' ? (React.createElement(SettingsView, { currentUser: currentUser, onUpdateName: handleUpdateName, onUpdateAvatar: handleUpdateAvatar, onOpenAuth: setAuthModal })) : view === 'profile' ? (React.createElement(ProfileView, { username: profileTarget, currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal, onOpenProfile: openProfile })) : view === 'admin' ? (React.createElement(AdminPanel, { currentUser: currentUser, titles: titles, onOpenAuth: setAuthModal, moderators: moderators })) : null)),
+            React.createElement("div", { key: searching ? 'search' : view, className: "page-fade-in" }, searching ? (React.createElement(TypeGrid, { title: `نتائج البحث عن "${search}"`, items: mainList, onOpen: setActiveTitle, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0646\u062A\u0627\u0626\u062C \u0645\u0637\u0627\u0628\u0642\u0629.", watchedMap: watched })) : view === 'home' ? (React.createElement(HomeView, { items: published, onOpen: openTitleFromContinue, watchedMap: watched, watchProgress: watchProgress })) : (view === 'movie' || view === 'series' || view === 'anime') ? (React.createElement(TypeGrid, { title: TYPE_PLURAL[view], items: published.filter(t => t.type === view), onOpen: setActiveTitle, showGenreFilter: true, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u0628\u0639\u062F.", watchedMap: watched })) : view === 'lists' ? (React.createElement(ListsView, { currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal })) : view === 'requests' ? (React.createElement(RequestsView, { currentUser: currentUser, onOpenAuth: setAuthModal })) : view === 'settings' ? (React.createElement(SettingsView, { currentUser: currentUser, onUpdateName: handleUpdateName, onUpdateAvatar: handleUpdateAvatar, onOpenAuth: setAuthModal })) : view === 'profile' ? (React.createElement(ProfileView, { username: profileTarget, currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal, onOpenProfile: openProfile })) : view === 'admin' ? (React.createElement(AdminPanel, { currentUser: currentUser, titles: titles, onOpenAuth: setAuthModal, moderators: moderators })) : null)),
         React.createElement(MobileBottomNav, { view: view, setView: setView }),
         React.createElement(ToastHost, null),
         activeTitle && (React.createElement(TitleModal, { title: activeTitle, allTitles: published, currentUser: currentUser, liked: likedIds.includes(activeTitle.id), getRole: getRole, onLike: () => toggleLike(activeTitle), onClose: () => { setActiveTitle(null); if (new URLSearchParams(location.search).get('t'))
