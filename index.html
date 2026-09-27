@@ -1485,9 +1485,16 @@ async function theebFetch(path) {
         (typeof localStorage !== 'undefined' ? localStorage.getItem('theeb_source2_url') : '') || '').trim().replace(/\/+$/, '');
     const candidates = [];
     const add = (b) => { const v = String(b || '').trim().replace(/\/+$/, ''); if (v && !candidates.includes(v)) candidates.push(v); };
-    add(configured);
+
+    // عند فتح الموقع من cinadam.xyz، جرّب السيرفر المحلي أولًا.
+    // Chrome الحديث يحمي اتصالات المواقع العامة إلى localhost عبر Local Network Access،
+    // لذلك نضع targetAddressSpace: 'local' في طلب loopback، ويجب السماح للموقع عند ظهور نافذة الإذن.
+    const host = String((typeof location !== 'undefined' && location.hostname) || '').toLowerCase();
+    const isLoopback = (b) => /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(String(b || ''));
+    if (isLoopback('http://localhost:8787')) add('http://localhost:8787');
+    if (configured) add(configured);
     add(CINEMANA_PROXY);
-    add('http://localhost:8787');
+    add('http://127.0.0.1:8787');
 
     let lastError = null;
     for (const base of candidates) {
@@ -1497,11 +1504,14 @@ async function theebFetch(path) {
             const timer = setTimeout(() => ctl.abort(), timeout);
             let res;
             try {
-                res = await fetch(base + path, {
+                const fetchOptions = {
                     headers: { 'Accept': 'application/json' },
                     cache: 'no-store',
                     signal: ctl.signal
-                });
+                };
+                // Chromium Local Network Access: السماح بتحديد أن الوجهة loopback/local.
+                if (isLoopback(base)) fetchOptions.targetAddressSpace = 'local';
+                res = await fetch(base + path, fetchOptions);
             } finally { clearTimeout(timer); }
             const text = await res.text();
             let data = null;
@@ -1517,8 +1527,12 @@ async function theebFetch(path) {
             lastError = e;
         }
     }
-    if (lastError && lastError.message && !/Failed to fetch|NetworkError|Load failed|aborted|AbortError/i.test(lastError.message)) throw lastError;
-    throw new Error('تعذر الاتصال بمصدر التشغيل الثاني — تأكد أن Akwam Source2 منشور على THEEB_SOURCE2_URL أو أن server.js يعمل على localhost:8787.');
+    const errText = lastError && lastError.message ? String(lastError.message) : '';
+    if (/Failed to fetch|NetworkError|Load failed|NotAllowedError/i.test(errText)) {
+        throw new Error('تعذر الوصول إلى السيرفر المحلي لمصدر Akwam. اسمح لـ cinadam.xyz بالوصول إلى الشبكة المحلية عند ظهور نافذة Chrome، وتأكد أن server.js يعمل على localhost:8787.');
+    }
+    if (lastError && errText && !/aborted|AbortError/i.test(errText)) throw lastError;
+    throw new Error('تعذر الاتصال بمصدر التشغيل الثاني — تأكد أن server.js يعمل على localhost:8787 أو ضع THEEB_SOURCE2_URL عام.');
 }
 function theebArray(data) {
     if (Array.isArray(data)) return data;
