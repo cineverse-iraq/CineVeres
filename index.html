@@ -5155,8 +5155,9 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const similarTitles = React.useMemo(() => computeSimilarTitles(title, allTitles, tmdbRecs), [title, allTitles, tmdbRecs]);
     const [showAllSim, setShowAllSim] = useState(false);
     const [locallyCompletedEpisodeKey, setLocallyCompletedEpisodeKey] = useState('');
+    const [locallyCompletedTitle, setLocallyCompletedTitle] = useState(false);
     const completionSaveRef = useRef('');
-    useEffect(() => { setShowAllSim(false); setPlayingDurationSec(0); setSkipDbSegments({ intro: null, recap: null, outro: null }); setLocallyCompletedEpisodeKey(''); completionSaveRef.current = ''; }, [title.id]);
+    useEffect(() => { setShowAllSim(false); setPlayingDurationSec(0); setSkipDbSegments({ intro: null, recap: null, outro: null }); setLocallyCompletedEpisodeKey(''); setLocallyCompletedTitle(false); completionSaveRef.current = ''; }, [title.id]);
     useEffect(() => {
         if (title.type === 'movie') return;
         if (playingSeasonNumber == null || playingMeta == null || playingMeta.number == null) return;
@@ -5172,7 +5173,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             return !!(wp && wp.completed) || !!(watched && watched[title.id] && watched[title.id].episodes && watched[title.id].episodes[key]);
         });
     })();
-    const titleWatched = title.type === 'movie' ? movieWatched : seriesWatched;
+    const titleWatched = !!locallyCompletedTitle || (title.type === 'movie' ? movieWatched : seriesWatched);
     const handleEpisodeComplete = (record = {}) => {
         if (title.type === 'movie' || playingSeasonNumber == null || !playingMeta || playingMeta.number == null)
             return;
@@ -5184,8 +5185,18 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         // اعرض علامة الصح فور ظهور زر الحلقة التالية، حتى لو لم يكن المستخدم مسجلاً.
         setLocallyCompletedEpisodeKey(key);
         onMarkEpisodeWatched && onMarkEpisodeWatched(title.id, playingSeasonNumber, playingMeta.number);
+        const currentIndex = allEpisodesFlat.findIndex(ep => Number(ep.seasonNumber) === Number(playingSeasonNumber) && Number(ep.number) === Number(playingMeta.number));
+        if (currentIndex === allEpisodesFlat.length - 1 && currentIndex >= 0) {
+            const previousEpisodesDone = allEpisodesFlat.slice(0, currentIndex).every(ep => {
+                const key2 = `s${Number(ep.seasonNumber)}e${Number(ep.number)}`;
+                const wp2 = currentEpisodeProgress(ep.seasonNumber, ep.number);
+                return !!(wp2 && wp2.completed) || !!(watched && watched[title.id] && watched[title.id].episodes && watched[title.id].episodes[key2]);
+            });
+            if (previousEpisodesDone) setLocallyCompletedTitle(true);
+        }
     };
     const handleMovieComplete = (record = {}) => {
+        setLocallyCompletedTitle(true);
         const key = `movie:${title.id}`;
         if (onSaveWatchProgress && completionSaveRef.current !== key) {
             completionSaveRef.current = key;
@@ -5193,6 +5204,17 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         }
         onMarkMovieWatched && onMarkMovieWatched(title.id);
     };
+    const centerResumeMode = !!resumeUi.hasResume || !!(isSeries && resumeUi.targetLabel);
+    const centerButtonLabel = resumeUi.hasResume ? resumeUi.label : (isSeries && resumeUi.targetLabel ? resumeUi.targetLabel : '');
+    const centerButtonDetail = resumeUi.hasResume ? resumeUi.detail : '';
+    const centerButtonChildren = [
+        React.createElement(Icon, { name: "play", className: `${centerResumeMode ? 'w-6 h-6' : 'w-8 h-8'} shrink-0 fill-current` }),
+        centerButtonLabel ? React.createElement("span", { className: "flex min-w-0 flex-col items-start leading-tight text-right" },
+            React.createElement("span", { className: "text-[11px] sm:text-sm font-black whitespace-nowrap" }, centerButtonLabel),
+            centerButtonDetail ? React.createElement("span", { className: "text-[10px] sm:text-xs font-bold text-white/85 mt-1 whitespace-nowrap", dir: "ltr" }, centerButtonDetail) : null) : null
+    ].filter(Boolean);
+    const centerButton = React.createElement("button", { onClick: () => handlePlay(false), className: `max-w-[88%] rounded-3xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center gap-2.5 px-5 py-3.5 shadow-[0_0_30px_rgba(255,51,75,0.6)] transform hover:scale-105 transition text-white ${centerResumeMode ? 'min-w-[235px]' : 'w-[72px] h-[72px] px-0'}` }, ...centerButtonChildren);
+    const centerOverlay = React.createElement("div", { className: "absolute inset-0 bg-gradient-to-t from-glass-950 via-black/40 to-transparent flex items-center justify-center px-4" }, centerButton);
     return (React.createElement("div", { className: `${closing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-50 bg-black/90 md:p-6 md:flex md:items-center md:justify-center overflow-y-auto`, onClick: requestClose },
         React.createElement("div", { onClick: e => e.stopPropagation(), className: `${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl` },
             React.createElement("div", { className: "relative" },
@@ -5205,20 +5227,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                             React.createElement(Icon, { name: "rotateCcw5", className: "w-3.5 h-3.5" }),
                             "\u0625\u0639\u0627\u062F\u0629 \u0627\u0644\u0645\u062D\u0627\u0648\u0644\u0629"))))) : (React.createElement("div", { className: "relative w-full aspect-video bg-glass-900" },
                     title.backdrop && React.createElement("img", { src: tmdbAdaptive(title.backdrop), alt: "", decoding: "async", className: "w-full h-full object-cover" }),
-                    React.createElement("div", { className: "absolute inset-0 bg-gradient-to-t from-glass-950 via-black/40 to-transparent flex items-center justify-center px-4" },
-                        resumeUi.hasResume ? (React.createElement("button", { onClick: () => handlePlay(false), className: "min-w-[210px] max-w-[82%] px-5 py-3.5 rounded-3xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center gap-2.5 shadow-[0_0_30px_rgba(255,51,75,0.6)] transform hover:scale-105 transition text-white" },
-                            React.createElement(Icon, { name: "play", className: "w-6 h-6 shrink-0 fill-current" }),
-                            React.createElement("span", { className: "flex flex-col items-start leading-tight text-right" },
-                                React.createElement("span", { className: "text-xs sm:text-sm font-black" }, resumeUi.label),
-                                React.createElement("span", { className: "text-[10px] sm:text-xs font-bold text-white/85 mt-1", dir: "ltr" }, resumeUi.detail))))
-                        : (resumeUi.completed ? (React.createElement("button", { onClick: () => handlePlay(false), className: "min-w-[190px] px-5 py-3.5 rounded-3xl bg-emerald-500/90 hover:bg-emerald-500 flex items-center justify-center gap-2 shadow-[0_0_28px_rgba(16,185,129,0.45)] transform hover:scale-105 transition text-white" },
-                            React.createElement(Icon, { name: "check", className: "w-6 h-6" }),
-                            React.createElement("span", { className: "text-sm font-black" }, "تمت المشاهدة بالكامل")))
-                        : (React.createElement(React.Fragment, null,
-                            React.createElement("button", { onClick: () => handlePlay(false), className: "w-[72px] h-[72px] rounded-3xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shadow-[0_0_30px_rgba(255,51,75,0.6)] transform hover:scale-110 transition" },
-                                React.createElement(Icon, { name: "play", className: "w-8 h-8 text-white fill-current translate-x-0.5" })),
-                            isSeries && resumeUi.targetLabel && React.createElement("div", { className: "mt-3 px-4 py-2 rounded-xl bg-black/65 backdrop-blur-md border border-white/10 text-[11px] sm:text-xs font-black text-white/90 text-center shadow-lg" }, resumeUi.targetLabel)
-                        )))))),
+                    centerOverlay)),
                 React.createElement("button", { onClick: requestClose, className: "absolute top-4 left-4 z-30 w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black transition" },
                     React.createElement(Icon, { name: "x", className: "w-5 h-5" })),
                 React.createElement("button", { onClick: shareLink, title: "\u0646\u0633\u062E \u0631\u0627\u0628\u0637 \u0627\u0644\u0645\u0634\u0627\u0631\u0643\u0629", className: "absolute top-4 right-4 z-30 w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black transition" },
@@ -5228,6 +5237,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                     React.createElement("span", { className: "text-xs px-3 py-1 rounded-full bg-accent-red text-white font-bold shadow-[0_0_12px_rgba(255,51,75,0.4)]" }, TYPE_LABELS[title.type]),
                     React.createElement("span", { className: "text-xs text-slate-300 font-semibold" }, title.year),
                     React.createElement(RatingBadges, { imdb: title.imdbRating, rt: title.rtRating }),
+                    titleWatched ? React.createElement("span", { className: "inline-flex shrink-0 items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-emerald-500/15 backdrop-blur-md text-emerald-400 font-bold border border-emerald-500/30 shadow-sm" }, React.createElement(Icon, { name: "check", className: "w-3 h-3" }), "تمت المشاهدة بالكامل") : null,
                     (playingDurationSec || getRuntimeSeconds(playingMeta) || titleDisplayRuntime) ? (React.createElement("span", { className: "inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-black/60 text-slate-200 font-bold border border-white/10", dir: "ltr", title: "مدة العمل" },
                         formatRuntimeMinutesSeconds(playingDurationSec || getRuntimeSeconds(playingMeta) || titleDisplayRuntime),
                         " دقيقة")) : null,
@@ -5236,10 +5246,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                         avgRating.toFixed(1),
                         " (",
                         ratingList.length,
-                        ")")),
-                    titleWatched && (React.createElement("span", { className: "inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-emerald-500/15 backdrop-blur-md text-emerald-400 font-bold border border-emerald-500/30 shadow-sm" },
-                        React.createElement(Icon, { name: "check", className: "w-3 h-3" }),
-                        "تمت المشاهدة بالكامل"))),
+                        ")"))),
                 React.createElement("h2", { className: "text-2xl md:text-3xl font-black mb-1 text-white" },
                     React.createElement("bdi", null, title.name)),
                 playingLabel && playingLabel !== title.name && (React.createElement("p", { className: "text-sm text-accent-cyan font-bold mb-3 flex items-center gap-1.5" },
