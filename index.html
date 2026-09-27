@@ -7979,9 +7979,11 @@ function getTitleEpisodeStatus(title, tree, watchedMap) {
     flat.forEach(ep => {
         const key = watchProgressEpisodeKey(ep.seasonNumber, ep.number);
         const p = progressEpisodes[key];
-        // Continue Watching يعتمد على watchProgress المرتبط بالحساب فقط.
-        // watchedMap القديم يبقى للعلامات القديمة، لكنه لا يستطيع إنشاء بطاقة متابعة.
+        // سجل التقدم المرتبط بالحساب هو المصدر الأساسي للاستئناف.
+        // لكن سجلات watched القديمة تبقى صالحة كعلامات إكمال حتى لا تضيع
+        // الأعمال التي سبق للمستخدم إنهاؤها قبل ترقية نظام التقدم.
         if (p && p.completed) completed.add(key);
+        else if (legacyEpisodes[key]) completed.add(key);
         if (p && !p.completed && Number(p.position) >= WATCH_PROGRESS_MIN_RESUME_SECONDS) inProgress.push(p);
     });
     return { flat, entry, legacyEntry, progressEpisodes, legacyEpisodes, completed, inProgress };
@@ -7989,8 +7991,9 @@ function getTitleEpisodeStatus(title, tree, watchedMap) {
 function isTitleFullyCompleted(title, tree, watchedMap) {
     if (!title) return false;
     const entry = getTitleWatchEntry(tree, title.id);
+    const legacyEntry = watchedMap && watchedMap[title.id];
     if (title.type === 'movie') {
-        return !!(entry && entry.movie && entry.movie.completed);
+        return !!((entry && entry.movie && entry.movie.completed) || (legacyEntry && legacyEntry.movie));
     }
     const status = getTitleEpisodeStatus(title, tree, watchedMap);
     return status.flat.length > 0 && status.completed.size >= status.flat.length;
@@ -8008,9 +8011,14 @@ function makeSyntheticEpisodeProgress(title, season, episode, updatedAt = 0) {
 function getTitleContinueProgress(title, tree, watchedMap) {
     if (!title) return null;
     const entry = getTitleWatchEntry(tree, title.id);
+    const legacyEntry = watchedMap && watchedMap[title.id];
     if (title.type === 'movie') {
         const p = entry && entry.movie;
         if (p && p.completed) return { kind: 'movie-complete', progress: p };
+        // توافق خلفي: الفيلم الذي كان مسجلًا كمكتمل بالنظام القديم يبقى مكتملًا.
+        if (legacyEntry && legacyEntry.movie) {
+            return { kind: 'movie-complete', progress: { kind: 'movie', titleId: String(title.id), position: 0, duration: 0, percent: 100, completed: true, updatedAt: getTitleLastUpdatedAt(title, tree, watchedMap), titleName: title.name, poster: title.poster } };
+        }
         if (p && !p.completed && p.position >= WATCH_PROGRESS_MIN_RESUME_SECONDS) return { kind: 'movie', progress: p };
         return null;
     }
