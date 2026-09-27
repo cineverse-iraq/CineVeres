@@ -1485,8 +1485,11 @@ async function theebFetch(path) {
         throw new Error('لم يتم ضبط رابط البروكسي العام.');
     let res, text;
     try {
+        // Accept فقط هيدر CORS-safelisted؛ لا نرسل Cache-Control هنا حتى لا نحول الطلب إلى
+        // preflight قد يمنعه الـCDN/Worker قبل وصوله إلى server.js.
         res = await fetch(CINEMANA_PROXY + path, {
-            headers: { 'Accept': 'application/json', 'Cache-Control': 'no-cache' }
+            headers: { 'Accept': 'application/json' },
+            cache: 'no-store'
         });
         text = await res.text();
     }
