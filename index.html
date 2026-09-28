@@ -678,6 +678,10 @@ function normalizeTitlePlaybackData(title) {
     clean.genres = normalizeGenresValue(clean.genres);
     clean.videoUrl = normalizeVideoUrl(clean.videoUrl || '');
     clean.videoSources = normalizeVideoSources(clean.videoSources);
+    clean.movieboxUrl = normalizeVideoUrl(clean.movieboxUrl || '');
+    clean.movieboxSources = normalizeVideoSources(clean.movieboxSources);
+    clean.movieboxId = String(clean.movieboxId || '').trim();
+    clean.movieboxSlug = String(clean.movieboxSlug || '').trim();
     clean.subtitleUrl = normalizeSubtitleUrl(clean.subtitleUrl || clean.subtitleURL || '');
     clean.subtitleOffset = Number(clean.subtitleOffset) || 0;
     clean.seasons = normalizeSeasonsValue(clean.seasons).map(season => ({
@@ -688,6 +692,10 @@ function normalizeTitlePlaybackData(title) {
             runtimeMinutes: Number(ep.runtimeMinutes ?? ep.runtime) || 0,
             videoUrl: normalizeVideoUrl(ep.videoUrl || ''),
             videoSources: normalizeVideoSources(ep.videoSources),
+            movieboxUrl: normalizeVideoUrl(ep.movieboxUrl || ''),
+            movieboxSources: normalizeVideoSources(ep.movieboxSources),
+            movieboxId: String(ep.movieboxId || '').trim(),
+            movieboxSlug: String(ep.movieboxSlug || '').trim(),
             subtitleUrl: normalizeSubtitleUrl(ep.subtitleUrl || ep.subtitleURL || ''),
             subtitleOffset: Number(ep.subtitleOffset) || 0,
             number: Number(ep.number) || 1
@@ -1196,6 +1204,12 @@ function isCinemanaPlayback(meta, url) {
         || !!String(m.cinemanaId || '').trim()
         || /cinemana/i.test(String(url || ''));
 }
+function isMovieBoxPlayback(meta, url) {
+    const m = meta || {};
+    return String(m.playbackProvider || '').toLowerCase() === 'moviebox'
+        || !!String(m.movieboxId || '').trim()
+        || /\/watch\/[A-Za-z0-9_-]+(?:\?|$)/i.test(String(url || ''));
+}
 const VIDAPI_EMBED_HOST = 'https://player.cinadam.xyz';
 let _hlsLoader = null;
 function ensureHlsJs() {
@@ -1455,97 +1469,156 @@ function cinemanaEpisodeNumber(ep) {
     return Number(ep && (ep.episodeNummer ?? ep.episode ?? ep.episodeNumber ?? ep.number)) || 0;
 }
 
-/* ───────────── محرك ذيب (Theeb Engine) — مصدر بديل متعدد المزودين ─────────────
-   هذا المصدر الثاني يُستخدم فقط كـfallback حي وقت التشغيل (بدون رفع روابط يدوية
-   لكل عمل): إذا فشل سينمانا نطلب من محرك ذيب حل نفس العنوان عبر مزوّديه
-   (أكوام، ArabSeed، WeCima...) ونبدّل رابط المشغل مباشرة.
-
-   ملاحظتين مهمتين بالتصميم:
-   1) طلب البحث/الحل (JSON صغير) يمر عبر نفس بروكسي سينمانا الموجود أصلًا
-      (server.js على CINEMANA_PROXY) بمسار جديد /theeb/resolve/episode، بدل ما
-      يتصل المتصفح بمحرك ذيب مباشرة — هذا يتفادى مشاكل CORS من محرك لسه بمرحلة
-      تطوير مبكرة، ويعيد استخدام نفس السيرفر المنشور أصلًا بدون خدمة جديدة.
-      (يحتاج فقط تضبط متغير بيئة THEEB_ENGINE_UPSTREAM بسيرفر server.js.)
-   2) رابط التشغيل الفعلي /play/:provider/:watchId/:episodeId (فيديو، مو JSON)
-      يُستدعى من المتصفح مباشرة على محرك ذيب العام (window.THEEB_ENGINE_URL) —
-      تمريره عبر بروكسي الترجمة يحمّل سيرفر خفيف بحمل بث فيديو بلا داعي.
-
-   أسماء الحقول بالاستجابة (provider/watch_id/episode_id) افتراضية بناءً على
-   توثيق API المتاح؛ إذا اختلفت أسماء الحقول الفعلية، تحتاج تعدّل
-   theebCandidateField/theebArray فقط. */
-function theebBaseUrl() {
+/* ───────────── MovieBox API (Cloudflare Worker) — مصدر بديل ─────────────
+   تكامل مباشر مع MovieBox-API المنشور كـCloudflare Worker:
+   /search, /detail/:slug, /episodes/:slug, /api/stream/:subject_id
+   ورابط التشغيل المحفوظ /watch/:subject_id?... .
+*/
+function movieboxBaseUrl() {
     let stored = '';
-    try { stored = localStorage.getItem('theeb_engine_url') || ''; } catch (e) { }
-    return String((typeof window !== 'undefined' && window.THEEB_ENGINE_URL) || stored || '').replace(/\/$/, '');
+    try { stored = localStorage.getItem('moviebox_api_url') || ''; } catch (e) { }
+    return String((typeof window !== 'undefined' && window.MOVIEBOX_API_URL) || stored || '').trim().replace(/\/+$/, '');
 }
-async function theebFetch(path) {
-    // نستخدم CINEMANA_PROXY (نفس server.js المنشور) — مو محرك ذيب مباشرة — لهذا
-    // الطلب تحديدًا لأنه JSON خفيف ويمر بأمان عبر بروكسي يملك CORS مضبوط أصلًا.
-    if (!CINEMANA_PROXY)
-        throw new Error('لم يتم ضبط رابط بروكسي سينمانا (نفسه يُستخدم لتمرير طلبات محرك ذيب).');
-    const res = await fetch(CINEMANA_PROXY + path, { headers: { 'Accept': 'application/json' } });
-    if (!res.ok)
-        throw new Error(`محرك ذيب رجّع خطأ (${res.status})`);
-    return res.json();
+async function movieboxFetch(path, init = {}) {
+    const base = movieboxBaseUrl();
+    if (!base) throw new Error('اضبط رابط MovieBox Worker من لوحة الإدارة أولًا.');
+    const clean = String(path || '').startsWith('/') ? path : `/${path}`;
+    const res = await fetch(base + clean, { ...init, headers: { Accept: 'application/json', ...(init.headers || {}) } });
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch (e) { }
+    if (!res.ok) {
+        const msg = data && (data.error || data.message) || text.slice(0, 180);
+        throw new Error(`MovieBox رجّع ${res.status}${msg ? `: ${msg}` : ''}`);
+    }
+    if (!data || typeof data !== 'object') throw new Error('MovieBox رجّع استجابة غير JSON.');
+    return data;
 }
-function theebArray(data, keys = ['results', 'candidates', 'items', 'data', 'list']) {
-    if (Array.isArray(data))
-        return data;
-    if (!data || typeof data !== 'object')
-        return [];
-    for (const k of keys)
-        if (Array.isArray(data[k]))
-            return data[k];
+function movieboxNorm(v) {
+    return String(v == null ? '' : v).trim().toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9\u0600-\u06ff]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function movieboxTitle(item) { return String(item && (item.name || item.title || item.subjectName || item.originalTitle || item.original_title) || '').trim(); }
+function movieboxYear(item) { return String(item && (item.year || item.releaseYear || item.release_date || item.releaseDate) || '').slice(0, 4); }
+function movieboxSlug(item) { return String(item && (item.slug || item.detailPath || item.detail_path || item.path) || '').trim(); }
+function movieboxId(item) { return String(item && (item.id || item.subjectId || item.subject_id || item.metadata?.id) || '').trim(); }
+function movieboxArray(data) {
+    if (Array.isArray(data)) return data;
+    if (!data || typeof data !== 'object') return [];
+    for (const k of ['movies','results','items','data','list']) if (Array.isArray(data[k])) return data[k];
     return [];
 }
-function theebCandidateField(c, ...names) {
-    for (const n of names)
-        if (c && c[n] != null && String(c[n]).trim())
-            return String(c[n]).trim();
-    return '';
+function movieboxScore(item, title, year) {
+    const wanted = movieboxNorm(title), got = movieboxNorm(movieboxTitle(item));
+    if (!wanted || !got) return -9999;
+    let score = got === wanted ? 1000 : ((got.includes(wanted) || wanted.includes(got)) ? 700 : 0);
+    if (!score) { const wt = wanted.split(' ').filter(x => x.length >= 2), gt = new Set(got.split(' ').filter(x => x.length >= 2)); score = wt.filter(x => gt.has(x)).length * 55; }
+    const y = Number(year) || 0, iy = Number(movieboxYear(item)) || 0;
+    if (y && iy) score += Math.abs(y - iy) === 0 ? 250 : (Math.abs(y - iy) === 1 ? 90 : -80);
+    return score;
 }
-function theebPickCandidate(list) {
-    if (!list || !list.length)
-        return null;
-    // نفضّل مرشح Direct (تحقق فعلي من بايتات الوسائط) على Embed عند توفره.
-    const direct = list.find(c => /direct/i.test(String(c && (c.kind || c.type || c.verification || c.status) || '')));
-    return direct || list[0];
+function movieboxPick(list, title, year) {
+    const ranked = (list || []).map((x,i) => ({ ...x, _score: movieboxScore(x,title,year), _index:i })).sort((a,b) => b._score-a._score || a._index-b._index);
+    if (!ranked.length || ranked[0]._score < 250) throw new Error('لم أجد تطابق MovieBox موثوق بالاسم/السنة.');
+    if (ranked[1] && ranked[1]._score >= 650 && Math.abs(ranked[0]._score-ranked[1]._score) < 60) throw new Error('MovieBox أعاد نتائج متقاربة؛ عدّل الاسم أو السنة حتى لا نحفظ رابط عمل خاطئ.');
+    return ranked[0];
 }
-function theebBuildPlayUrl(candidate) {
-    const base = theebBaseUrl();
-    const provider = theebCandidateField(candidate, 'provider', 'source', 'provider_id', 'providerId');
-    const watchId = theebCandidateField(candidate, 'watch_id', 'watchId', 'watchID');
-    const episodeId = theebCandidateField(candidate, 'episode_id', 'episodeId') || watchId;
-    if (!base || !provider || !watchId)
-        return '';
-    return `${base}/play/${encodeURIComponent(provider)}/${encodeURIComponent(watchId)}/${encodeURIComponent(episodeId)}?quality=720p`;
+async function movieboxSearch(title, year='') {
+    const data = await movieboxFetch(`/search?q=${encodeURIComponent(String(title || '').trim())}`);
+    return movieboxArray(data).map((x,i) => ({ ...x, _score: movieboxScore(x,title,year), _index:i })).sort((a,b)=>b._score-a._score || a._index-b._index).slice(0,20);
 }
-async function theebResolveEpisode({ title, season, episode }) {
-    const usp = new URLSearchParams();
-    usp.set('q', String(title || '').trim());
-    usp.set('season', String(Number(season) || 1));
-    usp.set('episode', String(Number(episode) || 1));
-    const data = await theebFetch(`/theeb/resolve/episode?${usp.toString()}`);
-    const pick = theebPickCandidate(theebArray(data));
-    if (!pick)
-        throw new Error('محرك ذيب ما لكى مرشح تشغيل لهذا العنوان.');
-    const url = theebBuildPlayUrl(pick);
-    if (!url)
-        throw new Error('استجابة محرك ذيب ناقصة (provider/watch_id) — تحقق من شكل الاستجابة الفعلي.');
-    return { url, raw: pick };
+async function movieboxResolveIdentity(title, year) {
+    const best = movieboxPick(await movieboxSearch(title,year), title, year);
+    let slug = movieboxSlug(best);
+    if (!slug && best.url) { try { const pu = new URL(best.url, movieboxBaseUrl()); const i=pu.pathname.indexOf('/detail/'); if(i>=0) slug=decodeURIComponent(pu.pathname.slice(i+8).split('/')[0]); } catch(e){} }
+    if (!slug) throw new Error('نتيجة MovieBox لا تحتوي slug/detail path.');
+    const detail = await movieboxFetch(`/detail/${encodeURIComponent(slug)}`);
+    const metadata = detail && (detail.metadata || detail.data?.metadata || detail.data || {});
+    const subjectId = movieboxId(metadata) || movieboxId(best) || movieboxId(detail);
+    if (!subjectId) throw new Error('تفاصيل MovieBox لا تحتوي subject_id.');
+    return { title: movieboxTitle(best)||title, year: movieboxYear(best)||String(year||''), slug, subjectId, matchScore: best._score };
 }
-// الأفلام: نعاملها كحلقة وحيدة season=1/episode=1 (اصطلاح شائع بمحركات الفهرسة).
-// إذا كان محرك ذيب يوفر مسارًا مخصصًا للأفلام لاحقًا، تُستبدل هذي الدالة بس.
-async function theebResolveMovie({ title }) {
-    return theebResolveEpisode({ title, season: 1, episode: 1 });
+async function movieboxEpisodes(slug) { return movieboxFetch(`/episodes/${encodeURIComponent(slug)}`); }
+function movieboxWorkerWatchUrl(subjectId, detailPath, season=0, episode=0, resolution=0) {
+    const base=movieboxBaseUrl(); if(!base || !subjectId || !detailPath) return '';
+    const u=new URL(`${base}/watch/${encodeURIComponent(subjectId)}`); u.searchParams.set('detail_path',String(detailPath));
+    if(Number(season)>0) u.searchParams.set('se',String(Number(season))); if(Number(episode)>0) u.searchParams.set('ep',String(Number(episode))); if(Number(resolution)>0) u.searchParams.set('resolution',String(Number(resolution)));
+    return u.toString();
 }
-// تفضيل الجهاز/الشبكة: أي مصدر اشتغل آخر مرة على هذا الجهاز، نجربه أولًا بالمرة الجاية
-// (محليًا بالمتصفح فقط — لأن مشكلة الحجب مرتبطة بالشبكة لا بالحساب).
-function getPreferredSource() {
-    try { return localStorage.getItem('cv_preferred_source') || ''; } catch (e) { return ''; }
+async function movieboxStreams(subjectId, detailPath, season=0, episode=0) {
+    const data=await movieboxFetch(`/api/stream/${encodeURIComponent(subjectId)}?detail_path=${encodeURIComponent(detailPath)}&se=${Number(season)||0}&ep=${Number(episode)||0}`);
+    return Array.isArray(data.sources) ? data.sources.map(x=>({url:String(x&&x.url||'').trim(),label:String(x&&(x.resolution||x.quality||x.label)||'HD').trim()})).filter(x=>/^https?:\/\//i.test(x.url)) : [];
 }
-function setPreferredSource(v) {
-    try { localStorage.setItem('cv_preferred_source', v); } catch (e) { }
+function movieboxSourcesFromStreams(subjectId, detailPath, streams, season=0, episode=0) {
+    const out=[],seen=new Set(); for(const st of streams||[]){ const n=Number(String(st.label||'').match(/\d{3,4}/)?.[0]||0); const url=movieboxWorkerWatchUrl(subjectId,detailPath,season,episode,n); if(!url||seen.has(url))continue; seen.add(url); out.push({label:st.label||(n?`${n}p`:'Auto'),resolution:n||0,url}); }
+    if(!out.length){ const url=movieboxWorkerWatchUrl(subjectId,detailPath,season,episode,0); if(url)out.push({label:'Auto',resolution:0,url}); }
+    out.sort((a,b)=>Number(b.resolution||0)-Number(a.resolution||0)); return normalizeVideoSources(out);
+}
+async function movieboxResolveMovie({title,year}) {
+    const identity=await movieboxResolveIdentity(title,year); const streams=await movieboxStreams(identity.subjectId,identity.slug,0,0); const sources=movieboxSourcesFromStreams(identity.subjectId,identity.slug,streams,0,0);
+    if(!sources.length)throw new Error('MovieBox لم يُرجع بثًا متحققًا لهذا الفيلم.'); return {ok:true,source:'moviebox',...identity,season:0,episode:0,sources,url:sources[0].url};
+}
+async function movieboxResolveEpisode({title,year,season,episode,identity=null}) {
+    const item=identity||await movieboxResolveIdentity(title,year); const eps=await movieboxEpisodes(item.slug); const subjectId=String(eps&&(eps.subject_id||eps.subjectId)||item.subjectId||'').trim();
+    if(!subjectId)throw new Error('MovieBox لم يُرجع subject_id للمسلسل.'); const streams=await movieboxStreams(subjectId,item.slug,Number(season)||1,Number(episode)||1); const sources=movieboxSourcesFromStreams(subjectId,item.slug,streams,Number(season)||1,Number(episode)||1);
+    if(!sources.length)throw new Error(`MovieBox لم يُرجع بثًا للموسم ${season} الحلقة ${episode}.`); return {ok:true,source:'moviebox',...item,subjectId,season:Number(season)||1,episode:Number(episode)||1,sources,url:sources[0].url};
+}
+const SOURCE_PREF_LOCAL_KEY='cv_preferred_source', SOURCE_PREF_DEVICE_KEY='cv_source_pref_device_id';
+function sourcePrefDeviceId(){ let id=''; try{id=localStorage.getItem(SOURCE_PREF_DEVICE_KEY)||'';}catch(e){} if(!id){ try{id=(globalThis.crypto&&globalThis.crypto.randomUUID)?globalThis.crypto.randomUUID():`d_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,10)}`;}catch(e){id=`d_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,10)}`;} try{localStorage.setItem(SOURCE_PREF_DEVICE_KEY,id);}catch(e){} } return id; }
+async function getPreferredSource(){ let local=''; try{local=localStorage.getItem(SOURCE_PREF_LOCAL_KEY)||'';}catch(e){} try{const snap=await db.ref(`sourcePreferences/${sanitizeKey(sourcePrefDeviceId())}`).once('value'); const remote=snap&&snap.val(); if(remote&&(remote.source==='cinemana'||remote.source==='moviebox')){try{localStorage.setItem(SOURCE_PREF_LOCAL_KEY,remote.source);}catch(e){} return remote.source;}}catch(e){} return local==='cinemana'||local==='moviebox'?local:''; }
+function setPreferredSource(v){ const source=v==='moviebox'?'moviebox':(v==='cinemana'?'cinemana':''); if(!source)return; try{localStorage.setItem(SOURCE_PREF_LOCAL_KEY,source);}catch(e){} try{db.ref(`sourcePreferences/${sanitizeKey(sourcePrefDeviceId())}`).set({source,updatedAt:Date.now()}).catch(()=>{});}catch(e){} }
+function MovieBoxConfigPanel(){
+    const [value,setValue]=useState(()=>movieboxBaseUrl()),[status,setStatus]=useState('');
+    const save=()=>{const url=String(value||'').trim().replace(/\/+$/,''); if(!/^https?:\/\//i.test(url)){setStatus('اكتب رابط Worker صحيح يبدأ بـ http:// أو https://');return;} try{localStorage.setItem('moviebox_api_url',url);}catch(e){} try{window.MOVIEBOX_API_URL=url;}catch(e){} setStatus('تم حفظ رابط MovieBox Worker. الحفظ القادم سيولد روابط المشاهدة تلقائيًا.');};
+    return React.createElement("div",{className:"glass-card rounded-2xl p-4 mb-5 border border-accent-purple/25 bg-accent-purple/5"},
+        React.createElement("div",{className:"flex items-start justify-between gap-3 flex-wrap"},React.createElement("div",null,React.createElement("h4",{className:"font-black text-white text-sm"},"مصدر MovieBox البديل"),React.createElement("p",{className:"text-[11px] text-slate-400 mt-1.5 leading-relaxed"},"الصق رابط Cloudflare Worker الذي نشرته من MovieBox-API.")),React.createElement("span",{className:`text-[10px] font-black px-2.5 py-1 rounded-lg border ${movieboxBaseUrl()?'text-emerald-300 bg-emerald-400/10 border-emerald-400/20':'text-amber-300 bg-amber-400/10 border-amber-400/20'}`},movieboxBaseUrl()?'مفعّل':'غير مضبوط')),
+        React.createElement("div",{className:"flex gap-2 mt-3 flex-col sm:flex-row"},React.createElement("input",{dir:"ltr",value,onChange:e=>{setValue(e.target.value);setStatus('');},placeholder:"https://your-worker.workers.dev",className:"flex-1 bg-glass-950 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-accent-cyan"}),React.createElement("button",{type:"button",onClick:save,className:"px-4 py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-xs font-black hover:brightness-110"},"حفظ الرابط")),
+        React.createElement("p",{className:`text-[10px] font-bold mt-2 ${status?'text-accent-cyan':'text-slate-500'}`},status||'روابط /watch المحفوظة تعمل لاحقًا من المتصفح بدون server.js.'));
+}
+function MovieBoxImportPanel({ kind, defaultTitle, defaultYear, seasons = [], onMovieResolved, onSeriesResolved }) {
+    const [loading, setLoading] = useState(false);
+    const [status, setStatus] = useState('');
+    const run = async () => {
+        const title = String(defaultTitle || '').trim();
+        if (!title) { setStatus('اكتب اسم العمل أولًا.'); return; }
+        if (!movieboxBaseUrl()) { setStatus('اضبط رابط MovieBox Worker من أعلى النموذج أولًا.'); return; }
+        setLoading(true); setStatus(kind === 'movie' ? 'جاري البحث واختبار بث الفيلم...' : 'جاري مطابقة المسلسل وتجهيز روابط الحلقات...');
+        try {
+            if (kind === 'movie') {
+                const r = await movieboxResolveMovie({ title, year: defaultYear || '' });
+                onMovieResolved && onMovieResolved(r);
+                setStatus(`تمت مطابقة MovieBox وحفظ ${r.sources.length} جودة.`);
+            } else {
+                const identity = await movieboxResolveIdentity(title, defaultYear || '');
+                const next = JSON.parse(JSON.stringify(seasons || []));
+                const jobs = [];
+                next.forEach(season => (season.episodes || []).forEach(ep => jobs.push({ season, ep })));
+                let done = 0, ok = 0;
+                for (let i = 0; i < jobs.length; i += 3) {
+                    await Promise.all(jobs.slice(i, i + 3).map(async job => {
+                        try {
+                            const r = await movieboxResolveEpisode({ title, year: defaultYear || '', season: Number(job.season.number) || 1, episode: Number(job.ep.number) || 1, identity });
+                            job.ep.movieboxUrl = r.url; job.ep.movieboxSources = r.sources; job.ep.movieboxId = r.subjectId || identity.subjectId; job.ep.movieboxSlug = r.slug || identity.slug;
+                            if (!job.ep.videoUrl) job.ep.playbackProvider = 'moviebox';
+                            ok++;
+                        } catch (e) { }
+                        done++; setStatus(`جاري تجهيز روابط MovieBox: ${done}/${jobs.length}`);
+                    }));
+                }
+                onSeriesResolved && onSeriesResolved({ identity, seasons: next });
+                setStatus(`اكتمل MovieBox: ${ok}/${jobs.length} حلقة لديها رابط مشاهدة.`);
+            }
+        } catch (e) { setStatus(e && e.message ? e.message : 'تعذر جلب MovieBox.'); }
+        finally { setLoading(false); }
+    };
+    return React.createElement("div", { className: "glass-card rounded-2xl p-4 mt-4 border border-accent-purple/20 bg-accent-purple/5" },
+        React.createElement("div", { className: "flex items-center justify-between gap-3 flex-wrap" },
+            React.createElement("div", null,
+                React.createElement("h5", { className: "font-black text-white text-sm" }, "MovieBox — جلب المصدر البديل"),
+                React.createElement("p", { className: "text-[10px] text-slate-500 mt-1" }, kind === 'movie' ? 'يبحث بالاسم والسنة ثم يختبر /api/stream قبل حفظ رابط /watch.' : 'يستخدم هوية المسلسل مرة واحدة ثم يختبر بث كل حلقة ويخزن روابط /watch.')),
+            React.createElement("button", { type: "button", onClick: run, disabled: loading || !movieboxBaseUrl(), className: "flex items-center gap-2 px-4 py-2 rounded-xl bg-accent-purple text-white text-xs font-black disabled:opacity-40 hover:brightness-110" },
+                React.createElement(Icon, { name: loading ? "loader" : "search", className: `w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}` }),
+                loading ? 'جاري العمل...' : (kind === 'movie' ? 'جلب رابط الفيلم' : 'جلب روابط الحلقات'))),
+        status && React.createElement("p", { className: "text-[10px] font-bold text-slate-300 mt-2" }, status));
 }
 function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGenerate, onGenerateQualities, onGenerateSubtitle, onPickedNb, onImportTmdb }) {
     const [query, setQuery] = useState(defaultTitle || '');
@@ -3503,7 +3576,7 @@ function SubSlider({ label, value, unit, min, max, step, onChange }) {
                 unit)),
         React.createElement("input", { type: "range", min: min, max: max, step: step, value: value, onChange: e => onChange(Number(e.target.value)), className: "w-full mb-2", style: { accentColor: '#00F0FF' } })));
 }
-function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration, trimStart, trimEnd, introStart, introEnd, recapStart, recapEnd, outroStart, outroEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, onEnded, onOutroStart, onPreviousEpisode, onNextEpisode, hasPreviousEpisode, hasNextEpisode, previousEpisodeLabel, nextEpisodeLabel, qualities, onQualityChange, startAt, onProgressSave }) {
+function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onSourceReady, onDuration, trimStart, trimEnd, introStart, introEnd, recapStart, recapEnd, outroStart, outroEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, onEnded, onOutroStart, onPreviousEpisode, onNextEpisode, hasPreviousEpisode, hasNextEpisode, previousEpisodeLabel, nextEpisodeLabel, qualities, onQualityChange, startAt, onProgressSave }) {
     const videoRef = useRef(null);
     const wrapRef = useRef(null);
     const hideTimerRef = useRef(null);
@@ -3713,13 +3786,28 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
             if (p && p.catch)
                 p.catch(() => { });
         };
-        const markReady = () => {
-            clearBufferingTimer();
-            setLoading(false);
+        let readyNotified = false, failed = false, metadataSeen = false, canPlaySeen = false;
+        let metadataTimer = null, canPlayTimer = null;
+        const failSource = () => {
+            if (cancelled || failed || readyNotified) return;
+            failed = true;
+            if (metadataTimer) clearTimeout(metadataTimer);
+            if (canPlayTimer) clearTimeout(canPlayTimer);
+            clearBufferingTimer(); setLoading(false); onError && onError();
         };
-        const onReady = () => { markReady(); tryPlay(); };
+        const markReady = () => {
+            if (cancelled || readyNotified) return;
+            readyNotified = true;
+            if (metadataTimer) clearTimeout(metadataTimer);
+            if (canPlayTimer) clearTimeout(canPlayTimer);
+            clearBufferingTimer(); setLoading(false);
+            try { onSourceReady && onSourceReady(); } catch (e) { }
+        };
+        const onReady = () => { canPlaySeen = true; markReady(); tryPlay(); };
+        const onLoadedMetadata = () => { metadataSeen = true; };
         videoEl.addEventListener('canplay', onReady);
         videoEl.addEventListener('loadeddata', onReady);
+        videoEl.addEventListener('loadedmetadata', onLoadedMetadata);
         const setup = async () => {
             if (cancelled)
                 return;
@@ -3786,15 +3874,18 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
             videoEl.load();
         };
         setup();
-        const stuckTimer = setTimeout(() => { if (videoEl.readyState < 2)
-            setLoading(false); }, CV_LOW_POWER ? 20000 : 14000);
+        const metadataTimeout = CV_VERY_LOW_POWER ? 15000 : (CV_LOW_POWER ? 12000 : 9000);
+        const canPlayTimeout = CV_VERY_LOW_POWER ? 26000 : (CV_LOW_POWER ? 22000 : 16000);
+        metadataTimer = setTimeout(() => { if (!metadataSeen && videoEl.readyState < 1) failSource(); }, metadataTimeout);
+        canPlayTimer = setTimeout(() => { if (!canPlaySeen && videoEl.readyState < 3) failSource(); }, canPlayTimeout);
         return () => {
             cancelled = true;
             videoEl.removeEventListener('canplay', onReady);
             videoEl.removeEventListener('loadeddata', onReady);
-            if (hls)
-                hls.destroy();
-            clearTimeout(stuckTimer);
+            videoEl.removeEventListener('loadedmetadata', onLoadedMetadata);
+            if (hls) hls.destroy();
+            if (metadataTimer) clearTimeout(metadataTimer);
+            if (canPlayTimer) clearTimeout(canPlayTimer);
             clearBufferingTimer();
         };
     }, [src]);
@@ -4706,7 +4797,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const [replyText, setReplyText] = useState('');
     const [videoError, setVideoError] = useState(false);
     const [playerRetryCount, setPlayerRetryCount] = useState(0);
-    // أي مصدر شغّال حاليًا: 'cinemana' أو 'theeb' — يحدد اتجاه التبديل عند الفشل
+    // أي مصدر شغّال حاليًا: 'cinemana' أو 'moviebox' — يحدد اتجاه التبديل عند الفشل
     // (نبدّل للمصدر الآخر، مو نفس المصدر مرتين).
     const [activeSource, setActiveSource] = useState('cinemana');
     const retryPlayback = () => { setVideoError(false); setPlayerRetryCount(c => c + 1); };
@@ -5035,6 +5126,8 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         return null;
     };
     const getSavedVideoUrl = (item) => normalizeVideoUrl((item && item.videoUrl) || (((item && item.videoSources) || [])[0] || {}).url || '');
+    const getSavedMovieBoxUrl = (item) => normalizeVideoUrl((item && item.movieboxUrl) || (((item && item.movieboxSources) || [])[0] || {}).url || '');
+    const getSavedMovieBoxSources = (item) => normalizeVideoSources(item && item.movieboxSources || []);
     const recoverMovieVideo = async () => {
         // إذا كان الفيلم محفوظًا ومعه cinemanaId فلا داعي للبحث بالعنوان.
         // البحث كان سبب المشكلة الجديدة: الهاتف/الموقع يحاول أولًا /search ثم يفشل
@@ -5089,19 +5182,20 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             if (title.type === 'movie') {
                 let url = '';
                 let sources = [];
-                // إذا كان آخر تشغيل ناجح بهذا الجهاز صار عبر محرك ذيب (يعني سينمانا
-                // محجوب بهذي الشبكة)، نجرب ذيب أولًا مباشرة بدل ما نضيّع وقت بمحاولة
-                // سينمانا نعرف مسبقًا انها راح تفشل.
-                if (getPreferredSource() === 'theeb') {
-                    try {
-                        const alt = await theebResolveMovie({ title: title.name });
-                        url = alt.url;
-                        setActiveSource('theeb');
-                    } catch (e) { /* نتجاهل ونكمل بالمسار الطبيعي (سينمانا) */ }
+                const preferred = await getPreferredSource();
+                let selectedSource = 'cinemana';
+                if (preferred === 'moviebox') {
+                    url = getSavedMovieBoxUrl(title);
+                    sources = getSavedMovieBoxSources(title);
+                    if (url) { selectedSource = 'moviebox'; setActiveSource('moviebox'); }
+                    if (!url && movieboxBaseUrl()) {
+                        try { const alt = await movieboxResolveMovie({ title: title.name, year: title.year || '' }); url = alt.url; sources = alt.sources; selectedSource = 'moviebox'; setActiveSource('moviebox'); } catch (e) { }
+                    }
                 }
                 if (!url) {
                     url = getSavedVideoUrl(title);
                     sources = normalizeVideoSources(title.videoSources);
+                    if (url) { selectedSource = 'cinemana'; setActiveSource('cinemana'); }
                 }
                 if (!url) {
                     const recovered = await recoverMovieVideo();
@@ -5111,7 +5205,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 }
                 if (requestId !== playRequestRef.current) return;
                 setPlayingUrl(url);
-                setPlayingMeta({ ...title, videoUrl: url, videoSources: sources, subtitleUrl: title.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: title.subtitlePublicUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
+                setPlayingMeta({ ...title, videoUrl: url, videoSources: sources, playbackProvider: selectedSource === 'moviebox' ? 'moviebox' : (title.playbackProvider || 'cinemana'), subtitleUrl: title.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: title.subtitlePublicUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
                 setPlayingLabel(title.name);
                 ensureVidApiSubtitlePublic({ ...title, videoUrl: url }).catch(() => {});
             }
@@ -5147,16 +5241,20 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         try {
             let url = '';
             let sources = [];
-            if (getPreferredSource() === 'theeb') {
-                try {
-                    const alt = await theebResolveEpisode({ title: title.name, season: seasonNumber, episode: ep && ep.number });
-                    url = alt.url;
-                    setActiveSource('theeb');
-                } catch (e) { /* نتجاهل ونكمل بالمسار الطبيعي (سينمانا) */ }
+            const preferred = await getPreferredSource();
+            let selectedSource = 'cinemana';
+            if (preferred === 'moviebox') {
+                url = getSavedMovieBoxUrl(ep);
+                sources = getSavedMovieBoxSources(ep);
+                if (url) { selectedSource = 'moviebox'; setActiveSource('moviebox'); }
+                if (!url && movieboxBaseUrl()) {
+                    try { const alt = await movieboxResolveEpisode({ title: title.name, year: title.year || '', season: seasonNumber, episode: ep && ep.number }); url = alt.url; sources = alt.sources; selectedSource = 'moviebox'; setActiveSource('moviebox'); } catch (e) { }
+                }
             }
             if (!url) {
                 url = getSavedVideoUrl(ep);
                 sources = normalizeVideoSources(ep.videoSources);
+                if (url) { selectedSource = 'cinemana'; setActiveSource('cinemana'); }
             }
             if (!url) {
                 const recovered = await recoverEpisodeVideo(ep, seasonNumber);
@@ -5166,7 +5264,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             }
             if (requestId !== playRequestRef.current) return;
             setPlayingUrl(url);
-            setPlayingMeta({ ...ep, videoUrl: url, videoSources: sources, subtitleUrl: ep.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: ep.subtitlePublicUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
+            setPlayingMeta({ ...ep, videoUrl: url, videoSources: sources, playbackProvider: selectedSource === 'moviebox' ? 'moviebox' : (ep.playbackProvider || 'cinemana'), subtitleUrl: ep.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: ep.subtitlePublicUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
             setPlayingSeasonNumber(seasonNumber != null ? seasonNumber : null);
             setPlayingLabel(`${title.name} · ${ep.title || `الحلقة ${ep.number != null ? ep.number : ''}`}`);
                 ensureVidApiSubtitlePublic({ ...ep, videoUrl: url }).catch(() => {});
@@ -5233,40 +5331,30 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         setPlayingMeta(prev => ({ ...prev, videoUrl: url, subtitleUrl: normalizeSubtitleUrl((quality && quality.subtitleUrl) || prev.subtitleUrl || '') }));
         setPlayingUrl(normalizeVideoUrl(url));
     };
-    // فشل سينمانا (شبكة العميل تحجب الـCDN مثلًا) → نجرب محرك ذيب فورًا كمصدر ثاني
-    // حي، دون أي حاجة لرابط مرفوع مسبقًا. تُجرَّب مرة واحدة فقط بكل جلسة تشغيل
-    // (triedFallbackRef) حتى ما ندخل بحلقة تبديل لا نهائية إذا فشل المصدرين.
+    // فشل المصدر الحالي → نجرب المصدر الآخر مرة واحدة في جلسة التشغيل.
     const attemptFallback = async () => {
         try {
-            let url = '';
-            let nextSource = '';
-            if (activeSource !== 'theeb') {
-                // كنا نلعب من سينمانا وفشل → نجرب ذيب.
-                const result = title.type === 'movie'
-                    ? await theebResolveMovie({ title: title.name })
-                    : await theebResolveEpisode({ title: title.name, season: playingSeasonNumber || 1, episode: (playingMeta && playingMeta.number) || 1 });
-                url = result.url;
-                nextSource = 'theeb';
-                setPreferredSource('theeb'); // سينمانا فاشل على هذا الجهاز/الشبكة، نتذكرها للمرة الجاية
+            let url = '', sources = [], nextSource = '';
+            if (activeSource !== 'moviebox') {
+                const item = title.type === 'movie' ? title : playingMeta;
+                url = getSavedMovieBoxUrl(item);
+                sources = getSavedMovieBoxSources(item);
+                if (!url && movieboxBaseUrl()) {
+                    const result = title.type === 'movie'
+                        ? await movieboxResolveMovie({ title: title.name, year: title.year || '' })
+                        : await movieboxResolveEpisode({ title: title.name, year: title.year || '', season: playingSeasonNumber || 1, episode: (playingMeta && playingMeta.number) || 1 });
+                    url = result.url; sources = result.sources;
+                }
+                if (!url) throw new Error('لا يوجد رابط MovieBox محفوظ ولم يتمكن الموقع من توليده الآن.');
+                nextSource = 'moviebox';
             } else {
-                // كنا نلعب من ذيب وفشل → نرجع نجرب سينمانا (بحث طازج، متجاهلين أي رابط محفوظ فاشل).
-                const recovered = title.type === 'movie'
-                    ? await recoverMovieVideo()
-                    : await recoverEpisodeVideo({ number: playingMeta && playingMeta.number }, playingSeasonNumber);
-                url = recovered.url;
-                nextSource = 'cinemana';
+                const recovered = title.type === 'movie' ? await recoverMovieVideo() : await recoverEpisodeVideo({ number: playingMeta && playingMeta.number }, playingSeasonNumber);
+                url = recovered.url; sources = recovered.sources; nextSource = 'cinemana';
             }
-            setPlayingMeta(prev => ({ ...prev, videoUrl: url, videoSources: [] }));
-            setPlayingUrl(url);
-            setVideoError(false);
-            setActiveSource(nextSource);
-            setPlayerRetryCount(c => c + 1);
+            setPlayingMeta(prev => ({ ...prev, videoUrl: url, videoSources: sources, playbackProvider: nextSource }));
+            setPlayingUrl(url); setVideoError(false); setActiveSource(nextSource); setPlayerRetryCount(c => c + 1);
             showToast('تم التبديل لمصدر تشغيل بديل', 'success');
-        }
-        catch (e) {
-            setVideoError(true);
-            showToast(e.message || 'تعذّر إيجاد مصدر تشغيل بديل', 'error');
-        }
+        } catch (e) { setVideoError(true); showToast(e.message || 'تعذّر إيجاد مصدر تشغيل بديل', 'error'); }
     };
     const handlePlaybackError = () => {
         if (triedFallbackRef.current) {
@@ -5397,7 +5485,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         React.createElement("div", { onClick: e => e.stopPropagation(), className: `${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl` },
             React.createElement("div", { className: "relative" },
                 playingUrl ? (React.createElement("div", { className: "relative" },
-                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: 'cinadam-player-' + title.id + '-' + playerRetryCount, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: handlePlaybackError, onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : Number(playingMeta.introStart) || 0, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : Number(playingMeta.introEnd) || 0, recapStart: skipDbSegments.recap ? Number(skipDbSegments.recap.start_ms) / 1000 : Number(playingMeta.recapStart) || 0, recapEnd: skipDbSegments.recap ? Number(skipDbSegments.recap.end_ms) / 1000 : Number(playingMeta.recapEnd) || 0, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : Number(playingMeta.outroStart) || 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : Number(playingMeta.outroEnd) || 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onOutroStart: handleEpisodeComplete, onPreviousEpisode: playPreviousEpisode, onNextEpisode: playNextEpisode, hasPreviousEpisode: !!getPreviousEpisodeInfo(), hasNextEpisode: !!getNextEpisodeInfo(), previousEpisodeLabel: (() => { const p = getPreviousEpisodeInfo(); return p ? `الحلقة السابقة · ${p.title || `الحلقة ${p.number}`}` : 'الحلقة السابقة'; })(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete, onProgressSave: onSaveWatchProgress ? (r => onSaveWatchProgress(title.id, title.type === 'movie' ? { kind: 'movie', ...r, titleName: title.name, poster: title.poster } : { kind: 'episode', season: playingSeasonNumber, episode: playingMeta && playingMeta.number, ...r, titleName: title.name, poster: title.poster, label: playingLabel })) : null })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
+                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl) || isMovieBoxPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: 'cinadam-player-' + title.id + '-' + playerRetryCount, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: handlePlaybackError, onSourceReady: () => setPreferredSource(activeSource), onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : Number(playingMeta.introStart) || 0, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : Number(playingMeta.introEnd) || 0, recapStart: skipDbSegments.recap ? Number(skipDbSegments.recap.start_ms) / 1000 : Number(playingMeta.recapStart) || 0, recapEnd: skipDbSegments.recap ? Number(skipDbSegments.recap.end_ms) / 1000 : Number(playingMeta.recapEnd) || 0, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : Number(playingMeta.outroStart) || 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : Number(playingMeta.outroEnd) || 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onOutroStart: handleEpisodeComplete, onPreviousEpisode: playPreviousEpisode, onNextEpisode: playNextEpisode, hasPreviousEpisode: !!getPreviousEpisodeInfo(), hasNextEpisode: !!getNextEpisodeInfo(), previousEpisodeLabel: (() => { const p = getPreviousEpisodeInfo(); return p ? `الحلقة السابقة · ${p.title || `الحلقة ${p.number}`}` : 'الحلقة السابقة'; })(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete, onProgressSave: onSaveWatchProgress ? (r => onSaveWatchProgress(title.id, title.type === 'movie' ? { kind: 'movie', ...r, titleName: title.name, poster: title.poster } : { kind: 'episode', season: playingSeasonNumber, episode: playingMeta && playingMeta.number, ...r, titleName: title.name, poster: title.poster, label: playingLabel })) : null })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
                     videoError && (React.createElement("div", { className: "absolute inset-0 bg-black/90 flex flex-col items-center justify-center gap-3 p-6 text-center" },
                         React.createElement("p", { className: "text-sm text-slate-200 font-bold" }, "\u062A\u0639\u0630\u0651\u0631 \u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u0639\u0644\u0649 \u0647\u0630\u0627 \u0627\u0644\u062C\u0647\u0627\u0632."),
                         isIOS && (React.createElement("p", { className: "text-xs text-slate-400 max-w-xs leading-relaxed" }, "\u063A\u0627\u0644\u0628\u064B\u0627 \u0627\u0644\u0633\u0628\u0628 \u0623\u0646 \u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u063A\u064A\u0631 \u0645\u0631\u0641\u0648\u0639 \u0628\u0635\u064A\u063A\u0629 \u064A\u062F\u0639\u0645\u0647\u0627 \u0627\u0644\u0622\u064A\u0641\u0648\u0646 \u0645\u0628\u0627\u0634\u0631\u0629. \u0627\u0644\u0623\u0639\u0645\u0627\u0644 \u0627\u0644\u062A\u064A \u062A\u064F\u0631\u0641\u0639 \u0645\u0646 \u0644\u0648\u062D\u0629 \u0627\u0644\u062A\u062D\u0643\u0645 \u0639\u0628\u0631 \u0632\u0631 \"\u0631\u0641\u0639 \u0645\u0646 \u0627\u0644\u062C\u0647\u0627\u0632\" \u062A\u0639\u0645\u0644 \u0628\u0634\u0643\u0644 \u0635\u062D\u064A\u062D \u0639\u0644\u0649 \u0643\u0644 \u0627\u0644\u0623\u062C\u0647\u0632\u0629.")),
@@ -6903,10 +6991,10 @@ function VideoDisplaySettings({ value, onChange }) {
         showCropStudio && (React.createElement(CropStudioModal, { videoUrl: normalizeVideoUrl(v.videoUrl), initial: crop, onCancel: () => setShowCropStudio(false), onSave: (newCrop) => { set('crop', newCrop); setShowCropStudio(false); } }))));
 }
 function emptyForm(type) {
-    return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', runtimeMinutes: 0, rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
+    return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', runtimeMinutes: 0, rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], movieboxUrl: '', movieboxSources: [], movieboxId: '', movieboxSlug: '', subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
 }
 function emptyEpisode(num) {
-    return { number: num, title: '', runtimeMinutes: 0, videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, imdb: '', tmdbRating: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
+    return { number: num, title: '', runtimeMinutes: 0, videoUrl: '', videoSources: [], movieboxUrl: '', movieboxSources: [], movieboxId: '', movieboxSlug: '', subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, imdb: '', tmdbRating: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
 }
 function SubtitleHelper({ value, onChange, sourceId, title, type, season, episode, year, cinemanaId, offset = 0, onOffsetChange }) {
     const [loading, setLoading] = useState(false);
@@ -7029,6 +7117,7 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
         React.createElement("div", { className: "mt-3.5" },
             React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u062D\u0644\u0642\u0629 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: e.videoUrl, onChange: v => set('videoUrl', v), folder: "episodes", accept: "video/*" })),
         React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb) }),
+        e.movieboxUrl && React.createElement("div", { className: "mt-2.5 rounded-xl bg-accent-purple/5 border border-accent-purple/20 px-3 py-2 text-[10px] font-bold text-accent-purple" }, "MovieBox: رابط مشاهدة محفوظ لهذه الحلقة — سيعمل مباشرة بدون server.js."),
         React.createElement("div", { className: "mt-3.5 flex items-center gap-2" },
             React.createElement("div", { className: "h-px flex-1 bg-white/10" }),
             React.createElement("span", { className: "text-[10px] font-black text-slate-500 px-1" }, "أو استخدم VidAPI"),
@@ -7373,6 +7462,10 @@ function AdminContentForm({ initial, defaultType, onDone }) {
         if (form.type === 'movie') {
             payload.videoUrl = normalizeVideoUrl(form.videoUrl.trim());
             payload.videoSources = normalizeVideoSources(form.videoSources);
+            payload.movieboxUrl = normalizeVideoUrl(form.movieboxUrl || '');
+            payload.movieboxSources = normalizeVideoSources(form.movieboxSources || []);
+            payload.movieboxId = String(form.movieboxId || '');
+            payload.movieboxSlug = String(form.movieboxSlug || '');
 
             // مهم جدًا للأفلام: لا نحفظ cinemanaId وحده ونترك videoUrl/videoSources فارغة.
             // الهاتف لا يستطيع الوصول إلى Node المحلي حتى يسترجع الرابط، بينما الحلقات
@@ -7395,11 +7488,21 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 payload.videoUrl = payload.videoSources[0].url;
             }
 
+            if (movieboxBaseUrl() && !payload.movieboxUrl) {
+                const mb = await movieboxResolveMovie({ title: payload.name, year: payload.year || '' });
+                payload.movieboxUrl = mb.url;
+                payload.movieboxSources = mb.sources;
+                payload.movieboxId = mb.subjectId || '';
+                payload.movieboxSlug = mb.slug || '';
+            } else if (!payload.movieboxUrl && payload.movieboxSources.length) {
+                payload.movieboxUrl = payload.movieboxSources[0].url;
+            }
+
             payload.subtitleUrl = normalizeSubtitleUrl(form.subtitleUrl || '');
             payload.subtitlePublicUrl = String(form.subtitlePublicUrl || '').trim();
             payload.subtitleOffset = Number(form.subtitleOffset) || 0;
             payload.cinemanaId = String(form.cinemanaId || '');
-            payload.playbackProvider = form.cinemanaId ? 'cinemana' : (isVidApiUrl(form.videoUrl) ? 'vidapi' : (form.playbackProvider || ''));
+            payload.playbackProvider = payload.movieboxUrl ? 'moviebox' : (form.cinemanaId ? 'cinemana' : (isVidApiUrl(form.videoUrl) ? 'vidapi' : (form.playbackProvider || '')));
             payload.trimStart = Number(form.trimStart) || 0;
             payload.trimEnd = Number(form.trimEnd) || 0;
             payload.introStart = Number(form.introStart) || 0;
@@ -7416,11 +7519,28 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 poster: (s.poster || '').trim(),
                 episodeThumbnail: (s.episodeThumbnail || '').trim(),
                 episodes: (s.episodes || []).map(e => ({
-                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || ''), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
+                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), movieboxUrl: normalizeVideoUrl((e.movieboxUrl || '').trim()), movieboxSources: normalizeVideoSources(e.movieboxSources), movieboxId: String(e.movieboxId || ''), movieboxSlug: String(e.movieboxSlug || ''), playbackProvider: e.movieboxUrl ? 'moviebox' : (e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : ''))), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || ''), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
                     trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, introStart: Number(e.introStart) || 0, introEnd: Number(e.introEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
                 }))
             }));
             payload.videoUrl = '';
+            if (movieboxBaseUrl()) {
+                const missing = [];
+                const identity = await movieboxResolveIdentity(payload.name, payload.year || '');
+                payload.movieboxId = identity.subjectId;
+                payload.movieboxSlug = identity.slug;
+                const jobs = [];
+                payload.seasons.forEach(season => (season.episodes || []).forEach(ep => { if (!ep.movieboxUrl) jobs.push({ season: Number(season.number)||1, ep }); }));
+                const worker = async ({ season, ep }) => {
+                    try {
+                        const mb = await movieboxResolveEpisode({ title: payload.name, year: payload.year || '', season, episode: ep.number, identity });
+                        ep.movieboxUrl = mb.url; ep.movieboxSources = mb.sources; ep.movieboxId = mb.subjectId || identity.subjectId; ep.movieboxSlug = mb.slug || identity.slug;
+                        if (!ep.videoUrl && ep.movieboxUrl) ep.playbackProvider = 'moviebox';
+                    } catch (e) { missing.push(`S${String(season).padStart(2,'0')}E${String(ep.number).padStart(2,'0')}`); }
+                };
+                for (let i=0;i<jobs.length;i+=3) await Promise.all(jobs.slice(i,i+3).map(worker));
+                if (missing.length) setError(`تم حفظ MovieBox للمتاح. لم تُحل ${missing.length} حلقة: ${missing.slice(0,8).join('، ')}${missing.length>8?'...':''}`);
+            }
         }
         if (payload.status === 'published') {
             try {
@@ -7450,6 +7570,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
     const labelCls = "text-xs font-bold text-slate-300 mb-1.5 block";
     const activeSeason = form.seasons[activeSeasonIdx];
     return (React.createElement("div", { className: "glass-panel rounded-3xl p-5 md:p-7 border border-white/10 shadow-2xl" },
+        React.createElement(MovieBoxConfigPanel, null),
         React.createElement(TmdbImportPanel, { type: form.type, onApply: applyTmdb }),
         React.createElement("div", { className: "grid md:grid-cols-2 gap-5" },
             React.createElement("div", null,
@@ -7498,6 +7619,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                     setBannerData(r.bannerData || null);
                     return r;
                   } }),
+            React.createElement(MovieBoxImportPanel, { kind: "movie", defaultTitle: form.name, defaultYear: form.year, onMovieResolved: r => setForm(prev => ({ ...prev, movieboxUrl: r.url, movieboxSources: r.sources, movieboxId: r.subjectId || '', movieboxSlug: r.slug || '', playbackProvider: 'moviebox' })) }),
             React.createElement("div", { className: "mt-3.5 flex items-center gap-2" },
                 React.createElement("div", { className: "h-px flex-1 bg-white/10" }),
                 React.createElement("span", { className: "text-[10px] font-black text-slate-500 px-1" }, "أو استخدم VidAPI"),
@@ -7520,6 +7642,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                         setActiveSeasonIdx(0);
                         setEditingEpisodeIdx(null);
                     } })),
+            React.createElement(MovieBoxImportPanel, { kind: "tv", defaultTitle: form.name, defaultYear: form.year, seasons: form.seasons, onSeriesResolved: r => setForm(prev => ({ ...prev, movieboxId: r.identity.subjectId || '', movieboxSlug: r.identity.slug || '', seasons: r.seasons })) }),
             React.createElement("div", { className: "mt-6 border-t border-white/10 pt-5" },
                 React.createElement("div", { className: "flex items-center justify-between mb-4" },
                     React.createElement("h4", { className: "font-black text-white text-base" }, "\u0627\u0644\u0645\u0648\u0627\u0633\u0645 \u0648\u0627\u0644\u062D\u0644\u0642\u0627\u062A"),
