@@ -1455,74 +1455,184 @@ function cinemanaEpisodeNumber(ep) {
     return Number(ep && (ep.episodeNummer ?? ep.episode ?? ep.episodeNumber ?? ep.number)) || 0;
 }
 
-/* ───────────── Source 2 — API قابل للضبط ─────────────
-   مصدر بديل مستقل: Cinemana أولاً، وعند فشل التشغيل نطلب رابطًا حيًا من Source 2.
-   السيرفر هو الذي ينفذ البحث/الحل ويعيد رابط proxy قابل للـRange/HLS.
+/* ───────────── محرك ذيب (Theeb Engine) — مصدر بديل متعدد المزودين ─────────────
+   هذا المصدر الثاني يُستخدم فقط كـfallback حي وقت التشغيل (بدون رفع روابط يدوية
+   لكل عمل): إذا فشل سينمانا نطلب من محرك ذيب حل نفس العنوان عبر مزوّديه
+   (أكوام، ArabSeed، WeCima...) ونبدّل رابط المشغل مباشرة.
+
+   ملاحظتين مهمتين بالتصميم:
+   1) طلب البحث/الحل (JSON صغير) يمر عبر نفس بروكسي سينمانا الموجود أصلًا
+      (server.js على CINEMANA_PROXY) بمسار جديد /theeb/resolve/episode، بدل ما
+      يتصل المتصفح بمحرك ذيب مباشرة — هذا يتفادى مشاكل CORS من محرك لسه بمرحلة
+      تطوير مبكرة، ويعيد استخدام نفس السيرفر المنشور أصلًا بدون خدمة جديدة.
+      (يحتاج فقط تضبط متغير بيئة THEEB_ENGINE_UPSTREAM بسيرفر server.js.)
+   2) رابط التشغيل الفعلي /play/:provider/:watchId/:episodeId (فيديو، مو JSON)
+      يُستدعى من المتصفح مباشرة على محرك ذيب العام (window.THEEB_ENGINE_URL) —
+      تمريره عبر بروكسي الترجمة يحمّل سيرفر خفيف بحمل بث فيديو بلا داعي.
+
+   أسماء الحقول بالاستجابة (provider/watch_id/episode_id) افتراضية بناءً على
+   توثيق API المتاح؛ إذا اختلفت أسماء الحقول الفعلية، تحتاج تعدّل
+   theebCandidateField/theebArray فقط. */
+function theebBaseUrl() {
+    let stored = '';
+    try { stored = localStorage.getItem('theeb_engine_url') || ''; } catch (e) { }
+    return String((typeof window !== 'undefined' && window.THEEB_ENGINE_URL) || stored || '').replace(/\/$/, '');
+}
+async function theebFetch(path) {
+    // نستخدم CINEMANA_PROXY (نفس server.js المنشور) — مو محرك ذيب مباشرة — لهذا
+    // الطلب تحديدًا لأنه JSON خفيف ويمر بأمان عبر بروكسي يملك CORS مضبوط أصلًا.
+    if (!CINEMANA_PROXY)
+        throw new Error('لم يتم ضبط رابط بروكسي سينمانا (نفسه يُستخدم لتمرير طلبات محرك ذيب).');
+    let res, text;
+    try {
+        res = await fetch(CINEMANA_PROXY + path, { headers: { 'Accept': 'application/json' } });
+        text = await res.text();
+    }
+    catch (e) {
+        throw new Error('تعذر الاتصال ببروكسي محرك ذيب — تحقق من CINEMANA_PROXY والإنترنت');
+    }
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch (e) { /* استجابة مو JSON (مثلًا صفحة خطأ HTML) */ }
+    if (!res.ok) {
+        // نظهر رسالة الخطأ الحقيقية القادمة من السيرفر (مثلًا "THEEB_ENGINE_UPSTREAM غير مضبوط")
+        // بدل رسالة عامة، حتى تعرف بالضبط وين المشكلة.
+        const serverMsg = data && (data.error || data.message);
+        throw new Error(serverMsg || `محرك ذيب رجّع خطأ (${res.status})${text ? ': ' + text.slice(0, 200) : ''}`);
+    }
+    if (!data)
+        throw new Error('استجابة غير متوقعة من محرك ذيب (مو JSON) — تحقق من رابط THEEB_ENGINE_UPSTREAM');
+    return data;
+}
+function theebArray(data, keys = ['results', 'candidates', 'items', 'data', 'list']) {
+    if (Array.isArray(data))
+        return data;
+    if (!data || typeof data !== 'object')
+        return [];
+    for (const k of keys)
+        if (Array.isArray(data[k]))
+            return data[k];
+    return [];
+}
+function theebCandidateField(c, ...names) {
+    for (const n of names)
+        if (c && c[n] != null && String(c[n]).trim())
+            return String(c[n]).trim();
+    return '';
+}
+function theebPickCandidate(list) {
+    if (!list || !list.length)
+        return null;
+    // نفضّل مرشح Direct (تحقق فعلي من بايتات الوسائط) على Embed عند توفره.
+    const direct = list.find(c => /direct/i.test(String(c && (c.kind || c.type || c.verification || c.status) || '')));
+    return direct || list[0];
+}
+function theebBuildPlayUrl(candidate) {
+    const base = theebBaseUrl();
+    const provider = theebCandidateField(candidate, 'provider', 'source', 'provider_id', 'providerId');
+    const watchId = theebCandidateField(candidate, 'watch_id', 'watchId', 'watchID');
+    const episodeId = theebCandidateField(candidate, 'episode_id', 'episodeId') || watchId;
+    if (!base || !provider || !watchId)
+        return '';
+    return `${base}/play/${encodeURIComponent(provider)}/${encodeURIComponent(watchId)}/${encodeURIComponent(episodeId)}?quality=720p`;
+}
+async function theebResolveEpisode({ title, season, episode }) {
+    const usp = new URLSearchParams();
+    usp.set('q', String(title || '').trim());
+    usp.set('season', String(Number(season) || 1));
+    usp.set('episode', String(Number(episode) || 1));
+    const data = await theebFetch(`/theeb/resolve/episode?${usp.toString()}`);
+    const pick = theebPickCandidate(theebArray(data));
+    if (!pick)
+        throw new Error('محرك ذيب ما لكى مرشح تشغيل لهذا العنوان.');
+    const url = theebBuildPlayUrl(pick);
+    if (!url)
+        throw new Error('استجابة محرك ذيب ناقصة (provider/watch_id) — تحقق من شكل الاستجابة الفعلي.');
+    return { url, raw: pick };
+}
+// الأفلام: نعاملها كحلقة وحيدة season=1/episode=1 (اصطلاح شائع بمحركات الفهرسة).
+// إذا كان محرك ذيب يوفر مسارًا مخصصًا للأفلام لاحقًا، تُستبدل هذي الدالة بس.
+async function theebResolveMovie({ title }) {
+    return theebResolveEpisode({ title, season: 1, episode: 1 });
+}
+/* ───────────── Source 2 (عام) ─────────────
+   هذا طبقة Adapter بسيطة لمصدر ثانٍ مستقل. لا تغيّر أي شيء في بقية الموقع:
+   - إذا فشل المصدر الأساسي، نحاول رابط altVideoUrl المحفوظ أولًا.
+   - إذا ما موجود، نستدعي Source 2 من نفس الـproxy عبر /source2/resolve/movie أو
+     /source2/resolve/episode.
+   - الاستجابة المقبولة: {url}, {videoUrl}, {sources:[...]}, أو {candidates:[...]}
+   - يمكن ضبط عنوان الـAPI عبر window.SOURCE2_URL أو localStorage: source2_url.
 */
 function source2BaseUrl() {
     let stored = '';
     try { stored = localStorage.getItem('source2_url') || ''; } catch (e) { }
-    const explicit = (typeof window !== 'undefined' && window.SOURCE2_URL) || '';
-    const configured = String(explicit || stored || '').trim().replace(/\/+$/, '');
-    return configured || CINEMANA_PROXY;
+    const configured = (typeof window !== 'undefined' && (window.SOURCE2_URL || window.SOURCE2_BASE_URL)) || stored || '';
+    return String(configured || '').trim().replace(/\/+$/, '');
 }
 async function source2Fetch(path) {
-    const base = source2BaseUrl();
-    if (!base) throw new Error('لم يتم ضبط مصدر التشغيل الثاني.');
-    const candidates = [];
-    const add = b => { const v = String(b || '').trim().replace(/\/+$/, ''); if (v && !candidates.includes(v)) candidates.push(v); };
-    add(base);
-    if (/^https?:\/\/localhost(?::\d+)?$/i.test(base) || /^https?:\/\/127\.0\.0\.1(?::\d+)?$/i.test(base)) add('http://localhost:8787');
-    if (location && (location.hostname === 'localhost' || location.hostname === '127.0.0.1')) add('http://localhost:8787');
-    let last = null;
-    for (const b of candidates) {
-        try {
-            const headers = { 'Accept': 'application/json' };
-            const init = { headers };
-            if (/^https?:\/\/(localhost|127\.0\.0\.1)(?::\d+)?$/i.test(b)) init.targetAddressSpace = 'loopback';
-            const res = await fetch(`${b}${path}`, init);
-            const text = await res.text();
-            let data = null; try { data = text ? JSON.parse(text) : null; } catch (_) { }
-            if (!res.ok) throw new Error(data && (data.error || data.message) || `HTTP ${res.status}`);
-            if (!data) throw new Error('استجابة المصدر الثاني ليست JSON');
-            return data;
-        } catch (e) { last = e; }
+    const base = source2BaseUrl() || CINEMANA_PROXY;
+    if (!base) throw new Error('لم يتم ضبط Source 2.');
+    let res, text;
+    try {
+        res = await fetch(base + path, { headers: { 'Accept': 'application/json' } });
+        text = await res.text();
+    } catch (e) {
+        const reason = e?.cause?.code || e?.message || String(e);
+        throw new Error(`Source 2: تعذر الاتصال (${reason})`);
     }
-    throw new Error(last ? `تعذر الاتصال بمصدر التشغيل الثاني: ${last.message}` : 'تعذر الاتصال بمصدر التشغيل الثاني');
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch (e) { }
+    if (!res.ok) {
+        throw new Error((data && (data.error || data.message)) || `Source 2 HTTP ${res.status}`);
+    }
+    if (!data) throw new Error('Source 2 رجّع استجابة فارغة أو غير صالحة.');
+    return data;
 }
-function source2MakeUrl(value) {
-    const raw = String(value || '').trim();
-    if (!raw) return '';
-    if (/^https?:\/\//i.test(raw)) return raw;
-    const base = source2BaseUrl();
-    return `${base}${raw.startsWith('/') ? raw : '/' + raw}`;
+function source2List(data) {
+    if (Array.isArray(data)) return data;
+    if (!data || typeof data !== 'object') return [];
+    for (const key of ['sources', 'candidates', 'results', 'items', 'data', 'list']) {
+        if (Array.isArray(data[key])) return data[key];
+    }
+    return [];
+}
+function source2PickUrl(data) {
+    const direct = data && (data.url || data.videoUrl || data.video_url || data.src || data.streamUrl || data.stream_url);
+    if (typeof direct === 'string' && /^https?:\/\//i.test(direct)) return normalizeVideoUrl(direct);
+    for (const item of source2List(data)) {
+        const u = item && (item.url || item.videoUrl || item.video_url || item.src || item.streamUrl || item.stream_url);
+        if (typeof u === 'string' && /^https?:\/\//i.test(u)) return normalizeVideoUrl(u);
+    }
+    return '';
 }
 async function source2ResolveMovie({ title, year }) {
     const usp = new URLSearchParams();
     usp.set('q', String(title || '').trim());
     if (year) usp.set('year', String(year));
     const data = await source2Fetch(`/source2/resolve/movie?${usp.toString()}`);
-    const sources = normalizeVideoSources((data && (data.sources || data.candidates)) || []).map(x => ({ ...x, url: source2MakeUrl(x.url) }));
-    const url = source2MakeUrl(data && data.url);
-    if (!sources.length && !url) throw new Error((data && data.error) || 'Source 2 ما رجّع رابط تشغيل');
-    return { url: url || sources[0].url, sources: sources.length ? sources : [{ label: 'HD', resolution: 'HD', url }] , raw: data };
+    const url = source2PickUrl(data);
+    if (!url) throw new Error('Source 2 ما رجّع رابط فيديو صالح للفيلم.');
+    return { url, raw: data };
 }
-async function source2ResolveEpisode({ title, season, episode }) {
+async function source2ResolveEpisode({ title, season, episode, year }) {
     const usp = new URLSearchParams();
     usp.set('q', String(title || '').trim());
     usp.set('season', String(Number(season) || 1));
     usp.set('episode', String(Number(episode) || 1));
+    if (year) usp.set('year', String(year));
     const data = await source2Fetch(`/source2/resolve/episode?${usp.toString()}`);
-    const sources = normalizeVideoSources((data && (data.sources || data.candidates)) || []).map(x => ({ ...x, url: source2MakeUrl(x.url) }));
-    const url = source2MakeUrl(data && data.url);
-    if (!sources.length && !url) throw new Error((data && data.error) || 'Source 2 ما رجّع رابط الحلقة');
-    return { url: url || sources[0].url, sources: sources.length ? sources : [{ label: 'HD', resolution: 'HD', url }], raw: data };
+    const url = source2PickUrl(data);
+    if (!url) throw new Error('Source 2 ما رجّع رابط فيديو صالح للحلقة.');
+    return { url, raw: data };
 }
-// Keep old function names so the rest of the app keeps working without a rewrite.
-const theebResolveMovie = source2ResolveMovie;
-const theebResolveEpisode = source2ResolveEpisode;
-const theebCandidateField = (c, ...names) => { for (const n of names) if (c && c[n] != null && String(c[n]).trim()) return String(c[n]).trim(); return ''; };
 
+// تفضيل الجهاز/الشبكة: أي مصدر اشتغل آخر مرة على هذا الجهاز، نجربه أولًا بالمرة الجاية
+// (محليًا بالمتصفح فقط — لأن مشكلة الحجب مرتبطة بالشبكة لا بالحساب).
+function getPreferredSource() {
+    try { return localStorage.getItem('cv_preferred_source') || ''; } catch (e) { return ''; }
+}
+function setPreferredSource(v) {
+    try { localStorage.setItem('cv_preferred_source', v); } catch (e) { }
+}
 function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGenerate, onGenerateQualities, onGenerateSubtitle, onPickedNb, onImportTmdb }) {
     const [query, setQuery] = useState(defaultTitle || '');
     useEffect(() => { if (defaultTitle)
@@ -1760,7 +1870,7 @@ function TheebHelper({ kind, season, episode, defaultTitle, value, onGenerate })
             setFound(result);
         }
         catch (e) {
-            setError(e.message || 'Source 2 ما لكى مصدر بديل لهذا العنوان');
+            setError(e.message || 'محرك ذيب ما لكى مصدر بديل لهذا العنوان');
         }
         setLoading(false);
     };
@@ -5172,7 +5282,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             if (title.type === 'movie') {
                 let url = '';
                 let sources = [];
-                // إذا كان آخر تشغيل ناجح بهذا الجهاز صار عبر Source 2 (يعني سينمانا
+                // إذا كان آخر تشغيل ناجح بهذا الجهاز صار عبر محرك ذيب (يعني سينمانا
                 // محجوب بهذي الشبكة)، نجرب ذيب أولًا مباشرة بدل ما نضيّع وقت بمحاولة
                 // سينمانا نعرف مسبقًا انها راح تفشل.
                 if (getPreferredSource() === 'theeb') {
@@ -5329,29 +5439,28 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         setPlayingMeta(prev => ({ ...prev, videoUrl: url, subtitleUrl: normalizeSubtitleUrl((quality && quality.subtitleUrl) || prev.subtitleUrl || '') }));
         setPlayingUrl(normalizeVideoUrl(url));
     };
-    // فشل سينمانا (شبكة العميل تحجب الـCDN مثلًا) → نجرب Source 2 فورًا كمصدر ثاني
+    // فشل المصدر الأساسي → نجرب Source 2 فورًا كمصدر ثاني
     // حي، دون أي حاجة لرابط مرفوع مسبقًا. تُجرَّب مرة واحدة فقط بكل جلسة تشغيل
     // (triedFallbackRef) حتى ما ندخل بحلقة تبديل لا نهائية إذا فشل المصدرين.
     const attemptFallback = async () => {
         try {
             let url = '';
             let nextSource = '';
-            if (activeSource !== 'theeb') {
-                // كنا نلعب من سينمانا وفشل → نجرب المصدر البديل. أولوية للرابط
-                // المثبَّت يدويًا بالأدمن (مضمون)، وإلا بحث حي بSource 2.
+            if (activeSource !== 'source2') {
+                // المصدر الأساسي فشل → نستخدم الرابط البديل المحفوظ، وإلا Source 2.
                 const pinned = getSavedAltVideoUrl(playingMeta);
                 if (pinned) {
                     url = pinned;
                 } else {
                     const result = title.type === 'movie'
-                        ? await theebResolveMovie({ title: title.name })
-                        : await theebResolveEpisode({ title: title.name, season: playingSeasonNumber || 1, episode: (playingMeta && playingMeta.number) || 1 });
+                        ? await source2ResolveMovie({ title: title.name, year: title.year })
+                        : await source2ResolveEpisode({ title: title.name, year: title.year, season: playingSeasonNumber || 1, episode: (playingMeta && playingMeta.number) || 1 });
                     url = result.url;
                 }
-                nextSource = 'theeb';
-                setPreferredSource('theeb'); // سينمانا فاشل على هذا الجهاز/الشبكة، نتذكرها للمرة الجاية
+                nextSource = 'source2';
+                setPreferredSource('source2');
             } else {
-                // كنا نلعب من ذيب وفشل → نرجع نجرب سينمانا (بحث طازج، متجاهلين أي رابط محفوظ فاشل).
+                // Source 2 فشل → نرجع لسينمانا بنفس مسار الاسترجاع الموجود أصلًا.
                 const recovered = title.type === 'movie'
                     ? await recoverMovieVideo()
                     : await recoverEpisodeVideo({ number: playingMeta && playingMeta.number }, playingSeasonNumber);
@@ -5359,15 +5468,15 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 nextSource = 'cinemana';
             }
             setPlayingMeta(prev => ({ ...prev, videoUrl: url, videoSources: [] }));
-            setPlayingUrl(url);
+            setPlayingUrl(normalizeVideoUrl(url));
             setVideoError(false);
             setActiveSource(nextSource);
             setPlayerRetryCount(c => c + 1);
-            showToast('تم التبديل إلى Source 2 كمصدر بديل', 'success');
+            showToast('تم التبديل لمصدر تشغيل بديل', 'success');
         }
         catch (e) {
             setVideoError(true);
-            showToast(e.message || 'تعذّر إيجاد مصدر تشغيل بديل من Source 2', 'error');
+            showToast(e.message || 'تعذّر إيجاد مصدر تشغيل بديل', 'error');
         }
     };
     const handlePlaybackError = () => {
@@ -7376,7 +7485,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
         return { ...prev, seasons };
     });
     // دوران دفعي على كل حلقات المسلسل/الأنمي دفعة وحدة (بدل ما تدخل كل حلقة
-    // براحها) — يبحث لكل حلقة بSource 2 ويثبّت altVideoUrl لو لقى مرشح، ويتخطى
+    // براحها) — يبحث لكل حلقة بمحرك ذيب ويثبّت altVideoUrl لو لقى مرشح، ويتخطى
     // أي حلقة محفوظ لها مصدر بديل مسبقًا حتى ما يعيد البحث من الصفر كل مرة.
     const [bulkTheebLoading, setBulkTheebLoading] = useState(false);
     const [bulkTheebProgress, setBulkTheebProgress] = useState('');
@@ -7402,7 +7511,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                     });
                 }
                 catch (e) { /* هذي الحلقة ما لكيت مطابقة — نكمل البقية */ }
-                await new Promise(r => setTimeout(r, 400)); // تهدئة بين الطلبات، Source 2 يشتغل بسكرايبنغ
+                await new Promise(r => setTimeout(r, 400)); // تهدئة بين الطلبات، محرك ذيب يشتغل بسكرايبنغ
             }
         }
         setBulkTheebProgress(`خلص: ${found} حلقة لقت مصدر بديل${skipped ? `، ${skipped} كانت محفوظة مسبقًا` : ''} من أصل ${total}.`);
@@ -7537,7 +7646,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.subtitlePublicUrl = String(form.subtitlePublicUrl || '').trim();
             payload.subtitleOffset = Number(form.subtitleOffset) || 0;
             payload.cinemanaId = String(form.cinemanaId || '');
-            // مصدر بديل مثبَّت وقت الرفع (Source 2) — يُستخدم فورًا عند فشل سينمانا
+            // مصدر بديل مثبَّت وقت الرفع (محرك ذيب) — يُستخدم فورًا عند فشل سينمانا
             // بدل بحث حي، لأنه أُكِّد وجوده مسبقًا هنا بالأدمن.
             payload.altVideoUrl = normalizeVideoUrl(String(form.altVideoUrl || '').trim());
             payload.playbackProvider = form.cinemanaId ? 'cinemana' : (isVidApiUrl(form.videoUrl) ? 'vidapi' : (form.playbackProvider || ''));
