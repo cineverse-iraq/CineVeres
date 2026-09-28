@@ -1455,14 +1455,14 @@ function cinemanaEpisodeNumber(ep) {
     return Number(ep && (ep.episodeNummer ?? ep.episode ?? ep.episodeNumber ?? ep.number)) || 0;
 }
 
-/* ───────────── Source 2 — MovieBox ─────────────
-   مصدر بديل مستقل: Cinemana أولاً، وعند فشل التشغيل نطلب رابطًا حيًا من MovieBox.
+/* ───────────── Source 2 — API قابل للضبط ─────────────
+   مصدر بديل مستقل: Cinemana أولاً، وعند فشل التشغيل نطلب رابطًا حيًا من Source 2.
    السيرفر هو الذي ينفذ البحث/الحل ويعيد رابط proxy قابل للـRange/HLS.
 */
 function source2BaseUrl() {
     let stored = '';
     try { stored = localStorage.getItem('source2_url') || ''; } catch (e) { }
-    const explicit = (typeof window !== 'undefined' && (window.SOURCE2_URL || window.MOVIEBOX_SOURCE2_URL)) || '';
+    const explicit = (typeof window !== 'undefined' && window.SOURCE2_URL) || '';
     const configured = String(explicit || stored || '').trim().replace(/\/+$/, '');
     return configured || CINEMANA_PROXY;
 }
@@ -1504,7 +1504,7 @@ async function source2ResolveMovie({ title, year }) {
     const data = await source2Fetch(`/source2/resolve/movie?${usp.toString()}`);
     const sources = normalizeVideoSources((data && (data.sources || data.candidates)) || []).map(x => ({ ...x, url: source2MakeUrl(x.url) }));
     const url = source2MakeUrl(data && data.url);
-    if (!sources.length && !url) throw new Error((data && data.error) || 'MovieBox ما رجّع رابط تشغيل');
+    if (!sources.length && !url) throw new Error((data && data.error) || 'Source 2 ما رجّع رابط تشغيل');
     return { url: url || sources[0].url, sources: sources.length ? sources : [{ label: 'HD', resolution: 'HD', url }] , raw: data };
 }
 async function source2ResolveEpisode({ title, season, episode }) {
@@ -1515,7 +1515,7 @@ async function source2ResolveEpisode({ title, season, episode }) {
     const data = await source2Fetch(`/source2/resolve/episode?${usp.toString()}`);
     const sources = normalizeVideoSources((data && (data.sources || data.candidates)) || []).map(x => ({ ...x, url: source2MakeUrl(x.url) }));
     const url = source2MakeUrl(data && data.url);
-    if (!sources.length && !url) throw new Error((data && data.error) || 'MovieBox ما رجّع رابط الحلقة');
+    if (!sources.length && !url) throw new Error((data && data.error) || 'Source 2 ما رجّع رابط الحلقة');
     return { url: url || sources[0].url, sources: sources.length ? sources : [{ label: 'HD', resolution: 'HD', url }], raw: data };
 }
 // Keep old function names so the rest of the app keeps working without a rewrite.
@@ -1760,7 +1760,7 @@ function TheebHelper({ kind, season, episode, defaultTitle, value, onGenerate })
             setFound(result);
         }
         catch (e) {
-            setError(e.message || 'MovieBox ما لكى مصدر بديل لهذا العنوان');
+            setError(e.message || 'Source 2 ما لكى مصدر بديل لهذا العنوان');
         }
         setLoading(false);
     };
@@ -5172,7 +5172,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             if (title.type === 'movie') {
                 let url = '';
                 let sources = [];
-                // إذا كان آخر تشغيل ناجح بهذا الجهاز صار عبر MovieBox (يعني سينمانا
+                // إذا كان آخر تشغيل ناجح بهذا الجهاز صار عبر Source 2 (يعني سينمانا
                 // محجوب بهذي الشبكة)، نجرب ذيب أولًا مباشرة بدل ما نضيّع وقت بمحاولة
                 // سينمانا نعرف مسبقًا انها راح تفشل.
                 if (getPreferredSource() === 'theeb') {
@@ -5329,7 +5329,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         setPlayingMeta(prev => ({ ...prev, videoUrl: url, subtitleUrl: normalizeSubtitleUrl((quality && quality.subtitleUrl) || prev.subtitleUrl || '') }));
         setPlayingUrl(normalizeVideoUrl(url));
     };
-    // فشل سينمانا (شبكة العميل تحجب الـCDN مثلًا) → نجرب MovieBox فورًا كمصدر ثاني
+    // فشل سينمانا (شبكة العميل تحجب الـCDN مثلًا) → نجرب Source 2 فورًا كمصدر ثاني
     // حي، دون أي حاجة لرابط مرفوع مسبقًا. تُجرَّب مرة واحدة فقط بكل جلسة تشغيل
     // (triedFallbackRef) حتى ما ندخل بحلقة تبديل لا نهائية إذا فشل المصدرين.
     const attemptFallback = async () => {
@@ -5338,7 +5338,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             let nextSource = '';
             if (activeSource !== 'theeb') {
                 // كنا نلعب من سينمانا وفشل → نجرب المصدر البديل. أولوية للرابط
-                // المثبَّت يدويًا بالأدمن (مضمون)، وإلا بحث حي بMovieBox.
+                // المثبَّت يدويًا بالأدمن (مضمون)، وإلا بحث حي بSource 2.
                 const pinned = getSavedAltVideoUrl(playingMeta);
                 if (pinned) {
                     url = pinned;
@@ -5363,11 +5363,11 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             setVideoError(false);
             setActiveSource(nextSource);
             setPlayerRetryCount(c => c + 1);
-            showToast('تم التبديل إلى MovieBox كمصدر بديل', 'success');
+            showToast('تم التبديل إلى Source 2 كمصدر بديل', 'success');
         }
         catch (e) {
             setVideoError(true);
-            showToast(e.message || 'تعذّر إيجاد مصدر تشغيل بديل من MovieBox', 'error');
+            showToast(e.message || 'تعذّر إيجاد مصدر تشغيل بديل من Source 2', 'error');
         }
     };
     const handlePlaybackError = () => {
@@ -7376,7 +7376,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
         return { ...prev, seasons };
     });
     // دوران دفعي على كل حلقات المسلسل/الأنمي دفعة وحدة (بدل ما تدخل كل حلقة
-    // براحها) — يبحث لكل حلقة بMovieBox ويثبّت altVideoUrl لو لقى مرشح، ويتخطى
+    // براحها) — يبحث لكل حلقة بSource 2 ويثبّت altVideoUrl لو لقى مرشح، ويتخطى
     // أي حلقة محفوظ لها مصدر بديل مسبقًا حتى ما يعيد البحث من الصفر كل مرة.
     const [bulkTheebLoading, setBulkTheebLoading] = useState(false);
     const [bulkTheebProgress, setBulkTheebProgress] = useState('');
@@ -7402,7 +7402,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                     });
                 }
                 catch (e) { /* هذي الحلقة ما لكيت مطابقة — نكمل البقية */ }
-                await new Promise(r => setTimeout(r, 400)); // تهدئة بين الطلبات، MovieBox يشتغل بسكرايبنغ
+                await new Promise(r => setTimeout(r, 400)); // تهدئة بين الطلبات، Source 2 يشتغل بسكرايبنغ
             }
         }
         setBulkTheebProgress(`خلص: ${found} حلقة لقت مصدر بديل${skipped ? `، ${skipped} كانت محفوظة مسبقًا` : ''} من أصل ${total}.`);
@@ -7537,7 +7537,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.subtitlePublicUrl = String(form.subtitlePublicUrl || '').trim();
             payload.subtitleOffset = Number(form.subtitleOffset) || 0;
             payload.cinemanaId = String(form.cinemanaId || '');
-            // مصدر بديل مثبَّت وقت الرفع (MovieBox) — يُستخدم فورًا عند فشل سينمانا
+            // مصدر بديل مثبَّت وقت الرفع (Source 2) — يُستخدم فورًا عند فشل سينمانا
             // بدل بحث حي، لأنه أُكِّد وجوده مسبقًا هنا بالأدمن.
             payload.altVideoUrl = normalizeVideoUrl(String(form.altVideoUrl || '').trim());
             payload.playbackProvider = form.cinemanaId ? 'cinemana' : (isVidApiUrl(form.videoUrl) ? 'vidapi' : (form.playbackProvider || ''));
