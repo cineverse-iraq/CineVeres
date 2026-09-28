@@ -1483,25 +1483,10 @@ async function theebFetch(path) {
     // الطلب تحديدًا لأنه JSON خفيف ويمر بأمان عبر بروكسي يملك CORS مضبوط أصلًا.
     if (!CINEMANA_PROXY)
         throw new Error('لم يتم ضبط رابط بروكسي سينمانا (نفسه يُستخدم لتمرير طلبات محرك ذيب).');
-    let res, text;
-    try {
-        res = await fetch(CINEMANA_PROXY + path, { headers: { 'Accept': 'application/json' } });
-        text = await res.text();
-    }
-    catch (e) {
-        throw new Error('تعذر الاتصال ببروكسي محرك ذيب — تحقق من CINEMANA_PROXY والإنترنت');
-    }
-    let data = null;
-    try { data = text ? JSON.parse(text) : null; } catch (e) { /* استجابة مو JSON (مثلًا صفحة خطأ HTML) */ }
-    if (!res.ok) {
-        // نظهر رسالة الخطأ الحقيقية القادمة من السيرفر (مثلًا "THEEB_ENGINE_UPSTREAM غير مضبوط")
-        // بدل رسالة عامة، حتى تعرف بالضبط وين المشكلة.
-        const serverMsg = data && (data.error || data.message);
-        throw new Error(serverMsg || `محرك ذيب رجّع خطأ (${res.status})${text ? ': ' + text.slice(0, 200) : ''}`);
-    }
-    if (!data)
-        throw new Error('استجابة غير متوقعة من محرك ذيب (مو JSON) — تحقق من رابط THEEB_ENGINE_UPSTREAM');
-    return data;
+    const res = await fetch(CINEMANA_PROXY + path, { headers: { 'Accept': 'application/json' } });
+    if (!res.ok)
+        throw new Error(`محرك ذيب رجّع خطأ (${res.status})`);
+    return res.json();
 }
 function theebArray(data, keys = ['results', 'candidates', 'items', 'data', 'list']) {
     if (Array.isArray(data))
@@ -1554,77 +1539,6 @@ async function theebResolveEpisode({ title, season, episode }) {
 async function theebResolveMovie({ title }) {
     return theebResolveEpisode({ title, season: 1, episode: 1 });
 }
-/* ───────────── Source 2 (عام) ─────────────
-   هذا طبقة Adapter بسيطة لمصدر ثانٍ مستقل. لا تغيّر أي شيء في بقية الموقع:
-   - إذا فشل المصدر الأساسي، نحاول رابط altVideoUrl المحفوظ أولًا.
-   - إذا ما موجود، نستدعي Source 2 من نفس الـproxy عبر /source2/resolve/movie أو
-     /source2/resolve/episode.
-   - الاستجابة المقبولة: {url}, {videoUrl}, {sources:[...]}, أو {candidates:[...]}
-   - يمكن ضبط عنوان الـAPI عبر window.SOURCE2_URL أو localStorage: source2_url.
-*/
-function source2BaseUrl() {
-    let stored = '';
-    try { stored = localStorage.getItem('source2_url') || ''; } catch (e) { }
-    const configured = (typeof window !== 'undefined' && (window.SOURCE2_URL || window.SOURCE2_BASE_URL)) || stored || '';
-    return String(configured || '').trim().replace(/\/+$/, '');
-}
-async function source2Fetch(path) {
-    const base = source2BaseUrl() || CINEMANA_PROXY;
-    if (!base) throw new Error('لم يتم ضبط Source 2.');
-    let res, text;
-    try {
-        res = await fetch(base + path, { headers: { 'Accept': 'application/json' } });
-        text = await res.text();
-    } catch (e) {
-        const reason = e?.cause?.code || e?.message || String(e);
-        throw new Error(`Source 2: تعذر الاتصال (${reason})`);
-    }
-    let data = null;
-    try { data = text ? JSON.parse(text) : null; } catch (e) { }
-    if (!res.ok) {
-        throw new Error((data && (data.error || data.message)) || `Source 2 HTTP ${res.status}`);
-    }
-    if (!data) throw new Error('Source 2 رجّع استجابة فارغة أو غير صالحة.');
-    return data;
-}
-function source2List(data) {
-    if (Array.isArray(data)) return data;
-    if (!data || typeof data !== 'object') return [];
-    for (const key of ['sources', 'candidates', 'results', 'items', 'data', 'list']) {
-        if (Array.isArray(data[key])) return data[key];
-    }
-    return [];
-}
-function source2PickUrl(data) {
-    const direct = data && (data.url || data.videoUrl || data.video_url || data.src || data.streamUrl || data.stream_url);
-    if (typeof direct === 'string' && /^https?:\/\//i.test(direct)) return normalizeVideoUrl(direct);
-    for (const item of source2List(data)) {
-        const u = item && (item.url || item.videoUrl || item.video_url || item.src || item.streamUrl || item.stream_url);
-        if (typeof u === 'string' && /^https?:\/\//i.test(u)) return normalizeVideoUrl(u);
-    }
-    return '';
-}
-async function source2ResolveMovie({ title, year }) {
-    const usp = new URLSearchParams();
-    usp.set('q', String(title || '').trim());
-    if (year) usp.set('year', String(year));
-    const data = await source2Fetch(`/source2/resolve/movie?${usp.toString()}`);
-    const url = source2PickUrl(data);
-    if (!url) throw new Error('Source 2 ما رجّع رابط فيديو صالح للفيلم.');
-    return { url, raw: data };
-}
-async function source2ResolveEpisode({ title, season, episode, year }) {
-    const usp = new URLSearchParams();
-    usp.set('q', String(title || '').trim());
-    usp.set('season', String(Number(season) || 1));
-    usp.set('episode', String(Number(episode) || 1));
-    if (year) usp.set('year', String(year));
-    const data = await source2Fetch(`/source2/resolve/episode?${usp.toString()}`);
-    const url = source2PickUrl(data);
-    if (!url) throw new Error('Source 2 ما رجّع رابط فيديو صالح للحلقة.');
-    return { url, raw: data };
-}
-
 // تفضيل الجهاز/الشبكة: أي مصدر اشتغل آخر مرة على هذا الجهاز، نجربه أولًا بالمرة الجاية
 // (محليًا بالمتصفح فقط — لأن مشكلة الحجب مرتبطة بالشبكة لا بالحساب).
 function getPreferredSource() {
@@ -1788,110 +1702,6 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
                         onGenerateQualities && onGenerateQualities(allSources);
                     }, className: "px-3 py-1.5 rounded-lg bg-accent-purple/15 border border-accent-purple/30 hover:bg-accent-purple/25 text-accent-purple text-[11px] font-bold transition" }, v.label)))),
             React.createElement("button", { type: "button", onClick: () => { setVideos(null); setPicked(null); }, className: "mt-2 text-[10px] text-slate-500 hover:text-slate-300 underline" }, "\u0631\u062C\u0648\u0639 \u0644\u0644\u0646\u062A\u0627\u0626\u062C")))));
-}
-// معاينة مصغّرة داخل لوحة الإدارة نفسها (بدون فتح تبويب خارجي) — تستخدم نفس
-// آلية التشغيل الحقيقية بالموقع (ensureHlsJs + hls.js لو الرابط HLS، أو
-// <video src> مباشرة غير كذلك)، عشان الإدمن يشوف بالضبط نفس اللي راح يشوفه
-// المستخدم لو انسحب المصدر البديل فعليًا.
-function TheebPreviewPlayer({ src }) {
-    const videoRef = useRef(null);
-    const [error, setError] = useState('');
-    useEffect(() => {
-        const videoEl = videoRef.current;
-        if (!videoEl || !src)
-            return;
-        setError('');
-        let hls = null;
-        let cancelled = false;
-        const isM3u8 = /\.m3u8(\?.*)?$/i.test(src);
-        const setup = async () => {
-            if (isM3u8) {
-                let HlsClass = window.Hls;
-                if (!HlsClass) {
-                    try {
-                        HlsClass = await ensureHlsJs();
-                    }
-                    catch (e) {
-                        if (!cancelled)
-                            setError('تعذر تحميل مشغل HLS');
-                        return;
-                    }
-                }
-                if (cancelled)
-                    return;
-                if (HlsClass && HlsClass.isSupported()) {
-                    hls = new HlsClass();
-                    hls.attachMedia(videoEl);
-                    hls.once(HlsClass.Events.MEDIA_ATTACHED, () => { if (!cancelled && hls)
-                        hls.loadSource(src); });
-                    hls.on(HlsClass.Events.ERROR, (_e, data) => { if (data && data.fatal && !cancelled)
-                        setError('فشل تشغيل هذا الرابط (خطأ HLS) — المصدر ما يشتغل فعليًا'); });
-                    return;
-                }
-            }
-            videoEl.src = src;
-        };
-        const onNativeError = () => { if (!cancelled)
-            setError('فشل تشغيل هذا الرابط'); };
-        videoEl.addEventListener('error', onNativeError);
-        setup();
-        return () => {
-            cancelled = true;
-            videoEl.removeEventListener('error', onNativeError);
-            if (hls)
-                hls.destroy();
-        };
-    }, [src]);
-    return (React.createElement("div", { className: "mt-2.5" },
-        React.createElement("video", { ref: videoRef, controls: true, playsInline: true, className: "w-full max-h-56 rounded-xl bg-black" }),
-        error && React.createElement("p", { className: "text-[11px] font-bold text-rose-400 mt-1.5" }, error)));
-}
-/* مصدر بديل مُحقَّق يدويًا وقت الرفع (يُخزَّن بـaltVideoUrl): نفس منطق البحث
-   الحي بالمشغل (theebResolveMovie/theebResolveEpisode) بس الإدمن يتأكد ويثبّت
-   النتيجة هنا وقت الرفع بدل ما يعتمد بالكامل على بحث حي وقت المشاهدة، فيضمن
-   انه فعلاً موجود ويشتغل قبل النشر. */
-function TheebHelper({ kind, season, episode, defaultTitle, value, onGenerate }) {
-    const [query, setQuery] = useState(defaultTitle || '');
-    useEffect(() => { if (defaultTitle) setQuery(defaultTitle); }, [defaultTitle]);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
-    const [found, setFound] = useState(null);
-    const isEpisodeMode = kind === 'tv' && (season != null || episode != null);
-    const search = async () => {
-        if (!query.trim())
-            return;
-        setLoading(true);
-        setError('');
-        setFound(null);
-        try {
-            const result = isEpisodeMode
-                ? await theebResolveEpisode({ title: query.trim(), season: Number(season) || 1, episode: Number(episode) || 1 })
-                : await theebResolveMovie({ title: query.trim() });
-            setFound(result);
-        }
-        catch (e) {
-            setError(e.message || 'محرك ذيب ما لكى مصدر بديل لهذا العنوان');
-        }
-        setLoading(false);
-    };
-    const [previewOn, setPreviewOn] = useState(false);
-    useEffect(() => { setPreviewOn(false); }, [found]);
-    const providerLabel = found && theebCandidateField(found.raw, 'provider', 'source', 'provider_id', 'providerId');
-    return (React.createElement("div", { className: "glass-card rounded-2xl p-3.5 border border-accent-gold/20 mt-3.5" },
-        React.createElement("p", { className: "text-[10px] text-slate-500 mb-2" }, "\u062F\u0648\u0651\u0631 \u0648\u0627\u062D\u0641\u0638 \u0631\u0627\u0628\u0637 \u0628\u062F\u064A\u0644 \u0645\u0646 \u0645\u0632\u0648\u062F\u064A\u0646 \u0622\u062E\u0631\u064A\u0646 (\u0623\u0643\u0648\u0627\u0645 \u0648\u063A\u064A\u0631\u0647\u0627) \u0642\u0628\u0644 \u0627\u0644\u0646\u0634\u0631\u060C \u062A\u0636\u0645\u0646 \u0623\u0646\u0647 \u0645\u0648\u062C\u0648\u062F \u0648\u064A\u0634\u062A\u063A\u0644 \u0641\u0639\u0644\u064B\u0627. \u064A\u0634\u062A\u063A\u0644 \u062A\u0644\u0642\u0627\u0626\u064A\u064B\u0627 \u0648\u062D\u062F\u0647 \u0639\u0646\u062F \u0627\u0644\u0645\u0634\u0627\u0647\u062F\u060C \u0628\u062F\u0648\u0646 \u0623\u064A \u062A\u062F\u062E\u0644 \u0645\u0646\u0643 \u0648\u0642\u062A \u0627\u0644\u0645\u0634\u0627\u0647\u062F\u0629."),
-        React.createElement("div", { className: "flex items-center gap-2 mb-2.5" },
-            React.createElement("input", { value: query, onChange: ev => setQuery(ev.target.value), onKeyDown: ev => ev.key === 'Enter' && search(), placeholder: "\u0627\u0633\u0645 \u0627\u0644\u0639\u0645\u0644 \u0628\u0627\u0644\u0639\u0631\u0628\u064A \u0623\u0648 \u0627\u0644\u0625\u0646\u062C\u0644\u064A\u0632\u064A", className: "flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-gold" }),
-            React.createElement("button", { type: "button", onClick: () => search(), disabled: !query.trim() || loading, className: "shrink-0 px-4 py-2 rounded-xl bg-accent-gold text-glass-950 text-xs font-bold hover:brightness-110 transition disabled:opacity-40" }, loading ? 'جاري...' : 'بحث')),
-        isEpisodeMode && React.createElement("p", { className: "text-[10px] text-slate-500 mb-1.5" },
-            "\u0627\u0644\u0645\u0648\u0633\u0645 ", Number(season) || 1, " \u00B7 \u0627\u0644\u062D\u0644\u0642\u0629 ", Number(episode) || 1),
-        error && React.createElement("p", { className: "text-[11px] font-bold text-rose-400 mb-2" }, error),
-        found && React.createElement("div", { className: "bg-glass-900 border border-white/10 rounded-xl px-3 py-2" },
-            React.createElement("div", { className: "flex items-center justify-between gap-2" },
-                React.createElement("p", { className: "text-[11px] text-slate-300 truncate" }, `\u0644\u0642\u064A\u0646\u0627 \u0645\u0635\u062F\u0631\u064B\u0627 \u064A\u0634\u062A\u063A\u0644${providerLabel ? ' — ' + providerLabel : ''}`),
-                React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
-                    React.createElement("button", { type: "button", onClick: () => setPreviewOn(p => !p), className: "px-3 py-1.5 rounded-lg bg-white/5 border border-white/15 hover:border-white/30 text-slate-300 text-[11px] font-bold transition" }, previewOn ? "\u0625\u062E\u0641\u0627\u0621 \u0627\u0644\u0645\u0639\u0627\u064A\u0646\u0629" : "\u0645\u0639\u0627\u064A\u0646\u0629 \u062F\u0627\u062E\u0644 \u0627\u0644\u0645\u0648\u0642\u0639"),
-                    React.createElement("button", { type: "button", onClick: () => onGenerate && onGenerate(found.url), className: "px-3 py-1.5 rounded-lg bg-accent-gold/15 border border-accent-gold/30 hover:bg-accent-gold/25 text-accent-gold text-[11px] font-bold transition" }, "\u0627\u0633\u062A\u062E\u062F\u0627\u0645 \u0647\u0630\u0627 \u0627\u0644\u0631\u0627\u0628\u0637"))),
-            previewOn && React.createElement(TheebPreviewPlayer, { src: found.url }))));
 }
 async function tmdbFindBestByTitle(title, currentType, year) {
     const query = String(title || '').trim();
@@ -5225,9 +5035,6 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         return null;
     };
     const getSavedVideoUrl = (item) => normalizeVideoUrl((item && item.videoUrl) || (((item && item.videoSources) || [])[0] || {}).url || '');
-    // رابط بديل ثُبِّت يدويًا من لوحة الإدارة (TheebHelper) — أولوية أعلى من أي
-    // بحث حي، لأنه مُتحقَّق منه مسبقًا وقت الرفع.
-    const getSavedAltVideoUrl = (item) => normalizeVideoUrl((item && item.altVideoUrl) || '');
     const recoverMovieVideo = async () => {
         // إذا كان الفيلم محفوظًا ومعه cinemanaId فلا داعي للبحث بالعنوان.
         // البحث كان سبب المشكلة الجديدة: الهاتف/الموقع يحاول أولًا /search ثم يفشل
@@ -5286,18 +5093,11 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 // محجوب بهذي الشبكة)، نجرب ذيب أولًا مباشرة بدل ما نضيّع وقت بمحاولة
                 // سينمانا نعرف مسبقًا انها راح تفشل.
                 if (getPreferredSource() === 'theeb') {
-                    const pinned = getSavedAltVideoUrl(title);
-                    if (pinned) {
-                        // مصدر بديل مثبَّت يدويًا بالأدمن — استخدمه مباشرة، أضمن وأسرع من بحث حي.
-                        url = pinned;
+                    try {
+                        const alt = await theebResolveMovie({ title: title.name });
+                        url = alt.url;
                         setActiveSource('theeb');
-                    } else {
-                        try {
-                            const alt = await theebResolveMovie({ title: title.name });
-                            url = alt.url;
-                            setActiveSource('theeb');
-                        } catch (e) { /* نتجاهل ونكمل بالمسار الطبيعي (سينمانا) */ }
-                    }
+                    } catch (e) { /* نتجاهل ونكمل بالمسار الطبيعي (سينمانا) */ }
                 }
                 if (!url) {
                     url = getSavedVideoUrl(title);
@@ -5348,17 +5148,11 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             let url = '';
             let sources = [];
             if (getPreferredSource() === 'theeb') {
-                const pinned = getSavedAltVideoUrl(ep);
-                if (pinned) {
-                    url = pinned;
+                try {
+                    const alt = await theebResolveEpisode({ title: title.name, season: seasonNumber, episode: ep && ep.number });
+                    url = alt.url;
                     setActiveSource('theeb');
-                } else {
-                    try {
-                        const alt = await theebResolveEpisode({ title: title.name, season: seasonNumber, episode: ep && ep.number });
-                        url = alt.url;
-                        setActiveSource('theeb');
-                    } catch (e) { /* نتجاهل ونكمل بالمسار الطبيعي (سينمانا) */ }
-                }
+                } catch (e) { /* نتجاهل ونكمل بالمسار الطبيعي (سينمانا) */ }
             }
             if (!url) {
                 url = getSavedVideoUrl(ep);
@@ -5439,28 +5233,23 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         setPlayingMeta(prev => ({ ...prev, videoUrl: url, subtitleUrl: normalizeSubtitleUrl((quality && quality.subtitleUrl) || prev.subtitleUrl || '') }));
         setPlayingUrl(normalizeVideoUrl(url));
     };
-    // فشل المصدر الأساسي → نجرب Source 2 فورًا كمصدر ثاني
+    // فشل سينمانا (شبكة العميل تحجب الـCDN مثلًا) → نجرب محرك ذيب فورًا كمصدر ثاني
     // حي، دون أي حاجة لرابط مرفوع مسبقًا. تُجرَّب مرة واحدة فقط بكل جلسة تشغيل
     // (triedFallbackRef) حتى ما ندخل بحلقة تبديل لا نهائية إذا فشل المصدرين.
     const attemptFallback = async () => {
         try {
             let url = '';
             let nextSource = '';
-            if (activeSource !== 'source2') {
-                // المصدر الأساسي فشل → نستخدم الرابط البديل المحفوظ، وإلا Source 2.
-                const pinned = getSavedAltVideoUrl(playingMeta);
-                if (pinned) {
-                    url = pinned;
-                } else {
-                    const result = title.type === 'movie'
-                        ? await source2ResolveMovie({ title: title.name, year: title.year })
-                        : await source2ResolveEpisode({ title: title.name, year: title.year, season: playingSeasonNumber || 1, episode: (playingMeta && playingMeta.number) || 1 });
-                    url = result.url;
-                }
-                nextSource = 'source2';
-                setPreferredSource('source2');
+            if (activeSource !== 'theeb') {
+                // كنا نلعب من سينمانا وفشل → نجرب ذيب.
+                const result = title.type === 'movie'
+                    ? await theebResolveMovie({ title: title.name })
+                    : await theebResolveEpisode({ title: title.name, season: playingSeasonNumber || 1, episode: (playingMeta && playingMeta.number) || 1 });
+                url = result.url;
+                nextSource = 'theeb';
+                setPreferredSource('theeb'); // سينمانا فاشل على هذا الجهاز/الشبكة، نتذكرها للمرة الجاية
             } else {
-                // Source 2 فشل → نرجع لسينمانا بنفس مسار الاسترجاع الموجود أصلًا.
+                // كنا نلعب من ذيب وفشل → نرجع نجرب سينمانا (بحث طازج، متجاهلين أي رابط محفوظ فاشل).
                 const recovered = title.type === 'movie'
                     ? await recoverMovieVideo()
                     : await recoverEpisodeVideo({ number: playingMeta && playingMeta.number }, playingSeasonNumber);
@@ -5468,7 +5257,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 nextSource = 'cinemana';
             }
             setPlayingMeta(prev => ({ ...prev, videoUrl: url, videoSources: [] }));
-            setPlayingUrl(normalizeVideoUrl(url));
+            setPlayingUrl(url);
             setVideoError(false);
             setActiveSource(nextSource);
             setPlayerRetryCount(c => c + 1);
@@ -7240,9 +7029,6 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
         React.createElement("div", { className: "mt-3.5" },
             React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u062D\u0644\u0642\u0629 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: e.videoUrl, onChange: v => set('videoUrl', v), folder: "episodes", accept: "video/*" })),
         React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb) }),
-        React.createElement("div", { className: "mt-3.5" },
-            React.createElement(FileUploadField, { label: "\u0645\u0635\u062F\u0631 \u0628\u062F\u064A\u0644 (\u0645\u062D\u0631\u0643 \u0630\u064A\u0628) \u2014 \u064A\u0634\u062A\u063A\u0644 \u0641\u0642\u0637 \u0644\u0648 \u0633\u064A\u0646\u0645\u0627\u0646\u0627 \u062A\u0639\u0637\u0651\u0644 \u0639\u0646\u062F \u0627\u0644\u0645\u0634\u0627\u0647\u062F", value: e.altVideoUrl || '', onChange: v => set('altVideoUrl', v), folder: "episodes", accept: "video/*" })),
-        React.createElement(TheebHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, value: e.altVideoUrl || '', onGenerate: (url) => set('altVideoUrl', url) }),
         React.createElement("div", { className: "mt-3.5 flex items-center gap-2" },
             React.createElement("div", { className: "h-px flex-1 bg-white/10" }),
             React.createElement("span", { className: "text-[10px] font-black text-slate-500 px-1" }, "أو استخدم VidAPI"),
@@ -7484,39 +7270,6 @@ function AdminContentForm({ initial, defaultType, onDone }) {
         setEditingEpisodeIdx(null);
         return { ...prev, seasons };
     });
-    // دوران دفعي على كل حلقات المسلسل/الأنمي دفعة وحدة (بدل ما تدخل كل حلقة
-    // براحها) — يبحث لكل حلقة بمحرك ذيب ويثبّت altVideoUrl لو لقى مرشح، ويتخطى
-    // أي حلقة محفوظ لها مصدر بديل مسبقًا حتى ما يعيد البحث من الصفر كل مرة.
-    const [bulkTheebLoading, setBulkTheebLoading] = useState(false);
-    const [bulkTheebProgress, setBulkTheebProgress] = useState('');
-    const bulkResolveTheebForAllEpisodes = async () => {
-        setBulkTheebLoading(true);
-        let done = 0, found = 0, skipped = 0;
-        const total = form.seasons.reduce((n, s) => n + (s.episodes || []).length, 0);
-        for (let si = 0; si < form.seasons.length; si++) {
-            const season = form.seasons[si];
-            for (let ei = 0; ei < (season.episodes || []).length; ei++) {
-                const ep = season.episodes[ei];
-                done++;
-                if (ep.altVideoUrl) { skipped++; continue; }
-                setBulkTheebProgress(`جاري (${done}/${total}) — الموسم ${season.number} الحلقة ${ep.number}...`);
-                try {
-                    const result = await theebResolveEpisode({ title: form.name, season: season.number, episode: ep.number });
-                    found++;
-                    setForm(prev => {
-                        const seasons = prev.seasons.map((s, i) => i !== si ? s : {
-                            ...s, episodes: s.episodes.map((e2, j) => j !== ei ? e2 : { ...e2, altVideoUrl: result.url })
-                        });
-                        return { ...prev, seasons };
-                    });
-                }
-                catch (e) { /* هذي الحلقة ما لكيت مطابقة — نكمل البقية */ }
-                await new Promise(r => setTimeout(r, 400)); // تهدئة بين الطلبات، محرك ذيب يشتغل بسكرايبنغ
-            }
-        }
-        setBulkTheebProgress(`خلص: ${found} حلقة لقت مصدر بديل${skipped ? `، ${skipped} كانت محفوظة مسبقًا` : ''} من أصل ${total}.`);
-        setBulkTheebLoading(false);
-    };
     const removeSeason = (si) => setForm(prev => {
         const seasons = prev.seasons.filter((_, i) => i !== si);
         setActiveSeasonIdx(idx => Math.max(0, Math.min(idx, seasons.length - 1)));
@@ -7646,9 +7399,6 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.subtitlePublicUrl = String(form.subtitlePublicUrl || '').trim();
             payload.subtitleOffset = Number(form.subtitleOffset) || 0;
             payload.cinemanaId = String(form.cinemanaId || '');
-            // مصدر بديل مثبَّت وقت الرفع (محرك ذيب) — يُستخدم فورًا عند فشل سينمانا
-            // بدل بحث حي، لأنه أُكِّد وجوده مسبقًا هنا بالأدمن.
-            payload.altVideoUrl = normalizeVideoUrl(String(form.altVideoUrl || '').trim());
             payload.playbackProvider = form.cinemanaId ? 'cinemana' : (isVidApiUrl(form.videoUrl) ? 'vidapi' : (form.playbackProvider || ''));
             payload.trimStart = Number(form.trimStart) || 0;
             payload.trimEnd = Number(form.trimEnd) || 0;
@@ -7666,7 +7416,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 poster: (s.poster || '').trim(),
                 episodeThumbnail: (s.episodeThumbnail || '').trim(),
                 episodes: (s.episodes || []).map(e => ({
-                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), altVideoUrl: normalizeVideoUrl(String(e.altVideoUrl || '').trim()), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || ''), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
+                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || ''), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
                     trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, introStart: Number(e.introStart) || 0, introEnd: Number(e.introEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
                 }))
             }));
@@ -7748,9 +7498,6 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                     setBannerData(r.bannerData || null);
                     return r;
                   } }),
-            React.createElement("div", { className: "mt-3.5" },
-                React.createElement(FileUploadField, { label: "\u0645\u0635\u062F\u0631 \u0628\u062F\u064A\u0644 (\u0645\u062D\u0631\u0643 \u0630\u064A\u0628) \u2014 \u064A\u0634\u062A\u063A\u0644 \u0641\u0642\u0637 \u0644\u0648 \u0633\u064A\u0646\u0645\u0627\u0646\u0627 \u062A\u0639\u0637\u0651\u0644 \u0639\u0646\u062F \u0627\u0644\u0645\u0634\u0627\u0647\u062F", value: form.altVideoUrl || '', onChange: v => set('altVideoUrl', v), folder: "videos", accept: "video/*" })),
-            React.createElement(TheebHelper, { kind: form.type === 'anime' ? 'anime' : 'movie', defaultTitle: form.name, value: form.altVideoUrl || '', onGenerate: (url) => set('altVideoUrl', url) }),
             React.createElement("div", { className: "mt-3.5 flex items-center gap-2" },
                 React.createElement("div", { className: "h-px flex-1 bg-white/10" }),
                 React.createElement("span", { className: "text-[10px] font-black text-slate-500 px-1" }, "أو استخدم VidAPI"),
@@ -7774,16 +7521,11 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                         setEditingEpisodeIdx(null);
                     } })),
             React.createElement("div", { className: "mt-6 border-t border-white/10 pt-5" },
-                React.createElement("div", { className: "flex items-center justify-between mb-4 flex-wrap gap-2" },
+                React.createElement("div", { className: "flex items-center justify-between mb-4" },
                     React.createElement("h4", { className: "font-black text-white text-base" }, "\u0627\u0644\u0645\u0648\u0627\u0633\u0645 \u0648\u0627\u0644\u062D\u0644\u0642\u0627\u062A"),
-                    React.createElement("div", { className: "flex items-center gap-2" },
-                        form.seasons.some(s => (s.episodes || []).length) && React.createElement("button", { type: "button", onClick: bulkResolveTheebForAllEpisodes, disabled: bulkTheebLoading, className: "flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl bg-accent-gold/15 border border-accent-gold/30 text-accent-gold font-bold hover:bg-accent-gold/25 transition disabled:opacity-50" },
-                            React.createElement(Icon, { name: "shield", className: "w-4 h-4" }),
-                            bulkTheebLoading ? 'جاري الدوران...' : 'دوّر مصادر بديلة لكل الحلقات'),
-                        React.createElement("button", { onClick: addSeason, className: "flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 font-bold hover:brightness-110 transition shadow-sm" },
-                            React.createElement(Icon, { name: "plus", className: "w-4 h-4" }),
-                            "\u0625\u0636\u0627\u0641\u0629 \u0645\u0648\u0633\u0645"))),
-                bulkTheebProgress && React.createElement("p", { className: "text-[11px] font-bold text-accent-gold mb-3 -mt-2" }, bulkTheebProgress),
+                    React.createElement("button", { onClick: addSeason, className: "flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 font-bold hover:brightness-110 transition shadow-sm" },
+                        React.createElement(Icon, { name: "plus", className: "w-4 h-4" }),
+                        "\u0625\u0636\u0627\u0641\u0629 \u0645\u0648\u0633\u0645")),
                 form.seasons.length === 0 ? (React.createElement("p", { className: "text-xs text-slate-500 font-medium" }, "\u0644\u0627 \u062A\u0648\u062C\u062F \u0645\u0648\u0627\u0633\u0645 \u0628\u0639\u062F. \u0627\u0636\u063A\u0637 \"\u0625\u0636\u0627\u0641\u0629 \u0645\u0648\u0633\u0645\" \u0644\u0644\u0628\u062F\u0621.")) : (React.createElement("div", null,
                     React.createElement("p", { className: "text-[11px] font-bold text-slate-400 mb-2" }, "\u0661) \u0627\u062E\u062A\u0631 \u0627\u0644\u0645\u0648\u0633\u0645"),
                     React.createElement(SlidingTabs, { containerClassName: "flex gap-1.5 flex-wrap mb-5 bg-glass-900/80 p-1.5 rounded-2xl border border-white/5", items: form.seasons.map((s, si) => ({
