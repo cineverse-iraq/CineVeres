@@ -1605,7 +1605,7 @@ const CINADAM_SOURCE2_CONFIG = (() => {
         .filter(v => !/YOUR[-_]?SOURCE2|YOUR[-_]?API|REPLACE[-_]?|example\.com/i.test(v));
     return {
         apiBases: Array.from(new Set(bases)),
-        timeoutMs: Math.max(60000, Math.min(60000, Number(cfg.timeoutMs) || 60000)),
+        timeoutMs: 60000,
         preferredProvider: String(cfg.preferredProvider || '').trim().toLowerCase()
     };
 })();
@@ -1771,21 +1771,25 @@ function source2InfoForPayload(tmdbId) {
     return { enabled: !!id, provider: 'tmdb-embed-api', tmdbId: id, mode: 'live', urlsExpire: true };
 }
 
-function Source2Helper({ kind, tmdbId, season, episode, onChange }) {
+function Source2Helper({ kind, tmdbId, season, episode, defaultTitle = '', defaultYear = '', onChange }) {
     const [loading, setLoading] = useState(false);
     const [msg, setMsg] = useState('');
     const [result, setResult] = useState(null);
     const run = async () => {
-        const id = String(tmdbId || '').replace(/\D/g, '');
         if (!source2Configured()) { setMsg('ضع رابط TMDB-Embed-API العام في source2-config.js أولًا.'); return; }
-        if (!id) { setMsg('أدخل TMDB ID أولًا حتى نختبر مصدر 2.'); return; }
-        setLoading(true); setMsg('جاري اختبار جميع مزوّدي Source 2...'); setResult(null);
+        setLoading(true); setMsg('جاري مطابقة العمل ثم اختبار مصادر Source 2...'); setResult(null);
         try {
+            let id = String(tmdbId || '').replace(/\D/g, '');
+            if (!id && String(defaultTitle || '').trim()) {
+                const best = await tmdbFindBestByTitle(defaultTitle, kind === 'movie' ? 'movie' : 'tv', defaultYear);
+                if (best?.id) id = String(best.id);
+            }
+            if (!id) throw new Error('لم أجد تطابق TMDB تلقائيًا. تأكد من اسم العمل والسنة.');
             const r = kind === 'movie' ? await source2ResolveMovie({ tmdbId: id }) : await source2ResolveEpisode({ tmdbId: id, season, episode });
             const providers = Array.from(new Set((r.providers || []).map(v => String(v).trim()).filter(Boolean)));
             setResult(r);
             onChange && onChange({ source2TmdbId: id, source2Provider: 'tmdb-embed-api', source2Mode: 'live', source2LastCheckedAt: Date.now(), source2SourceCount: r.count || r.sources.length, source2Providers: providers });
-            setMsg(`نجح الاختبار: ${r.count || r.sources.length} مصدر · ${providers.length} مزوّد`);
+            setMsg(`نجح الاختبار: ${r.count || r.sources.length} مصدر · ${providers.length} مزوّد · TMDB ${id}`);
         } catch (e) {
             setMsg(e.message || 'فشل اختبار Source 2.');
         } finally { setLoading(false); }
@@ -1794,7 +1798,7 @@ function Source2Helper({ kind, tmdbId, season, episode, onChange }) {
         React.createElement('div', { className: 'flex items-center justify-between gap-2 flex-wrap' },
             React.createElement('div', null,
                 React.createElement('p', { className: 'text-[11px] font-black text-accent-cyan' }, 'Source 2 — TMDB Embed API'),
-                React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, 'مصدر متعدد المزوّدين؛ روابط التشغيل تُجلب وقت المشاهدة ولا تُحفظ كروابط دائمة.')),
+                React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, 'يُطابق TMDB تلقائيًا من اسم العمل والسنة؛ روابط التشغيل تُجلب وقت المشاهدة ولا تُحفظ كروابط دائمة.')),
             React.createElement('button', { type: 'button', onClick: run, disabled: loading, className: 'px-4 py-2 rounded-xl bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan text-xs font-black disabled:opacity-40' }, loading ? 'جاري الاختبار...' : 'اختبار Source 2')),
         msg && React.createElement('p', { className: `text-[10px] font-bold mt-2 ${result ? 'text-emerald-400' : 'text-slate-400'}` }, msg),
         result && React.createElement('div', { className: 'mt-2.5 flex flex-wrap gap-1.5' }, (result.providers || []).map((p, i) => React.createElement('span', { key: `${p}-${i}`, className: 'px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-[9px] text-slate-300 font-bold' }, p))),
@@ -4134,6 +4138,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
     const [skipFlash, setSkipFlash] = useState(null);
     const [showSpeedMenu, setShowSpeedMenu] = useState(false);
     const [showQualityMenu, setShowQualityMenu] = useState(false);
+    const [showSourceMenu, setShowSourceMenu] = useState(false);
     const [showDisplayMenu, setShowDisplayMenu] = useState(false);
     const [fakeFullscreen, setFakeFullscreen] = useState(false);
     const [playerDisplay, setPlayerDisplay] = useState(() => {
@@ -4376,13 +4381,14 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
         if (ctrl.playing) {
             setShowSubtitleMenu(false);
             setShowQualityMenu(false);
+            setShowSourceMenu(false);
             setShowSpeedMenu(false);
             setShowDisplayMenu(false);
         }
         if (!ctrl.playing) {
             setBarVisible(true);
             if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-        } else if (!showSubtitleMenu && !showQualityMenu && !showSpeedMenu) {
+        } else if (!showSubtitleMenu && !showQualityMenu && !showSourceMenu && !showSpeedMenu) {
             showBarTemporarily();
         }
         // eslint-disable-next-line
@@ -4398,12 +4404,14 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
             if (insideMenu || menuButton || menuTrigger) return;
             setShowSubtitleMenu(false);
             setShowQualityMenu(false);
+            setShowSourceMenu(false);
             setShowSpeedMenu(false);
         };
         const onKey = (e) => {
             if (e.key === 'Escape') {
                 setShowSubtitleMenu(false);
                 setShowQualityMenu(false);
+                setShowSourceMenu(false);
                 setShowSpeedMenu(false);
                 setShowDisplayMenu(false);
             }
@@ -4417,11 +4425,11 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
     }, []);
 
     useEffect(() => {
-        if (showSubtitleMenu || showQualityMenu || showSpeedMenu || showDisplayMenu) {
+        if (showSubtitleMenu || showQualityMenu || showSpeedMenu || showSourceMenu || showDisplayMenu) {
             setBarVisible(true);
             if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
         }
-    }, [showSubtitleMenu, showQualityMenu, showSpeedMenu, showDisplayMenu]);
+    }, [showSubtitleMenu, showQualityMenu, showSpeedMenu, showSourceMenu, showDisplayMenu]);
     useEffect(() => () => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current); if (interactionHudTimerRef.current) clearTimeout(interactionHudTimerRef.current); }, []);
     useEffect(() => {
         const onKeyDown = (e) => {
@@ -4471,7 +4479,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
         const relX = (e.clientX - rect.left) / rect.width;
         const pt = e.nativeEvent && e.nativeEvent.pointerType;
         const isMouse = pt ? pt === 'mouse' : !!(window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches);
-        if (isMouse) { // ماوس: كلك يسار = إيقاف/تشغيل. النقر المزدوج يلغي التبديل ويبقى تقديم/تأخير 5 ثوان على الأطراف
+        if (isMouse) { // ماوس: الحركة/النقرة تُظهر الدوائر والإعدادات فقط؛ لا توقف التشغيل بنقرة واحدة.
             if (e.button !== undefined && e.button !== 0)
                 return;
             if (e.detail === 2) {
@@ -4591,11 +4599,18 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
     }
     const qualityOptions = normalizeVideoSources(qualities);
     const currentQuality = qualityOptions.find(q => q.url === src) || qualityOptions[0] || null;
+    const sourceGroups = Array.from(qualityOptions.reduce((map, q) => {
+        const key = String(q.provider || q.source || 'مصدر').trim() || 'مصدر';
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(q);
+        return map;
+    }, new Map()).entries()).map(([provider, items]) => ({ provider, item: items.slice().sort((a,b) => (source2Resolution(b.resolution)||source2Resolution(b.label)||0) - (source2Resolution(a.resolution)||source2Resolution(a.label)||0))[0], count: items.length }));
     const changeQuality = (q) => {
         setShowSubtitleMenu(false);
         setShowSpeedMenu(false);
         const at = videoRef.current ? Number(videoRef.current.currentTime) || 0 : 0;
         setShowQualityMenu(false);
+        setShowSourceMenu(false);
         if (q && onQualityChange)
             onQualityChange(q.url, at, q);
     };
@@ -4759,8 +4774,17 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
                                     catch (e) { } syncSubPrefsRemote({ ...SUB_PREF_DEFAULTS }); }, className: "px-2 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10" }, "\u0627\u0644\u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u0627\u0641\u062A\u0631\u0627\u0636\u064A\u0629")),
                             localSub && React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => { setLocalSub(null); setSubAdj(subtitleUrl ? readSubAdj(subtitleUrl) : 0); }, className: "w-full mt-1 px-2 py-1.5 rounded-lg bg-rose-500/20 text-rose-300 text-[10px] font-bold" }, "\u0625\u0632\u0627\u0644\u0629 \u0645\u0644\u0641 \u062C\u0647\u0627\u0632\u0643"),
                             React.createElement("input", { ref: localFileRef, type: "file", accept: ".srt,.vtt,text/vtt,application/x-subrip", onChange: onLocalSub, className: "hidden" })))),
+                    sourceGroups.length > 1 && React.createElement("div", { className: "relative shrink-0" },
+                        React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => { setShowSourceMenu(v => !v); setShowQualityMenu(false); setShowSpeedMenu(false); }, className: "yt-btn cv-player-menu-button h-7 px-2 gap-1 text-[11px] font-bold", "data-player-menu-trigger": true, title: "اختيار المصدر" },
+                            React.createElement("span", { className: "text-[10px] font-black" }, "مصدر"),
+                            React.createElement("span", { className: "text-[9px] opacity-60" }, sourceGroups.length)),
+                        showSourceMenu && React.createElement("div", { className: "cv-player-menu absolute bottom-10 left-0 bg-black/95 backdrop-blur-md rounded-xl border border-white/10 p-1.5 flex flex-col gap-0.5 shadow-2xl min-w-[170px] z-50", onPointerDown: e => e.stopPropagation(), onClick: e => e.stopPropagation() },
+                            React.createElement("div", { className: "px-2 py-1 text-[9px] text-slate-500 font-black" }, "اختر مزوّد المصدر"),
+                            sourceGroups.map((g, i) => React.createElement("button", { key: `${g.provider}-${i}`, type: "button", onClick: () => changeQuality(g.item), className: `text-[10px] font-bold px-3 py-2 rounded-lg text-right transition ${currentQuality && currentQuality.provider === g.provider ? 'bg-accent-cyan text-glass-950' : 'text-white hover:bg-white/10'}` },
+                                React.createElement("span", { className: "block truncate" }, g.provider),
+                                React.createElement("span", { className: "float-left opacity-60 text-[9px]" }, `${g.count} رابط`))))),
                     qualityOptions.length > 1 && (React.createElement("div", { className: "relative shrink-0" },
-                        React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => { setShowQualityMenu(v => !v); setShowSpeedMenu(false); }, className: "yt-btn cv-player-menu-button h-7 px-2 gap-1 text-[11px] font-bold", "data-player-menu-trigger": true, title: "\u0627\u062E\u062A\u064A\u0627\u0631 \u0627\u0644\u062C\u0648\u062F\u0629" },
+                        React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => { setShowQualityMenu(v => !v); setShowSourceMenu(false); setShowSpeedMenu(false); }, className: "yt-btn cv-player-menu-button h-7 px-2 gap-1 text-[11px] font-bold", "data-player-menu-trigger": true, title: "\u0627\u062E\u062A\u064A\u0627\u0631 \u0627\u0644\u062C\u0648\u062F\u0629" },
                             React.createElement(Icon, { name: "sliders-horizontal", className: "w-3.5 h-3.5" }),
                             React.createElement("span", null, currentQuality ? currentQuality.label : 'جودة')),
                         showQualityMenu && (React.createElement("div", { className: "cv-player-menu absolute bottom-10 left-0 bg-black/95 backdrop-blur-md rounded-xl border border-white/10 p-1.5 flex flex-col gap-0.5 shadow-2xl min-w-[88px] z-50" }, qualityOptions.map((q, i) => (React.createElement("button", { key: i, type: "button", onClick: () => changeQuality(q), className: `text-[11px] font-bold px-3 py-1.5 rounded-lg text-right transition ${currentQuality && currentQuality.url === q.url ? 'bg-accent-cyan text-glass-950' : 'text-white hover:bg-white/10'}` }, q.label))))))),
@@ -5442,6 +5466,16 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 setPlayingLabel(title.name);
                 scrollToPlayer();
                 ensureVidApiSubtitlePublic({ ...title, videoUrl: url }).catch(() => {});
+                // ابدأ تشغيل المصدر المحفوظ فورًا، ثم اجلب البدائل الحية بالخلفية وأضفها لقائمة المصدر.
+                source2ResolveForItem(title).then(resolved => {
+                    const live = normalizeVideoSources(resolved.sources).filter(source2IsBrowserPlayable);
+                    if (!live.length) return;
+                    setPlayingMeta(prev => {
+                        const existing = normalizeVideoSources(prev?.videoSources || []);
+                        const merged = [...existing, ...live].filter((x, i, a) => normalizeVideoUrl(x.url) && a.findIndex(y => normalizeVideoUrl(y.url) === normalizeVideoUrl(x.url)) === i);
+                        return { ...prev, videoSources: merged, source2TmdbId: resolved.tmdbId, source2SourceCount: resolved.count || live.length, source2Providers: resolved.providers || [] };
+                    });
+                }).catch(() => {});
             }
             else {
                 let found = firstEpisode();
@@ -5476,20 +5510,20 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             let url = '';
             let sources = [];
             let selectedSource = '';
-            try {
-                const resolved = await source2ResolveForItem(ep, seasonNumber, ep && ep.number);
-                sources = normalizeVideoSources(resolved.sources);
-                url = sources[0]?.url || resolved.url;
-                if (url) { selectedSource = 'source2'; setActiveSource('source2'); }
-            } catch (_) {}
+            const fallbackSaved = getSavedSourceRecord(ep, 'cinemana') || getSavedSourceRecord(ep, '');
+            if (fallbackSaved) {
+                url = fallbackSaved.url;
+                selectedSource = String(fallbackSaved.source || 'saved').toLowerCase();
+                setActiveSource(selectedSource);
+                sources = [...normalizeVideoSources(ep.videoSources), ...normalizeAlternativeSources(ep.alternativeSources)];
+            }
             if (!url) {
-                const fallbackSaved = getSavedSourceRecord(ep, '') || getSavedSourceRecord(ep, 'cinemana');
-                if (fallbackSaved) {
-                    url = fallbackSaved.url;
-                    selectedSource = String(fallbackSaved.source || 'saved').toLowerCase();
-                    setActiveSource(selectedSource);
-                }
-                sources = sources.length ? sources : normalizeVideoSources(ep.videoSources);
+                try {
+                    const resolved = await source2ResolveForItem(ep, seasonNumber, ep && ep.number);
+                    sources = normalizeVideoSources(resolved.sources).filter(source2IsBrowserPlayable);
+                    url = sources[0]?.url || resolved.url;
+                    if (url) { selectedSource = 'source2'; setActiveSource('source2'); }
+                } catch (_) {}
             }
             if (!url) {
                 const recovered = await recoverEpisodeVideo(ep, seasonNumber);
@@ -5506,6 +5540,16 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             setPlayingSeasonNumber(seasonNumber != null ? seasonNumber : null);
             setPlayingLabel(`${title.name} · ${ep.title || `الحلقة ${ep.number != null ? ep.number : ''}`}`);
             ensureVidApiSubtitlePublic({ ...ep, videoUrl: url }).catch(() => {});
+            // البديل يُجلب بعد بدء تشغيل الحلقة، لذلك لا نؤخر المستخدم بانتظار كل المزودين.
+            source2ResolveForItem({ ...ep, name: title.name, type: title.type, tmdbId: ep.tmdbId || ep.source2TmdbId || title.tmdbId || title.source2TmdbId }, seasonNumber, ep && ep.number).then(resolved => {
+                const live = normalizeVideoSources(resolved.sources).filter(source2IsBrowserPlayable);
+                if (!live.length) return;
+                setPlayingMeta(prev => {
+                    const existing = normalizeVideoSources(prev?.videoSources || []);
+                    const merged = [...existing, ...live].filter((x, i, a) => normalizeVideoUrl(x.url) && a.findIndex(y => normalizeVideoUrl(y.url) === normalizeVideoUrl(x.url)) === i);
+                    return { ...prev, videoSources: merged, source2TmdbId: resolved.tmdbId, source2SourceCount: resolved.count || live.length, source2Providers: resolved.providers || [] };
+                });
+            }).catch(() => {});
         }
         catch (e) {
             setVideoError(true);
@@ -5598,7 +5642,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             }
             if (!next || !next.url) throw new Error('لم يتم العثور على رابط تشغيل بديل صالح.');
             const nextSource = String(next.source || 'saved').toLowerCase();
-            const mergedSources = currentSources.length ? currentSources : [next];
+            const mergedSources = [...currentSources, next].filter((x, i, a) => normalizeVideoUrl(x.url) && a.findIndex(y => normalizeVideoUrl(y.url) === normalizeVideoUrl(x.url)) === i);
             setPlayingMeta(prev => ({ ...prev, videoUrl: next.url, videoSources: mergedSources, source: nextSource, playbackProvider: nextSource, sourceKind: next.sourceKind || '' }));
             setPlayingUrl(normalizeVideoUrl(next.url));
             setVideoError(false);
@@ -7439,7 +7483,7 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
         React.createElement("div", { className: "mt-3.5" },
             React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u062D\u0644\u0642\u0629 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: e.videoUrl, onChange: v => set('videoUrl', v), folder: "episodes", accept: "video/*" })),
         React.createElement(AlternativeSourcesEditor, { value: e.alternativeSources || [], onChange: v => set('alternativeSources', v), folder: 'episode-alternatives' }),
-        React.createElement(Source2Helper, { kind: "tv", tmdbId: seriesTmdbId || e.source2TmdbId || e.tmdbId || '', season: seasonNumber, episode: e.number, onChange: patch => onChange({ ...eRef.current, ...patch }) }),
+        React.createElement(Source2Helper, { kind: "tv", tmdbId: seriesTmdbId || e.source2TmdbId || e.tmdbId || '', defaultTitle: seriesName, season: seasonNumber, episode: e.number, onChange: patch => onChange({ ...eRef.current, ...patch }) }),
         React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb) }),
         React.createElement("div", { className: "mt-3.5 flex items-center gap-2" },
             React.createElement("div", { className: "h-px flex-1 bg-white/10" }),
@@ -7937,7 +7981,8 @@ function AdminContentForm({ initial, defaultType, onDone }) {
         form.type === 'movie' ? (React.createElement("div", null,
             React.createElement("div", { className: "mt-5" },
                 React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u0644\u0645 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: form.videoUrl, onChange: v => set('videoUrl', v), folder: "videos", accept: "video/*" })),
-            React.createElement(Source2Helper, { kind: 'movie', tmdbId: form.tmdbId || form.source2TmdbId || '', onChange: patch => setForm(prev => ({ ...prev, ...patch })) }),
+            React.createElement(AlternativeSourcesEditor, { value: form.alternativeSources || [], onChange: v => set('alternativeSources', v), folder: 'alternative-videos' }),
+            React.createElement(Source2Helper, { kind: 'movie', tmdbId: form.tmdbId || form.source2TmdbId || '', defaultTitle: form.name, defaultYear: form.year, onChange: patch => setForm(prev => ({ ...prev, ...patch })) }),
             React.createElement(CinemanaHelper, { kind: form.type === 'anime' ? 'anime' : 'movie', defaultTitle: form.name, defaultYear: form.year, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb), onImportTmdb: async (item) => {
                     if (sourceId) return { patch: {}, sourceId, imdbId: '', tmdbId: '' };
                     const r = await importFromTmdbTitle(cinemanaTitle(item), form.type, cinemanaYear(item) || form.year, { withEpisodes: false });
@@ -8439,7 +8484,11 @@ function countAlternativeSources(item) {
 function countSource2Entries(item) {
     if (!item) return 0;
     if (item.type === 'movie') return Number(item.source2SourceCount) || 0;
-    return (item.seasons || []).flatMap(s => (s.episodes || [])).filter(ep => Number(ep.source2SourceCount) > 0).length;
+    return (item.seasons || []).flatMap(s => (s.episodes || [])).reduce((n, ep) => n + (Number(ep.source2SourceCount) || 0), 0);
+}
+function countAlternativeDisplaySources(item) {
+    // البدائل للمستخدم = مصادر Source 2 الحية؛ لا نخزن روابطها لأنها مؤقتة.
+    return countSource2Entries(item);
 }
 
 async function resolveCinemanaRecordForTitle(t) {
@@ -8489,20 +8538,27 @@ async function bulkRefreshCinemanaTitle(t) {
     return { updated: true, count: t.type === 'movie' ? 1 : (patch.seasons || []).reduce((n, s) => n + (s.episodes || []).filter(e => e.videoUrl).length, 0) };
 }
 async function bulkRefreshSource2Title(t, onPartProgress) {
+    // Source 2 لا يحفظ الروابط نفسها؛ نخزن فقط TMDB + العدد + المزوّدين + آخر فحص.
+    let tmdbId = String(t.tmdbId || t.source2TmdbId || t.source2?.tmdbId || '').replace(/\D/g, '');
+    if (!tmdbId) {
+        const best = await tmdbFindBestByTitle(t.name, t.type === 'movie' ? 'movie' : 'tv', t.year);
+        tmdbId = best?.id ? String(best.id) : '';
+    }
+    if (!tmdbId) throw new Error('لم أجد TMDB ID تلقائيًا لهذا العمل.');
     if (t.type === 'movie') {
-        const r = await source2ResolveForItem(t);
-        const patch = { source2: source2InfoForPayload(r.tmdbId), source2TmdbId: r.tmdbId, source2Provider: 'tmdb-embed-api', source2Mode: 'live', source2LastCheckedAt: Date.now(), source2SourceCount: r.count || r.sources.length, source2Providers: Array.from(new Set((r.providers || []).map(String))) };
+        const r = await source2ResolveMovie({ tmdbId });
+        const patch = { source2: source2InfoForPayload(r.tmdbId), source2TmdbId: r.tmdbId, tmdbId: r.tmdbId, source2Provider: 'tmdb-embed-api', source2Mode: 'live', source2LastCheckedAt: Date.now(), source2SourceCount: r.count || r.sources.length, source2Providers: Array.from(new Set((r.providers || []).map(String))) };
         await db.ref(`titles/${t.id}`).update(patch);
         onPartProgress?.(1, 1);
         return { updated: 1 };
     }
     const seasons = normalizeSeasonsValue(t.seasons).map(s => ({ ...s, episodes: (s.episodes || []).map(e => ({ ...e })) }));
-    let done = 0, updated = 0;
+    let done = 0, updated = 0, failed = 0;
     const total = seasons.reduce((n, s) => n + (s.episodes || []).length, 0);
     for (const season of seasons) {
         for (const ep of (season.episodes || [])) {
             try {
-                const r = await source2ResolveForItem({ ...ep, name: t.name, type: t.type, tmdbId: t.tmdbId || t.source2TmdbId }, season.number, ep.number);
+                const r = await source2ResolveEpisode({ tmdbId, season: season.number, episode: ep.number });
                 ep.source2TmdbId = r.tmdbId;
                 ep.source2Provider = 'tmdb-embed-api';
                 ep.source2Mode = 'live';
@@ -8512,12 +8568,17 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
                 ep.source2Season = Number(season.number) || 1;
                 ep.source2Episode = Number(ep.number) || 1;
                 updated++;
-            } catch (_) {}
+            } catch (_) {
+                failed++;
+                ep.source2LastCheckedAt = Date.now();
+                if (!Number(ep.source2SourceCount)) ep.source2SourceCount = 0;
+            }
             done++; onPartProgress?.(done, total);
         }
     }
-    await db.ref(`titles/${t.id}`).update({ source2: source2InfoForPayload(t.tmdbId || t.source2TmdbId), source2TmdbId: String(t.tmdbId || t.source2TmdbId || ''), source2Provider: 'tmdb-embed-api', source2Mode: 'live', source2LastCheckedAt: Date.now(), source2SourceCount: updated, seasons, source2Providers: [] });
-    return { updated };
+    const sourceCount = seasons.reduce((n, ss) => n + (ss.episodes || []).reduce((m, ee) => m + (Number(ee.source2SourceCount) || 0), 0), 0);
+    await db.ref(`titles/${t.id}`).update({ source2: source2InfoForPayload(tmdbId), tmdbId, source2TmdbId: tmdbId, source2Provider: 'tmdb-embed-api', source2Mode: 'live', source2LastCheckedAt: Date.now(), source2SourceCount: sourceCount, seasons, source2Providers: [] });
+    return { updated, failed, sourceCount };
 }
 async function bulkSyncAlternativeSourcesTitle(t) {
     const patch = {};
@@ -8588,6 +8649,61 @@ function AdminSourcesManager({ currentUser, titles }) {
         lastError && React.createElement('p',{className:'text-[10px] text-amber-400 font-bold mt-2 break-words'},`آخر خطأ: ${lastError}`));
 }
 
+function AdminSourcesQuickActions({ currentUser, titles, contentType }) {
+    const [running, setRunning] = useState(false);
+    const [done, setDone] = useState(0);
+    const [total, setTotal] = useState(0);
+    const [success, setSuccess] = useState(0);
+    const [failed, setFailed] = useState(0);
+    const [current, setCurrent] = useState('');
+    const [part, setPart] = useState({ done: 0, total: 0 });
+    const list = (titles || []).filter(t => !t.deleted && ['movie','series','anime'].includes(t.type));
+    const alternativeCount = list.reduce((n, t) => n + countAlternativeDisplaySources(t), 0);
+    const cinemanaCount = list.reduce((n, t) => n + countCinemanaSources(t), 0);
+    const perType = ['movie','series','anime'].map(k => ({ key:k, label:TYPE_LABELS[k], count:list.filter(t => t.type === k).length }));
+    const run = async (jobMode) => {
+        if (running || !list.length) return;
+        setRunning(true); setDone(0); setTotal(list.length); setSuccess(0); setFailed(0); setCurrent(''); setPart({ done: 0, total: 0 });
+        for (let i = 0; i < list.length; i++) {
+            const t = list[i];
+            setCurrent(t.name || `#${i + 1}`);
+            setPart({ done: 0, total: t.type === 'movie' ? 1 : (t.seasons || []).reduce((n, ss) => n + (ss.episodes || []).length, 0) });
+            try {
+                if (jobMode === 'alternative') await bulkRefreshSource2Title(t, (d, n) => setPart({ done: d, total: n }));
+                else {
+                    await bulkRefreshCinemanaTitle(t);
+                    await bulkRefreshSource2Title(t, (d, n) => setPart({ done: d, total: n }));
+                }
+                setSuccess(v => v + 1);
+            } catch (e) {
+                setFailed(v => v + 1);
+                setCurrent(`${t.name || 'عمل'} — ${e?.message || 'خطأ'}`);
+            }
+            setDone(i + 1);
+        }
+        setRunning(false);
+        setCurrent('اكتملت العملية.');
+        logAuditAction(currentUser, jobMode === 'alternative' ? 'إضافة مصدر بديل جماعي' : 'تحديث جميع الروابط', `${list.length} أعمال`);
+        showToast(jobMode === 'alternative' ? 'تم فحص/إضافة المصادر البديلة للأعمال.' : 'تم تحديث سينمانا والمصادر البديلة.');
+    };
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    return React.createElement('div', { className: 'glass-card rounded-2xl p-3.5 md:p-4 border border-accent-cyan/15 mb-5' },
+        React.createElement('div', { className: 'grid md:grid-cols-2 gap-2.5' },
+            React.createElement('button', { type:'button', disabled: running || !list.length, onClick: () => run('alternative'), className:'text-right rounded-xl border border-accent-cyan/25 bg-accent-cyan/10 hover:bg-accent-cyan/15 px-3.5 py-3 transition disabled:opacity-40' },
+                React.createElement('div',{className:'flex items-center justify-between gap-3'},
+                    React.createElement('div',null,React.createElement('p',{className:'text-xs font-black text-accent-cyan'},'إضافة مصدر بديل لجميع الأعمال'),React.createElement('p',{className:'text-[10px] text-slate-500 mt-1'},'كل الأفلام والمسلسلات والأنمي — مطابقة الاسم تلقائيًا مع TMDB ثم جلب المصادر الحية')),
+                    React.createElement('span',{className:'min-w-9 h-9 px-2 rounded-xl bg-accent-cyan/15 border border-accent-cyan/20 text-accent-cyan font-black text-sm flex items-center justify-center'},alternativeCount)),
+            React.createElement('div',{className:'mt-1.5 text-[9px] text-slate-500'},`المصادر البديلة الحالية: ${alternativeCount} · ${perType.map(x => `${x.label} ${x.count}`).join(' · ')}`)),
+            React.createElement('button', { type:'button', disabled: running || !list.length, onClick: () => run('all'), className:'text-right rounded-xl border border-accent-red/25 bg-accent-red/10 hover:bg-accent-red/15 px-3.5 py-3 transition disabled:opacity-40' },
+                React.createElement('div',{className:'flex items-center justify-between gap-3'},
+                    React.createElement('div',null,React.createElement('p',{className:'text-xs font-black text-accent-red'},'تحديث جميع الروابط'),React.createElement('p',{className:'text-[10px] text-slate-500 mt-1'},'كل الأفلام والمسلسلات والأنمي — سينمانا + المصادر البديلة / Source 2')),
+                    React.createElement('span',{className:'min-w-9 h-9 px-2 rounded-xl bg-accent-red/15 border border-accent-red/20 text-accent-red font-black text-sm flex items-center justify-center'},cinemanaCount)),
+            React.createElement('div',{className:'mt-1.5 text-[9px] text-slate-500'},`سينمانا الحالية: ${cinemanaCount} · ${perType.map(x => `${x.label} ${x.count}`).join(' · ')}`))),
+        React.createElement('div',{className:'mt-3 flex items-center justify-between text-[10px] font-bold text-slate-400'},React.createElement('span',null,running ? `جاري: ${current}` : current),React.createElement('span',null,`${done}/${total}`)),
+        React.createElement('div',{className:'h-1.5 rounded-full bg-glass-900 overflow-hidden border border-white/5 mt-1.5'},React.createElement('div',{className:'h-full bg-accent-cyan transition-all duration-300',style:{width:`${pct}%`}})),
+        React.createElement('div',{className:'flex flex-wrap gap-3 mt-2 text-[9px] font-bold'},React.createElement('span',{className:'text-emerald-400'},`نجح ${success}`),React.createElement('span',{className:'text-rose-400'},`فشل ${failed}`),part.total>0&&React.createElement('span',{className:'text-accent-purple'},`العمل ${part.done}/${part.total}`)))
+}
+
 function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
     const [tab, setTab] = useState('content');
     const [contentType, setContentType] = useState('movie');
@@ -8654,6 +8770,7 @@ function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
                             titles.filter(t => t.type === k).length,
                             ")")))
                 })), active: contentType, onChange: setContentType, trackClassName: "bg-accent-red shadow-[0_0_15px_rgba(255,51,75,0.4)]", getButtonClassName: (isActive) => `flex-1 px-4 py-2.5 rounded-xl text-sm font-bold ${isActive ? 'text-white' : 'text-slate-300 hover:text-white hover:bg-white/5'}` }),
+            React.createElement(AdminSourcesQuickActions, { currentUser, titles, contentType }),
             React.createElement("div", { className: "flex items-center gap-3 mb-6 flex-wrap" },
                 React.createElement("button", { onClick: () => setEditing('new'), className: "flex items-center gap-2 px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition" },
                     React.createElement(Icon, { name: "plus", className: "w-4 h-4" }),
@@ -8684,8 +8801,8 @@ function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
                             "/",
                             subProgress.total),
                         React.createElement("span", { className: "text-[10px] px-2.5 py-1 rounded-full font-bold shrink-0 bg-accent-red/10 text-accent-red border border-accent-red/20", title: "عدد مصادر سينمانا المحفوظة" }, `سينمانا ${countCinemanaSources(t)}`),
-                        React.createElement("span", { className: "text-[10px] px-2.5 py-1 rounded-full font-bold shrink-0 bg-accent-cyan/10 text-accent-cyan border border-accent-cyan/20", title: "عدد نتائج Source 2 المسجلة" }, `Source 2 ${countSource2Entries(t)}`),
-                        React.createElement("span", { className: "text-[10px] px-2.5 py-1 rounded-full font-bold shrink-0 bg-accent-purple/10 text-accent-purple border border-accent-purple/20", title: "عدد المصادر البديلة المحفوظة" }, `بدائل ${countAlternativeSources(t)}`),
+                        React.createElement("span", { className: "text-[10px] px-2.5 py-1 rounded-full font-bold shrink-0 bg-accent-cyan/10 text-accent-cyan border border-accent-cyan/20", title: "عدد مصادر البديل الحية من Source 2؛ الروابط نفسها لا تُخزّن" }, `بدائل ${countAlternativeDisplaySources(t)}`),
+                        countAlternativeSources(t) > 0 && React.createElement("span", { className: "text-[9px] px-2 py-0.5 rounded-full font-bold shrink-0 bg-white/5 text-slate-400 border border-white/5", title: "ملفات/روابط بديلة يدوية مرفوعة من الإدارة" }, `يدوي ${countAlternativeSources(t)}`),
                         t.featured === true && React.createElement("span", { className: "text-[11px] px-3 py-1 rounded-full font-bold shrink-0 bg-amber-500/20 text-amber-400 border border-amber-500/30" }, "Hero"),
                         React.createElement("button", { onClick: () => toggleFeatured(t), title: t.featured === true ? 'إزالة من العرض الرئيسي (Hero)' : 'إظهار في العرض الرئيسي (Hero)', className: `w-9 h-9 rounded-xl glass-card border flex items-center justify-center transition shrink-0 ${t.featured === true ? 'border-amber-400 text-amber-400' : 'border-white/10 hover:border-accent-cyan text-slate-200'}` },
                             React.createElement(Icon, { name: "star", className: `w-4 h-4 ${t.featured === true ? 'fill-current' : ''}` })),
