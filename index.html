@@ -1758,8 +1758,8 @@ async function source2ResolveEpisode({ tmdbId, season, episode }) {
 }
 // ===== Source 2 TV/Anime FAST MODE =====
 // لا نستخدم aggregate الكامل للحلقات في لوحة الإدارة؛ نفحص مزودات منفصلة وبالتوازي.
-const SOURCE2_FAST_EPISODE_PROVIDERS = ['vidlink', 'vaplayer', 'castletv'];
-const SOURCE2_FAST_EPISODE_TIMEOUT = 7000;
+const SOURCE2_FAST_EPISODE_PROVIDERS = ['vixsrc', 'vaplayer', 'vidlink', 'castletv'];
+const SOURCE2_FAST_EPISODE_TIMEOUT = 18000;
 
 async function source2ResolveEpisodeFast({ tmdbId, season, episode, timeoutMs = SOURCE2_FAST_EPISODE_TIMEOUT }) {
     const id = String(tmdbId || '').replace(/\D/g, '');
@@ -8943,7 +8943,11 @@ function Source2LinksViewer({ title, onClose }) {
         if (!title?.id || refreshing) return;
         setRefreshing(true);
         try {
-            await bulkRefreshSource2Title(title, () => {});
+            await bulkRefreshSource2Title(
+                title,
+                () => {},
+                title?.type === 'movie' ? {} : { limitEpisodes: 2 }
+            );
             await loadFresh();
             showToast('تم تحديث روابط البدائل.');
         } catch (e) {
@@ -9028,8 +9032,19 @@ async function refreshSingleTitleSource2(t, setBusy) {
     if (!t?.id) throw new Error('العمل غير معروف.');
     setBusy?.(true);
     try {
-        await bulkRefreshSource2Title(t, () => {});
-        return true;
+        const snap = await db.ref(`titles/${t.id}`).once('value');
+        const fresh = sanitizeFirebaseValue(snap.val() || t);
+        const result = await bulkRefreshSource2Title(
+            fresh,
+            () => {},
+            fresh?.type === 'movie' ? {} : { limitEpisodes: 2 }
+        );
+        if (!result || Number(result.updated || 0) < (fresh?.type === 'movie' ? 1 : 1)) {
+            throw new Error(fresh?.type === 'movie'
+                ? 'لم يتم جلب أي مصدر بديل للفيلم.'
+                : 'لم يتم جلب أي مصدر بديل لأول حلقتين.');
+        }
+        return result;
     } finally {
         setBusy?.(false);
     }
