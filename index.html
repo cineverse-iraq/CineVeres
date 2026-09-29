@@ -1744,8 +1744,8 @@ async function source2ResolveEpisode({ tmdbId, season, episode }) {
 }
 // ===== Source 2 TV/Anime FAST MODE =====
 // لا نستخدم aggregate الكامل للحلقات في لوحة الإدارة؛ نفحص مزودات منفصلة وبالتوازي.
-const SOURCE2_FAST_EPISODE_PROVIDERS = ['vidlink', 'vaplayer', 'castletv', 'netmirror'];
-const SOURCE2_FAST_EPISODE_TIMEOUT = 9000;
+const SOURCE2_FAST_EPISODE_PROVIDERS = ['vidlink', 'vaplayer', 'castletv'];
+const SOURCE2_FAST_EPISODE_TIMEOUT = 7000;
 
 async function source2ResolveEpisodeFast({ tmdbId, season, episode, timeoutMs = SOURCE2_FAST_EPISODE_TIMEOUT }) {
     const id = String(tmdbId || '').replace(/\D/g, '');
@@ -1798,9 +1798,10 @@ async function source2ResolveForItem(item, season, episode) {
         } catch (_) {}
     }
     if (!id) throw new Error('لا يوجد TMDB ID محفوظ لـSource 2.');
-    return (item?.type === 'movie' || item?.mediaType === 'movie')
-        ? source2ResolveMovie({ tmdbId: id })
-        : source2ResolveEpisode({ tmdbId: id, season, episode });
+    if (item?.type === 'movie' || item?.mediaType === 'movie') {
+        return source2ResolveMovie({ tmdbId: id });
+    }
+    return source2ResolveEpisodeFast({ tmdbId: id, season, episode });
 }
 async function source2EnsureTmdbId(form, fallbackSourceId) {
     let id = String(form?.tmdbId || form?.source2TmdbId || '').replace(/\D/g, '');
@@ -8620,48 +8621,134 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
         const sources = normalizeVideoSources(r.sources).filter(source2IsBrowserPlayable);
         const patch = {
             source2: source2StoredRecordFromResolved({ ...r, sources }, 1, 1, 'movie'),
-            source2TmdbId: r.tmdbId, tmdbId: r.tmdbId,
-            source2Provider: 'tmdb-embed-api', source2Mode: 'live', source2LastCheckedAt: Date.now(),
-            source2SourceCount: sources.length, source2Providers: Array.from(new Set(sources.map(s => s.provider).filter(Boolean))),
-            source2Sources: sources, source2ExpiresAt: Number(r.raw?.expiresAt || 0) || 0
+            source2TmdbId: r.tmdbId,
+            tmdbId: r.tmdbId,
+            source2Provider: 'tmdb-embed-api',
+            source2Mode: 'live',
+            source2LastCheckedAt: Date.now(),
+            source2SourceCount: sources.length,
+            source2Providers: Array.from(new Set(sources.map(s => s.provider).filter(Boolean))),
+            source2Sources: sources,
+            source2ExpiresAt: Number(r.raw?.expiresAt || 0) || 0
         };
         await db.ref(`titles/${t.id}`).update(patch);
-        onPartProgress?.(1, 1, { message: 'تم جلب مصادر الفيلم', batchDone:1, batchTotal:1, updated:1, failed:0 });
-        return { updated:1, failed:0, sourceCount:sources.length };
+        onPartProgress?.(1, 1, { message: 'تم جلب مصادر الفيلم', batchDone: 1, batchTotal: 1, updated: 1, failed: 0 });
+        return { updated: 1, failed: 0, sourceCount: sources.length };
     }
 
-    const seasons = normalizeSeasonsValue(t.seasons).map(s => ({ ...s, episodes:(s.episodes || []).map(e => ({ ...e })) }));
-    const jobs=[];
-    seasons.forEach((season, si) => (season.episodes || []).forEach((ep, ei) => jobs.push({si,ei,season:Number(season.number)||1,episode:Number(ep.number)||1})));
-    const total=jobs.length; let done=0,updated=0,failed=0;
-    const BATCH_SIZE=2;
-    for (let offset=0; offset<jobs.length; offset+=BATCH_SIZE) {
-        const batch=jobs.slice(offset, offset+BATCH_SIZE);
-        const batchResults=await Promise.all(batch.map(async job=>{
-            const ep=seasons[job.si].episodes[job.ei];
+    // TV/Anime: never run the 13-provider aggregate during bulk refresh.
+    // Process exactly two episodes per batch; each episode queries three fast providers in parallel.
+    const seasons = normalizeSeasonsValue(t.seasons).map(s => ({
+        ...s,
+        episodes: (s.episodes || []).map(e => ({ ...e }))
+    }));
+    const jobs = [];
+    seasons.forEach((season, si) => {
+        (season.episodes || []).forEach((ep, ei) => {
+            jobs.push({
+                si,
+                ei,
+                season: Number(season.number) || 1,
+                episode: Number(ep.number) || 1
+            });
+        });
+    });
+
+    const total = jobs.length;
+    let done = 0, updated = 0, failed = 0;
+    const BATCH_SIZE = 2;
+
+    for (let offset = 0; offset < jobs.length; offset += BATCH_SIZE) {
+        const batch = jobs.slice(offset, offset + BATCH_SIZE);
+
+        const results = await Promise.all(batch.map(async job => {
+            const ep = seasons[job.si].episodes[job.ei];
             try {
-                const r=await source2ResolveEpisodeFast({tmdbId,season:job.season,episode:job.episode});
-                const sources=normalizeVideoSources(r.sources).filter(source2IsBrowserPlayable);
-                ep.source2TmdbId=r.tmdbId; ep.source2Provider='tmdb-embed-api'; ep.source2Mode='live'; ep.source2LastCheckedAt=Date.now();
-                ep.source2Season=job.season; ep.source2Episode=job.episode; ep.source2SourceCount=sources.length;
-                ep.source2Providers=Array.from(new Set(sources.map(s=>s.provider).filter(Boolean)));
-                ep.source2=source2StoredRecordFromResolved(r,job.season,job.episode,'tv');
-                return {ok:true,job};
-            } catch(error) {
-                ep.source2LastCheckedAt=Date.now(); ep.source2LastError=error?.message||'تعذر جلب البديل';
-                if(!Number(ep.source2SourceCount)) ep.source2SourceCount=0;
-                return {ok:false,job,error};
+                const r = await source2ResolveEpisodeFast({
+                    tmdbId,
+                    season: job.season,
+                    episode: job.episode,
+                    timeoutMs: SOURCE2_FAST_EPISODE_TIMEOUT
+                });
+                const sources = normalizeVideoSources(r.sources).filter(source2IsBrowserPlayable);
+
+                ep.source2TmdbId = r.tmdbId;
+                ep.source2Provider = 'tmdb-embed-api';
+                ep.source2Mode = 'live';
+                ep.source2LastCheckedAt = Date.now();
+                ep.source2Season = job.season;
+                ep.source2Episode = job.episode;
+                ep.source2SourceCount = sources.length;
+                ep.source2Providers = Array.from(new Set(sources.map(s => s.provider).filter(Boolean)));
+                ep.source2 = source2StoredRecordFromResolved(r, job.season, job.episode, 'tv');
+
+                return { ok: true, job, sourceCount: sources.length };
+            } catch (error) {
+                ep.source2LastCheckedAt = Date.now();
+                ep.source2LastError = error?.message || 'تعذر جلب البديل';
+                // Do not fall back to the slow 13-provider aggregate here.
+                // The individual episode can retry later when the user watches it.
+                return { ok: false, job, error };
             }
         }));
-        const batchUpdated=batchResults.filter(x=>x.ok).length;
-        const batchFailed=batchResults.length-batchUpdated;
-        updated+=batchUpdated; failed+=batchFailed; done+=batchResults.length;
-        const sourceCount=seasons.reduce((n,s)=>n+(s.episodes||[]).reduce((m,e)=>m+(Number(e.source2SourceCount)||0),0),0);
-        const providers=Array.from(new Set(seasons.flatMap(s=>(s.episodes||[]).flatMap(e=>e.source2Providers||[]))));
-        await db.ref(`titles/${t.id}`).update({source2:source2InfoForPayload(tmdbId),tmdbId,source2TmdbId:tmdbId,source2Provider:'tmdb-embed-api',source2Mode:'live',source2LastCheckedAt:Date.now(),source2SourceCount:sourceCount,source2Providers:providers,seasons});
-        onPartProgress?.(done,total,{message:`تم جلب ${batch.length} حلقة — ${done}/${total}`,batchDone:batch.length,batchTotal:BATCH_SIZE,updated:batchUpdated,failed:batchFailed});
+
+        const batchUpdated = results.filter(x => x.ok).length;
+        const batchFailed = results.length - batchUpdated;
+        updated += batchUpdated;
+        failed += batchFailed;
+        done += results.length;
+
+        const sourceCount = seasons.reduce(
+            (n, s) => n + (s.episodes || []).reduce((m, e) => m + (Number(e.source2SourceCount) || 0), 0),
+            0
+        );
+        const providers = Array.from(new Set(
+            seasons.flatMap(s => (s.episodes || []).flatMap(e => e.source2Providers || []))
+        ));
+
+        await db.ref(`titles/${t.id}`).update({
+            source2: source2InfoForPayload(tmdbId),
+            tmdbId,
+            source2TmdbId: tmdbId,
+            source2Provider: 'tmdb-embed-api',
+            source2Mode: 'live',
+            source2LastCheckedAt: Date.now(),
+            source2SourceCount: sourceCount,
+            source2Providers: providers,
+            seasons
+        });
+
+        const batchMessage = batchUpdated === batch.length
+            ? `تم جلب مصادر ${batch.length} حلقة`
+            : `تم فحص ${batch.length} حلقات — نجح ${batchUpdated} وفشل ${batchFailed}`;
+
+        onPartProgress?.(done, total, {
+            message: `${batchMessage} · ${done}/${total}`,
+            batchDone: batch.length,
+            batchTotal: BATCH_SIZE,
+            updated: batchUpdated,
+            failed: batchFailed
+        });
     }
-    return {updated,failed,sourceCount:countSource2Entries({...t,seasons})};
+
+    // Mark the parent work green only when every episode has at least one fast source.
+    const coverage = getSource2Coverage({ ...t, seasons });
+    await db.ref(`titles/${t.id}/source2Coverage`).set({
+        done: coverage.done,
+        total: coverage.total,
+        complete: coverage.complete,
+        sourceCount: coverage.sources,
+        checkedAt: Date.now()
+    });
+
+    return {
+        updated,
+        failed,
+        sourceCount: coverage.sources,
+        episodeDone: coverage.done,
+        episodeTotal: coverage.total,
+        complete: coverage.complete
+    };
 }
 async function bulkSyncAlternativeSourcesTitle(t) {
     const patch = {};
