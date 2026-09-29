@@ -777,6 +777,25 @@ function shiftVttTimings(vtt, offsetMs) {
     };
     return String(vtt || '').split('\n').map(line => line.replace(/(\d{1,2}):(\d{2}):(\d{2})[.,](\d{3})\s+-->\s+(\d{1,2}):(\d{2}):(\d{2})[.,](\d{3})/, (_, h1, m1, s1, ms1, h2, m2, s2, ms2) => `${fmt(toMs(h1, m1, s1, ms1) + ms)} --> ${fmt(toMs(h2, m2, s2, ms2) + ms)}`)).join('\n');
 }
+// Firebase RTDB rejects undefined values. Recursively sanitize objects/arrays
+// before reading/writing records so admin Source 2 actions never fail on
+// optional fields that are missing. Undefined object properties are omitted;
+// undefined array slots become null to preserve indexes.
+function sanitizeFirebaseValue(value) {
+    if (value === undefined) return null;
+    if (value === null) return null;
+    if (Array.isArray(value)) return value.map(sanitizeFirebaseValue);
+    if (typeof value === 'object') {
+        const out = {};
+        Object.keys(value).forEach((key) => {
+            if (value[key] === undefined) return;
+            out[key] = sanitizeFirebaseValue(value[key]);
+        });
+        return out;
+    }
+    return value;
+}
+
 function isFirebaseStorageUrl(url) {
     const s = String(url || '').trim();
     return /^https:\/\/(?:firebasestorage\.googleapis\.com|storage\.googleapis\.com)\//i.test(s)
