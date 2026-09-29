@@ -707,6 +707,14 @@ function normalizeTitlePlaybackData(title) {
     clean.source2LastCheckedAt = Number(clean.source2LastCheckedAt) || 0;
     clean.source2SourceCount = Number(clean.source2SourceCount) || 0;
     clean.source2Providers = normalizeGenresValue(clean.source2Providers);
+    clean.source2Sources = normalizeVideoSources(clean.source2Sources || clean.source2?.sources || []).filter(source2IsBrowserPlayable);
+    if (clean.source2 && typeof clean.source2 === 'object') {
+        clean.source2 = {
+            ...clean.source2,
+            sources: normalizeVideoSources(clean.source2.sources || clean.source2Sources || []).filter(source2IsBrowserPlayable),
+            sourceCount: Number(clean.source2.sourceCount) || normalizeVideoSources(clean.source2.sources || clean.source2Sources || []).filter(source2IsBrowserPlayable).length
+        };
+    }
     clean.seasons = normalizeSeasonsValue(clean.seasons).map(season => ({
         ...season,
         episodes: season.episodes.map(ep => ({
@@ -724,6 +732,12 @@ function normalizeTitlePlaybackData(title) {
             source2LastCheckedAt: Number(ep.source2LastCheckedAt) || 0,
             source2SourceCount: Number(ep.source2SourceCount) || 0,
             source2Providers: normalizeGenresValue(ep.source2Providers),
+            source2Sources: normalizeVideoSources(ep.source2Sources || ep.source2?.sources || []).filter(source2IsBrowserPlayable),
+            source2: ep.source2 && typeof ep.source2 === 'object' ? {
+                ...ep.source2,
+                sources: normalizeVideoSources(ep.source2.sources || ep.source2Sources || []).filter(source2IsBrowserPlayable),
+                sourceCount: Number(ep.source2.sourceCount) || normalizeVideoSources(ep.source2.sources || ep.source2Sources || []).filter(source2IsBrowserPlayable).length
+            } : ep.source2,
             number: Number(ep.number) || 1
         }))
     }));
@@ -1836,7 +1850,7 @@ function Source2Helper({ kind, tmdbId, season, episode, defaultTitle = '', defau
             const r = kind === 'movie' ? await source2ResolveMovie({ tmdbId: id }) : await source2ResolveEpisodeFast({ tmdbId: id, season, episode });
             const providers = Array.from(new Set((r.providers || []).map(v => String(v).trim()).filter(Boolean)));
             setResult(r);
-            onChange && onChange({ source2TmdbId: id, source2Provider: 'tmdb-embed-api', source2Mode: 'live', source2LastCheckedAt: Date.now(), source2SourceCount: r.count || r.sources.length, source2Providers: providers });
+            onChange && onChange({ source2TmdbId: id, source2Provider: 'tmdb-embed-api', source2Mode: 'live', source2LastCheckedAt: Date.now(), source2SourceCount: r.count || r.sources.length, source2Providers: providers, source2Sources: normalizeVideoSources(r.sources).filter(source2IsBrowserPlayable), source2: source2StoredRecordFromResolved(r, season, episode, kind === 'movie' ? 'movie' : 'tv') });
             setMsg(`نجح الاختبار: ${r.count || r.sources.length} مصدر · ${providers.length} مزوّد · TMDB ${id}`);
         } catch (e) {
             setMsg(e.message || 'فشل اختبار Source 2.');
@@ -7944,7 +7958,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 poster: (s.poster || '').trim(),
                 episodeThumbnail: (s.episodeThumbnail || '').trim(),
                 episodes: (s.episodes || []).map(e => ({
-                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), alternativeSources: normalizeAlternativeSources(e.alternativeSources), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || ''), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
+                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), alternativeSources: normalizeAlternativeSources(e.alternativeSources), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || ''), source2TmdbId: String(e.source2TmdbId || '').replace(/\D/g, ''), source2Provider: String(e.source2Provider || 'tmdb-embed-api'), source2Mode: String(e.source2Mode || (e.source2TmdbId ? 'live' : '')), source2LastCheckedAt: Number(e.source2LastCheckedAt) || 0, source2SourceCount: Number(e.source2SourceCount) || 0, source2Providers: normalizeGenresValue(e.source2Providers), source2Sources: normalizeVideoSources(e.source2Sources || e.source2?.sources || []).filter(source2IsBrowserPlayable), source2: e.source2 && typeof e.source2 === 'object' ? { ...e.source2, sources: normalizeVideoSources(e.source2.sources || e.source2Sources || []).filter(source2IsBrowserPlayable) } : e.source2, imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
                     trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, introStart: Number(e.introStart) || 0, introEnd: Number(e.introEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
                 }))
             }));
@@ -8875,7 +8889,21 @@ function AdminSourcesQuickActions({ currentUser, titles, contentType }) {
 }
 
 function Source2LinksViewer({ title, onClose }) {
-    const local = normalizeTitlePlaybackData(title);
+    const [local, setLocal] = useState(() => normalizeTitlePlaybackData(title));
+    const [loadingFresh, setLoadingFresh] = useState(true);
+    useEffect(() => {
+        let alive = true;
+        (async () => {
+            try {
+                if (title?.id && typeof db !== 'undefined') {
+                    const snap = await db.ref(`titles/${title.id}`).once('value');
+                    if (alive && snap.exists()) setLocal(normalizeTitlePlaybackData({ id: title.id, ...(snap.val() || {}) }));
+                }
+            } catch (_) {}
+            finally { if (alive) setLoadingFresh(false); }
+        })();
+        return () => { alive = false; };
+    }, [title?.id]);
     const copy = async (url) => { try { await navigator.clipboard.writeText(String(url || '')); } catch (_) {} };
     const box = (source, key) => React.createElement('div',{key,className:'glass-card rounded-xl p-3 border border-white/10'},
         React.createElement('div',{className:'flex items-center justify-between gap-2 flex-wrap'},
@@ -8908,7 +8936,7 @@ function Source2LinksViewer({ title, onClose }) {
             React.createElement('div',{className:'p-4 border-b border-white/10 flex items-center justify-between gap-3'},
                 React.createElement('div',null,React.createElement('h3',{className:'font-black text-white'},`روابط البدائل — ${local.name || ''}`),React.createElement('p',{className:'text-[10px] text-slate-500 mt-1'},'يمكنك فتح أو نسخ كل رابط للتحقق منه.')),
                 React.createElement('button',{type:'button',onClick:onClose,className:'w-9 h-9 rounded-xl glass-card border border-white/10 text-slate-300'},'×')),
-            React.createElement('div',{className:'p-4 overflow-y-auto space-y-3'}, sections.length ? sections : React.createElement('p',{className:'text-sm text-slate-500'},'لا توجد بيانات بديلة محفوظة.'))
+            React.createElement('div',{className:'p-4 overflow-y-auto space-y-3'}, loadingFresh ? React.createElement('p',{className:'text-sm text-slate-500'},'جاري تحميل روابط البدائل...') : (sections.length ? sections : React.createElement('p',{className:'text-sm text-slate-500'},'لا توجد بيانات بديلة محفوظة.')))
         )
     );
 }
