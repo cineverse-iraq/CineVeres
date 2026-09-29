@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
+  <!-- CineVeres Source 2 real fix: HLS proxy classification + deep provider episode refresh -->
   <meta charset="UTF-8" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
@@ -1256,7 +1257,8 @@ function isDirectVideo(url) {
     return /\.(mp4|webm|ogg|mov|m3u8)(?:[?#]|$)/i.test(s)
         || /(?:\/)(?:master|playlist|index)(?:\.m3u8)?(?:[?#]|$)/i.test(s)
         || /(?:m3u8|manifest|stream|video)(?:[/?#]|$)/i.test(s)
-        || /\/v1\/proxy\?data=/i.test(s);
+        || /\/v1\/proxy\?data=/i.test(s)
+        || /\/m3u8-proxy(?:[/?#]|$)/i.test(s);
 }
 function isCinemanaPlayback(meta, url) {
     const m = meta || {};
@@ -1286,55 +1288,6 @@ function ensureHlsJs() {
         document.head.appendChild(script);
     }).catch(err => { _hlsLoader = null; throw err; });
     return _hlsLoader;
-}
-function buildSource2HlsLoader(HlsClass, rootSrc) {
-    try {
-        const BaseLoader = HlsClass && HlsClass.DefaultConfig && HlsClass.DefaultConfig.loader;
-        if (!BaseLoader) return null;
-        const root = new URL(rootSrc);
-        const proxyOrigin = root.origin;
-        const rawHeaders = root.searchParams.get('headers') || '';
-        let headersValue = rawHeaders;
-        // URLSearchParams already decodes once; accept both raw JSON and an
-        // accidentally double-encoded value without ever throwing.
-        try {
-            if (rawHeaders && !/^\s*\{/.test(rawHeaders)) headersValue = decodeURIComponent(rawHeaders);
-        } catch (_) {}
-        const build = (path, targetUrl) => {
-            const params = `?url=${encodeURIComponent(targetUrl)}` + (headersValue ? `&headers=${encodeURIComponent(headersValue)}` : '');
-            return `${proxyOrigin}${path}${params}`;
-        };
-        const isOwnProxy = (u) => {
-            try {
-                const x = new URL(u, rootSrc);
-                return x.origin === proxyOrigin && /\/(?:m3u8|ts|sub)-proxy$/i.test(x.pathname);
-            } catch (_) { return false; }
-        };
-        return class CineVeresSource2Loader extends BaseLoader {
-            load(context, config, callbacks) {
-                try {
-                    const type = String(context && context.type || '').toUpperCase();
-                    const target = new URL(String(context && context.url || ''), rootSrc).toString();
-                    if (target && !isOwnProxy(target)) {
-                        let wrapped = '';
-                        if (/KEY/.test(type)) {
-                            wrapped = build('/ts-proxy', target);
-                        } else if (/SUBTITLE|SUBTITLE_TRACK/.test(type)) {
-                            wrapped = /(?:m3u8|\.m3u8)(?:$|[?#])/i.test(target) ? build('/m3u8-proxy', target) : build('/sub-proxy', target);
-                        } else if (/MANIFEST|LEVEL|AUDIO_TRACK|STEERING/.test(type)) {
-                            wrapped = build('/m3u8-proxy', target);
-                        } else if (/FRAG|INIT_SEGMENT|PART/.test(type)) {
-                            wrapped = build('/ts-proxy', target);
-                        }
-                        if (wrapped) context = { ...context, url: wrapped };
-                    }
-                } catch (_) {}
-                return super.load(context, config, callbacks);
-            }
-        };
-    } catch (_) {
-        return null;
-    }
 }
 async function buildVidApiUrl(kind, rawId, season, episode) {
     const id = (rawId || '').trim();
@@ -1739,31 +1692,74 @@ function source2ProviderName(item) {
     if (typeof p === 'string') return p.trim() || 'Source 2';
     return String(p?.name || p?.id || item?.providerName || item?.sourceName || item?.name || 'Source 2').trim();
 }
+function source2DecodeUrl(value) {
+    let out = String(value || '').trim();
+    for (let i = 0; i < 3; i++) {
+        try {
+            const next = decodeURIComponent(out);
+            if (next === out) break;
+            out = next;
+        } catch (_) { break; }
+    }
+    return out;
+}
+function source2ProxyTargetUrl(rawUrl) {
+    const value = String(rawUrl || '').trim();
+    if (!value) return '';
+    try {
+        const u = new URL(value, typeof location !== 'undefined' ? location.href : undefined);
+        const q = u.searchParams.get('url');
+        if (q) return source2DecodeUrl(q);
+    } catch (_) {}
+    const decoded = source2DecodeUrl(value);
+    const m = decoded.match(/[?&]url=([^&]+)/i);
+    return m ? source2DecodeUrl(m[1]) : decoded;
+}
+function source2LooksLikeHlsUrl(url) {
+    const value = source2DecodeUrl(url).toLowerCase();
+    return /(?:^|[/?_-])m3u8(?:[/?._-]|$)/i.test(value)
+        || /(?:^|\/)master\.m3u8(?:$|[?#])/i.test(value)
+        || /(?:^|\/)playlist\.m3u8(?:$|[?#])/i.test(value)
+        || /(?:^|\/)index\.m3u8(?:$|[?#])/i.test(value)
+        || /\/m3u8-proxy(?:[/?#]|$)/i.test(value)
+        || /[?&](?:format|type)=mpegurl(?:&|$)/i.test(value)
+        || /application\/(?:vnd\.apple\.)?mpegurl/i.test(value);
+}
 function source2SourceKind(item) {
     const raw = String(item?.type || item?.format || item?.mimeType || item?.mime || '').toLowerCase();
     const url = String(item?.url || item?.link || item?.source || item?.streamUrl || '');
-    const text = [url, item?.title, item?.name, item?.label].map(v => String(v || '')).join(' ');
-    let decoded = text;
-    try { decoded = decodeURIComponent(text); } catch (_) {}
-    if (raw.includes('hls') || raw.includes('mpegurl') || raw.includes('m3u8') || /\.m3u8(?:$|[?#\s])/i.test(decoded) || /(?:\/m3u8-proxy)(?:[/?#]|$)/i.test(decoded)) return 'hls';
-    if (raw.includes('mp4') || /\.mp4(?:$|[?#\s])/i.test(decoded)) return 'mp4';
-    if (raw.includes('webm') || /\.webm(?:$|[?#\s])/i.test(decoded)) return 'webm';
-    if (raw.includes('mkv') || /\.mkv(?:$|[?#\s])/i.test(decoded)) return 'mkv';
-    if (raw.includes('avi') || /\.avi(?:$|[?#\s])/i.test(decoded)) return 'avi';
-    if (raw.includes('mov') || /\.mov(?:$|[?#\s])/i.test(decoded)) return 'mov';
+    const target = source2ProxyTargetUrl(url);
+    const targetDecoded = source2DecodeUrl(target);
+    // IMPORTANT: classify from the actual stream URL/proxy target BEFORE looking at title/name.
+    // A VaPlayer/Vixsrc HLS URL may have a .mkv filename in its descriptive title.
+    if (raw.includes('hls') || raw.includes('mpegurl') || raw.includes('m3u8') || source2LooksLikeHlsUrl(url) || source2LooksLikeHlsUrl(targetDecoded)) return 'hls';
+    if (raw.includes('mp4') || /\.mp4(?:$|[?#])/i.test(targetDecoded)) return 'mp4';
+    if (raw.includes('webm') || /\.webm(?:$|[?#])/i.test(targetDecoded)) return 'webm';
+    if (raw.includes('mkv') || /\.mkv(?:$|[?#])/i.test(targetDecoded)) return 'mkv';
+    if (raw.includes('avi') || /\.avi(?:$|[?#])/i.test(targetDecoded)) return 'avi';
+    if (raw.includes('mov') || /\.mov(?:$|[?#])/i.test(targetDecoded)) return 'mov';
+    const descriptive = [item?.title, item?.name, item?.label].map(v => String(v || '')).join(' ');
+    const descDecoded = source2DecodeUrl(descriptive);
     if (/^(https?:)?\/\//i.test(url)) return 'direct';
+    if (/\.mkv(?:$|[?#\s])/i.test(descDecoded)) return 'mkv';
+    if (/\.avi(?:$|[?#\s])/i.test(descDecoded)) return 'avi';
+    if (/\.mov(?:$|[?#\s])/i.test(descDecoded)) return 'mov';
     return raw;
 }
 function source2IsBrowserPlayable(source) {
+    const url = String(source?.url || '');
+    const target = source2ProxyTargetUrl(url);
     const kind = String(source?.sourceKind || '').toLowerCase();
-    if (kind === 'hls' || kind === 'mp4' || kind === 'webm') return true;
+    // URL/proxy truth wins over descriptive labels that may mention .mkv/.avi.
+    if (source2LooksLikeHlsUrl(url) || source2LooksLikeHlsUrl(target)) return true;
+    if (/\.mp4(?:$|[?#])/i.test(target) || /\.mp4(?:$|[?#])/i.test(url)) return true;
+    if (/\.webm(?:$|[?#])/i.test(target) || /\.webm(?:$|[?#])/i.test(url)) return true;
+    if (kind === 'hls' || kind === 'mp4' || kind === 'webm' || kind === 'direct') return true;
     if (kind === 'mkv' || kind === 'avi' || kind === 'mov') return false;
-    const text = [source?.url, source?.label, source?.provider].map(v => String(v || '')).join(' ');
-    let decoded = text;
-    try { decoded = decodeURIComponent(text); } catch (_) {}
+    const text = [source?.label, source?.provider].map(v => String(v || '')).join(' ');
+    const decoded = source2DecodeUrl(text);
     if (/\.(?:mkv|avi|mov)(?:$|[?#\s])/i.test(decoded)) return false;
-    if (/\.(?:mp4|webm|m3u8)(?:$|[?#\s])/i.test(decoded)) return true;
-    return kind === 'direct';
+    return /^https?:\/\//i.test(url);
 }
 function source2SourcesFromResponse(data) {
     const base = data?.__source2Base || CINADAM_SOURCE2_APIS[0] || '';
@@ -1835,7 +1831,7 @@ const SOURCE2_FAST_EPISODE_PROVIDERS = [
 const SOURCE2_FAST_EPISODE_TIMEOUT = 12000;
 const SOURCE2_AGGREGATE_EPISODE_TIMEOUT = 20000;
 
-async function source2ResolveEpisodeFast({ tmdbId, season, episode, timeoutMs = SOURCE2_FAST_EPISODE_TIMEOUT }) {
+async function source2ResolveEpisodeFast({ tmdbId, season, episode, timeoutMs = SOURCE2_FAST_EPISODE_TIMEOUT, collectAll = false }) {
     const id = String(tmdbId || '').replace(/\D/g, '');
     const se = Math.max(1, Number(season) || 1);
     const ep = Math.max(1, Number(episode) || 1);
@@ -1849,64 +1845,79 @@ async function source2ResolveEpisodeFast({ tmdbId, season, episode, timeoutMs = 
             const url = normalizeVideoUrl(source.url);
             if (!url || seen.has(url)) continue;
             seen.add(url);
-            out.push(source);
+            out.push({ ...source, source: 'source2' });
         }
         return out;
     };
 
+    let aggregateSources = [];
     let aggregateError = null;
-    let aggregateData = null;
-    let allSources = [];
-
-    // 1) The official aggregate endpoint is the primary path. It is designed
-    // to merge every enabled provider into one response.
     try {
-        aggregateData = await source2FetchJson(
+        const aggregateData = await source2FetchJson(
             `/api/streams/series/${encodeURIComponent(id)}?season=${encodeURIComponent(se)}&episode=${encodeURIComponent(ep)}`,
             SOURCE2_AGGREGATE_EPISODE_TIMEOUT
         );
-        allSources = dedupeSources(source2SourcesFromResponse(aggregateData));
+        aggregateSources = dedupeSources(source2SourcesFromResponse(aggregateData));
+        if (aggregateSources.length && !collectAll) {
+            return {
+                ok: true,
+                type: 'tv',
+                tmdbId: id,
+                season: se,
+                episode: ep,
+                providers: Array.from(new Set(aggregateSources.map(s => s.provider).filter(Boolean))),
+                count: aggregateSources.length,
+                sources: aggregateSources,
+                url: aggregateSources[0].url,
+                raw: { ...(aggregateData || {}), aggregate: true }
+            };
+        }
     } catch (e) {
         aggregateError = e;
     }
 
-    // 2) If the aggregate route returned nothing, do not give up after the
-    // first provider. Probe all provider-specific endpoints in parallel and
-    // merge every successful response. This is the important recovery path
-    // for episodes where one provider or the aggregate cache fails.
-    if (!allSources.length) {
-        const jobs = SOURCE2_FAST_EPISODE_PROVIDERS.map(async provider => {
-            const path = `/api/streams/${encodeURIComponent(provider)}/series/${encodeURIComponent(id)}?season=${encodeURIComponent(se)}&episode=${encodeURIComponent(ep)}`;
-            const data = await source2FetchJson(path, timeoutMs);
-            return dedupeSources(
-                source2SourcesFromResponse(data).map(s => ({ ...s, provider: s.provider || provider }))
-            );
-        });
-        const results = await Promise.allSettled(jobs);
-        for (const result of results) {
-            if (result.status === 'fulfilled' && Array.isArray(result.value)) {
-                allSources = dedupeSources([...allSources, ...result.value]);
-            }
+    // Deep mode is used by the admin "إضافة/تحديث البديل" actions. It deliberately
+    // checks every configured provider even when the aggregate endpoint already has
+    // a result, so a single episode can retain multiple independent fallbacks.
+    const jobs = SOURCE2_FAST_EPISODE_PROVIDERS.map(async provider => {
+        const path = `/api/streams/${encodeURIComponent(provider)}/series/${encodeURIComponent(id)}?season=${encodeURIComponent(se)}&episode=${encodeURIComponent(ep)}`;
+        const data = await source2FetchJson(path, timeoutMs);
+        return dedupeSources(source2SourcesFromResponse(data).map(s => ({ ...s, provider: s.provider || provider })));
+    });
+
+    const results = await Promise.allSettled(jobs);
+    const allSources = [...aggregateSources];
+    const errors = [];
+    results.forEach((result, i) => {
+        if (result.status === 'fulfilled') {
+            allSources.push(...result.value);
+        } else {
+            errors.push(`${SOURCE2_FAST_EPISODE_PROVIDERS[i]}: ${result.reason?.message || 'failed'}`);
         }
+    });
+    const merged = dedupeSources(allSources);
+    if (merged.length) {
+        return {
+            ok: true,
+            type: 'tv',
+            tmdbId: id,
+            season: se,
+            episode: ep,
+            providers: Array.from(new Set(merged.map(s => s.provider).filter(Boolean))),
+            count: merged.length,
+            sources: merged,
+            url: merged[0].url,
+            raw: {
+                deep: true,
+                aggregateSources: aggregateSources.length,
+                providerChecks: results.length,
+                providerErrors: errors.slice(0, 8)
+            }
+        };
     }
 
-    if (!allSources.length) {
-        const diagnostic = source2DiagnosticText(aggregateData);
-        throw new Error(diagnostic || aggregateError?.message || `لم تحصل الحلقة S${se}E${ep} على مصدر من Source 2.`);
-    }
-
-    return {
-        ok: true,
-        type: 'tv',
-        tmdbId: id,
-        season: se,
-        episode: ep,
-        providers: Array.from(new Set(allSources.map(s => s.provider).filter(Boolean))),
-        count: allSources.length,
-        sources: allSources,
-        url: allSources[0].url,
-        raw: aggregateData || { fastFallback: true, providers: Array.from(new Set(allSources.map(s => s.provider).filter(Boolean))) }
-    };
+    const detail = errors.length ? ` — ${errors.slice(0, 6).join(' | ')}` : (aggregateError?.message ? ` — ${aggregateError.message}` : '');
+    throw new Error(`لم تحصل الحلقة S${se}E${ep} على مصدر من Source 2${detail}`);
 }
 
 function source2StoredRecordFromResolved(resolved, season, episode, mediaType = 'tv') {
@@ -1969,7 +1980,7 @@ function Source2Helper({ kind, tmdbId, season, episode, defaultTitle = '', defau
                 if (best?.id) id = String(best.id);
             }
             if (!id) throw new Error('لم أجد تطابق TMDB تلقائيًا. تأكد من اسم العمل والسنة.');
-            const r = kind === 'movie' ? await source2ResolveMovie({ tmdbId: id }) : await source2ResolveEpisodeFast({ tmdbId: id, season, episode });
+            const r = kind === 'movie' ? await source2ResolveMovie({ tmdbId: id }) : await source2ResolveEpisodeFast({ tmdbId: id, season, episode, collectAll: true });
             const providers = Array.from(new Set((r.providers || []).map(v => String(v).trim()).filter(Boolean)));
             setResult(r);
             onChange && onChange({ source2TmdbId: id, source2Provider: 'tmdb-embed-api', source2Mode: 'live', source2LastCheckedAt: Date.now(), source2SourceCount: r.count || r.sources.length, source2Providers: providers, source2Sources: normalizeVideoSources(r.sources).filter(source2IsBrowserPlayable), source2: source2StoredRecordFromResolved(r, season, episode, kind === 'movie' ? 'movie' : 'tv') });
@@ -4137,7 +4148,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
         let hls = null;
         let fatalRetries = 0;
         let cancelled = false;
-        const isM3u8 = String(sourceKind || '').toLowerCase() === 'hls' || /\.m3u8(\?.*)?$/i.test(src);
+        const isM3u8 = String(sourceKind || '').toLowerCase() === 'hls' || source2LooksLikeHlsUrl(src) || /\.m3u8(?:[?#]|$)/i.test(source2ProxyTargetUrl(src));
         const hlsConfig = {
             enableWorker: !CV_VERY_LOW_POWER,
             capLevelToPlayerSize: true,
@@ -4194,8 +4205,6 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
                 if (cancelled)
                     return;
                 if (HlsClass && HlsClass.isSupported()) {
-                    const source2Loader = /(?:\/m3u8-proxy|\/ts-proxy|\/sub-proxy)/i.test(src) ? buildSource2HlsLoader(HlsClass, src) : null;
-                    if (source2Loader) hlsConfig.loader = source2Loader;
                     hls = new HlsClass(hlsConfig);
                     hls.attachMedia(videoEl);
                     hls.once(HlsClass.Events.MEDIA_ATTACHED, () => { if (!cancelled && hls)
@@ -5702,6 +5711,15 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 selectedSource = String(fallbackSaved.source || 'saved').toLowerCase();
                 setActiveSource(selectedSource);
                 sources = [...normalizeVideoSources(ep.videoSources), ...normalizeAlternativeSources(ep.alternativeSources)];
+            }
+            if (!url) {
+                const savedSource2 = normalizeVideoSources(ep.source2Sources || ep.source2?.sources || []).filter(source2IsBrowserPlayable);
+                if (savedSource2.length) {
+                    sources = savedSource2;
+                    url = savedSource2[0].url;
+                    selectedSource = 'source2';
+                    setActiveSource('source2');
+                }
             }
             if (!url) {
                 try {
@@ -8846,7 +8864,8 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
                     tmdbId,
                     season: job.season,
                     episode: job.episode,
-                    timeoutMs: SOURCE2_FAST_EPISODE_TIMEOUT
+                    timeoutMs: SOURCE2_FAST_EPISODE_TIMEOUT,
+                    collectAll: true
                 });
                 const sources = normalizeVideoSources(r.sources).filter(source2IsBrowserPlayable);
 
@@ -9076,7 +9095,7 @@ function Source2LinksViewer({ title, onClose }) {
         if (!title?.id || refreshing) return;
         setRefreshing(true);
         try {
-            await bulkRefreshSource2Title(title, () => {});
+            await bulkRefreshSource2Title(local, () => {});
             await loadFresh();
             showToast('تم تحديث روابط البدائل.');
         } catch (e) {
@@ -9270,7 +9289,7 @@ async function refreshSingleEpisodeSource2(t, seasonNumber, episodeNumber) {
         resolvedId = best?.id ? String(best.id) : '';
     }
     if (!resolvedId) throw new Error('لم أجد TMDB ID لهذا المسلسل.');
-    const r = await source2ResolveEpisodeFast({ tmdbId: resolvedId, season, episode, timeoutMs: SOURCE2_FAST_EPISODE_TIMEOUT });
+    const r = await source2ResolveEpisodeFast({ tmdbId: resolvedId, season, episode, timeoutMs: SOURCE2_FAST_EPISODE_TIMEOUT, collectAll: true });
     const sources = normalizeVideoSources(r.sources).filter(source2IsBrowserPlayable);
     if (!sources.length) throw new Error(`لم تُجلب مصادر للحلقة S${season}E${episode}.`);
     ep.source2TmdbId = r.tmdbId;
