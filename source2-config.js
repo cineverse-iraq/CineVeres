@@ -8,7 +8,7 @@
 (function () {
   window.CINADAM_SOURCE2_CONFIG = {
     apiBases: [
-      "https://REPLACE-WITH-YOUR-SOURCE2-DOMAIN"
+      "https://cineveres-source2.onrender.com"
       // , "https://YOUR-BACKUP-SOURCE2-DOMAIN"
     ],
     timeoutMs: 25000,
