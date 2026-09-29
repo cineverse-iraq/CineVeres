@@ -3770,7 +3770,7 @@ function SubSlider({ label, value, unit, min, max, step, onChange }) {
                 unit)),
         React.createElement("input", { type: "range", min: min, max: max, step: step, value: value, onChange: e => onChange(Number(e.target.value)), className: "w-full mb-2", style: { accentColor: '#00F0FF' } })));
 }
-function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', onSourcePlaying, onError, onDuration, trimStart, trimEnd, introStart, introEnd, recapStart, recapEnd, outroStart, outroEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, onEnded, onOutroStart, onPreviousEpisode, onNextEpisode, hasPreviousEpisode, hasNextEpisode, previousEpisodeLabel, nextEpisodeLabel, qualities, onQualityChange, startAt, onProgressSave }) {
+function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', onSourcePlaying, onError, silentSwitching = false, onDuration, trimStart, trimEnd, introStart, introEnd, recapStart, recapEnd, outroStart, outroEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, onEnded, onOutroStart, onPreviousEpisode, onNextEpisode, hasPreviousEpisode, hasNextEpisode, previousEpisodeLabel, nextEpisodeLabel, qualities, onQualityChange, startAt, onProgressSave }) {
     const videoRef = useRef(null);
     const wrapRef = useRef(null);
     const hideTimerRef = useRef(null);
@@ -3783,6 +3783,8 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
     const outroTriggeredRef = useRef(false);
     const progressSaveRef = useRef(onProgressSave);
     const sourcePlayingRef = useRef(onSourcePlaying);
+    const previousSrcRef = useRef(src);
+    const sourceTransitionRef = useRef(false);
     const lastSavedProgressRef = useRef(0);
     const latestProgressRef = useRef({ position: 0, duration: 0 });
     const clearBufferingTimer = () => {
@@ -3934,6 +3936,8 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
         const videoEl = videoRef.current;
         if (!videoEl || !src)
             return;
+        sourceTransitionRef.current = !!previousSrcRef.current && previousSrcRef.current !== src;
+        previousSrcRef.current = src;
         setLoading(true);
         let savedMuted = null, savedVolume = null;
         try {
@@ -3990,6 +3994,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
         };
         const markReady = () => {
             clearBufferingTimer();
+            sourceTransitionRef.current = false;
             setLoading(false);
         };
         const onReady = () => { markReady(); tryPlay(); };
@@ -4007,7 +4012,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
                     catch (e) {
                         if (!cancelled) {
                             setLoading(false);
-                            onError && onError();
+                            onError && onError({ currentTime: Number(videoEl.currentTime) || 0 });
                         }
                         return;
                     }
@@ -4039,12 +4044,12 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
                             }
                             else {
                                 setLoading(false);
-                                onError && onError();
+                                onError && onError({ currentTime: Number(videoEl.currentTime) || 0 });
                             }
                             return;
                         }
                         setLoading(false);
-                        onError && onError();
+                        onError && onError({ currentTime: Number(videoEl.currentTime) || 0 });
                     });
                     return;
                 }
@@ -4054,7 +4059,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
                     return;
                 }
                 setLoading(false);
-                onError && onError();
+                onError && onError({ currentTime: Number(videoEl.currentTime) || 0 });
                 return;
             }
             videoEl.src = src;
@@ -4226,7 +4231,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
             if (stallFailTimerRef.current) clearTimeout(stallFailTimerRef.current);
             stallFailTimerRef.current = setTimeout(() => {
                 if (!videoEl.paused && !videoEl.ended && videoEl.readyState < 3) {
-                    onError && onError();
+                    onError && onError({ currentTime: Number(videoEl.currentTime) || 0 });
                 }
             }, delay);
         };
@@ -4638,9 +4643,9 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
     };
     const playerButtonProps = { onPointerDown: blurPlayerButton };
     return (React.createElement("div", { ref: wrapRef, className: `video-crop-wrap cv-player-stage ${fakeFullscreen ? 'ios-fake-fullscreen' : ''}${!barVisible ? ' cv-nocursor' : ''}`, style: fakeFullscreen ? undefined : playerStageStyle, onMouseMove: showBarTemporarily, onPointerDown: onPlayerPointerDown, onPointerMove: onPlayerPointerMove, onPointerUp: onPlayerPointerUp, onPointerCancel: onPlayerPointerUp, onClick: onStageClick },
-        loading && (React.createElement("div", { className: "absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none z-10" },
+        loading && !silentSwitching && (React.createElement("div", { className: "absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none z-10" },
             React.createElement("div", { className: "w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan yt-spinner" }))),
-        React.createElement("video", { ref: videoRef, controls: false, autoPlay: true, playsInline: true, "webkit-playsinline": "true", "x5-playsinline": "true", preload: "metadata", onCanPlay: () => setLoading(false), onPlaying: () => setLoading(false), onLoadedData: () => setLoading(false), onError: () => { setLoading(false); onError && onError(); }, style: videoStyle }, subtitleSrc && React.createElement("track", { key: subtitleSrc, kind: "subtitles", src: subtitleSrc, srcLang: "ar", label: "\u0627\u0644\u0639\u0631\u0628\u064A\u0629", default: true, ref: node => { if (node && node.track)
+        React.createElement("video", { ref: videoRef, controls: false, autoPlay: true, playsInline: true, "webkit-playsinline": "true", "x5-playsinline": "true", preload: "metadata", onCanPlay: () => setLoading(false), onPlaying: () => setLoading(false), onLoadedData: () => setLoading(false), onError: () => { setLoading(false); onError && onError({ currentTime: Number(videoEl.currentTime) || 0 }); }, style: videoStyle }, subtitleSrc && React.createElement("track", { key: subtitleSrc, kind: "subtitles", src: subtitleSrc, srcLang: "ar", label: "\u0627\u0644\u0639\u0631\u0628\u064A\u0629", default: true, ref: node => { if (node && node.track)
                 node.track.mode = subtitleOn ? 'showing' : 'hidden'; } })),
         !isIOS && subtitleOn && activeCues.length > 0 && React.createElement(SubtitleOverlay, { videoRef: videoRef, cues: activeCues, shiftMs: subtitleShift, prefs: subPrefs, lifted: barVisible }),
         episodeLabel && (React.createElement("div", { className: `absolute inset-x-0 top-0 z-20 p-3 md:p-4 bg-gradient-to-b from-black/80 to-transparent transition-opacity duration-300 ${barVisible ? 'opacity-100' : 'opacity-0'}` },
@@ -5035,6 +5040,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const [replyingTo, setReplyingTo] = useState(null);
     const [replyText, setReplyText] = useState('');
     const [videoError, setVideoError] = useState(false);
+    const [switchingSource, setSwitchingSource] = useState(false);
     const [playerRetryCount, setPlayerRetryCount] = useState(0);
     // أي مصدر شغّال حاليًا: 'cinemana' أو 'source2' — يحدد اتجاه التبديل عند الفشل
     // (نبدّل للمصدر الآخر، مو نفس المصدر مرتين).
@@ -5072,6 +5078,16 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     };
     const playRequestRef = useRef(0);
     const triedFallbackRef = useRef(0);
+    const source2PrefetchRef = useRef({ key: '', promise: null });
+    const getSource2Prefetch = (item, season, episode) => {
+        const id = String(item?.tmdbId || item?.source2TmdbId || title.tmdbId || title.source2TmdbId || '').replace(/\D/g, '');
+        const key = `${id}|${title.type}|${Number(season) || 0}|${Number(episode) || 0}|${item?.id || title.id || ''}`;
+        if (!id) return Promise.reject(new Error('لا يوجد TMDB ID لـSource 2.'));
+        if (source2PrefetchRef.current.key === key && source2PrefetchRef.current.promise) return source2PrefetchRef.current.promise;
+        const promise = source2ResolveForItem(item || title, season, episode);
+        source2PrefetchRef.current = { key, promise };
+        return promise;
+    };
     const explicitContinueTarget = title.__continueTarget && title.__continueTarget.season != null && title.__continueTarget.episode != null
         ? { kind: 'episode', progress: { season: Number(title.__continueTarget.season), episode: Number(title.__continueTarget.episode), position: 0, completed: false, updatedAt: Date.now() } }
         : null;
@@ -5103,7 +5119,9 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         setCommentText('');
         setReplyingTo(null);
         setVideoError(false);
+        setSwitchingSource(false);
         triedFallbackRef.current = 0;
+        source2PrefetchRef.current = { key: '', promise: null };
         setActiveSource('cinemana');
         setResumeAt(0);
         const ref = db.ref(`comments/${title.id}`);
@@ -5500,7 +5518,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 scrollToPlayer();
                 ensureVidApiSubtitlePublic({ ...title, videoUrl: url }).catch(() => {});
                 // ابدأ تشغيل المصدر المحفوظ فورًا، ثم اجلب البدائل الحية بالخلفية وأضفها لقائمة المصدر.
-                source2ResolveForItem(title).then(resolved => {
+                getSource2Prefetch(title).then(resolved => {
                     const live = normalizeVideoSources(resolved.sources).filter(source2IsBrowserPlayable);
                     if (!live.length) return;
                     setPlayingMeta(prev => {
@@ -5574,7 +5592,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             setPlayingLabel(`${title.name} · ${ep.title || `الحلقة ${ep.number != null ? ep.number : ''}`}`);
             ensureVidApiSubtitlePublic({ ...ep, videoUrl: url }).catch(() => {});
             // البديل يُجلب بعد بدء تشغيل الحلقة، لذلك لا نؤخر المستخدم بانتظار كل المزودين.
-            source2ResolveForItem({ ...ep, name: title.name, type: title.type, tmdbId: ep.tmdbId || ep.source2TmdbId || title.tmdbId || title.source2TmdbId }, seasonNumber, ep && ep.number).then(resolved => {
+            getSource2Prefetch({ ...ep, name: title.name, type: title.type, tmdbId: ep.tmdbId || ep.source2TmdbId || title.tmdbId || title.source2TmdbId }, seasonNumber, ep && ep.number).then(resolved => {
                 const live = normalizeVideoSources(resolved.sources).filter(source2IsBrowserPlayable);
                 if (!live.length) return;
                 setPlayingMeta(prev => {
@@ -5642,6 +5660,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         if (onSaveWatchProgress && title.type === 'movie') onSaveWatchProgress(title.id, { kind: 'movie', position: Number(at)||0, duration: Number(playingDurationSec)||0, completed: false, updatedAt: Date.now(), titleName: title.name, poster: title.poster });
         else if (onSaveWatchProgress && title.type !== 'movie' && playingSeasonNumber != null && playingMeta && playingMeta.number != null) onSaveWatchProgress(title.id, { kind: 'episode', season: playingSeasonNumber, episode: playingMeta.number, position: Number(at)||0, duration: Number(playingDurationSec)||0, completed: false, updatedAt: Date.now(), titleName: title.name, poster: title.poster, label: playingLabel });
         setVideoError(false);
+        setSwitchingSource(true);
         setResumeAt(Number(at) || 0);
         if (quality && quality.source) setActiveSource(String(quality.source).toLowerCase() === 'source2' ? 'source2' : 'cinemana');
         setPlayingMeta(prev => ({ ...prev, videoUrl: url, videoSources: normalizeVideoSources((prev && prev.videoSources) || []), source: String((quality && quality.source) || prev.source || activeSource || 'cinemana').toLowerCase(), playbackProvider: String((quality && quality.source) || prev.playbackProvider || activeSource || 'cinemana').toLowerCase(), sourceKind: String((quality && quality.sourceKind) || prev.sourceKind || '').toLowerCase(), subtitleUrl: normalizeSubtitleUrl((quality && quality.subtitleUrl) || prev.subtitleUrl || '') }));
@@ -5649,12 +5668,17 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     };
     // Source 2 exposes several independent providers. On playback error we cycle through them
     // before falling back to an old saved/manual URL. This avoids making Cinemana mandatory.
-    const attemptFallback = async () => {
+    // Automatic source failover is intentionally silent: keep the same player,
+    // subtitle state and playback position; do not show a toast or modal.
+    const attemptFallback = async (failureInfo = null) => {
+        setSwitchingSource(true);
         try {
             const item = title.type === 'movie'
                 ? title
                 : (allEpisodesFlat.find(x => Number(x.number) === Number(playingMeta && playingMeta.number) && Number(x.seasonNumber) === Number(playingSeasonNumber)) || playingMeta);
             const currentUrl = normalizeVideoUrl(playingUrl);
+            const at = Math.max(0, Number(failureInfo?.currentTime) || Number(resumeAt) || 0);
+            setResumeAt(at);
             const currentSources = normalizeVideoSources(playingMeta && playingMeta.videoSources ? playingMeta.videoSources : []).filter(source2IsBrowserPlayable);
             let next = null;
             if (activeSource === 'source2') {
@@ -5662,7 +5686,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             }
             if (!next && activeSource !== 'source2') {
                 try {
-                    const resolved = await source2ResolveForItem(item, playingSeasonNumber, playingMeta && playingMeta.number);
+                    const resolved = await getSource2Prefetch(item, playingSeasonNumber, playingMeta && playingMeta.number);
                     const fresh = normalizeVideoSources(resolved.sources).filter(s => source2IsBrowserPlayable(s) && normalizeVideoUrl(s.url) !== currentUrl);
                     if (fresh.length) next = fresh[0];
                 } catch (_) {}
@@ -5679,21 +5703,20 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             setPlayingMeta(prev => ({ ...prev, videoUrl: next.url, videoSources: mergedSources, source: nextSource, playbackProvider: nextSource, sourceKind: next.sourceKind || '' }));
             setPlayingUrl(normalizeVideoUrl(next.url));
             setVideoError(false);
-            setActiveSource(nextSource);
-            setPlayerRetryCount(c => c + 1);
-            showToast(nextSource === 'source2' ? `تم التبديل لمزوّد Source 2 آخر${next.provider ? `: ${next.provider}` : ''}` : 'تم التبديل لمصدر محفوظ احتياطي', 'success');
+            setActiveSource(nextSource === 'source2' ? 'source2' : 'cinemana');
         } catch (e) {
+            setSwitchingSource(false);
             setVideoError(true);
-            showToast(e.message || 'تعذّر إيجاد مصدر تشغيل بديل', 'error');
         }
     };
-    const handlePlaybackError = () => {
+    const handlePlaybackError = (info = null) => {
         if (triedFallbackRef.current >= 5) {
+            setSwitchingSource(false);
             setVideoError(true);
             return;
         }
         triedFallbackRef.current += 1;
-        attemptFallback();
+        attemptFallback(info);
     };
     const shareLink = () => {
         const url = `${location.origin}${location.pathname}?t=${title.id}`;
@@ -5816,8 +5839,8 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         React.createElement("div", { onClick: e => e.stopPropagation(), className: `${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl` },
             React.createElement("div", { className: "relative", ref: playerAnchorRef },
                 playingUrl ? (React.createElement("div", { className: "relative" },
-                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl) || isSource2Playback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: 'cinadam-player-' + title.id + '-' + playerRetryCount, src: normalizeVideoUrl(playingUrl), sourceKind: playingMeta.sourceKind || '', onSourcePlaying: () => setPreferredSource(String(activeSource || 'cinemana').toLowerCase() === 'source2' ? 'source2' : 'cinemana'), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: handlePlaybackError, onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : Number(playingMeta.introStart) || 0, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : Number(playingMeta.introEnd) || 0, recapStart: skipDbSegments.recap ? Number(skipDbSegments.recap.start_ms) / 1000 : Number(playingMeta.recapStart) || 0, recapEnd: skipDbSegments.recap ? Number(skipDbSegments.recap.end_ms) / 1000 : Number(playingMeta.recapEnd) || 0, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : Number(playingMeta.outroStart) || 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : Number(playingMeta.outroEnd) || 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onOutroStart: handleEpisodeComplete, onPreviousEpisode: playPreviousEpisode, onNextEpisode: playNextEpisode, hasPreviousEpisode: !!getPreviousEpisodeInfo(), hasNextEpisode: !!getNextEpisodeInfo(), previousEpisodeLabel: (() => { const p = getPreviousEpisodeInfo(); return p ? `الحلقة السابقة · ${p.title || `الحلقة ${p.number}`}` : 'الحلقة السابقة'; })(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete, onProgressSave: onSaveWatchProgress ? (r => onSaveWatchProgress(title.id, title.type === 'movie' ? { kind: 'movie', ...r, titleName: title.name, poster: title.poster } : { kind: 'episode', season: playingSeasonNumber, episode: playingMeta && playingMeta.number, ...r, titleName: title.name, poster: title.poster, label: playingLabel })) : null })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
-                    videoError && (React.createElement("div", { className: "absolute inset-0 bg-black/90 flex flex-col items-center justify-center gap-3 p-6 text-center" },
+                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl) || isSource2Playback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: 'cinadam-player-' + title.id + '-' + playerRetryCount, src: normalizeVideoUrl(playingUrl), sourceKind: playingMeta.sourceKind || '', onSourcePlaying: () => { setSwitchingSource(false); setVideoError(false); setPreferredSource(String(activeSource || 'cinemana').toLowerCase() === 'source2' ? 'source2' : 'cinemana'); }, subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: handlePlaybackError, silentSwitching: switchingSource, onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : Number(playingMeta.introStart) || 0, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : Number(playingMeta.introEnd) || 0, recapStart: skipDbSegments.recap ? Number(skipDbSegments.recap.start_ms) / 1000 : Number(playingMeta.recapStart) || 0, recapEnd: skipDbSegments.recap ? Number(skipDbSegments.recap.end_ms) / 1000 : Number(playingMeta.recapEnd) || 0, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : Number(playingMeta.outroStart) || 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : Number(playingMeta.outroEnd) || 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onOutroStart: handleEpisodeComplete, onPreviousEpisode: playPreviousEpisode, onNextEpisode: playNextEpisode, hasPreviousEpisode: !!getPreviousEpisodeInfo(), hasNextEpisode: !!getNextEpisodeInfo(), previousEpisodeLabel: (() => { const p = getPreviousEpisodeInfo(); return p ? `الحلقة السابقة · ${p.title || `الحلقة ${p.number}`}` : 'الحلقة السابقة'; })(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete, onProgressSave: onSaveWatchProgress ? (r => onSaveWatchProgress(title.id, title.type === 'movie' ? { kind: 'movie', ...r, titleName: title.name, poster: title.poster } : { kind: 'episode', season: playingSeasonNumber, episode: playingMeta && playingMeta.number, ...r, titleName: title.name, poster: title.poster, label: playingLabel })) : null })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
+                    videoError && !switchingSource && (React.createElement("div", { className: "absolute inset-0 bg-black/90 flex flex-col items-center justify-center gap-3 p-6 text-center" },
                         React.createElement("p", { className: "text-sm text-slate-200 font-bold" }, "\u062A\u0639\u0630\u0651\u0631 \u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u0639\u0644\u0649 \u0647\u0630\u0627 \u0627\u0644\u062C\u0647\u0627\u0632."),
                         isIOS && (React.createElement("p", { className: "text-xs text-slate-400 max-w-xs leading-relaxed" }, "\u063A\u0627\u0644\u0628\u064B\u0627 \u0627\u0644\u0633\u0628\u0628 \u0623\u0646 \u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u063A\u064A\u0631 \u0645\u0631\u0641\u0648\u0639 \u0628\u0635\u064A\u063A\u0629 \u064A\u062F\u0639\u0645\u0647\u0627 \u0627\u0644\u0622\u064A\u0641\u0648\u0646 \u0645\u0628\u0627\u0634\u0631\u0629. \u0627\u0644\u0623\u0639\u0645\u0627\u0644 \u0627\u0644\u062A\u064A \u062A\u064F\u0631\u0641\u0639 \u0645\u0646 \u0644\u0648\u062D\u0629 \u0627\u0644\u062A\u062D\u0643\u0645 \u0639\u0628\u0631 \u0632\u0631 \"\u0631\u0641\u0639 \u0645\u0646 \u0627\u0644\u062C\u0647\u0627\u0632\" \u062A\u0639\u0645\u0644 \u0628\u0634\u0643\u0644 \u0635\u062D\u064A\u062D \u0639\u0644\u0649 \u0643\u0644 \u0627\u0644\u0623\u062C\u0647\u0632\u0629.")),
                         React.createElement("button", { onClick: retryPlayback, className: "flex items-center gap-2 px-5 py-2.5 rounded-xl bg-accent-red hover:bg-accent-redHover text-xs font-bold text-white transition" },
