@@ -1766,25 +1766,45 @@ async function source2ResolveEpisodeFast({ tmdbId, season, episode, timeoutMs = 
     const se = Math.max(1, Number(season) || 1);
     const ep = Math.max(1, Number(episode) || 1);
     if (!id) throw new Error('Source 2 يحتاج TMDB ID للمسلسل.');
+
     const jobs = SOURCE2_FAST_EPISODE_PROVIDERS.map(async provider => {
         const path = `/api/streams/${encodeURIComponent(provider)}/series/${encodeURIComponent(id)}?season=${encodeURIComponent(se)}&episode=${encodeURIComponent(ep)}`;
         const data = await source2FetchJson(path, timeoutMs);
-        return source2SourcesFromResponse(data).filter(source2IsBrowserPlayable);
+        const sources = source2SourcesFromResponse(data).filter(source2IsBrowserPlayable);
+        if (!sources.length) throw new Error(`${provider}: 0`);
+        return sources;
     });
-    const settled = await Promise.allSettled(jobs);
+
+    let first;
+    try {
+        first = await Promise.any(jobs);
+    } catch (_) {
+        throw new Error(`لم تحصل الحلقة S${se}E${ep} على مصدر سريع.`);
+    }
+
     const sources = [];
     const seen = new Set();
-    for (const result of settled) {
-        if (result.status !== 'fulfilled') continue;
-        for (const source of result.value || []) {
-            const url = normalizeVideoUrl(source.url);
-            if (!url || seen.has(url)) continue;
-            seen.add(url);
-            sources.push(source);
-        }
+    for (const source of first || []) {
+        const url = normalizeVideoUrl(source.url);
+        if (!url || seen.has(url)) continue;
+        seen.add(url);
+        sources.push(source);
     }
+
     if (!sources.length) throw new Error(`لم تحصل الحلقة S${se}E${ep} على مصدر سريع.`);
-    return { ok:true, type:'tv', tmdbId:id, season:se, episode:ep, providers:Array.from(new Set(sources.map(s=>s.provider).filter(Boolean))), count:sources.length, sources, url:sources[0].url, raw:{fast:true} };
+
+    return {
+        ok: true,
+        type: 'tv',
+        tmdbId: id,
+        season: se,
+        episode: ep,
+        providers: Array.from(new Set(sources.map(s => s.provider).filter(Boolean))),
+        count: sources.length,
+        sources,
+        url: sources[0].url,
+        raw: { fast: true, firstProvider: sources[0]?.provider || '' }
+    };
 }
 
 function source2StoredRecordFromResolved(resolved, season, episode, mediaType = 'tv') {
@@ -8622,7 +8642,7 @@ async function bulkRefreshCinemanaTitle(t) {
     await db.ref(`titles/${t.id}`).update(patch);
     return { updated: true, count: t.type === 'movie' ? 1 : (patch.seasons || []).reduce((n, s) => n + (s.episodes || []).filter(e => e.videoUrl).length, 0) };
 }
-async function bulkRefreshSource2Title(t, onPartProgress) {
+async function bulkRefreshSource2Title(t, onPartProgress, options = {}) {
     let tmdbId = String(t.tmdbId || t.source2TmdbId || t.source2?.tmdbId || '').replace(/\D/g, '');
     if (!tmdbId) {
         const best = await tmdbFindBestByTitle(t.name, t.type === 'movie' ? 'movie' : 'tv', t.year);
@@ -8633,6 +8653,7 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
     if (t.type === 'movie') {
         const r = await source2ResolveMovie({ tmdbId });
         const sources = normalizeVideoSources(r.sources).filter(source2IsBrowserPlayable);
+        if (!sources.length) throw new Error('Source 2 لم يُرجع مصدرًا صالحًا للفيلم.');
         const patch = {
             source2: source2StoredRecordFromResolved({ ...r, sources }, 1, 1, 'movie'),
             source2TmdbId: r.tmdbId,
@@ -8647,19 +8668,18 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
         };
         await db.ref(`titles/${t.id}`).update(sanitizeFirebasePatch(patch));
         onPartProgress?.(1, 1, { message: 'تم جلب مصادر الفيلم', batchDone: 1, batchTotal: 1, updated: 1, failed: 0 });
-        return { updated: 1, failed: 0, sourceCount: sources.length };
+        return { updated: 1, failed: 0, sourceCount: sources.length, episodeDone: 1, episodeTotal: 1, complete: true };
     }
 
-    // TV/Anime: never run the 13-provider aggregate during bulk refresh.
-    // Process exactly two episodes per batch; each episode queries three fast providers in parallel.
-    const seasons = normalizeSeasonsValue(t.seasons).map(s => ({
+    const allSeasons = normalizeSeasonsValue(t.seasons).map(s => ({
         ...s,
         episodes: (s.episodes || []).map(e => ({ ...e }))
     }));
-    const jobs = [];
-    seasons.forEach((season, si) => {
+
+    const allJobs = [];
+    allSeasons.forEach((season, si) => {
         (season.episodes || []).forEach((ep, ei) => {
-            jobs.push({
+            allJobs.push({
                 si,
                 ei,
                 season: Number(season.number) || 1,
@@ -8668,6 +8688,13 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
         });
     });
 
+    const requestedLimit = options && options.limitEpisodes != null
+        ? Math.max(1, Number(options.limitEpisodes) || 1)
+        : null;
+
+    // For fast per-work/admin actions, only the requested number of episodes is checked.
+    // Full bulk updates can omit limitEpisodes to process the entire season list.
+    const jobs = requestedLimit ? allJobs.slice(0, requestedLimit) : allJobs;
     const total = jobs.length;
     let done = 0, updated = 0, failed = 0;
     const BATCH_SIZE = 2;
@@ -8676,8 +8703,9 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
         const batch = jobs.slice(offset, offset + BATCH_SIZE);
 
         const results = await Promise.all(batch.map(async job => {
-            const ep = seasons[job.si].episodes[job.ei];
+            const ep = allSeasons[job.si].episodes[job.ei];
             try {
+                // Fast episode resolver: return as soon as ANY fast provider gives a playable source.
                 const r = await source2ResolveEpisodeFast({
                     tmdbId,
                     season: job.season,
@@ -8685,6 +8713,7 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
                     timeoutMs: SOURCE2_FAST_EPISODE_TIMEOUT
                 });
                 const sources = normalizeVideoSources(r.sources).filter(source2IsBrowserPlayable);
+                if (!sources.length) throw new Error('لا يوجد مصدر صالح.');
 
                 ep.source2TmdbId = r.tmdbId;
                 ep.source2Provider = 'tmdb-embed-api';
@@ -8696,13 +8725,12 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
                 ep.source2Providers = Array.from(new Set(sources.map(s => s.provider).filter(Boolean)));
                 ep.source2 = source2StoredRecordFromResolved(r, job.season, job.episode, 'tv');
                 ep.source2Sources = sources;
+                ep.source2LastError = '';
 
                 return { ok: true, job, sourceCount: sources.length };
             } catch (error) {
                 ep.source2LastCheckedAt = Date.now();
                 ep.source2LastError = error?.message || 'تعذر جلب البديل';
-                // Do not fall back to the slow 13-provider aggregate here.
-                // The individual episode can retry later when the user watches it.
                 return { ok: false, job, error };
             }
         }));
@@ -8713,15 +8741,14 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
         failed += batchFailed;
         done += results.length;
 
-        const sourceCount = seasons.reduce(
+        const sourceCount = allSeasons.reduce(
             (n, s) => n + (s.episodes || []).reduce((m, e) => m + (Number(e.source2SourceCount) || 0), 0),
             0
         );
         const providers = Array.from(new Set(
-            seasons.flatMap(s => (s.episodes || []).flatMap(e => e.source2Providers || []))
+            allSeasons.flatMap(s => (s.episodes || []).flatMap(e => e.source2Providers || []))
         ));
 
-        const safeSeasons = sanitizeFirebaseValue(seasons);
         await db.ref(`titles/${t.id}`).update(sanitizeFirebasePatch({
             source2: source2InfoForPayload(tmdbId),
             tmdbId,
@@ -8731,7 +8758,7 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
             source2LastCheckedAt: Date.now(),
             source2SourceCount: sourceCount,
             source2Providers: providers,
-            seasons: safeSeasons
+            seasons: allSeasons
         }));
 
         const batchMessage = batchUpdated === batch.length
@@ -8747,8 +8774,7 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
         });
     }
 
-    // Mark the parent work green only when every episode has at least one fast source.
-    const coverage = getSource2Coverage({ ...t, seasons });
+    const coverage = getSource2Coverage({ ...t, seasons: allSeasons });
     await db.ref(`titles/${t.id}/source2Coverage`).set({
         done: coverage.done,
         total: coverage.total,
@@ -8757,15 +8783,24 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
         checkedAt: Date.now()
     });
 
+    // Never report a successful job when zero episodes actually produced a source.
+    if (updated === 0 && total > 0) {
+        throw new Error(requestedLimit
+            ? `لم يتم جلب مصدر لأي من أول ${Math.min(requestedLimit, total)} حلقة.`
+            : 'لم يتم جلب أي مصدر بديل للحلقات.');
+    }
+
     return {
         updated,
         failed,
         sourceCount: coverage.sources,
         episodeDone: coverage.done,
         episodeTotal: coverage.total,
-        complete: coverage.complete
+        complete: coverage.complete,
+        requested: requestedLimit || total
     };
 }
+
 async function bulkSyncAlternativeSourcesTitle(t) {
     const patch = {};
     if (t.type === 'movie') {
@@ -8855,7 +8890,7 @@ function AdminSourcesQuickActions({ currentUser, titles, contentType }) {
             setCurrent(t.name || `#${i + 1}`);
             setPart({ done: 0, total: t.type === 'movie' ? 1 : (t.seasons || []).reduce((n, ss) => n + (ss.episodes || []).length, 0) });
             try {
-                if (jobMode === 'alternative') await bulkRefreshSource2Title(t, (d, n, info) => { setPart({ done: d, total: n }); if (info?.message) setCurrent(`${t.name || ''} — ${info.message}`); });
+                if (jobMode === 'alternative') await bulkRefreshSource2Title(t, (d, n, info) => { setPart({ done: d, total: n }); if (info?.message) setCurrent(`${t.name || ''} — ${info.message}`); }, t.type === 'movie' ? {} : { limitEpisodes: 2 });
                 else {
                     await bulkRefreshCinemanaTitle(t);
                     await bulkRefreshSource2Title(t, (d, n, info) => { setPart({ done: d, total: n }); if (info?.message) setCurrent(`${t.name || ''} — ${info.message}`); });
@@ -8979,7 +9014,7 @@ async function refreshSingleTitleSources(t, setBusy) {
     try {
         if (t.type === 'movie') {
             await bulkRefreshCinemanaTitle(t);
-            await bulkRefreshSource2Title(t, () => {});
+            await bulkRefreshSource2Title(t, () => {}, t.type === 'movie' ? {} : { limitEpisodes: 2 });
         } else {
             await bulkRefreshCinemanaTitle(t);
             await bulkRefreshSource2Title(t, () => {});
@@ -8993,9 +9028,7 @@ async function refreshSingleTitleSource2(t, setBusy) {
     if (!t?.id) throw new Error('العمل غير معروف.');
     setBusy?.(true);
     try {
-        const snap = await db.ref(`titles/${t.id}`).once('value');
-        const fresh = sanitizeFirebaseValue(snap.val() || t);
-        await bulkRefreshSource2Title(fresh, () => {});
+        await bulkRefreshSource2Title(t, () => {});
         return true;
     } finally {
         setBusy?.(false);
@@ -9047,23 +9080,6 @@ async function deleteSingleTitleSource2(t) {
     }
     return true;
 }
-function sanitizeFirebaseValue(value) {
-    if (value === undefined) return undefined;
-    if (value === null) return null;
-    if (Array.isArray(value)) return value.map(sanitizeFirebaseValue).filter(v => v !== undefined);
-    if (typeof value === 'object') {
-        const out = {};
-        Object.entries(value).forEach(([k, v]) => {
-            const clean = sanitizeFirebaseValue(v);
-            if (clean !== undefined) out[k] = clean;
-        });
-        return out;
-    }
-    return value;
-}
-function sanitizeFirebasePatch(value) {
-    return sanitizeFirebaseValue(value) || {};
-}
 function AdminWorkSourceActions({ title, currentUser, onRefreshView, onEdit }) {
     const [busy, setBusy] = useState('');
     const run = async (kind) => {
@@ -9092,12 +9108,10 @@ function AdminWorkSourceActions({ title, currentUser, onRefreshView, onEdit }) {
             busy==='refresh-all' ? 'جارٍ...' : (isMovie ? 'تحديث رابط الفيلم' : 'تحديث روابط الحلقات')),
         React.createElement('button',{type:'button',disabled:!!busy,onClick:()=>run('refresh-source2'),title:isMovie?'إعادة جلب البديل للفيلم':'إعادة جلب بدائل الحلقات',className:'px-2.5 py-1 rounded-lg bg-accent-cyan/10 border border-accent-cyan/25 text-accent-cyan text-[10px] font-black disabled:opacity-40'},
             busy==='refresh-source2' ? 'جارٍ...' : 'تحديث البدائل'),
-        React.createElement('button',{type:'button',disabled:!!busy,onClick:()=>run('refresh-source2'),title:'إضافة مصدر بديل تلقائيًا لهذا العمل',className:'px-2.5 py-1 rounded-lg bg-accent-purple/10 border border-accent-purple/25 text-accent-purple text-[10px] font-black disabled:opacity-40'},
-            busy==='refresh-source2' ? 'جارٍ...' : 'إضافة مصدر بديل'),
+        React.createElement('button',{type:'button',disabled:!!busy,onClick:()=>onEdit?.(),title:'إضافة/تعديل مصدر بديل يدوي',className:'px-2.5 py-1 rounded-lg bg-accent-purple/10 border border-accent-purple/25 text-accent-purple text-[10px] font-black disabled:opacity-40'},
+            'إضافة مصدر بديل'),
         React.createElement('button',{type:'button',disabled:!!busy,onClick:()=>run('delete'),title:'حذف روابط Source 2 البديلة',className:'px-2.5 py-1 rounded-lg bg-rose-500/10 border border-rose-500/25 text-rose-300 text-[10px] font-black disabled:opacity-40'},
-            'حذف البدائل'),
-        React.createElement('button',{type:'button',disabled:!!busy,onClick:()=>onEdit?.(),title:'إضافة/تعديل رابط بديل يدوي',className:'px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-[10px] font-black disabled:opacity-40'},
-            'بديل يدوي'));
+            'حذف البدائل'));
 }
 
 function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
