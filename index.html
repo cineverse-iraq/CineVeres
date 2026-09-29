@@ -49,7 +49,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
-  <script src="./source2-config.js?v=20260928"></script>
+  <script src="./source2-config.js?v=20260929"></script>
 
   <style>
     html { scroll-behavior: smooth; }
@@ -1643,13 +1643,29 @@ function source2ProviderName(item) {
 }
 function source2SourceKind(item) {
     const raw = String(item?.type || item?.format || item?.mimeType || item?.mime || '').toLowerCase();
-    if (raw.includes('hls') || raw.includes('mpegurl') || raw.includes('m3u8')) return 'hls';
-    if (raw.includes('mp4')) return 'mp4';
     const url = String(item?.url || item?.link || item?.source || item?.streamUrl || '');
-    if (/\.m3u8(?:$|[?#])/i.test(url)) return 'hls';
-    if (/\.mp4(?:$|[?#])/i.test(url)) return 'mp4';
+    const text = [url, item?.title, item?.name, item?.label].map(v => String(v || '')).join(' ');
+    let decoded = text;
+    try { decoded = decodeURIComponent(text); } catch (_) {}
+    if (raw.includes('hls') || raw.includes('mpegurl') || raw.includes('m3u8') || /\.m3u8(?:$|[?#\s])/i.test(decoded)) return 'hls';
+    if (raw.includes('mp4') || /\.mp4(?:$|[?#\s])/i.test(decoded)) return 'mp4';
+    if (raw.includes('webm') || /\.webm(?:$|[?#\s])/i.test(decoded)) return 'webm';
+    if (raw.includes('mkv') || /\.mkv(?:$|[?#\s])/i.test(decoded)) return 'mkv';
+    if (raw.includes('avi') || /\.avi(?:$|[?#\s])/i.test(decoded)) return 'avi';
+    if (raw.includes('mov') || /\.mov(?:$|[?#\s])/i.test(decoded)) return 'mov';
     if (/^(https?:)?\/\//i.test(url)) return 'direct';
     return raw;
+}
+function source2IsBrowserPlayable(source) {
+    const kind = String(source?.sourceKind || '').toLowerCase();
+    if (kind === 'hls' || kind === 'mp4' || kind === 'webm') return true;
+    if (kind === 'mkv' || kind === 'avi' || kind === 'mov') return false;
+    const text = [source?.url, source?.label, source?.provider].map(v => String(v || '')).join(' ');
+    let decoded = text;
+    try { decoded = decodeURIComponent(text); } catch (_) {}
+    if (/\.(?:mkv|avi|mov)(?:$|[?#\s])/i.test(decoded)) return false;
+    if (/\.(?:mp4|webm|m3u8)(?:$|[?#\s])/i.test(decoded)) return true;
+    return kind === 'direct';
 }
 function source2SourcesFromResponse(data) {
     const base = data?.__source2Base || CINADAM_SOURCE2_APIS[0] || '';
@@ -1665,6 +1681,7 @@ function source2SourcesFromResponse(data) {
         seen.add(url);
         const resolution = source2Resolution(item?.resolution || item?.quality?.resolution || item?.quality || item?.label);
         const q = typeof item?.quality === 'object' ? (item.quality?.label || item.quality?.name || '') : String(item?.quality || '');
+        const sourceKind = source2SourceKind(item);
         const label = String(q || item?.label || item?.title || item?.name || (resolution ? `${resolution}p` : `Source 2 ${index + 1}`)).trim();
         out.push({
             url,
@@ -1673,17 +1690,19 @@ function source2SourcesFromResponse(data) {
             source: 'source2',
             sourceId: String(item?.id || item?.sourceId || item?.providerId || '').trim(),
             provider: source2ProviderName(item),
-            sourceKind: source2SourceKind(item),
+            sourceKind,
             subtitleUrl: String(item?.subtitleUrl || item?.subtitle_url || item?.subtitle || '').trim(),
             headers: item?.headers && typeof item.headers === 'object' ? item.headers : undefined
         });
     });
+    const playable = out.filter(source2IsBrowserPlayable);
+    const pool = playable.length ? playable : out;
     const rank = s => {
         const providerScore = CINADAM_SOURCE2_CONFIG.preferredProvider && String(s.provider || '').toLowerCase().includes(CINADAM_SOURCE2_CONFIG.preferredProvider) ? 100000 : 0;
-        const kindScore = s.sourceKind === 'hls' ? 5000 : 0;
+        const kindScore = s.sourceKind === 'hls' ? 50000 : (s.sourceKind === 'mp4' ? 40000 : (s.sourceKind === 'webm' ? 30000 : 0));
         return providerScore + kindScore + (source2Resolution(s.resolution) || source2Resolution(s.label));
     };
-    return out.sort((a,b) => rank(b) - rank(a));
+    return pool.sort((a,b) => rank(b) - rank(a));
 }
 function source2DiagnosticText(data) {
     const list = Array.isArray(data?.diagnostics) ? data.diagnostics : (Array.isArray(data?.data?.diagnostics) ? data.data.diagnostics : []);
@@ -5343,24 +5362,37 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 let url = '';
                 let sources = [];
                 let selectedSource = '';
-                // Source 2 is always attempted first. This is the network-independent path:
-                // the public TMDB-Embed-API resolves several providers and can proxy them.
-                try {
-                    const resolved = await source2ResolveForItem(title);
-                    sources = normalizeVideoSources(resolved.sources);
-                    url = sources[0]?.url || resolved.url;
-                    if (url) { selectedSource = 'source2'; setActiveSource('source2'); }
-                } catch (_) {}
-                // Existing manually saved playback remains a compatibility fallback for old content.
-                if (!url) {
-                    const fallbackSaved = getSavedSourceRecord(title, '') || getSavedSourceRecord(title, 'cinemana');
-                    if (fallbackSaved) {
-                        url = fallbackSaved.url;
-                        selectedSource = String(fallbackSaved.source || 'saved').toLowerCase();
-                        setActiveSource(selectedSource);
-                    }
-                    sources = sources.length ? sources : normalizeVideoSources(title.videoSources);
+
+                // Movie playback keeps the original CineVeres path first so existing movies
+                // continue to use their saved/Cinemana URLs. Source 2 is the live fallback
+                // when that path is unavailable on the current network.
+                const primarySaved = getSavedSourceRecord(title, 'cinemana') || getSavedSourceRecord(title, '');
+                if (primarySaved?.url) {
+                    url = normalizeVideoUrl(primarySaved.url);
+                    selectedSource = String(primarySaved.source || 'cinemana').toLowerCase();
+                    setActiveSource(selectedSource);
+                    sources = normalizeVideoSources(title.videoSources);
                 }
+
+                if (!url) {
+                    const manualUrl = normalizeVideoUrl(title.videoUrl || '');
+                    if (manualUrl) {
+                        url = manualUrl;
+                        selectedSource = String(title.playbackProvider || (title.cinemanaId ? 'cinemana' : 'saved')).toLowerCase();
+                        setActiveSource(selectedSource);
+                        sources = normalizeVideoSources(title.videoSources);
+                    }
+                }
+
+                if (!url) {
+                    try {
+                        const resolved = await source2ResolveForItem(title);
+                        sources = normalizeVideoSources(resolved.sources).filter(source2IsBrowserPlayable);
+                        url = sources[0]?.url || '';
+                        if (url) { selectedSource = 'source2'; setActiveSource('source2'); }
+                    } catch (_) {}
+                }
+
                 if (!url) {
                     const recovered = await recoverMovieVideo();
                     if (requestId !== playRequestRef.current) return;
@@ -5511,7 +5543,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 ? title
                 : (allEpisodesFlat.find(x => Number(x.number) === Number(playingMeta && playingMeta.number) && Number(x.seasonNumber) === Number(playingSeasonNumber)) || playingMeta);
             const currentUrl = normalizeVideoUrl(playingUrl);
-            const currentSources = normalizeVideoSources(playingMeta && playingMeta.videoSources ? playingMeta.videoSources : []);
+            const currentSources = normalizeVideoSources(playingMeta && playingMeta.videoSources ? playingMeta.videoSources : []).filter(source2IsBrowserPlayable);
             let next = null;
             if (activeSource === 'source2') {
                 next = currentSources.find(s => String(s.source || '').toLowerCase() === 'source2' && normalizeVideoUrl(s.url) && normalizeVideoUrl(s.url) !== currentUrl) || null;
@@ -5519,7 +5551,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             if (!next && activeSource !== 'source2') {
                 try {
                     const resolved = await source2ResolveForItem(item, playingSeasonNumber, playingMeta && playingMeta.number);
-                    const fresh = normalizeVideoSources(resolved.sources).filter(s => normalizeVideoUrl(s.url) !== currentUrl);
+                    const fresh = normalizeVideoSources(resolved.sources).filter(s => source2IsBrowserPlayable(s) && normalizeVideoUrl(s.url) !== currentUrl);
                     if (fresh.length) next = fresh[0];
                 } catch (_) {}
             }
@@ -5544,7 +5576,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         }
     };
     const handlePlaybackError = () => {
-        if (triedFallbackRef.current >= 2) {
+        if (triedFallbackRef.current >= 5) {
             setVideoError(true);
             return;
         }
