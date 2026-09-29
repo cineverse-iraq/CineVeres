@@ -639,7 +639,11 @@ function normalizeVideoSources(value) {
         const source = String((x && (x.source || x.provider || x.playbackProvider)) || '').trim().toLowerCase();
         const sourceId = String((x && (x.sourceId || x.subjectId || x.subject_id || x.cinemanaId)) || '').trim();
         const provider = String((x && (x.provider || x.providerName || x.sourceName)) || '').trim();
-        const sourceKind = String((x && (x.sourceKind || x.kind || x.format || x.type || x.mimeType || '')) || '').trim().toLowerCase();
+        let sourceKind = String((x && (x.sourceKind || x.kind || x.format || x.type || x.mimeType || '')) || '').trim().toLowerCase();
+        const decodedUrl = source2DecodeForDetection(url);
+        if (!sourceKind && /\/m3u8-proxy(?:[/?#]|$)/i.test(decodedUrl)) sourceKind = 'hls';
+        if (!sourceKind && /\/ts-proxy(?:[/?#]|$)/i.test(decodedUrl)) sourceKind = 'ts';
+        if (!sourceKind && /\.m3u8(?:$|[?#\s])/i.test(decodedUrl)) sourceKind = 'hls';
         return url ? { label, resolution: label, url, subtitleUrl, source, sourceId, provider, sourceKind } : null;
     })
         .filter(Boolean)
@@ -1690,13 +1694,28 @@ function source2ProviderName(item) {
     if (typeof p === 'string') return p.trim() || 'Source 2';
     return String(p?.name || p?.id || item?.providerName || item?.sourceName || item?.name || 'Source 2').trim();
 }
+function source2DecodeForDetection(value) {
+    let out = String(value || '');
+    // Some provider URLs contain an encoded provider URL (sometimes encoded more than once).
+    for (let i = 0; i < 3; i++) {
+        try {
+            const next = decodeURIComponent(out);
+            if (next === out) break;
+            out = next;
+        } catch (_) { break; }
+    }
+    return out;
+}
 function source2SourceKind(item) {
-    const raw = String(item?.type || item?.format || item?.mimeType || item?.mime || '').toLowerCase();
+    const raw = String(item?.type || item?.format || item?.mimeType || item?.mime || item?.sourceKind || '').toLowerCase();
     const url = String(item?.url || item?.link || item?.source || item?.streamUrl || '');
-    const text = [url, item?.title, item?.name, item?.label].map(v => String(v || '')).join(' ');
-    let decoded = text;
-    try { decoded = decodeURIComponent(text); } catch (_) {}
-    if (raw.includes('hls') || raw.includes('mpegurl') || raw.includes('m3u8') || /\.m3u8(?:$|[?#\s])/i.test(decoded)) return 'hls';
+    const text = [url, item?.title, item?.name, item?.label, item?.format, item?.mimeType].map(v => String(v || '')).join(' ');
+    const decoded = source2DecodeForDetection(text);
+    // TMDB-Embed-API's own proxy URLs are authoritative hints even when the response omits a MIME/type.
+    if (/\/(?:m3u8|hls)(?:-proxy)?(?:[/?#]|$)/i.test(decoded) || /\/m3u8-proxy(?:[/?#]|$)/i.test(decoded) ||
+        raw.includes('hls') || raw.includes('mpegurl') || raw.includes('m3u8') || /\.m3u8(?:$|[?#\s])/i.test(decoded)) return 'hls';
+    // Raw MPEG-TS proxy streams are useful as data but are not reliable <video> sources in Chromium.
+    if (/\/ts-proxy(?:[/?#]|$)/i.test(decoded) || raw === 'ts' || raw.includes('mpegts') || raw.includes('transport-stream')) return 'ts';
     if (raw.includes('mp4') || /\.mp4(?:$|[?#\s])/i.test(decoded)) return 'mp4';
     if (raw.includes('webm') || /\.webm(?:$|[?#\s])/i.test(decoded)) return 'webm';
     if (raw.includes('mkv') || /\.mkv(?:$|[?#\s])/i.test(decoded)) return 'mkv';
@@ -1708,10 +1727,10 @@ function source2SourceKind(item) {
 function source2IsBrowserPlayable(source) {
     const kind = String(source?.sourceKind || '').toLowerCase();
     if (kind === 'hls' || kind === 'mp4' || kind === 'webm') return true;
-    if (kind === 'mkv' || kind === 'avi' || kind === 'mov') return false;
+    if (kind === 'mkv' || kind === 'avi' || kind === 'mov' || kind === 'ts') return false;
     const text = [source?.url, source?.label, source?.provider].map(v => String(v || '')).join(' ');
-    let decoded = text;
-    try { decoded = decodeURIComponent(text); } catch (_) {}
+    const decoded = source2DecodeForDetection(text);
+    if (/\/(?:m3u8|hls)(?:-proxy)?(?:[/?#]|$)/i.test(decoded) || /\/m3u8-proxy(?:[/?#]|$)/i.test(decoded)) return true;
     if (/\.(?:mkv|avi|mov)(?:$|[?#\s])/i.test(decoded)) return false;
     if (/\.(?:mp4|webm|m3u8)(?:$|[?#\s])/i.test(decoded)) return true;
     return kind === 'direct';
@@ -1720,38 +1739,49 @@ function source2SourcesFromResponse(data) {
     const base = data?.__source2Base || CINADAM_SOURCE2_APIS[0] || '';
     const raw = Array.isArray(data?.streams) ? data.streams
         : Array.isArray(data?.sources) ? data.sources
+        : Array.isArray(data?.results) ? data.results
         : Array.isArray(data?.data?.streams) ? data.data.streams
-        : Array.isArray(data?.data?.sources) ? data.data.sources : [];
+        : Array.isArray(data?.data?.sources) ? data.data.sources
+        : Array.isArray(data?.data?.results) ? data.data.results
+        : Array.isArray(data?.data?.items) ? data.data.items : [];
     const out = [];
     const seen = new Set();
     raw.forEach((item, index) => {
-        const url = source2AbsoluteUrl(item?.url || item?.link || item?.source || item?.streamUrl || '', base);
-        if (!/^https?:\/\//i.test(url) || seen.has(url)) return;
-        seen.add(url);
+        if (!item || typeof item !== 'object') return;
+        const url = source2AbsoluteUrl(item?.url || item?.link || item?.source || item?.streamUrl || item?.stream || '', base);
+        if (!/^https?:\/\//i.test(url)) return;
         const resolution = source2Resolution(item?.resolution || item?.quality?.resolution || item?.quality || item?.label);
         const q = typeof item?.quality === 'object' ? (item.quality?.label || item.quality?.name || '') : String(item?.quality || '');
         const sourceKind = source2SourceKind(item);
+        const provider = source2ProviderName(item);
         const label = String(q || item?.label || item?.title || item?.name || (resolution ? `${resolution}p` : `Source 2 ${index + 1}`)).trim();
-        out.push({
+        const candidate = {
             url,
             label,
             resolution: resolution || label,
             source: 'source2',
             sourceId: String(item?.id || item?.sourceId || item?.providerId || '').trim(),
-            provider: source2ProviderName(item),
+            provider,
             sourceKind,
             subtitleUrl: String(item?.subtitleUrl || item?.subtitle_url || item?.subtitle || '').trim(),
             headers: item?.headers && typeof item.headers === 'object' ? item.headers : undefined
-        });
+        };
+        // Keep one copy of an actually identical stream URL. Different providers with genuinely
+        // different URLs remain separate choices even when their quality labels match.
+        const key = normalizeVideoUrl(candidate.url);
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        out.push(candidate);
     });
     const playable = out.filter(source2IsBrowserPlayable);
-    const pool = playable.length ? playable : out;
     const rank = s => {
         const providerScore = CINADAM_SOURCE2_CONFIG.preferredProvider && String(s.provider || '').toLowerCase().includes(CINADAM_SOURCE2_CONFIG.preferredProvider) ? 100000 : 0;
         const kindScore = s.sourceKind === 'hls' ? 50000 : (s.sourceKind === 'mp4' ? 40000 : (s.sourceKind === 'webm' ? 30000 : 0));
         return providerScore + kindScore + (source2Resolution(s.resolution) || source2Resolution(s.label));
     };
-    return pool.sort((a,b) => rank(b) - rank(a));
+    // Never return raw MKV/TS proxy entries merely to make the list look non-empty; those entries
+    // caused the player to select an unplayable source and made every fallback look broken.
+    return playable.sort((a,b) => rank(b) - rank(a));
 }
 function source2DiagnosticText(data) {
     const list = Array.isArray(data?.diagnostics) ? data.diagnostics : (Array.isArray(data?.data?.diagnostics) ? data.data.diagnostics : []);
@@ -1786,32 +1816,32 @@ const SOURCE2_FAST_EPISODE_PROVIDERS = [
 const SOURCE2_FAST_EPISODE_TIMEOUT = 12000;
 const SOURCE2_AGGREGATE_EPISODE_TIMEOUT = 20000;
 
+function source2DedupeSources(items) {
+    const out = [];
+    const seen = new Set();
+    for (const source of normalizeVideoSources(items || [])) {
+        if (!source2IsBrowserPlayable(source)) continue;
+        const url = normalizeVideoUrl(source.url);
+        if (!url || seen.has(url)) continue;
+        seen.add(url);
+        out.push(source);
+    }
+    return out;
+}
 async function source2ResolveEpisodeFast({ tmdbId, season, episode, timeoutMs = SOURCE2_FAST_EPISODE_TIMEOUT }) {
     const id = String(tmdbId || '').replace(/\D/g, '');
     const se = Math.max(1, Number(season) || 1);
     const ep = Math.max(1, Number(episode) || 1);
     if (!id) throw new Error('Source 2 يحتاج TMDB ID للمسلسل.');
 
-    const dedupeSources = (items) => {
-        const out = [];
-        const seen = new Set();
-        for (const source of normalizeVideoSources(items || [])) {
-            if (!source2IsBrowserPlayable(source)) continue;
-            const url = normalizeVideoUrl(source.url);
-            if (!url || seen.has(url)) continue;
-            seen.add(url);
-            out.push(source);
-        }
-        return out;
-    };
-
-    // 1) Aggregate: الأفضل لأنه يعيد مصادر من عدة مزودات في استجابة واحدة.
+    // Fast path: the aggregate endpoint is already multi-provider and is the quickest way
+    // to put a working source on screen. We enrich the list in the background separately.
     try {
         const aggregateData = await source2FetchJson(
             `/api/streams/series/${encodeURIComponent(id)}?season=${encodeURIComponent(se)}&episode=${encodeURIComponent(ep)}`,
             SOURCE2_AGGREGATE_EPISODE_TIMEOUT
         );
-        const aggregateSources = dedupeSources(source2SourcesFromResponse(aggregateData));
+        const aggregateSources = source2DedupeSources(source2SourcesFromResponse(aggregateData));
         if (aggregateSources.length) {
             return {
                 ok: true,
@@ -1828,20 +1858,18 @@ async function source2ResolveEpisodeFast({ tmdbId, season, episode, timeoutMs = 
         }
     } catch (_) {}
 
-    // 2) Fallback: افحص كل المزودات المعروفة بالتوازي، وخذ أول نتيجة صالحة.
+    // Emergency fast fallback when the aggregate route itself is empty/down.
     const jobs = SOURCE2_FAST_EPISODE_PROVIDERS.map(async provider => {
         const path = `/api/streams/${encodeURIComponent(provider)}/series/${encodeURIComponent(id)}?season=${encodeURIComponent(se)}&episode=${encodeURIComponent(ep)}`;
         const data = await source2FetchJson(path, timeoutMs);
-        const sources = dedupeSources(
+        const sources = source2DedupeSources(
             source2SourcesFromResponse(data).map(s => ({ ...s, provider: s.provider || provider }))
         );
         if (!sources.length) throw new Error(`${provider}: 0`);
         return sources;
     });
-
     try {
         const firstSources = await Promise.any(jobs);
-        if (!firstSources.length) throw new Error('no sources');
         return {
             ok: true,
             type: 'tv',
@@ -1857,6 +1885,78 @@ async function source2ResolveEpisodeFast({ tmdbId, season, episode, timeoutMs = 
     } catch (_) {
         throw new Error(`لم تحصل الحلقة S${se}E${ep} على مصدر من Source 2.`);
     }
+}
+
+// Full episode resolver used by admin actions and background enrichment.
+// Unlike the old fallback, this deliberately waits for every provider attempt and merges
+// all successful, browser-playable streams into one list.
+async function source2ResolveEpisodeAll({ tmdbId, season, episode, timeoutMs = SOURCE2_FAST_EPISODE_TIMEOUT }) {
+    const id = String(tmdbId || '').replace(/\D/g, '');
+    const se = Math.max(1, Number(season) || 1);
+    const ep = Math.max(1, Number(episode) || 1);
+    if (!id) throw new Error('Source 2 يحتاج TMDB ID للمسلسل.');
+
+    const all = [];
+    let aggregateData = null;
+    const errors = [];
+
+    try {
+        aggregateData = await source2FetchJson(
+            `/api/streams/series/${encodeURIComponent(id)}?season=${encodeURIComponent(se)}&episode=${encodeURIComponent(ep)}`,
+            SOURCE2_AGGREGATE_EPISODE_TIMEOUT
+        );
+        all.push(...source2DedupeSources(source2SourcesFromResponse(aggregateData)));
+    } catch (e) {
+        errors.push(`aggregate: ${e?.message || e}`);
+    }
+
+    // Even when aggregate succeeded, still inspect every provider. This is what makes
+    // "إضافة/تحديث البدائل" actually additive instead of stopping at the first hit.
+    const results = await Promise.allSettled(SOURCE2_FAST_EPISODE_PROVIDERS.map(async provider => {
+        const path = `/api/streams/${encodeURIComponent(provider)}/series/${encodeURIComponent(id)}?season=${encodeURIComponent(se)}&episode=${encodeURIComponent(ep)}`;
+        const data = await source2FetchJson(path, timeoutMs);
+        const sources = source2DedupeSources(
+            source2SourcesFromResponse(data).map(s => ({ ...s, provider: s.provider || provider }))
+        );
+        return { provider, data, sources };
+    }));
+
+    for (let i = 0; i < results.length; i++) {
+        const r = results[i];
+        const provider = SOURCE2_FAST_EPISODE_PROVIDERS[i];
+        if (r.status === 'fulfilled') {
+            all.push(...r.value.sources);
+        } else {
+            errors.push(`${provider}: ${r.reason?.message || r.reason || 'failed'}`);
+        }
+    }
+
+    const merged = source2DedupeSources(all);
+    if (!merged.length) {
+        const detail = errors.slice(0, 6).join(' | ');
+        const diag = aggregateData ? source2DiagnosticText(aggregateData) : '';
+        throw new Error(diag || detail || `لم تحصل الحلقة S${se}E${ep} على أي مصدر صالح من Source 2.`);
+    }
+    return {
+        ok: true,
+        type: 'tv',
+        tmdbId: id,
+        season: se,
+        episode: ep,
+        providers: Array.from(new Set(merged.map(s => s.provider).filter(Boolean))),
+        count: merged.length,
+        sources: merged,
+        url: merged[0].url,
+        raw: {
+            aggregate: !!aggregateData,
+            providerResults: results.map((r, i) => ({
+                provider: SOURCE2_FAST_EPISODE_PROVIDERS[i],
+                ok: r.status === 'fulfilled',
+                count: r.status === 'fulfilled' ? r.value.sources.length : 0,
+                error: r.status === 'rejected' ? String(r.reason?.message || r.reason || '') : ''
+            }))
+        }
+    };
 }
 
 function source2StoredRecordFromResolved(resolved, season, episode, mediaType = 'tv') {
@@ -1919,7 +2019,7 @@ function Source2Helper({ kind, tmdbId, season, episode, defaultTitle = '', defau
                 if (best?.id) id = String(best.id);
             }
             if (!id) throw new Error('لم أجد تطابق TMDB تلقائيًا. تأكد من اسم العمل والسنة.');
-            const r = kind === 'movie' ? await source2ResolveMovie({ tmdbId: id }) : await source2ResolveEpisodeFast({ tmdbId: id, season, episode });
+            const r = kind === 'movie' ? await source2ResolveMovie({ tmdbId: id }) : await source2ResolveEpisodeAll({ tmdbId: id, season, episode });
             const providers = Array.from(new Set((r.providers || []).map(v => String(v).trim()).filter(Boolean)));
             setResult(r);
             onChange && onChange({ source2TmdbId: id, source2Provider: 'tmdb-embed-api', source2Mode: 'live', source2LastCheckedAt: Date.now(), source2SourceCount: r.count || r.sources.length, source2Providers: providers, source2Sources: normalizeVideoSources(r.sources).filter(source2IsBrowserPlayable), source2: source2StoredRecordFromResolved(r, season, episode, kind === 'movie' ? 'movie' : 'tv') });
@@ -4148,6 +4248,9 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
                     hls.attachMedia(videoEl);
                     hls.once(HlsClass.Events.MEDIA_ATTACHED, () => { if (!cancelled && hls)
                         hls.loadSource(src); });
+                    if (HlsClass.Events.MANIFEST_PARSED) {
+                        hls.once(HlsClass.Events.MANIFEST_PARSED, () => { if (!cancelled) { setLoading(false); tryPlay(); } });
+                    }
                     hls.on(HlsClass.Events.ERROR, (_e, data) => {
                         if (!data || !data.fatal || cancelled)
                             return;
@@ -4364,7 +4467,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
                 if (!videoEl.paused && videoEl.readyState < 3)
                     setLoading(true);
             }, CV_LOW_POWER ? 850 : 650);
-            armStallFallback(CV_LOW_POWER ? 12000 : 10000);
+            armStallFallback(isSource2Playback({ source: sourceKind }, src) ? (CV_LOW_POWER ? 20000 : 18000) : (CV_LOW_POWER ? 12000 : 10000));
         };
         const onStalled = () => {
             if (videoEl.paused || videoEl.ended)
@@ -4374,7 +4477,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
                 if (!videoEl.paused && videoEl.readyState < 3)
                     setLoading(true);
             }, CV_LOW_POWER ? 1000 : 700);
-            armStallFallback(CV_LOW_POWER ? 12000 : 10000);
+            armStallFallback(isSource2Playback({ source: sourceKind }, src) ? (CV_LOW_POWER ? 20000 : 18000) : (CV_LOW_POWER ? 12000 : 10000));
         };
         const onPlaying = () => { clearBufferingTimer(); setLoading(false); sourcePlayingRef.current && sourcePlayingRef.current(); };
         const onLoadedData = () => { clearBufferingTimer(); setLoading(false); };
@@ -5682,7 +5785,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             setPlayingLabel(`${title.name} · ${ep.title || `الحلقة ${ep.number != null ? ep.number : ''}`}`);
             ensureVidApiSubtitlePublic({ ...ep, videoUrl: url }).catch(() => {});
             // البديل يُجلب بعد بدء تشغيل الحلقة، لذلك لا نؤخر المستخدم بانتظار كل المزودين.
-            source2ResolveEpisodeFast({ tmdbId: ep.tmdbId || ep.source2TmdbId || title.tmdbId || title.source2TmdbId, season: seasonNumber, episode: ep && ep.number }).then(resolved => {
+            source2ResolveEpisodeAll({ tmdbId: ep.tmdbId || ep.source2TmdbId || title.tmdbId || title.source2TmdbId, season: seasonNumber, episode: ep && ep.number }).then(resolved => {
                 const live = normalizeVideoSources(resolved.sources).filter(source2IsBrowserPlayable);
                 if (!live.length) return;
                 setPlayingMeta(prev => {
@@ -5691,7 +5794,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                     return { ...prev, videoSources: merged, source2TmdbId: resolved.tmdbId, source2SourceCount: resolved.count || live.length, source2Providers: resolved.providers || [], source2: source2StoredRecordFromResolved(resolved, seasonNumber, ep && ep.number, 'tv') };
                 });
             }).catch(() => {
-                source2ResolveForItem({ ...ep, name: title.name, type: title.type, tmdbId: ep.tmdbId || ep.source2TmdbId || title.tmdbId || title.source2TmdbId }, seasonNumber, ep && ep.number).then(resolved => {
+                source2ResolveEpisodeAll({ tmdbId: ep.tmdbId || ep.source2TmdbId || title.tmdbId || title.source2TmdbId, season: seasonNumber, episode: ep && ep.number }).then(resolved => {
                     const live = normalizeVideoSources(resolved.sources).filter(source2IsBrowserPlayable);
                     if (!live.length) return;
                     setPlayingMeta(prev => ({ ...prev, videoSources: [...normalizeVideoSources(prev?.videoSources || []), ...live].filter((x,i,a)=>a.findIndex(y=>normalizeVideoUrl(y.url)===normalizeVideoUrl(x.url))===i), source2TmdbId: resolved.tmdbId, source2SourceCount: resolved.count || live.length, source2Providers: resolved.providers || [], source2: source2StoredRecordFromResolved(resolved, seasonNumber, ep && ep.number, 'tv') }));
@@ -5776,7 +5879,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             }
             if (!next && activeSource !== 'source2') {
                 try {
-                    const resolved = await source2ResolveForItem(item, playingSeasonNumber, playingMeta && playingMeta.number);
+                    const resolved = item?.type === 'movie' ? await source2ResolveMovie({ tmdbId: item?.tmdbId || item?.source2TmdbId || item?.source2?.tmdbId }) : await source2ResolveEpisodeAll({ tmdbId: item?.tmdbId || item?.source2TmdbId || item?.source2?.tmdbId || title.tmdbId || title.source2TmdbId, season: playingSeasonNumber, episode: playingMeta && playingMeta.number });
                     const fresh = normalizeVideoSources(resolved.sources).filter(s => source2IsBrowserPlayable(s) && normalizeVideoUrl(s.url) !== currentUrl);
                     if (fresh.length) next = fresh[0];
                 } catch (_) {}
@@ -8790,7 +8893,7 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
         const results = await Promise.all(batch.map(async job => {
             const ep = seasons[job.si].episodes[job.ei];
             try {
-                const r = await source2ResolveEpisodeFast({
+                const r = await source2ResolveEpisodeAll({
                     tmdbId,
                     season: job.season,
                     episode: job.episode,
@@ -9121,7 +9224,7 @@ function Source2LinksViewer({ title, onClose }) {
                             disabled:!!episodeBusy || refreshing,
                             onClick:refreshEpisode,
                             className:`px-3 py-1.5 rounded-lg ${sources.length ? 'bg-accent-cyan/10 border-accent-cyan/20 text-accent-cyan':'bg-accent-purple/10 border-accent-purple/20 text-accent-purple'} border text-[10px] font-black disabled:opacity-40`
-                        },busyKey ? 'جاري...' : (sources.length ? 'تحديث البديل' : 'إضافة بديل'))
+                        },busyKey ? 'جاري...' : (sources.length ? 'تحديث البدائل' : 'إضافة البدائل'))
                     ),
                     React.createElement('div',{className:'mt-2 space-y-2'},
                         ...(sources.length
