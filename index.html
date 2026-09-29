@@ -1724,10 +1724,80 @@ function source2DiagnosticText(data) {
     const list = Array.isArray(data?.diagnostics) ? data.diagnostics : (Array.isArray(data?.data?.diagnostics) ? data.data.diagnostics : []);
     return list.map(x => String(x?.message || x?.code || '').trim()).filter(Boolean).slice(0, 6).join(' | ');
 }
+const SOURCE2_FAST_PROVIDERS = ['vidlink', 'vaplayer', 'castletv'];
+const SOURCE2_FAST_PROVIDER_TIMEOUT = 8000;
+
+async function source2FetchProviderJson(provider, mediaType, tmdbId, season, episode, timeoutMs = SOURCE2_FAST_PROVIDER_TIMEOUT) {
+    if (!source2Configured()) throw new Error('Source 2 غير مضبوط.');
+    const id = String(tmdbId || '').replace(/\D/g, '');
+    const type = mediaType === 'movie' ? 'movie' : 'series';
+    const qs = type === 'series'
+        ? `?season=${encodeURIComponent(Number(season) || 1)}&episode=${encodeURIComponent(Number(episode) || 1)}`
+        : '';
+    let lastError = null;
+    for (const base of CINADAM_SOURCE2_APIS) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const url = `${base}/api/streams/${encodeURIComponent(provider)}/${type}/${encodeURIComponent(id)}${qs}`;
+            const res = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' }, signal: controller.signal, redirect: 'follow', cache: 'no-store' });
+            const raw = await res.text();
+            let data = {};
+            try { data = raw ? JSON.parse(raw) : {}; } catch (_) { throw new Error(`HTTP ${res.status}: استجابة غير JSON`); }
+            if (!res.ok) throw new Error(`HTTP ${res.status}: ${data?.error || data?.message || 'provider error'}`);
+            return { data, base, provider };
+        } catch (e) {
+            lastError = e && e.name === 'AbortError' ? new Error(`${provider}: timeout`) : e;
+        } finally { clearTimeout(timer); }
+    }
+    throw lastError || new Error(`${provider}: request failed`);
+}
+
+async function source2ResolveFast({ tmdbId, type = 'movie', season = 1, episode = 1 }) {
+    const jobs = SOURCE2_FAST_PROVIDERS.map(provider => source2FetchProviderJson(provider, type, tmdbId, season, episode));
+    const settled = await Promise.allSettled(jobs);
+    const sources = [];
+    const providerTimings = [];
+    for (let i = 0; i < settled.length; i++) {
+        const provider = SOURCE2_FAST_PROVIDERS[i];
+        const r = settled[i];
+        if (r.status !== 'fulfilled') {
+            providerTimings.push({ provider, count: 0, error: r.reason?.message || 'failed' });
+            continue;
+        }
+        const list = source2SourcesFromResponse(r.value.data);
+        if (list.length) sources.push(...list.map(s => ({ ...s, provider: s.provider || provider })));
+        providerTimings.push({ provider, count: list.length });
+    }
+    const seen = new Set();
+    const unique = sources.filter(s => {
+        const k = `${String(s.provider || '').toLowerCase()}|${String(s.url || '')}`;
+        if (!s.url || seen.has(k)) return false;
+        seen.add(k); return true;
+    });
+    if (!unique.length) return null;
+    return {
+        ok: true,
+        type: type === 'movie' ? 'movie' : 'tv',
+        tmdbId: String(tmdbId).replace(/\D/g, ''),
+        season: type === 'movie' ? 0 : Number(season) || 1,
+        episode: type === 'movie' ? 0 : Number(episode) || 1,
+        providers: Array.from(new Set(unique.map(s => s.provider).filter(Boolean))),
+        count: unique.length,
+        sources: unique,
+        url: unique[0]?.url || '',
+        raw: { providerTimings, fast: true }
+    };
+}
+
 async function source2ResolveMovie({ tmdbId }) {
     const id = String(tmdbId || '').replace(/\D/g, '');
     if (!id) throw new Error('Source 2 يحتاج TMDB ID للفيلم.');
-    const data = await source2FetchJson(`/api/streams/movie/${encodeURIComponent(id)}`);
+    try {
+        const fast = await source2ResolveFast({ tmdbId: id, type: 'movie' });
+        if (fast?.sources?.length) return fast;
+    } catch (_) {}
+    const data = await source2FetchJson(`/api/streams/movie/${encodeURIComponent(id)}`, 60000);
     const sources = source2SourcesFromResponse(data);
     if (!sources.length) throw new Error(source2DiagnosticText(data) || 'Source 2 لم يُرجع أي مصدر للفيلم.');
     return { ok: true, type: 'movie', tmdbId: id, providers: Array.from(new Set(sources.map(s => s.provider).filter(Boolean))), count: sources.length, sources, url: sources[0].url, raw: data };
@@ -1737,7 +1807,11 @@ async function source2ResolveEpisode({ tmdbId, season, episode }) {
     const se = Math.max(1, Number(season) || 1);
     const ep = Math.max(1, Number(episode) || 1);
     if (!id) throw new Error('Source 2 يحتاج TMDB ID للمسلسل.');
-    const data = await source2FetchJson(`/api/streams/series/${encodeURIComponent(id)}?season=${encodeURIComponent(se)}&episode=${encodeURIComponent(ep)}`);
+    try {
+        const fast = await source2ResolveFast({ tmdbId: id, type: 'tv', season: se, episode: ep });
+        if (fast?.sources?.length) return fast;
+    } catch (_) {}
+    const data = await source2FetchJson(`/api/streams/series/${encodeURIComponent(id)}?season=${encodeURIComponent(se)}&episode=${encodeURIComponent(ep)}`, 60000);
     const sources = source2SourcesFromResponse(data);
     if (!sources.length) throw new Error(source2DiagnosticText(data) || `Source 2 لم يُرجع مصادر للحلقة S${se}E${ep}.`);
     return { ok: true, type: 'tv', tmdbId: id, season: se, episode: ep, providers: Array.from(new Set(sources.map(s => s.provider).filter(Boolean))), count: sources.length, sources, url: sources[0].url, raw: data };
@@ -8336,6 +8410,7 @@ function AppealModal({ username, type, message, outcomeOnly, initialStage, onClo
 function AdminUsers({ currentUser }) {
     const [list, setList] = useState([]);
     const [query, setQuery] = useState('');
+    const [sourceAction, setSourceAction] = useState('');
     const [deleteTarget, setDeleteTarget] = useState(null);
     const [banTarget, setBanTarget] = useState(null);
     const [busyId, setBusyId] = useState(null);
@@ -8501,6 +8576,20 @@ async function resolveCinemanaRecordForTitle(t) {
     if (!pick?.nb) throw new Error('لم يتم العثور على العمل في سينمانا');
     return pick;
 }
+async function runWithConcurrency(items, limit, worker) {
+    const list = Array.isArray(items) ? items : [];
+    const max = Math.max(1, Math.min(Number(limit) || 1, list.length || 1));
+    let cursor = 0;
+    const runners = Array.from({ length: max }, async () => {
+        while (true) {
+            const i = cursor++;
+            if (i >= list.length) return;
+            await worker(list[i], i);
+        }
+    });
+    await Promise.all(runners);
+}
+
 async function bulkRefreshCinemanaTitle(t) {
     const picked = await resolveCinemanaRecordForTitle(t);
     const patch = { cinemanaId: String(picked.nb) };
@@ -8513,23 +8602,23 @@ async function bulkRefreshCinemanaTitle(t) {
     } else {
         const cinEpisodes = await cinemanaEpisodes(String(picked.nb));
         const seasons = normalizeSeasonsValue(t.seasons).map(s => ({ ...s, episodes: (s.episodes || []).map(e => ({ ...e })) }));
+        const jobs = [];
+        seasons.forEach(season => (season.episodes || []).forEach(ep => jobs.push({ season, ep })));
         let matched = 0;
-        for (const season of seasons) {
-            for (const ep of (season.episodes || [])) {
-                const match = cinEpisodes.find(x => cinemanaEpisodeSeason(x) === Number(season.number) && cinemanaEpisodeNumber(x) === Number(ep.number));
-                if (!match?.nb) continue;
-                try {
-                    const sources = cinemanaVideoSources(await cinemanaVideos(String(match.nb), 'tv'));
-                    if (sources.length) {
-                        ep.cinemanaId = String(match.nb);
-                        ep.videoSources = sources;
-                        ep.videoUrl = sources[0].url;
-                        ep.playbackProvider = 'cinemana';
-                        matched++;
-                    }
-                } catch (_) {}
-            }
-        }
+        await runWithConcurrency(jobs, 3, async ({ season, ep }) => {
+            const match = cinEpisodes.find(x => cinemanaEpisodeSeason(x) === Number(season.number) && cinemanaEpisodeNumber(x) === Number(ep.number));
+            if (!match?.nb) return;
+            try {
+                const sources = cinemanaVideoSources(await cinemanaVideos(String(match.nb), 'tv'));
+                if (sources.length) {
+                    ep.cinemanaId = String(match.nb);
+                    ep.videoSources = sources;
+                    ep.videoUrl = sources[0].url;
+                    ep.playbackProvider = 'cinemana';
+                    matched++;
+                }
+            } catch (_) {}
+        });
         patch.seasons = seasons;
         if (!matched) throw new Error('لم يتم تحديث أي حلقة من سينمانا');
     }
@@ -8555,27 +8644,27 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
     const seasons = normalizeSeasonsValue(t.seasons).map(s => ({ ...s, episodes: (s.episodes || []).map(e => ({ ...e })) }));
     let done = 0, updated = 0, failed = 0;
     const total = seasons.reduce((n, s) => n + (s.episodes || []).length, 0);
-    for (const season of seasons) {
-        for (const ep of (season.episodes || [])) {
-            try {
-                const r = await source2ResolveEpisode({ tmdbId, season: season.number, episode: ep.number });
-                ep.source2TmdbId = r.tmdbId;
-                ep.source2Provider = 'tmdb-embed-api';
-                ep.source2Mode = 'live';
-                ep.source2LastCheckedAt = Date.now();
-                ep.source2SourceCount = r.count || r.sources.length;
-                ep.source2Providers = Array.from(new Set((r.providers || []).map(String)));
-                ep.source2Season = Number(season.number) || 1;
-                ep.source2Episode = Number(ep.number) || 1;
-                updated++;
-            } catch (_) {
-                failed++;
-                ep.source2LastCheckedAt = Date.now();
-                if (!Number(ep.source2SourceCount)) ep.source2SourceCount = 0;
-            }
-            done++; onPartProgress?.(done, total);
+    const jobs = [];
+    seasons.forEach(season => (season.episodes || []).forEach(ep => jobs.push({ season, ep })));
+    await runWithConcurrency(jobs, 4, async ({ season, ep }) => {
+        try {
+            const r = await source2ResolveEpisode({ tmdbId, season: season.number, episode: ep.number });
+            ep.source2TmdbId = r.tmdbId;
+            ep.source2Provider = 'tmdb-embed-api';
+            ep.source2Mode = 'live';
+            ep.source2LastCheckedAt = Date.now();
+            ep.source2SourceCount = r.count || r.sources.length;
+            ep.source2Providers = Array.from(new Set((r.providers || []).map(String)));
+            ep.source2Season = Number(season.number) || 1;
+            ep.source2Episode = Number(ep.number) || 1;
+            updated++;
+        } catch (_) {
+            failed++;
+            ep.source2LastCheckedAt = Date.now();
+            if (!Number(ep.source2SourceCount)) ep.source2SourceCount = 0;
         }
-    }
+        done++; onPartProgress?.(done, total);
+    });
     const sourceCount = seasons.reduce((n, ss) => n + (ss.episodes || []).reduce((m, ee) => m + (Number(ee.source2SourceCount) || 0), 0), 0);
     await db.ref(`titles/${t.id}`).update({ source2: source2InfoForPayload(tmdbId), tmdbId, source2TmdbId: tmdbId, source2Provider: 'tmdb-embed-api', source2Mode: 'live', source2LastCheckedAt: Date.now(), source2SourceCount: sourceCount, seasons, source2Providers: [] });
     return { updated, failed, sourceCount };
@@ -8711,6 +8800,24 @@ function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
     const [deleteTarget, setDeleteTarget] = useState(null);
     const [query, setQuery] = useState('');
     const isFullAdmin = currentUser && currentUser.username === 'mavilovelife';
+    const runTitleSourceAction = async (t, mode) => {
+        if (!t || sourceAction) return;
+        const key = `${t.id}:${mode}`;
+        setSourceAction(key);
+        try {
+            if (mode === 'cinemana') {
+                await bulkRefreshCinemanaTitle(t);
+                logAuditAction(currentUser, 'تحديث روابط العمل', `${t.name} — سينمانا`);
+                showToast(t.type === 'movie' ? 'تم تحديث رابط الفيلم من سينمانا.' : 'تم تحديث روابط حلقات العمل من سينمانا.');
+            } else if (mode === 'source2') {
+                await bulkRefreshSource2Title(t);
+                logAuditAction(currentUser, 'إضافة مصدر بديل لعمل', t.name);
+                showToast('تم تحديث/إضافة المصادر البديلة للعمل.');
+            }
+        } catch (e) {
+            showToast(`${t.name}: ${e?.message || 'فشلت العملية.'}`);
+        } finally { setSourceAction(''); }
+    };
     const handleDelete = async (id) => {
         const t = titles.find(x => x.id === id);
         await db.ref(`titles/${id}`).remove();
@@ -8803,6 +8910,10 @@ function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
                         React.createElement("span", { className: "text-[10px] px-2.5 py-1 rounded-full font-bold shrink-0 bg-accent-red/10 text-accent-red border border-accent-red/20", title: "عدد مصادر سينمانا المحفوظة" }, `سينمانا ${countCinemanaSources(t)}`),
                         React.createElement("span", { className: "text-[10px] px-2.5 py-1 rounded-full font-bold shrink-0 bg-accent-cyan/10 text-accent-cyan border border-accent-cyan/20", title: "عدد مصادر البديل الحية من Source 2؛ الروابط نفسها لا تُخزّن" }, `بدائل ${countAlternativeDisplaySources(t)}`),
                         countAlternativeSources(t) > 0 && React.createElement("span", { className: "text-[9px] px-2 py-0.5 rounded-full font-bold shrink-0 bg-white/5 text-slate-400 border border-white/5", title: "ملفات/روابط بديلة يدوية مرفوعة من الإدارة" }, `يدوي ${countAlternativeSources(t)}`),
+                        React.createElement("div", { className: "w-full flex items-center gap-2 flex-wrap pt-1 border-t border-white/5" },
+                            React.createElement("button", { type: "button", disabled: !!sourceAction, onClick: () => runTitleSourceAction(t, 'cinemana'), title: t.type === 'movie' ? 'تحديث رابط الفيلم من سينمانا' : 'تحديث روابط الحلقات من سينمانا', className: `px-2.5 py-1.5 rounded-lg text-[10px] font-black border border-accent-red/25 bg-accent-red/10 text-accent-red hover:bg-accent-red/15 transition disabled:opacity-40` }, sourceAction === `${t.id}:cinemana` ? 'جاري تحديث سينمانا...' : (t.type === 'movie' ? 'تحديث رابط الفيلم' : 'تحديث روابط الحلقات')),
+                            React.createElement("button", { type: "button", disabled: !!sourceAction, onClick: () => runTitleSourceAction(t, 'source2'), title: 'مطابقة العمل تلقائيًا مع TMDB ثم إضافة المصادر البديلة', className: `px-2.5 py-1.5 rounded-lg text-[10px] font-black border border-accent-cyan/25 bg-accent-cyan/10 text-accent-cyan hover:bg-accent-cyan/15 transition disabled:opacity-40` }, sourceAction === `${t.id}:source2` ? 'جاري فحص البدائل...' : 'إضافة مصدر بديل'),
+                            React.createElement("span", { className: "text-[9px] text-slate-500" }, t.type === 'movie' ? 'للفيلم' : 'لكل الحلقات')),
                         t.featured === true && React.createElement("span", { className: "text-[11px] px-3 py-1 rounded-full font-bold shrink-0 bg-amber-500/20 text-amber-400 border border-amber-500/30" }, "Hero"),
                         React.createElement("button", { onClick: () => toggleFeatured(t), title: t.featured === true ? 'إزالة من العرض الرئيسي (Hero)' : 'إظهار في العرض الرئيسي (Hero)', className: `w-9 h-9 rounded-xl glass-card border flex items-center justify-center transition shrink-0 ${t.featured === true ? 'border-amber-400 text-amber-400' : 'border-white/10 hover:border-accent-cyan text-slate-200'}` },
                             React.createElement(Icon, { name: "star", className: `w-4 h-4 ${t.featured === true ? 'fill-current' : ''}` })),
