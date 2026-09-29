@@ -1767,43 +1767,51 @@ async function source2ResolveEpisodeFast({ tmdbId, season, episode, timeoutMs = 
     const ep = Math.max(1, Number(episode) || 1);
     if (!id) throw new Error('Source 2 يحتاج TMDB ID للمسلسل.');
 
+    // المرحلة 1: اطلب مزودًا واحدًا للحلقة بشكل مباشر (الأسرع).
+    // بعض إصدارات Source 2/Render قد لا تسمح بمسارات provider-specific، لذلك لا نعتمد عليها وحدها.
     const jobs = SOURCE2_FAST_EPISODE_PROVIDERS.map(async provider => {
         const path = `/api/streams/${encodeURIComponent(provider)}/series/${encodeURIComponent(id)}?season=${encodeURIComponent(se)}&episode=${encodeURIComponent(ep)}`;
-        const data = await source2FetchJson(path, timeoutMs);
+        const data = await source2FetchJson(path, Math.min(12000, timeoutMs));
         const sources = source2SourcesFromResponse(data).filter(source2IsBrowserPlayable);
         if (!sources.length) throw new Error(`${provider}: 0`);
         return sources;
     });
 
-    let first;
     try {
-        first = await Promise.any(jobs);
+        const first = await Promise.any(jobs);
+        const sources = [];
+        const seen = new Set();
+        for (const source of first || []) {
+            const url = normalizeVideoUrl(source.url);
+            if (!url || seen.has(url)) continue;
+            seen.add(url);
+            sources.push(source);
+        }
+        if (sources.length) {
+            return {
+                ok: true, type: 'tv', tmdbId: id, season: se, episode: ep,
+                providers: Array.from(new Set(sources.map(s => s.provider).filter(Boolean))),
+                count: sources.length, sources, url: sources[0].url,
+                raw: { fast: true, mode: 'provider-specific' }
+            };
+        }
     } catch (_) {
-        throw new Error(`لم تحصل الحلقة S${se}E${ep} على مصدر سريع.`);
+        // ننتقل تلقائيًا إلى endpoint الـaggregate الذي ثبت أنه يعيد مصادر الحلقات في مشروعك.
     }
 
-    const sources = [];
-    const seen = new Set();
-    for (const source of first || []) {
-        const url = normalizeVideoUrl(source.url);
-        if (!url || seen.has(url)) continue;
-        seen.add(url);
-        sources.push(source);
+    // المرحلة 2: fallback موثوق — نفس endpoint الذي تستخدمه إضافة جميع الأعمال.
+    // هنا لا نعتمد على مسارات غير موجودة؛ الـbackend الحالي موثق على /api/streams/series/:tmdbId.
+    const aggregate = await source2ResolveEpisode({ tmdbId: id, season: se, episode: ep });
+    const sources = normalizeVideoSources(aggregate.sources).filter(source2IsBrowserPlayable);
+    if (!sources.length) {
+        throw new Error(`Source 2 لم يُرجع مصدرًا صالحًا للحلقة S${se}E${ep}.`);
     }
-
-    if (!sources.length) throw new Error(`لم تحصل الحلقة S${se}E${ep} على مصدر سريع.`);
-
     return {
-        ok: true,
-        type: 'tv',
-        tmdbId: id,
-        season: se,
-        episode: ep,
-        providers: Array.from(new Set(sources.map(s => s.provider).filter(Boolean))),
-        count: sources.length,
+        ...aggregate,
         sources,
-        url: sources[0].url,
-        raw: { fast: true, firstProvider: sources[0]?.provider || '' }
+        count: sources.length,
+        url: sources[0]?.url || aggregate.url,
+        raw: { ...(aggregate.raw || {}), fast: true, mode: 'aggregate-fallback' }
     };
 }
 
@@ -9105,11 +9113,15 @@ function AdminWorkSourceActions({ title, currentUser, onRefreshView, onEdit }) {
         }
         setBusy(kind);
         try {
-            if (kind === 'refresh-all') await refreshSingleTitleSources(title);
-            else if (kind === 'refresh-source2') await refreshSingleTitleSource2(title);
-            else if (kind === 'delete') await deleteSingleTitleSource2(title);
+            let result = null;
+            if (kind === 'refresh-all') result = await refreshSingleTitleSources(title);
+            else if (kind === 'refresh-source2') result = await refreshSingleTitleSource2(title);
+            else if (kind === 'delete') result = await deleteSingleTitleSource2(title);
             logAuditAction(currentUser, kind === 'delete' ? 'حذف روابط Source 2 لعمل واحد' : (kind === 'refresh-source2' ? 'تحديث بدائل Source 2 لعمل واحد' : 'تحديث روابط عمل واحد'), title.name || '');
-            showToast(kind === 'delete' ? 'تم حذف روابط Source 2 البديلة.' : 'تم تحديث المصادر بنجاح.');
+            if (kind === 'delete') showToast('تم حذف روابط Source 2 البديلة.');
+            else if (kind === 'refresh-source2' && title?.type !== 'movie') showToast(`تم جلب بدائل ${Number(result?.updated || 0)}/${Number(result?.requested || 2)} حلقة.`);
+            else if (kind === 'refresh-source2') showToast(`تم جلب ${Number(result?.sourceCount || result?.updated || 0)} مصدر بديل.`);
+            else showToast('تم تحديث المصادر بنجاح.');
             onRefreshView?.();
         } catch (e) {
             showToast(e?.message || 'تعذر تنفيذ العملية.', 'error');
