@@ -1,10 +1,4 @@
-/*
- * CineVeres Source 2 configuration
- *
- * Public TMDB-Embed-API endpoint used by the admin panel and player.
- * Keep AI description endpoint empty until you deploy a secure server-side
- * AI proxy; never put an AI provider secret in this browser file.
- */
+/* CineVeres Source 2 configuration */
 (function () {
   window.CINADAM_SOURCE2_CONFIG = {
     apiBases: [
@@ -12,8 +6,8 @@
     ],
     timeoutMs: 60000,
     preferredProvider: "vixsrc",
+    // AI endpoint intentionally left empty: never expose an AI secret in the browser.
     aiDescriptionEndpoint: ""
   };
-
   window.CINADAM_SOURCE2_URL = window.CINADAM_SOURCE2_CONFIG.apiBases[0] || "";
 })();
