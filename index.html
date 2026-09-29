@@ -1771,6 +1771,26 @@ async function source2EnsureTmdbId(form, fallbackSourceId) {
     }
     return id;
 }
+function source2StoredRecordFromResolved(resolved, season, episode) {
+    const sources = normalizeVideoSources(resolved?.sources || []).filter(source2IsBrowserPlayable);
+    const tmdbId = String(resolved?.tmdbId || '').replace(/\D/g, '');
+    return {
+        enabled: !!tmdbId && sources.length > 0,
+        provider: 'tmdb-embed-api',
+        tmdbId,
+        mode: 'live',
+        type: 'tv',
+        season: Number(season) || 1,
+        episode: Number(episode) || 1,
+        url: sources[0]?.url || '',
+        sources,
+        sourceCount: sources.length,
+        providers: Array.from(new Set(sources.map(s => s.provider).filter(Boolean))),
+        expiresAt: Number(resolved?.raw?.expiresAt || resolved?.expiresAt || 0) || 0,
+        savedAt: Date.now()
+    };
+}
+
 function source2InfoForPayload(tmdbId) {
     const id = String(tmdbId || '').replace(/\D/g, '');
     return { enabled: !!id, provider: 'tmdb-embed-api', tmdbId: id, mode: 'live', urlsExpire: true };
@@ -1807,8 +1827,18 @@ function Source2Helper({ kind, tmdbId, season, episode, defaultTitle = '', defau
             React.createElement('button', { type: 'button', onClick: run, disabled: loading, className: 'px-4 py-2 rounded-xl bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan text-xs font-black disabled:opacity-40' }, loading ? 'جاري الاختبار...' : 'اختبار Source 2')),
         msg && React.createElement('p', { className: `text-[10px] font-bold mt-2 ${result ? 'text-emerald-400' : 'text-slate-400'}` }, msg),
         result && React.createElement('div', { className: 'mt-2.5 flex flex-wrap gap-1.5' }, (result.providers || []).map((p, i) => React.createElement('span', { key: `${p}-${i}`, className: 'px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-[9px] text-slate-300 font-bold' }, p))),
-        result?.url && React.createElement('div', { className: 'mt-2' },
-            React.createElement('a', { href: result.url, target: '_blank', rel: 'noreferrer', className: 'text-[10px] text-cyan-300 hover:underline break-all', dir: 'ltr' }, 'فتح أول رابط مؤقت للاختبار'))
+        result?.sources?.length > 0 && React.createElement('div', { className: 'mt-3 space-y-2' },
+            React.createElement('p', { className: 'text-[10px] font-black text-slate-300' }, `الروابط الحية (${result.sources.length})`),
+            result.sources.map((s, i) => React.createElement('div', { key: `${s.provider || 'source'}-${i}-${s.url}`, className: 'rounded-xl bg-black/20 border border-white/5 p-2' },
+                React.createElement('div', { className: 'flex items-center justify-between gap-2 flex-wrap mb-1' },
+                    React.createElement('span', { className: 'text-[9px] font-black text-cyan-300' }, s.provider || `Source ${i + 1}`),
+                    React.createElement('span', { className: 'text-[9px] text-slate-400' }, s.label || s.resolution || s.sourceKind || '')),
+                React.createElement('div', { className: 'flex items-center gap-2' },
+                    React.createElement('a', { href: s.url, target: '_blank', rel: 'noreferrer', className: 'text-[9px] text-cyan-200 hover:underline break-all flex-1', dir: 'ltr' }, s.url),
+                    React.createElement('button', { type:'button', onClick: () => navigator.clipboard?.writeText(s.url), className:'px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-[9px] text-slate-200 shrink-0' }, 'نسخ')
+                )
+            ))
+        )
     );
 }
 
@@ -5566,11 +5596,24 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 url = fallbackSaved.url;
                 selectedSource = String(fallbackSaved.source || 'saved').toLowerCase();
                 setActiveSource(selectedSource);
-                sources = [...normalizeVideoSources(ep.videoSources), ...normalizeAlternativeSources(ep.alternativeSources)];
+                sources = [
+                    ...normalizeVideoSources(ep.videoSources),
+                    ...normalizeAlternativeSources(ep.alternativeSources),
+                    ...normalizeVideoSources(ep.source2?.sources || []).filter(source2IsBrowserPlayable)
+                ];
+            }
+            if (!url) {
+                const storedLive = normalizeVideoSources(ep.source2?.sources || []).filter(source2IsBrowserPlayable);
+                if (storedLive.length) {
+                    sources = storedLive;
+                    url = storedLive[0].url;
+                    selectedSource = 'source2';
+                    setActiveSource('source2');
+                }
             }
             if (!url) {
                 try {
-                    const resolved = await source2ResolveForItem(ep, seasonNumber, ep && ep.number);
+                    const resolved = await source2ResolveForItem({ ...ep, name: title.name, type: title.type, year: title.year, tmdbId: ep.tmdbId || ep.source2TmdbId || title.tmdbId || title.source2TmdbId }, seasonNumber, ep && ep.number);
                     sources = normalizeVideoSources(resolved.sources).filter(source2IsBrowserPlayable);
                     url = sources[0]?.url || resolved.url;
                     if (url) { selectedSource = 'source2'; setActiveSource('source2'); }
@@ -5598,7 +5641,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 setPlayingMeta(prev => {
                     const existing = normalizeVideoSources(prev?.videoSources || []);
                     const merged = [...existing, ...live].filter((x, i, a) => normalizeVideoUrl(x.url) && a.findIndex(y => normalizeVideoUrl(y.url) === normalizeVideoUrl(x.url)) === i);
-                    return { ...prev, videoSources: merged, source2TmdbId: resolved.tmdbId, source2SourceCount: resolved.count || live.length, source2Providers: resolved.providers || [] };
+                    return { ...prev, videoSources: merged, source2TmdbId: resolved.tmdbId, source2SourceCount: resolved.count || live.length, source2Providers: resolved.providers || [], source2: source2StoredRecordFromResolved(resolved, seasonNumber, ep && ep.number) };
                 });
             }).catch(() => {});
         }
@@ -8601,7 +8644,8 @@ async function bulkRefreshCinemanaTitle(t) {
     return { updated: true, count: t.type === 'movie' ? 1 : (patch.seasons || []).reduce((n, s) => n + (s.episodes || []).filter(e => e.videoUrl).length, 0) };
 }
 async function bulkRefreshSource2Title(t, onPartProgress) {
-    // Source 2 لا يحفظ الروابط نفسها؛ نخزن فقط TMDB + العدد + المزوّدين + آخر فحص.
+    // نحفظ بيانات Source 2 لكل حلقة مع الروابط الحالية ووقت الانتهاء،
+    // حتى تظهر للمشاهد/الإدارة فورًا. عند انتهاء الرابط سيُعاد حلّه تلقائيًا وقت التشغيل.
     let tmdbId = String(t.tmdbId || t.source2TmdbId || t.source2?.tmdbId || '').replace(/\D/g, '');
     if (!tmdbId) {
         const best = await tmdbFindBestByTitle(t.name, t.type === 'movie' ? 'movie' : 'tv', t.year);
@@ -8610,37 +8654,82 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
     if (!tmdbId) throw new Error('لم أجد TMDB ID تلقائيًا لهذا العمل.');
     if (t.type === 'movie') {
         const r = await source2ResolveMovie({ tmdbId });
-        const patch = { source2: source2InfoForPayload(r.tmdbId), source2TmdbId: r.tmdbId, tmdbId: r.tmdbId, source2Provider: 'tmdb-embed-api', source2Mode: 'live', source2LastCheckedAt: Date.now(), source2SourceCount: r.count || r.sources.length, source2Providers: Array.from(new Set((r.providers || []).map(String))) };
+        const patch = {
+            source2: source2InfoForPayload(r.tmdbId),
+            source2TmdbId: r.tmdbId,
+            tmdbId: r.tmdbId,
+            source2Provider: 'tmdb-embed-api',
+            source2Mode: 'live',
+            source2LastCheckedAt: Date.now(),
+            source2SourceCount: r.count || r.sources.length,
+            source2Providers: Array.from(new Set((r.providers || []).map(String))),
+            source2Sources: normalizeVideoSources(r.sources).filter(source2IsBrowserPlayable),
+            source2ExpiresAt: Number(r.raw?.expiresAt || 0) || 0
+        };
         await db.ref(`titles/${t.id}`).update(patch);
         onPartProgress?.(1, 1);
-        return { updated: 1 };
+        return { updated: 1, sourceCount: patch.source2SourceCount };
     }
+
     const seasons = normalizeSeasonsValue(t.seasons).map(s => ({ ...s, episodes: (s.episodes || []).map(e => ({ ...e })) }));
-    let done = 0, updated = 0, failed = 0;
-    const total = seasons.reduce((n, s) => n + (s.episodes || []).length, 0);
-    for (const season of seasons) {
-        for (const ep of (season.episodes || [])) {
+    const jobs = [];
+    seasons.forEach((season, si) => {
+        (season.episodes || []).forEach((ep, ei) => jobs.push({ si, ei, season: Number(season.number) || 1, episode: Number(ep.number) || 1 }));
+    });
+    let cursor = 0, updated = 0, failed = 0;
+    const total = jobs.length;
+    const workerCount = Math.min(4, Math.max(1, jobs.length));
+    const workers = Array.from({ length: workerCount }, async () => {
+        while (true) {
+            const i = cursor++;
+            if (i >= jobs.length) return;
+            const job = jobs[i];
             try {
-                const r = await source2ResolveEpisode({ tmdbId, season: season.number, episode: ep.number });
-                ep.source2TmdbId = r.tmdbId;
-                ep.source2Provider = 'tmdb-embed-api';
-                ep.source2Mode = 'live';
-                ep.source2LastCheckedAt = Date.now();
-                ep.source2SourceCount = r.count || r.sources.length;
-                ep.source2Providers = Array.from(new Set((r.providers || []).map(String)));
-                ep.source2Season = Number(season.number) || 1;
-                ep.source2Episode = Number(ep.number) || 1;
+                const r = await source2ResolveEpisode({ tmdbId, season: job.season, episode: job.episode });
+                seasons[job.si].episodes[job.ei].source2TmdbId = r.tmdbId;
+                seasons[job.si].episodes[job.ei].source2Provider = 'tmdb-embed-api';
+                seasons[job.si].episodes[job.ei].source2Mode = 'live';
+                seasons[job.si].episodes[job.ei].source2LastCheckedAt = Date.now();
+                seasons[job.si].episodes[job.ei].source2SourceCount = r.count || r.sources.length;
+                seasons[job.si].episodes[job.ei].source2Providers = Array.from(new Set((r.providers || []).map(String)));
+                seasons[job.si].episodes[job.ei].source2Season = job.season;
+                seasons[job.si].episodes[job.ei].source2Episode = job.episode;
+                seasons[job.si].episodes[job.ei].source2 = source2StoredRecordFromResolved(r, job.season, job.episode);
                 updated++;
-            } catch (_) {
+            } catch (e) {
                 failed++;
-                ep.source2LastCheckedAt = Date.now();
-                if (!Number(ep.source2SourceCount)) ep.source2SourceCount = 0;
+                const current = seasons[job.si].episodes[job.ei];
+                if (!current.source2 || !Array.isArray(current.source2.sources)) {
+                    current.source2 = { enabled: true, provider: 'tmdb-embed-api', tmdbId, mode: 'live', type: 'tv', season: job.season, episode: job.episode, url: '', sources: [], sourceCount: 0, providers: [], expiresAt: 0, savedAt: 0, lastResolveError: e?.message || 'تعذر حل Source 2.' };
+                } else {
+                    current.source2LastCheckedAt = Date.now();
+                    current.source2.lastResolveError = e?.message || 'تعذر حل Source 2.';
+                }
             }
-            done++; onPartProgress?.(done, total);
+            onPartProgress?.(Math.min(i + 1, total), total);
+            // حفظ تقدّم كل دفعة بدل الانتظار لنهاية كل العمل.
+            if ((i + 1) % workerCount === 0 || i === jobs.length - 1) {
+                try {
+                    await db.ref(`titles/${t.id}`).update({
+                        source2: source2InfoForPayload(tmdbId),
+                        tmdbId, source2TmdbId: tmdbId, source2Provider: 'tmdb-embed-api', source2Mode: 'live',
+                        source2LastCheckedAt: Date.now(),
+                        source2SourceCount: countSource2Entries({ ...t, seasons }),
+                        seasons
+                    });
+                } catch (_) {}
+            }
         }
-    }
-    const sourceCount = seasons.reduce((n, ss) => n + (ss.episodes || []).reduce((m, ee) => m + (Number(ee.source2SourceCount) || 0), 0), 0);
-    await db.ref(`titles/${t.id}`).update({ source2: source2InfoForPayload(tmdbId), tmdbId, source2TmdbId: tmdbId, source2Provider: 'tmdb-embed-api', source2Mode: 'live', source2LastCheckedAt: Date.now(), source2SourceCount: sourceCount, seasons, source2Providers: [] });
+    });
+    await Promise.all(workers);
+
+    const sourceCount = countSource2Entries({ ...t, seasons });
+    const providerSet = Array.from(new Set(seasons.flatMap(s => (s.episodes || []).flatMap(ep => ep.source2Providers || []))));
+    await db.ref(`titles/${t.id}`).update({
+        source2: source2InfoForPayload(tmdbId),
+        tmdbId, source2TmdbId: tmdbId, source2Provider: 'tmdb-embed-api', source2Mode: 'live',
+        source2LastCheckedAt: Date.now(), source2SourceCount: sourceCount, source2Providers: providerSet, seasons
+    });
     return { updated, failed, sourceCount };
 }
 async function bulkSyncAlternativeSourcesTitle(t) {
