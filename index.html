@@ -1800,7 +1800,7 @@ async function source2ExpandSourcesByQuality(sources) {
 // We keep at most one candidate per provider, verify real media access, then
 // retain the three strongest providers. Verification happens against the public
 // Source 2/proxy URL so the browser checks the exact resource the player will use.
-const SOURCE2_TOP_SOURCE_LIMIT = 1;
+const SOURCE2_TOP_SOURCE_LIMIT = 3;
 const SOURCE2_RESOLVER_VERSION = 10;
 const SOURCE2_VERIFY_TIMEOUT = 30000;
 
