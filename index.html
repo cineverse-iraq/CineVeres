@@ -1610,7 +1610,7 @@ const CINADAM_SOURCE2_CONFIG = (() => {
         .filter(v => !/YOUR[-_]?SOURCE2|YOUR[-_]?API|REPLACE[-_]?|example\.com/i.test(v));
     return {
         apiBases: Array.from(new Set(bases)),
-        timeoutMs: 60000,
+        timeoutMs: 120000,
         preferredProvider: String(cfg.preferredProvider || '').trim().toLowerCase()
     };
 })();
@@ -1771,7 +1771,7 @@ async function source2EnsureTmdbId(form, fallbackSourceId) {
     }
     return id;
 }
-function source2StoredRecordFromResolved(resolved, season, episode) {
+function source2StoredRecordFromResolved(resolved, season, episode, mediaType = 'tv') {
     const sources = normalizeVideoSources(resolved?.sources || []).filter(source2IsBrowserPlayable);
     const tmdbId = String(resolved?.tmdbId || '').replace(/\D/g, '');
     return {
@@ -1779,7 +1779,7 @@ function source2StoredRecordFromResolved(resolved, season, episode) {
         provider: 'tmdb-embed-api',
         tmdbId,
         mode: 'live',
-        type: 'tv',
+        type: mediaType === 'movie' ? 'movie' : 'tv',
         season: Number(season) || 1,
         episode: Number(episode) || 1,
         url: sources[0]?.url || '',
@@ -1813,7 +1813,7 @@ function Source2Helper({ kind, tmdbId, season, episode, defaultTitle = '', defau
             const r = kind === 'movie' ? await source2ResolveMovie({ tmdbId: id }) : await source2ResolveEpisode({ tmdbId: id, season, episode });
             const providers = Array.from(new Set((r.providers || []).map(v => String(v).trim()).filter(Boolean)));
             setResult(r);
-            onChange && onChange({ source2TmdbId: id, source2Provider: 'tmdb-embed-api', source2Mode: 'live', source2LastCheckedAt: Date.now(), source2SourceCount: r.count || r.sources.length, source2Providers: providers });
+            onChange && onChange({ source2TmdbId: id, source2Provider: 'tmdb-embed-api', source2Mode: 'live', source2LastCheckedAt: Date.now(), source2SourceCount: r.count || r.sources.length, source2Providers: providers, source2: source2StoredRecordFromResolved(r, season, episode, kind === 'movie' ? 'movie' : 'tv') });
             setMsg(`نجح الاختبار: ${r.count || r.sources.length} مصدر · ${providers.length} مزوّد · TMDB ${id}`);
         } catch (e) {
             setMsg(e.message || 'فشل اختبار Source 2.');
@@ -5694,6 +5694,12 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         return () => { cancelled = true; };
     }, [title.id, title.type, title.sourceId, title.tmdbId, title.imdbId, playingSeasonNumber, playingMeta && playingMeta.number, playingDurationSec]);
     const playingQualities = normalizeVideoSources(playingMeta && playingMeta.videoSources ? playingMeta.videoSources : (title.type === 'movie' ? title.videoSources : []));
+    useEffect(() => {
+        if (!playingUrl || !playerAnchorRef.current) return;
+        const timers = [40, 180, 420].map(ms => setTimeout(() => { try { scrollToPlayer(); } catch (_) {} }, ms));
+        return () => timers.forEach(clearTimeout);
+    }, [playingUrl, playingSeasonNumber, playingMeta && playingMeta.number]);
+
     const activeSubtitleUrl = (playingMeta && playingMeta.subtitleUrl) || (playingQualities[0] && playingQualities[0].subtitleUrl) || (title.type === 'movie' ? title.subtitleUrl : '');
     const activeSubtitleOffset = Number((playingMeta && playingMeta.subtitleOffset) ?? (title.type === 'movie' ? title.subtitleOffset : 0)) || 0;
     const activeSubtitlePublicUrl = (playingMeta && playingMeta.subtitlePublicUrl) || (title.type === 'movie' ? title.subtitlePublicUrl : '');
@@ -5981,8 +5987,8 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                                             formatRuntimeMinutesSeconds(getDisplayRuntime(ep, `${title.id}:${ep.seasonNumber}:${ep.number}`)), " دقيقة"))),
                                 done && React.createElement(Icon, { name: "check", className: "w-4 h-4 text-emerald-400 shrink-0 hidden xs:block" }),
                                 isCurrent && React.createElement("span", { className: "text-[10px] px-2 py-1 rounded-lg bg-accent-cyan/15 text-accent-cyan font-bold shrink-0 hidden sm:inline" }, "\u0642\u064A\u062F \u0627\u0644\u062A\u0634\u063A\u064A\u0644"),
-                                React.createElement("button", { onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); playEpisode(ep, ep.seasonNumber); scrollToPlayer(); }, className: "px-3 h-9 rounded-xl bg-accent-cyan/15 border border-accent-cyan/30 hover:bg-accent-cyan/25 text-accent-cyan text-[10px] font-black flex items-center gap-1.5 shrink-0 transition" }, React.createElement(Icon, { name: "arrowUp", className: "w-3.5 h-3.5" }), "مشاهدة من هنا"),
-                                React.createElement("button", { onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); playEpisode(ep, ep.seasonNumber); scrollToPlayer(); }, className: "w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition" },
+                                React.createElement("button", { onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); playEpisode(ep, ep.seasonNumber); }, className: "px-3 h-9 rounded-xl bg-accent-cyan/15 border border-accent-cyan/30 hover:bg-accent-cyan/25 text-accent-cyan text-[10px] font-black flex items-center gap-1.5 shrink-0 transition" }, React.createElement(Icon, { name: "arrowUp", className: "w-3.5 h-3.5" }), "مشاهدة من هنا"),
+                                React.createElement("button", { onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); playEpisode(ep, ep.seasonNumber); }, className: "w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition" },
                                     React.createElement(Icon, { name: "play", className: "w-4 h-4 text-white fill-current translate-x-0.5" }))));
                         }),
                         allEpisodesFlat.length === 0 && React.createElement("p", { className: "text-sm text-slate-500 font-medium" }, "\u0644\u0627 \u062A\u0648\u062C\u062F \u062D\u0644\u0642\u0627\u062A \u0628\u0639\u062F."))) : !seasonView ? (React.createElement("div", { className: "grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3.5" }, seasons.map((s, i) => {
@@ -7983,7 +7989,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 episodeThumbnail: (s.episodeThumbnail || '').trim(),
                 episodes: (s.episodes || []).map(e => ({
                     number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), alternativeSources: normalizeAlternativeSources(e.alternativeSources), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || ''), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
-                    trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, introStart: Number(e.introStart) || 0, introEnd: Number(e.introEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
+                    trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, introStart: Number(e.introStart) || 0, introEnd: Number(e.introEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none', source2: e.source2 && typeof e.source2 === 'object' ? JSON.parse(JSON.stringify(e.source2)) : undefined
                 }))
             }));
             const source2TmdbId = await source2EnsureTmdbId(form, sourceId);
@@ -8113,6 +8119,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                         setActiveSeasonIdx(0);
                         setEditingEpisodeIdx(null);
                     } })),
+            React.createElement(Source2SeriesAudit, { value: form, onChange: updater => setForm(typeof updater === 'function' ? updater : (prev => ({ ...prev, ...updater }))) }),
             React.createElement("div", { className: "mt-6 border-t border-white/10 pt-5" },
                 React.createElement("div", { className: "flex items-center justify-between mb-4" },
                     React.createElement("h4", { className: "font-black text-white text-base" }, "\u0627\u0644\u0645\u0648\u0627\u0633\u0645 \u0648\u0627\u0644\u062D\u0644\u0642\u0627\u062A"),
@@ -8592,6 +8599,24 @@ function countSource2Entries(item) {
     if (item.type === 'movie') return Number(item.source2SourceCount) || 0;
     return getSafeSeasons(item).reduce((n, s) => n + (Array.isArray(s.episodes) ? s.episodes : []).reduce((m, ep) => m + (Number(ep.source2SourceCount) || 0), 0), 0);
 }
+function getSource2EpisodeStats(item) {
+    if (!item) return { total: 0, matched: 0, streams: 0, providers: [] };
+    if (item.type === 'movie') {
+        const streams = Math.max(Number(item.source2SourceCount) || 0, normalizeVideoSources(item.source2Sources || item.source2?.sources || []).filter(source2IsBrowserPlayable).length);
+        const providers = Array.from(new Set([...(item.source2Providers || []), ...(item.source2Sources || []).map(s => s.provider), ...((item.source2?.sources || []).map(s => s.provider))].filter(Boolean).map(String)));
+        return { total: 1, matched: streams > 0 ? 1 : 0, streams, providers };
+    }
+    const episodes = getSafeSeasons(item).flatMap(s => Array.isArray(s.episodes) ? s.episodes : []);
+    let matched = 0, streams = 0;
+    const providers = new Set();
+    episodes.forEach(ep => {
+        const epStreams = Math.max(Number(ep.source2SourceCount) || 0, normalizeVideoSources(ep.source2?.sources || []).filter(source2IsBrowserPlayable).length);
+        if (epStreams > 0) matched++;
+        streams += epStreams;
+        [...(ep.source2Providers || []), ...((ep.source2?.sources || []).map(s => s.provider))].filter(Boolean).forEach(v => providers.add(String(v)));
+    });
+    return { total: episodes.length, matched, streams, providers: Array.from(providers) };
+}
 function countAlternativeDisplaySources(item) {
     // البدائل للمستخدم = مصادر Source 2 الحية؛ لا نخزن روابطها لأنها مؤقتة.
     return countSource2Entries(item);
@@ -8856,6 +8881,146 @@ function AdminSourcesQuickActions({ currentUser, titles, contentType }) {
         React.createElement('div',{className:'flex flex-wrap gap-3 mt-2 text-[9px] font-bold'},React.createElement('span',{className:'text-emerald-400'},`نجح ${success}`),React.createElement('span',{className:'text-rose-400'},`فشل ${failed}`),part.total>0&&React.createElement('span',{className:'text-accent-purple'},`العمل ${part.done}/${part.total}`)))
 }
 
+
+function Source2SeriesAudit({ value, onChange }) {
+    const item = value || {};
+    const safeSeasons = getSafeSeasons(item);
+    const [running, setRunning] = useState(false);
+    const [done, setDone] = useState(0);
+    const [total, setTotal] = useState(0);
+    const [message, setMessage] = useState('');
+    const [expanded, setExpanded] = useState({});
+    const jobs = [];
+    safeSeasons.forEach((season, si) => {
+        (season.episodes || []).forEach((ep, ei) => {
+            jobs.push({ si, ei, season: Number(season.number) || 1, episode: Number(ep.number) || 1 });
+        });
+    });
+    const stats = getSource2EpisodeStats(item);
+    const updateEpisode = (job, patch) => {
+        onChange(prev => {
+            const seasons = normalizeSeasonsValue(prev.seasons).map((ss, si) => {
+                if (si !== job.si) return ss;
+                return {
+                    ...ss,
+                    episodes: (ss.episodes || []).map((ep, ei) => ei !== job.ei ? ep : ({ ...ep, ...patch }))
+                };
+            });
+            return { ...prev, seasons };
+        });
+    };
+    const run = async () => {
+        if (running || !jobs.length || !source2Configured()) return;
+        let tmdbId = String(item.tmdbId || item.source2TmdbId || '').replace(/\D/g, '');
+        if (!tmdbId) tmdbId = await source2EnsureTmdbId(item, item.sourceId || item.imdbId || '');
+        if (!tmdbId) { setMessage('لم أجد TMDB ID للمسلسل.'); return; }
+        setRunning(true);
+        setDone(0);
+        setTotal(jobs.length);
+        setMessage('جاري فحص بديل كل حلقة...');
+        let cursor = 0;
+        const worker = async () => {
+            while (true) {
+                const index = cursor++;
+                if (index >= jobs.length) return;
+                const job = jobs[index];
+                try {
+                    const r = await source2ResolveEpisode({ tmdbId, season: job.season, episode: job.episode });
+                    const stored = source2StoredRecordFromResolved(r, job.season, job.episode, 'tv');
+                    updateEpisode(job, {
+                        source2TmdbId: tmdbId,
+                        source2Provider: 'tmdb-embed-api',
+                        source2Mode: 'live',
+                        source2LastCheckedAt: Date.now(),
+                        source2SourceCount: stored.sourceCount,
+                        source2Providers: stored.providers,
+                        source2Season: job.season,
+                        source2Episode: job.episode,
+                        source2: stored
+                    });
+                } catch (e) {
+                    updateEpisode(job, {
+                        source2TmdbId: tmdbId,
+                        source2Provider: 'tmdb-embed-api',
+                        source2Mode: 'live',
+                        source2LastCheckedAt: Date.now(),
+                        source2Season: job.season,
+                        source2Episode: job.episode,
+                        source2: {
+                            enabled: true,
+                            provider: 'tmdb-embed-api',
+                            tmdbId,
+                            mode: 'live',
+                            type: 'tv',
+                            season: job.season,
+                            episode: job.episode,
+                            url: '',
+                            sources: [],
+                            sourceCount: 0,
+                            providers: [],
+                            expiresAt: 0,
+                            savedAt: 0,
+                            lastResolveError: e?.message || 'تعذر الحل'
+                        }
+                    });
+                }
+                setDone(x => x + 1);
+            }
+        };
+        await Promise.all(Array.from({ length: Math.min(4, jobs.length) }, worker));
+        onChange(prev => ({ ...prev, tmdbId, source2TmdbId: tmdbId, source2Provider: 'tmdb-embed-api', source2Mode: 'live', source2LastCheckedAt: Date.now(), source2SourceCount: getSource2EpisodeStats(prev).streams }));
+        setRunning(false);
+        setMessage('اكتمل فحص كل الحلقات.');
+    };
+    const toggle = key => setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
+    const renderEpisode = (ep, si, ei) => {
+        const srcs = normalizeVideoSources(ep.source2?.sources || []).filter(source2IsBrowserPlayable);
+        const count = srcs.length || Number(ep.source2SourceCount) || 0;
+        const key = `${si}-${ei}`;
+        const open = !!expanded[key];
+        const providerList = Array.from(new Set([...(ep.source2Providers || []), ...(ep.source2?.providers || [])].filter(Boolean).map(String)));
+        const details = [];
+        details.push(React.createElement('div', { className: 'flex flex-wrap gap-1.5 mb-2', key: 'providers' }, providerList.map((provider, i) => React.createElement('span', { key: `${provider}-${i}`, className: 'px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-[9px] text-slate-300 font-bold' }, provider))));
+        if (srcs.length) {
+            details.push(React.createElement('div', { key: 'links', className: 'space-y-1.5' }, srcs.map((src, i) => React.createElement('div', { key: `${i}-${src.url}`, className: 'rounded-lg bg-glass-900 border border-white/5 p-2' }, [
+                React.createElement('div', { key: 'meta', className: 'flex items-center justify-between gap-2' }, [
+                    React.createElement('span', { key: 'provider', className: 'text-[9px] text-cyan-300 font-black' }, src.provider || 'Source 2'),
+                    React.createElement('span', { key: 'label', className: 'text-[9px] text-slate-400' }, src.label || src.resolution || src.sourceKind || '')
+                ]),
+                React.createElement('div', { key: 'url', className: 'flex items-center gap-2 mt-1' }, [
+                    React.createElement('a', { key: 'open', href: src.url, target: '_blank', rel: 'noreferrer', dir: 'ltr', className: 'text-[9px] text-cyan-200 hover:underline break-all flex-1' }, src.url),
+                    React.createElement('button', { key: 'copy', type: 'button', onClick: () => navigator.clipboard?.writeText(src.url), className: 'px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-[9px] text-slate-200 shrink-0' }, 'نسخ')
+                ])
+            ]))));
+        } else {
+            details.push(React.createElement('p', { key: 'empty', className: 'text-[9px] text-slate-500' }, ep.source2?.lastResolveError || 'لا توجد روابط صالحة حاليًا'));
+        }
+        return React.createElement('div', { key, className: 'rounded-xl bg-black/20 border border-white/5 mb-1.5 overflow-hidden' }, [
+            React.createElement('button', { key: 'head', type: 'button', onClick: () => toggle(key), className: 'w-full px-3 py-2 flex items-center justify-between gap-2 text-right' }, [
+                React.createElement('span', { key: 'title', className: 'text-[10px] font-black text-slate-200' }, `الحلقة ${ep.number}${ep.title ? ' · ' + ep.title : ''}`),
+                React.createElement('span', { key: 'count', className: `text-[9px] font-black ${count > 0 ? 'text-emerald-400' : 'text-rose-400'}` }, count > 0 ? `${count} مصدر` : '0 مصدر')
+            ]),
+            open ? React.createElement('div', { key: 'body', className: 'px-3 pb-3' }, details) : null
+        ]);
+    };
+    const seasonNodes = safeSeasons.map((season, si) => React.createElement('div', { key: `season-${si}`, className: 'mt-3' }, [
+        React.createElement('p', { key: 'season-title', className: 'text-[10px] font-black text-slate-300 mb-1.5' }, `الموسم ${season.number}`),
+        ...(season.episodes || []).map((ep, ei) => renderEpisode(ep, si, ei))
+    ]));
+    return React.createElement('div', { className: 'mt-5 glass-card rounded-2xl p-3.5 border border-accent-cyan/20' }, [
+        React.createElement('div', { key: 'header', className: 'flex items-start justify-between gap-3 flex-wrap' }, [
+            React.createElement('div', { key: 'copy' }, [
+                React.createElement('p', { key: 'title', className: 'text-[11px] font-black text-accent-cyan' }, 'فحص بدائل Source 2 لكل الحلقات'),
+                React.createElement('p', { key: 'stats', className: 'text-[10px] text-slate-500 mt-1' }, `التغطية: ${stats.matched}/${stats.total} حلقة · ${stats.streams} مصدر · ${stats.providers.length} مزوّد`)
+            ]),
+            React.createElement('button', { key: 'run', type: 'button', onClick: run, disabled: running || !jobs.length, className: 'px-4 py-2 rounded-xl bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan text-xs font-black disabled:opacity-40' }, running ? `جاري ${done}/${total}` : 'فحص كل الحلقات')
+        ]),
+        message ? React.createElement('p', { key: 'message', className: 'text-[10px] text-slate-400 font-bold mt-2' }, message) : null,
+        total > 0 ? React.createElement('div', { key: 'progress', className: 'mt-2 h-1.5 rounded-full bg-glass-900 overflow-hidden border border-white/5' }, React.createElement('div', { className: 'h-full bg-accent-cyan transition-all duration-300', style: { width: `${Math.min(100, (done / total) * 100)}%` } })) : null,
+        ...seasonNodes
+    ]);
+}
+
 function AdminTitleSourceActions({ currentUser, title }) {
     const [busy, setBusy] = useState('');
     const [status, setStatus] = useState('');
@@ -8878,7 +9043,8 @@ function AdminTitleSourceActions({ currentUser, title }) {
         setBusy('source2'); setStatus('جاري جلب البدائل...');
         try {
             const r = await bulkRefreshSource2Title(title, () => {});
-            setStatus(`بدائل: ${r?.updated || r?.sourceCount || countAlternativeDisplaySources(title)} `);
+            const total = title.type === 'movie' ? 1 : episodeTotal;
+            setStatus(title.type === 'movie' ? `بديل: ${r?.sourceCount || 0} مصدر` : `بدائل: ${r?.updated || 0}/${total} حلقة · ${r?.sourceCount || 0} مصدر`);
             showToast('تم تحديث المصدر البديل للعمل.');
         } catch (e) {
             setStatus(`فشل: ${e?.message || 'تعذر جلب البدائل'}`);
@@ -8989,7 +9155,7 @@ function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
                             "/",
                             subProgress.total),
                         React.createElement("span", { className: "text-[10px] px-2.5 py-1 rounded-full font-bold shrink-0 bg-accent-red/10 text-accent-red border border-accent-red/20", title: "عدد مصادر سينمانا المحفوظة" }, `سينمانا ${countCinemanaSources(t)}`),
-                        React.createElement("span", { className: "text-[10px] px-2.5 py-1 rounded-full font-bold shrink-0 bg-accent-cyan/10 text-accent-cyan border border-accent-cyan/20", title: "عدد مصادر البديل الحية من Source 2؛ الروابط نفسها لا تُخزّن" }, `بدائل ${countAlternativeDisplaySources(t)}`),
+                        React.createElement("span", { className: "text-[10px] px-2.5 py-1 rounded-full font-bold shrink-0 bg-accent-cyan/10 text-accent-cyan border border-accent-cyan/20", title: "تغطية حلقات البديل من Source 2 وعدد الروابط الحية" }, (() => { const st = getSource2EpisodeStats(t); return t.type === 'movie' ? `بديل ${st.streams}` : `بدائل ${st.matched}/${st.total} · ${st.streams}`; })()),
                         countAlternativeSources(t) > 0 && React.createElement("span", { className: "text-[9px] px-2 py-0.5 rounded-full font-bold shrink-0 bg-white/5 text-slate-400 border border-white/5", title: "ملفات/روابط بديلة يدوية مرفوعة من الإدارة" }, `يدوي ${countAlternativeSources(t)}`),
                         React.createElement(AdminTitleSourceActions, { currentUser, title: t }),
                         t.featured === true && React.createElement("span", { className: "text-[11px] px-3 py-1 rounded-full font-bold shrink-0 bg-amber-500/20 text-amber-400 border border-amber-500/30" }, "Hero"),
