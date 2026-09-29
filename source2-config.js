@@ -11,7 +11,7 @@
       "https://cineveres-source2.onrender.com"
       // , "https://YOUR-BACKUP-SOURCE2-DOMAIN"
     ],
-    timeoutMs: 25000,
+    timeoutMs: 120000,
     preferredProvider: "vixsrc"
   };
 
