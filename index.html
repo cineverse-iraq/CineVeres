@@ -8695,6 +8695,7 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
                 ep.source2SourceCount = sources.length;
                 ep.source2Providers = Array.from(new Set(sources.map(s => s.provider).filter(Boolean)));
                 ep.source2 = source2StoredRecordFromResolved(r, job.season, job.episode, 'tv');
+                ep.source2Sources = sources;
 
                 return { ok: true, job, sourceCount: sources.length };
             } catch (error) {
@@ -8891,17 +8892,43 @@ function AdminSourcesQuickActions({ currentUser, titles, contentType }) {
 function Source2LinksViewer({ title, onClose }) {
     const [local, setLocal] = useState(() => normalizeTitlePlaybackData(title));
     const [loadingFresh, setLoadingFresh] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const loadFresh = async () => {
+        setLoadingFresh(true);
+        try {
+            if (title?.id && typeof db !== 'undefined') {
+                const snap = await db.ref(`titles/${title.id}`).once('value');
+                if (snap.exists()) setLocal(normalizeTitlePlaybackData({ id: title.id, ...(snap.val() || {}) }));
+            }
+        } catch (_) {}
+        finally { setLoadingFresh(false); }
+    };
+    const refreshLinksNow = async () => {
+        if (!title?.id || refreshing) return;
+        setRefreshing(true);
+        try {
+            await bulkRefreshSource2Title(title, () => {});
+            await loadFresh();
+            showToast('تم تحديث روابط البدائل.');
+        } catch (e) {
+            showToast(e?.message || 'تعذر تحديث روابط البدائل.', 'error');
+        } finally { setRefreshing(false); }
+    };
+    const clearLinksNow = async () => {
+        if (!title?.id) return;
+        const ok = window.confirm(`حذف روابط Source 2 البديلة من «${title?.name || 'هذا العمل'}»؟`);
+        if (!ok) return;
+        try {
+            await deleteSingleTitleSource2(title);
+            await loadFresh();
+            showToast('تم حذف روابط البدائل.');
+        } catch (e) {
+            showToast(e?.message || 'تعذر حذف الروابط.', 'error');
+        }
+    };
     useEffect(() => {
         let alive = true;
-        (async () => {
-            try {
-                if (title?.id && typeof db !== 'undefined') {
-                    const snap = await db.ref(`titles/${title.id}`).once('value');
-                    if (alive && snap.exists()) setLocal(normalizeTitlePlaybackData({ id: title.id, ...(snap.val() || {}) }));
-                }
-            } catch (_) {}
-            finally { if (alive) setLoadingFresh(false); }
-        })();
+        loadFresh().catch(() => {});
         return () => { alive = false; };
     }, [title?.id]);
     const copy = async (url) => { try { await navigator.clipboard.writeText(String(url || '')); } catch (_) {} };
@@ -8933,12 +8960,122 @@ function Source2LinksViewer({ title, onClose }) {
     }
     return React.createElement('div',{className:'fixed inset-0 z-[10030] bg-black/75 backdrop-blur-md p-3 md:p-6 flex items-center justify-center'},
         React.createElement('div',{className:'w-full max-w-6xl max-h-[90vh] glass-panel rounded-2xl border border-accent-cyan/25 overflow-hidden flex flex-col'},
-            React.createElement('div',{className:'p-4 border-b border-white/10 flex items-center justify-between gap-3'},
+            React.createElement('div',{className:'p-4 border-b border-white/10 flex items-center justify-between gap-3 flex-wrap'},
                 React.createElement('div',null,React.createElement('h3',{className:'font-black text-white'},`روابط البدائل — ${local.name || ''}`),React.createElement('p',{className:'text-[10px] text-slate-500 mt-1'},'يمكنك فتح أو نسخ كل رابط للتحقق منه.')),
-                React.createElement('button',{type:'button',onClick:onClose,className:'w-9 h-9 rounded-xl glass-card border border-white/10 text-slate-300'},'×')),
+                React.createElement('div',{className:'flex items-center gap-1.5 flex-wrap'},
+                    React.createElement('button',{type:'button',disabled:refreshing,onClick:refreshLinksNow,className:'px-3 py-2 rounded-lg bg-accent-cyan/10 border border-accent-cyan/20 text-accent-cyan text-[10px] font-black disabled:opacity-40'},refreshing?'جاري التحديث...':'تحديث البدائل'),
+                    React.createElement('button',{type:'button',onClick:clearLinksNow,className:'px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-[10px] font-black'},'حذف البدائل'),
+                    React.createElement('button',{type:'button',onClick:onClose,className:'w-9 h-9 rounded-xl glass-card border border-white/10 text-slate-300'},'×'))),
             React.createElement('div',{className:'p-4 overflow-y-auto space-y-3'}, loadingFresh ? React.createElement('p',{className:'text-sm text-slate-500'},'جاري تحميل روابط البدائل...') : (sections.length ? sections : React.createElement('p',{className:'text-sm text-slate-500'},'لا توجد بيانات بديلة محفوظة.')))
         )
     );
+}
+
+
+async function refreshSingleTitleSources(t, setBusy) {
+    if (!t?.id) throw new Error('العمل غير معروف.');
+    setBusy?.(true);
+    try {
+        if (t.type === 'movie') {
+            await bulkRefreshCinemanaTitle(t);
+            await bulkRefreshSource2Title(t, () => {});
+        } else {
+            await bulkRefreshCinemanaTitle(t);
+            await bulkRefreshSource2Title(t, () => {});
+        }
+        return true;
+    } finally {
+        setBusy?.(false);
+    }
+}
+async function refreshSingleTitleSource2(t, setBusy) {
+    if (!t?.id) throw new Error('العمل غير معروف.');
+    setBusy?.(true);
+    try {
+        await bulkRefreshSource2Title(t, () => {});
+        return true;
+    } finally {
+        setBusy?.(false);
+    }
+}
+async function deleteSingleTitleSource2(t) {
+    if (!t?.id) throw new Error('العمل غير معروف.');
+    if (t.type === 'movie') {
+        await db.ref(`titles/${t.id}`).update({
+            source2: null,
+            source2TmdbId: '',
+            source2Provider: '',
+            source2Mode: '',
+            source2LastCheckedAt: 0,
+            source2SourceCount: 0,
+            source2Providers: [],
+            source2Sources: [],
+            source2ExpiresAt: 0,
+            source2Coverage: null
+        });
+    } else {
+        const seasons = normalizeSeasonsValue(t.seasons).map(s => ({
+            ...s,
+            episodes: (s.episodes || []).map(ep => ({
+                ...ep,
+                source2: null,
+                source2TmdbId: '',
+                source2Provider: '',
+                source2Mode: '',
+                source2LastCheckedAt: 0,
+                source2SourceCount: 0,
+                source2Providers: [],
+                source2Season: Number(s.number) || 1,
+                source2Episode: Number(ep.number) || 1,
+                source2LastError: ''
+            }))
+        }));
+        await db.ref(`titles/${t.id}`).update({
+            source2: null,
+            source2TmdbId: '',
+            source2Provider: '',
+            source2Mode: '',
+            source2LastCheckedAt: 0,
+            source2SourceCount: 0,
+            source2Providers: [],
+            source2Coverage: { done: 0, total: seasons.reduce((n,s)=>n+(s.episodes||[]).length,0), complete: false, sourceCount: 0, checkedAt: Date.now() },
+            seasons
+        });
+    }
+    return true;
+}
+function AdminWorkSourceActions({ title, currentUser, onRefreshView, onEdit }) {
+    const [busy, setBusy] = useState('');
+    const run = async (kind) => {
+        if (busy) return;
+        if (kind === 'delete') {
+            const ok = window.confirm(`حذف جميع روابط Source 2 البديلة من «${title?.name || 'هذا العمل'}»؟\nسيتم حذف روابط Source 2 المحفوظة فقط، ولن تُحذف روابط سينمانا أو البدائل اليدوية.`);
+            if (!ok) return;
+        }
+        setBusy(kind);
+        try {
+            if (kind === 'refresh-all') await refreshSingleTitleSources(title);
+            else if (kind === 'refresh-source2') await refreshSingleTitleSource2(title);
+            else if (kind === 'delete') await deleteSingleTitleSource2(title);
+            logAuditAction(currentUser, kind === 'delete' ? 'حذف روابط Source 2 لعمل واحد' : (kind === 'refresh-source2' ? 'تحديث بدائل Source 2 لعمل واحد' : 'تحديث روابط عمل واحد'), title.name || '');
+            showToast(kind === 'delete' ? 'تم حذف روابط Source 2 البديلة.' : 'تم تحديث المصادر بنجاح.');
+            onRefreshView?.();
+        } catch (e) {
+            showToast(e?.message || 'تعذر تنفيذ العملية.', 'error');
+        } finally {
+            setBusy('');
+        }
+    };
+    const isMovie = title?.type === 'movie';
+    return React.createElement('div',{className:'flex flex-wrap items-center gap-1.5 shrink-0'},
+        React.createElement('button',{type:'button',disabled:!!busy,onClick:()=>run('refresh-all'),title:isMovie?'تحديث رابط الفيلم':'تحديث روابط الحلقات',className:'px-2.5 py-1 rounded-lg bg-accent-red/10 border border-accent-red/25 text-accent-red text-[10px] font-black disabled:opacity-40'},
+            busy==='refresh-all' ? 'جارٍ...' : (isMovie ? 'تحديث رابط الفيلم' : 'تحديث روابط الحلقات')),
+        React.createElement('button',{type:'button',disabled:!!busy,onClick:()=>run('refresh-source2'),title:isMovie?'إعادة جلب البديل للفيلم':'إعادة جلب بدائل الحلقات',className:'px-2.5 py-1 rounded-lg bg-accent-cyan/10 border border-accent-cyan/25 text-accent-cyan text-[10px] font-black disabled:opacity-40'},
+            busy==='refresh-source2' ? 'جارٍ...' : 'تحديث البدائل'),
+        React.createElement('button',{type:'button',disabled:!!busy,onClick:()=>onEdit?.(),title:'إضافة/تعديل مصدر بديل يدوي',className:'px-2.5 py-1 rounded-lg bg-accent-purple/10 border border-accent-purple/25 text-accent-purple text-[10px] font-black disabled:opacity-40'},
+            'إضافة مصدر بديل'),
+        React.createElement('button',{type:'button',disabled:!!busy,onClick:()=>run('delete'),title:'حذف روابط Source 2 البديلة',className:'px-2.5 py-1 rounded-lg bg-rose-500/10 border border-rose-500/25 text-rose-300 text-[10px] font-black disabled:opacity-40'},
+            'حذف البدائل'));
 }
 
 function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
@@ -9041,6 +9178,7 @@ function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
                         React.createElement("span", { className: "text-[10px] px-2.5 py-1 rounded-full font-bold shrink-0 bg-accent-red/10 text-accent-red border border-accent-red/20", title: "عدد مصادر سينمانا المحفوظة" }, `سينمانا ${countCinemanaSources(t)}`),
                         (() => { const cov = getSource2Coverage(t); return React.createElement("span", { className: `text-[10px] px-2.5 py-1 rounded-full font-bold shrink-0 border ${cov.complete ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25' : 'bg-accent-cyan/10 text-accent-cyan border-accent-cyan/20'}`, title: t.type === 'movie' ? 'مصادر Source 2 الحالية' : 'الحلقات التي حصلت على بديل Source 2' }, t.type === 'movie' ? `بدائل ${cov.sources}` : `بدائل ${cov.done}/${cov.total}`); })(),
                         React.createElement("button", { type:'button', onClick:()=>setSourceLinksTitle(t), title:'عرض روابط البدائل', className:'px-2.5 py-1 rounded-lg bg-accent-purple/10 border border-accent-purple/20 text-accent-purple text-[10px] font-black shrink-0' }, 'روابط البدائل'),
+                        React.createElement(AdminWorkSourceActions, { title:t, currentUser, onRefreshView:()=>setSourceLinksTitle(null), onEdit:()=>setEditing(t) }),
                         countAlternativeSources(t) > 0 && React.createElement("span", { className: "text-[9px] px-2 py-0.5 rounded-full font-bold shrink-0 bg-white/5 text-slate-400 border border-white/5", title: "ملفات/روابط بديلة يدوية مرفوعة من الإدارة" }, `يدوي ${countAlternativeSources(t)}`),
                         t.featured === true && React.createElement("span", { className: "text-[11px] px-3 py-1 rounded-full font-bold shrink-0 bg-amber-500/20 text-amber-400 border border-amber-500/30" }, "Hero"),
                         React.createElement("button", { onClick: () => toggleFeatured(t), title: t.featured === true ? 'إزالة من العرض الرئيسي (Hero)' : 'إظهار في العرض الرئيسي (Hero)', className: `w-9 h-9 rounded-xl glass-card border flex items-center justify-center transition shrink-0 ${t.featured === true ? 'border-amber-400 text-amber-400' : 'border-white/10 hover:border-accent-cyan text-slate-200'}` },
