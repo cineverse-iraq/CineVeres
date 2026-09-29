@@ -1775,10 +1775,16 @@ async function source2ResolveEpisode({ tmdbId, season, episode }) {
     if (!sources.length) throw new Error(source2DiagnosticText(data) || `Source 2 لم يُرجع مصادر للحلقة S${se}E${ep}.`);
     return { ok: true, type: 'tv', tmdbId: id, season: se, episode: ep, providers: Array.from(new Set(sources.map(s => s.provider).filter(Boolean))), count: sources.length, sources, url: sources[0].url, raw: data };
 }
-// ===== Source 2 TV/Anime FAST MODE =====
-// لا نستخدم aggregate الكامل للحلقات في لوحة الإدارة؛ نفحص مزودات منفصلة وبالتوازي.
-const SOURCE2_FAST_EPISODE_PROVIDERS = ['vidlink', 'vaplayer', 'castletv'];
+// ===== Source 2 TV/Anime EPISODE RESOLVER =====
+// نبدأ بالـ aggregate لأنه يجمع عدة مزودات دفعة واحدة.
+// إذا لم يرجع مصادر، نفحص مزودات منفصلة بشكل متوازٍ كخطة احتياطية.
+// بهذه الطريقة لا نحكم على الحلقة "بدون بديل" قبل فحص كل المسارات المتاحة.
+const SOURCE2_FAST_EPISODE_PROVIDERS = [
+    '4khdhub','vixsrc','videasy','vidlink','dahmermovies','streamflix',
+    'vaplayer','castletv','hdghartv','netmirror','onetouchtv','zxcstreams'
+];
 const SOURCE2_FAST_EPISODE_TIMEOUT = 12000;
+const SOURCE2_AGGREGATE_EPISODE_TIMEOUT = 20000;
 
 async function source2ResolveEpisodeFast({ tmdbId, season, episode, timeoutMs = SOURCE2_FAST_EPISODE_TIMEOUT }) {
     const id = String(tmdbId || '').replace(/\D/g, '');
@@ -1786,69 +1792,71 @@ async function source2ResolveEpisodeFast({ tmdbId, season, episode, timeoutMs = 
     const ep = Math.max(1, Number(episode) || 1);
     if (!id) throw new Error('Source 2 يحتاج TMDB ID للمسلسل.');
 
-    // The backend documents provider-specific episode routes. Race the fast
-    // providers so one slow/failing provider cannot hold up the episode.
-    const jobs = SOURCE2_FAST_EPISODE_PROVIDERS.map(async provider => {
-        const path = `/api/streams/${encodeURIComponent(provider)}/series/${encodeURIComponent(id)}?season=${encodeURIComponent(se)}&episode=${encodeURIComponent(ep)}`;
-        const data = await source2FetchJson(path, timeoutMs);
-        const sources = source2SourcesFromResponse(data).filter(source2IsBrowserPlayable);
-        if (!sources.length) throw new Error(`${provider}: 0`);
-        return sources.map(s => ({ ...s, provider: s.provider || provider }));
-    });
+    const dedupeSources = (items) => {
+        const out = [];
+        const seen = new Set();
+        for (const source of normalizeVideoSources(items || [])) {
+            if (!source2IsBrowserPlayable(source)) continue;
+            const url = normalizeVideoUrl(source.url);
+            if (!url || seen.has(url)) continue;
+            seen.add(url);
+            out.push(source);
+        }
+        return out;
+    };
 
-    let firstSources = [];
+    // 1) Aggregate: الأفضل لأنه يعيد مصادر من عدة مزودات في استجابة واحدة.
     try {
-        firstSources = await Promise.any(jobs);
-    } catch (_) {
-        // Last-resort fallback: the aggregate endpoint is the known-good
-        // endpoint for TV/Anime. It is only used when all fast providers fail.
-        try {
-            const aggregate = await source2ResolveEpisode({ tmdbId: id, season: se, episode: ep });
-            firstSources = normalizeVideoSources(aggregate.sources)
-                .filter(source2IsBrowserPlayable);
-            if (!firstSources.length) throw new Error('aggregate: 0');
+        const aggregateData = await source2FetchJson(
+            `/api/streams/series/${encodeURIComponent(id)}?season=${encodeURIComponent(se)}&episode=${encodeURIComponent(ep)}`,
+            SOURCE2_AGGREGATE_EPISODE_TIMEOUT
+        );
+        const aggregateSources = dedupeSources(source2SourcesFromResponse(aggregateData));
+        if (aggregateSources.length) {
             return {
                 ok: true,
                 type: 'tv',
                 tmdbId: id,
                 season: se,
                 episode: ep,
-                providers: Array.from(new Set(firstSources.map(s => s.provider).filter(Boolean))),
-                count: firstSources.length,
-                sources: firstSources,
-                url: firstSources[0].url,
-                raw: { ...(aggregate.raw || {}), fastFallback: true }
+                providers: Array.from(new Set(aggregateSources.map(s => s.provider).filter(Boolean))),
+                count: aggregateSources.length,
+                sources: aggregateSources,
+                url: aggregateSources[0].url,
+                raw: { ...(aggregateData || {}), aggregate: true }
             };
-        } catch (_) {
-            throw new Error(`لم تحصل الحلقة S${se}E${ep} على مصدر من Source 2.`);
         }
-    }
+    } catch (_) {}
 
-    const sources = [];
-    const seen = new Set();
-    for (const source of firstSources || []) {
-        const url = normalizeVideoUrl(source.url);
-        if (!url || seen.has(url)) continue;
-        seen.add(url);
-        sources.push(source);
-    }
+    // 2) Fallback: افحص كل المزودات المعروفة بالتوازي، وخذ أول نتيجة صالحة.
+    const jobs = SOURCE2_FAST_EPISODE_PROVIDERS.map(async provider => {
+        const path = `/api/streams/${encodeURIComponent(provider)}/series/${encodeURIComponent(id)}?season=${encodeURIComponent(se)}&episode=${encodeURIComponent(ep)}`;
+        const data = await source2FetchJson(path, timeoutMs);
+        const sources = dedupeSources(
+            source2SourcesFromResponse(data).map(s => ({ ...s, provider: s.provider || provider }))
+        );
+        if (!sources.length) throw new Error(`${provider}: 0`);
+        return sources;
+    });
 
-    if (!sources.length) {
+    try {
+        const firstSources = await Promise.any(jobs);
+        if (!firstSources.length) throw new Error('no sources');
+        return {
+            ok: true,
+            type: 'tv',
+            tmdbId: id,
+            season: se,
+            episode: ep,
+            providers: Array.from(new Set(firstSources.map(s => s.provider).filter(Boolean))),
+            count: firstSources.length,
+            sources: firstSources,
+            url: firstSources[0].url,
+            raw: { fastFallback: true, firstProvider: firstSources[0]?.provider || '' }
+        };
+    } catch (_) {
         throw new Error(`لم تحصل الحلقة S${se}E${ep} على مصدر من Source 2.`);
     }
-
-    return {
-        ok: true,
-        type: 'tv',
-        tmdbId: id,
-        season: se,
-        episode: ep,
-        providers: Array.from(new Set(sources.map(s => s.provider).filter(Boolean))),
-        count: sources.length,
-        sources,
-        url: sources[0].url,
-        raw: { fast: true, firstProvider: sources[0]?.provider || '' }
-    };
 }
 
 function source2StoredRecordFromResolved(resolved, season, episode, mediaType = 'tv') {
@@ -7524,34 +7532,73 @@ function AlternativeSourcesEditor({ value, onChange, folder = 'alternative-video
         React.createElement('button', { type: 'button', onClick: add, className: 'w-full px-3 py-2 rounded-xl bg-accent-purple/10 border border-accent-purple/20 text-accent-purple text-[11px] font-black hover:bg-accent-purple/20 transition flex items-center justify-center gap-1.5' }, React.createElement(Icon, { name: 'plus', className: 'w-3.5 h-3.5' }), 'إضافة مصدر بديل'));
 }
 
+async function translateOverviewToArabic(text) {
+    const raw = String(text || '').trim();
+    if (!raw) return '';
+    const chunks = [];
+    let current = '';
+    const words = raw.split(/\s+/);
+    const maxBytes = 470;
+    const bytes = str => new TextEncoder().encode(str).length;
+    for (const word of words) {
+        const candidate = current ? `${current} ${word}` : word;
+        if (bytes(candidate) > maxBytes && current) { chunks.push(current); current = word; }
+        else current = candidate;
+    }
+    if (current) chunks.push(current);
+    const translated = [];
+    for (const chunk of chunks) {
+        try {
+            const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(chunk)}&langpair=en|ar`;
+            const res = await fetch(url, { headers: { Accept: 'application/json' } });
+            const data = await res.json();
+            const value = String(data?.responseData?.translatedText || '').trim();
+            if (res.ok && value) translated.push(value);
+        } catch (_) {}
+    }
+    return translated.join(' ').replace(/\s+/g, ' ').trim();
+}
+
 async function generateSmartArabicDescription(form) {
     const endpoint = String((typeof window !== 'undefined' && window.CINADAM_SOURCE2_CONFIG && window.CINADAM_SOURCE2_CONFIG.aiDescriptionEndpoint) || (typeof window !== 'undefined' && window.CINADAM_AI_DESCRIPTION_ENDPOINT) || '').trim();
     let id = String(form?.tmdbId || form?.source2TmdbId || '').replace(/\D/g, '');
     const currentType = form?.type === 'movie' ? 'movie' : 'tv';
     let best = null;
     if (!id && form?.name) {
-        try { best = await tmdbFindBestByTitle(form.name, form.type === 'movie' ? 'movie' : 'tv', form.year); id = String(best?.id || '').replace(/\D/g, ''); } catch (_) {}
+        try { best = await tmdbFindBestByTitle(form.name, currentType, form.year); id = String(best?.id || '').replace(/\D/g, ''); } catch (_) {}
     }
-    const details = id ? await tmdbFetch(`${currentType}/${encodeURIComponent(id)}`, { language: 'ar-SA', append_to_response: 'credits' }) : {};
+    let arabicDetails = {};
+    let englishDetails = {};
+    if (id) {
+        try { arabicDetails = await tmdbFetch(`${currentType}/${encodeURIComponent(id)}`, { language: 'ar-SA' }); } catch (_) {}
+        if (!String(arabicDetails?.overview || '').trim()) {
+            try { englishDetails = await tmdbFetch(`${currentType}/${encodeURIComponent(id)}`, { language: 'en-US' }); } catch (_) {}
+        }
+    }
+    const details = Object.keys(arabicDetails || {}).length ? arabicDetails : englishDetails;
     const title = String(form?.name || details?.title || details?.name || '').trim();
-    const genres = Array.isArray(details?.genres) ? details.genres.map(g => g?.name).filter(Boolean) : normalizeGenresValue(form?.genresText);
-    const overview = String(details?.overview || form?.description || '').trim();
+    const nativeArabic = String(arabicDetails?.overview || '').trim();
+    const englishOverview = String(englishDetails?.overview || details?.overview || '').trim();
     const year = Number(form?.year) || Number(String(details?.release_date || details?.first_air_date || '').slice(0, 4)) || 0;
-    const payload = { title, type: form?.type || currentType, year, genres, overview, director: form?.director || '', writer: form?.writer || '', language: 'ar' };
+
+    // Optional server-side AI endpoint stays supported. The secret must remain on the server.
     if (endpoint) {
         try {
-            const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ prompt: `اكتب وصفًا عربيًا جذابًا وممتعًا للعمل التالي اعتمادًا على المعلومات المعطاة فقط، بدون اختلاق أحداث أو حرق النهاية. اجعل الوصف مناسبًا لصفحة مشاهدة: ${JSON.stringify(payload)}`, ...payload }) });
+            const payload = { title, type: form?.type || currentType, year, genres: Array.isArray(details?.genres) ? details.genres.map(g => g?.name).filter(Boolean) : normalizeGenresValue(form?.genresText), overview: nativeArabic || englishOverview, language: 'ar' };
+            const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(payload) });
             const raw = await response.text();
             let data = {}; try { data = raw ? JSON.parse(raw) : {}; } catch (_) {}
             const generated = String(data.description || data.text || data.content || data.result || '').trim();
             if (response.ok && generated) return { text: generated, mode: 'ai', id };
         } catch (_) {}
     }
-    const hook = genres.length ? `يمزج بين ${genres.slice(0, 3).join('، ')}` : 'يقدّم أجواءً درامية ومليئة بالتفاصيل';
-    if (overview) {
-        return { text: `يأخذك «${title}» في تجربة ${hook}. ${overview}${year ? ` ويأتي العمل من عام ${year}.` : ''} وصفٌ مناسب لمن يريد اكتشاف أجواء العمل وفكرته من دون كشف مفاجآته.`, mode: 'tmdb', id };
+    if (nativeArabic) return { text: nativeArabic, mode: 'tmdb-ar', id };
+    if (englishOverview) {
+        const translated = await translateOverviewToArabic(englishOverview);
+        if (translated) return { text: translated, mode: 'mymemory', id };
+        return { text: englishOverview, mode: 'tmdb-en', id };
     }
-    return { text: `استعد لتجربة «${title}»؛ عملٌ ${hook} ويقدّم أجواءً تستحق المتابعة من البداية حتى النهاية${year ? `، من إنتاج عام ${year}` : ''}.`, mode: 'template', id };
+    return { text: `وصف غير متوفر حاليًا لهذا العمل${title ? `: ${title}` : ''}.`, mode: 'empty', id };
 }
 function SmartDescriptionHelper({ form, onChange }) {
     const [loading, setLoading] = useState(false);
@@ -7562,7 +7609,7 @@ function SmartDescriptionHelper({ form, onChange }) {
         try {
             const r = await generateSmartArabicDescription(form);
             onChange && onChange(r.text);
-            setMsg(r.mode === 'ai' ? '✓ تم توليد الوصف عبر نقطة الذكاء الاصطناعي المضبوطة.' : '✓ تم توليد الوصف تلقائيًا من بيانات TMDB المتاحة.');
+            setMsg(r.mode === 'ai' ? '✓ تم توليد الوصف عبر نقطة الذكاء الاصطناعي المضبوطة.' : (r.mode === 'tmdb-ar' ? '✓ تم جلب الوصف العربي الأصلي من TMDB.' : (r.mode === 'mymemory' ? '✓ تمت ترجمة الوصف إلى العربية تلقائيًا.' : '✓ تم استخدام وصف TMDB المتاح.')));
         } catch (e) { setMsg(e?.message || 'تعذر توليد الوصف.'); }
         finally { setLoading(false); }
     };
@@ -8714,8 +8761,9 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
         return { updated: 1, failed: 0, sourceCount: sources.length };
     }
 
-    // TV/Anime: never run the 13-provider aggregate during bulk refresh.
-    // Process exactly two episodes per batch; each episode queries three fast providers in parallel.
+    // TV/Anime: process every episode in small parallel batches.
+    // Each episode first uses the aggregate Source 2 route, then all known
+    // provider-specific routes as fallback.
     const seasons = normalizeSeasonsValue(t.seasons).map(s => ({
         ...s,
         episodes: (s.episodes || []).map(e => ({ ...e }))
@@ -8960,6 +9008,8 @@ function Source2LinksViewer({ title, onClose }) {
     const [local, setLocal] = useState(() => normalizeTitlePlaybackData(title));
     const [loadingFresh, setLoadingFresh] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [episodeBusy, setEpisodeBusy] = useState('');
+    const [previewSource, setPreviewSource] = useState(null);
     const loadFresh = async () => {
         setLoadingFresh(true);
         try {
@@ -8981,6 +9031,31 @@ function Source2LinksViewer({ title, onClose }) {
             showToast(e?.message || 'تعذر تحديث روابط البدائل.', 'error');
         } finally { setRefreshing(false); }
     };
+    const refreshMissingEpisodesNow = async () => {
+        if (!local?.id || refreshing || episodeBusy) return;
+        const missing = normalizeSeasonsValue(local.seasons).flatMap(season =>
+            (season.episodes || [])
+                .filter(ep => normalizeVideoSources(ep.source2?.sources || ep.source2Sources || []).filter(source2IsBrowserPlayable).length === 0)
+                .map(ep => ({ season: Number(season.number) || 1, episode: Number(ep.number) || 1 }))
+        );
+        if (!missing.length) {
+            showToast('كل الحلقات لديها بدائل محفوظة.');
+            return;
+        }
+        setRefreshing(true);
+        let ok = 0, failed = 0;
+        try {
+            for (const item of missing) {
+                try {
+                    await refreshSingleEpisodeSource2(local, item.season, item.episode);
+                    ok++;
+                } catch (_) { failed++; }
+                await loadFresh();
+            }
+            showToast(failed ? `تمت معالجة ${ok} حلقة، وتعذرت ${failed}.` : `تمت إضافة البدائل إلى ${ok} حلقة.`);
+        } finally { setRefreshing(false); }
+    };
+
     const clearLinksNow = async () => {
         if (!title?.id) return;
         const ok = window.confirm(`حذف روابط Source 2 البديلة من «${title?.name || 'هذا العمل'}»؟`);
@@ -9006,7 +9081,7 @@ function Source2LinksViewer({ title, onClose }) {
         React.createElement('div',{className:'mt-2 flex items-center gap-2'},
             React.createElement('input',{readOnly:true,value:source.url || '',dir:'ltr',className:'flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-lg px-2.5 py-2 text-[10px] text-slate-300'}),
             React.createElement('button',{type:'button',onClick:()=>copy(source.url),className:'px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-[10px] font-black text-white'},'نسخ'),
-            React.createElement('a',{href:source.url,target:'_blank',rel:'noreferrer',className:'px-3 py-2 rounded-lg bg-accent-cyan/10 border border-accent-cyan/20 text-accent-cyan text-[10px] font-black'},'فتح')));
+            React.createElement('button',{type:'button',onClick:()=>setPreviewSource(source),className:'px-3 py-2 rounded-lg bg-accent-cyan/10 border border-accent-cyan/20 text-accent-cyan text-[10px] font-black'},'تشغيل')));
 
     const sections=[];
     if (local.type === 'movie') {
@@ -9017,12 +9092,45 @@ function Source2LinksViewer({ title, onClose }) {
     } else {
         const episodes = normalizeSeasonsValue(local.seasons).flatMap(s => (s.episodes || []).map(ep => ({...ep, seasonNumber:s.number})));
         for (const ep of episodes) {
+            const episodeKey = `e-${ep.seasonNumber}-${ep.number}`;
             const sources = normalizeVideoSources(ep.source2?.sources || ep.source2Sources || []).filter(source2IsBrowserPlayable);
-            sections.push(React.createElement('div',{key:`e-${ep.seasonNumber}-${ep.number}`,className:'glass-card rounded-xl p-3 border border-white/10'},
-                React.createElement('div',{className:'flex items-center justify-between gap-2 flex-wrap'},
-                    React.createElement('div',null,React.createElement('b',{className:'text-xs text-white'},`الموسم ${ep.seasonNumber} · الحلقة ${ep.number}`),React.createElement('p',{className:`text-[10px] font-black mt-1 ${sources.length ? 'text-emerald-400':'text-rose-400'}`},sources.length ? `بدائل ${sources.length}` : 'بدون بديل')),
-                    React.createElement('span',{className:'text-[10px] text-slate-500'},ep.title || '')),
-                React.createElement('div',{className:'mt-2 space-y-2'}, ...(sources.length ? sources.map((s,i)=>box(s,`e-${ep.seasonNumber}-${ep.number}-${i}`)) : [React.createElement('p',{key:'empty',className:'text-xs text-slate-500'},'لا توجد روابط محفوظة لهذه الحلقة.')]))));
+            const busyKey = episodeBusy === episodeKey;
+            const refreshEpisode = async () => {
+                if (episodeBusy) return;
+                setEpisodeBusy(episodeKey);
+                try {
+                    await refreshSingleEpisodeSource2(local, ep.seasonNumber, ep.number);
+                    await loadFresh();
+                    showToast(sources.length ? `تم تحديث بدائل الموسم ${ep.seasonNumber} الحلقة ${ep.number}.` : `تمت إضافة بديل للموسم ${ep.seasonNumber} الحلقة ${ep.number}.`);
+                } catch (e) {
+                    showToast(e?.message || 'تعذر جلب بديل الحلقة.', 'error');
+                } finally { setEpisodeBusy(''); }
+            };
+            sections.push(
+                React.createElement('div',{key:episodeKey,className:'glass-card rounded-xl p-3 border border-white/10'},
+                    React.createElement('div',{className:'flex items-center justify-between gap-2 flex-wrap'},
+                        React.createElement('div',null,
+                            React.createElement('b',{className:'text-xs text-white'},`الموسم ${ep.seasonNumber} · الحلقة ${ep.number}`),
+                            React.createElement('p',{className:`text-[10px] font-black mt-1 ${sources.length ? 'text-emerald-400':'text-rose-400'}`},sources.length ? `بدائل ${sources.length}` : 'بدون بديل')
+                        ),
+                        React.createElement('span',{className:'text-[10px] text-slate-500'},ep.title || '')
+                    ),
+                    React.createElement('div',{className:'mt-2 flex items-center gap-2 flex-wrap'},
+                        React.createElement('button',{
+                            type:'button',
+                            disabled:!!episodeBusy || refreshing,
+                            onClick:refreshEpisode,
+                            className:`px-3 py-1.5 rounded-lg ${sources.length ? 'bg-accent-cyan/10 border-accent-cyan/20 text-accent-cyan':'bg-accent-purple/10 border-accent-purple/20 text-accent-purple'} border text-[10px] font-black disabled:opacity-40`
+                        },busyKey ? 'جاري...' : (sources.length ? 'تحديث البديل' : 'إضافة بديل'))
+                    ),
+                    React.createElement('div',{className:'mt-2 space-y-2'},
+                        ...(sources.length
+                            ? sources.map((source,i)=>box(source,`${episodeKey}-${i}`))
+                            : [React.createElement('p',{key:'empty',className:'text-xs text-slate-500'},'لا توجد روابط محفوظة لهذه الحلقة. اضغط «إضافة بديل» لجلبها الآن.')]
+                        )
+                    )
+                )
+            );
         }
     }
     return React.createElement('div',{className:'fixed inset-0 z-[10030] bg-black/75 backdrop-blur-md p-3 md:p-6 flex items-center justify-center'},
@@ -9031,10 +9139,28 @@ function Source2LinksViewer({ title, onClose }) {
                 React.createElement('div',null,React.createElement('h3',{className:'font-black text-white'},`روابط البدائل — ${local.name || ''}`),React.createElement('p',{className:'text-[10px] text-slate-500 mt-1'},'يمكنك فتح أو نسخ كل رابط للتحقق منه.')),
                 React.createElement('div',{className:'flex items-center gap-1.5 flex-wrap'},
                     React.createElement('button',{type:'button',disabled:refreshing,onClick:refreshLinksNow,className:'px-3 py-2 rounded-lg bg-accent-cyan/10 border border-accent-cyan/20 text-accent-cyan text-[10px] font-black disabled:opacity-40'},refreshing?'جاري التحديث...':'تحديث البدائل'),
+                    local.type !== 'movie' && React.createElement('button',{type:'button',disabled:refreshing || !!episodeBusy,onClick:refreshMissingEpisodesNow,className:'px-3 py-2 rounded-lg bg-accent-purple/10 border border-accent-purple/20 text-accent-purple text-[10px] font-black disabled:opacity-40'},'إضافة البدائل للحلقات الناقصة'),
                     React.createElement('button',{type:'button',onClick:clearLinksNow,className:'px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-[10px] font-black'},'حذف البدائل'),
                     React.createElement('button',{type:'button',onClick:onClose,className:'w-9 h-9 rounded-xl glass-card border border-white/10 text-slate-300'},'×'))),
             React.createElement('div',{className:'p-4 overflow-y-auto space-y-3'}, loadingFresh ? React.createElement('p',{className:'text-sm text-slate-500'},'جاري تحميل روابط البدائل...') : (sections.length ? sections : React.createElement('p',{className:'text-sm text-slate-500'},'لا توجد بيانات بديلة محفوظة.')))
-        )
+        ),
+        previewSource && React.createElement('div',{className:'fixed inset-0 z-[10060] bg-black/90 backdrop-blur-sm p-3 md:p-6 flex items-center justify-center',onClick:()=>setPreviewSource(null)},
+            React.createElement('div',{className:'w-full max-w-6xl glass-panel rounded-2xl border border-accent-cyan/25 overflow-hidden',onClick:e=>e.stopPropagation()},
+                React.createElement('div',{className:'p-3 md:p-4 border-b border-white/10 flex items-center justify-between gap-3'},
+                    React.createElement('div',null,
+                        React.createElement('b',{className:'text-sm text-white'},previewSource.provider || 'Source 2'),
+                        React.createElement('p',{className:'text-[10px] text-slate-500 mt-1'},previewSource.label || previewSource.resolution || 'Auto')),
+                    React.createElement('button',{type:'button',onClick:()=>setPreviewSource(null),className:'w-9 h-9 rounded-xl glass-card border border-white/10 text-slate-300'},'×')),
+                React.createElement(VideoPlayer,{
+                    src: normalizeVideoUrl(previewSource.url),
+                    sourceKind: previewSource.sourceKind || source2SourceKind(previewSource),
+                    subtitleUrl: normalizeSubtitleUrl(previewSource.subtitleUrl || ''),
+                    subtitleOffset: Number(previewSource.subtitleOffset) || 0,
+                    fitMobile: 'contain',
+                    fitDesktop: 'contain',
+                    qualities: [previewSource],
+                    onError: () => showToast('تعذر تشغيل هذا المصدر داخل المشغل.', 'error')
+                })))
     );
 }
 
@@ -9071,6 +9197,65 @@ async function refreshSingleTitleSource2(t, setBusy) {
         setBusy?.(false);
     }
 }
+async function refreshSingleEpisodeSource2(t, seasonNumber, episodeNumber) {
+    if (!t?.id) throw new Error('العمل غير معروف.');
+    const season = Math.max(1, Number(seasonNumber) || 1);
+    const episode = Math.max(1, Number(episodeNumber) || 1);
+    const snap = await db.ref(`titles/${t.id}`).once('value');
+    const fresh = sanitizeFirebaseValue(snap.val() || t);
+    fresh.id = t.id;
+    const seasons = normalizeSeasonsValue(fresh.seasons).map(s => ({
+        ...s,
+        episodes: (s.episodes || []).map(e => ({ ...e }))
+    }));
+    const seasonObj = seasons.find(s => Number(s.number) === season);
+    const ep = seasonObj?.episodes?.find(e => Number(e.number) === episode);
+    if (!seasonObj || !ep) throw new Error(`لم أجد الموسم ${season} الحلقة ${episode}.`);
+    const tmdbId = String(ep.tmdbId || ep.source2TmdbId || fresh.tmdbId || fresh.source2TmdbId || fresh.source2?.tmdbId || '').replace(/\D/g, '');
+    let resolvedId = tmdbId;
+    if (!resolvedId) {
+        const best = await tmdbFindBestByTitle(fresh.name, fresh.type === 'movie' ? 'movie' : 'tv', fresh.year);
+        resolvedId = best?.id ? String(best.id) : '';
+    }
+    if (!resolvedId) throw new Error('لم أجد TMDB ID لهذا المسلسل.');
+    const r = await source2ResolveEpisodeFast({ tmdbId: resolvedId, season, episode, timeoutMs: SOURCE2_FAST_EPISODE_TIMEOUT });
+    const sources = normalizeVideoSources(r.sources).filter(source2IsBrowserPlayable);
+    if (!sources.length) throw new Error(`لم تُجلب مصادر للحلقة S${season}E${episode}.`);
+    ep.source2TmdbId = r.tmdbId;
+    ep.source2Provider = 'tmdb-embed-api';
+    ep.source2Mode = 'live';
+    ep.source2LastCheckedAt = Date.now();
+    ep.source2LastError = '';
+    ep.source2Season = season;
+    ep.source2Episode = episode;
+    ep.source2SourceCount = sources.length;
+    ep.source2Providers = Array.from(new Set(sources.map(x => x.provider).filter(Boolean)));
+    ep.source2 = source2StoredRecordFromResolved(r, season, episode, 'tv');
+    ep.source2Sources = sources;
+    const coverage = getSource2Coverage({ ...fresh, seasons });
+    const parentSourceCount = coverage.sources;
+    const parentProviders = Array.from(new Set(seasons.flatMap(ss => (ss.episodes || []).flatMap(e => e.source2Providers || []))));
+    await db.ref(`titles/${t.id}`).update(sanitizeFirebasePatch({
+        tmdbId: resolvedId,
+        source2TmdbId: resolvedId,
+        source2Provider: 'tmdb-embed-api',
+        source2Mode: 'live',
+        source2LastCheckedAt: Date.now(),
+        source2SourceCount: parentSourceCount,
+        source2Providers: parentProviders,
+        source2: source2InfoForPayload(resolvedId),
+        seasons,
+        source2Coverage: {
+            done: coverage.done,
+            total: coverage.total,
+            complete: coverage.complete,
+            sourceCount: parentSourceCount,
+            checkedAt: Date.now()
+        }
+    }));
+    return { ok: true, season, episode, sources, sourceCount: sources.length, coverage };
+}
+
 async function deleteSingleTitleSource2(t) {
     if (!t?.id) throw new Error('العمل غير معروف.');
     if (t.type === 'movie') {
