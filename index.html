@@ -302,6 +302,16 @@
     }
   </style>
 
+
+<style id="cinadam-mobile-polish-final">
+  html, body, #root { min-height:100%; min-height:100dvh; }
+  @media (max-width:767px) {
+    .glass-panel, .glass-card { -webkit-backdrop-filter:none !important; backdrop-filter:none !important; }
+    .glass-card:hover { transform:none !important; }
+    .fixed.inset-0 { padding:8px !important; }
+    .cv-player-menu { max-width:calc(100vw - 16px); }
+  }
+</style>
 </head>
 <body class="bg-glass-950 text-slate-100 min-h-screen selection:bg-accent-red selection:text-white">
   <style>
@@ -1738,7 +1748,7 @@ function source2NormalizeName(value) {
 function source2LooksGenericTitle(value) {
     const t = source2NormalizeName(value);
     if (!t) return true;
-    return /^(?:vaplayer|vixsrc|videasy|vidlink|streamflix|castletv|hdghartv|netmirror|onetouchtv|zxcstreams|source ?2|hls|auto|ost)(?:\s|$)/i.test(t)
+    return /^(?:source ?2|hls|auto|ost)(?:\s|$)/i.test(t)
         || /\b(?:2160|1440|1080|720|576|540|480|360|240)p?\b/i.test(t)
         || /\b(?:hls|source|ost|auto)\b/i.test(t);
 }
@@ -1834,7 +1844,7 @@ async function source2ExpandSourcesByQuality(sources) {
 // retain the three strongest providers. Verification happens against the public
 // Source 2/proxy URL so the browser checks the exact resource the player will use.
 const SOURCE2_TOP_SOURCE_LIMIT = 3;
-const SOURCE2_RESOLVER_VERSION = 10;
+const SOURCE2_RESOLVER_VERSION = 13;
 const SOURCE2_VERIFY_TIMEOUT = 30000;
 
 function source2ProviderKey(source) {
@@ -2067,7 +2077,8 @@ function source2SourcesFromResponse(data, expectedTitle = '') {
             headers: item?.headers && typeof item.headers === 'object' ? item.headers : undefined
         });
     });
-    const titleSafe = expectedTitle ? out.filter(source => source2MatchesExpectedTitle(source, expectedTitle)) : out;
+    const egyBestOnly = out.filter(source2IsEgyBestSource);
+    const titleSafe = expectedTitle ? egyBestOnly.filter(source => source2MatchesExpectedTitle(source, expectedTitle)) : egyBestOnly;
     const playable = titleSafe.filter(source2IsBrowserPlayable);
     const pool = playable.length ? playable : titleSafe;
     const rank = s => {
@@ -5893,7 +5904,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 if (!url) {
                     try {
                         const resolved = await source2Warmup;
-                        const source2s = normalizeVideoSources(resolved?.sources || []).filter(source2IsBrowserPlayable);
+                        const source2s = normalizeVideoSources(resolved?.sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable);
                         if (source2s.length) {
                             sources = source2s;
                             url = source2s[0].url;
@@ -5972,7 +5983,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 try {
                     const resolved = await source2Warmup;
                     if (resolved) {
-                        const source2s = normalizeVideoSources(resolved.sources || []).filter(source2IsBrowserPlayable);
+                        const source2s = normalizeVideoSources(resolved.sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable);
                         if (source2s.length) {
                             sources = source2s;
                             url = source2s[0].url;
@@ -9331,7 +9342,7 @@ function Source2LinksViewer({ title, onClose }) {
         if (!local?.id || refreshing || episodeBusy) return;
         const missing = normalizeSeasonsValue(local.seasons).flatMap(season =>
             (season.episodes || [])
-                .filter(ep => Number(ep.source2ResolverVersion || ep.source2?.resolverVersion) !== SOURCE2_RESOLVER_VERSION || normalizeVideoSources(ep.source2?.sources || ep.source2Sources || []).filter(source2IsBrowserPlayable).length === 0)
+                .filter(ep => Number(ep.source2ResolverVersion || ep.source2?.resolverVersion) !== SOURCE2_RESOLVER_VERSION || normalizeVideoSources(ep.source2?.sources || ep.source2Sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable).length === 0)
                 .map(ep => ({ season: Number(season.number) || 1, episode: Number(ep.number) || 1 }))
         );
         if (!missing.length) {
@@ -9381,7 +9392,7 @@ function Source2LinksViewer({ title, onClose }) {
 
     const sections=[];
     if (local.type === 'movie') {
-        const sources = normalizeVideoSources(local.source2Sources || local.source2?.sources || []).filter(source2IsBrowserPlayable);
+        const sources = normalizeVideoSources(local.source2Sources || local.source2?.sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable);
         sections.push(React.createElement('div',{key:'movie',className:'space-y-2'},
             React.createElement('div',{className:'flex items-center justify-between'},React.createElement('b',{className:'text-sm text-white'},'الفيلم'),React.createElement('span',{className:'text-[10px] text-accent-cyan font-black'},`${sources.length} مصدر`)),
             ...(sources.length ? sources.map((s,i)=>box(s,`m-${i}`)) : [React.createElement('p',{key:'empty',className:'text-xs text-slate-500'},'لا توجد روابط Source 2 محفوظة لهذا الفيلم.')])));
@@ -9389,7 +9400,7 @@ function Source2LinksViewer({ title, onClose }) {
         const episodes = normalizeSeasonsValue(local.seasons).flatMap(s => (s.episodes || []).map(ep => ({...ep, seasonNumber:s.number})));
         for (const ep of episodes) {
             const episodeKey = `e-${ep.seasonNumber}-${ep.number}`;
-            const sources = normalizeVideoSources(ep.source2?.sources || ep.source2Sources || []).filter(source2IsBrowserPlayable);
+            const sources = normalizeVideoSources(ep.source2?.sources || ep.source2Sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable);
             const busyKey = episodeBusy === episodeKey;
             const refreshEpisode = async () => {
                 if (episodeBusy) return;
