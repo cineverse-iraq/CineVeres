@@ -662,10 +662,8 @@ function normalizeVideoSources(value) {
         const embedUrl = String((x && (x.embedUrl || x.embed || '')) || '').trim();
         const pageUrl = String((x && (x.pageUrl || x.page || '')) || '').trim();
         const sessionId = String((x && (x.sessionId || x.sid || '')) || '').trim();
-        const headers = x && x.headers && typeof x.headers === 'object' ? x.headers : null;
-        const normalized = { label, resolution: label, url, directUrl, embedUrl, pageUrl, sessionId, subtitleUrl, source, sourceId, provider, sourceKind, sourceTitle };
-        if (headers) normalized.headers = headers;
-        return url ? normalized : null;
+        const headers = x && x.headers && typeof x.headers === 'object' ? x.headers : undefined;
+        return url ? { label, resolution: label, url, directUrl, embedUrl, pageUrl, sessionId, subtitleUrl, source, sourceId, provider, sourceKind, sourceTitle, headers } : null;
     })
         .filter(Boolean)
         .filter((x, i, a) => a.findIndex(y => y.url === x.url) === i);
@@ -2172,7 +2170,7 @@ function source2WithEmbed(source) {
 function source2StoredRecordFromResolved(resolved, season, episode, mediaType = 'tv') {
     const sources = normalizeVideoSources(resolved?.sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable);
     const tmdbId = String(resolved?.tmdbId || '').replace(/\D/g, '');
-    return sanitizeFirebaseValue({
+    return {
         enabled: !!tmdbId && sources.length > 0,
         provider: 'egybest', tmdbId, mode: 'live',
         type: mediaType === 'movie' ? 'movie' : 'tv',
@@ -2185,7 +2183,7 @@ function source2StoredRecordFromResolved(resolved, season, episode, mediaType = 
         providers: Array.from(new Set(sources.map(s => s.provider).filter(Boolean))),
         expiresAt: Number(resolved?.raw?.expiresAt || resolved?.expiresAt || 0) || 0,
         savedAt: Date.now(), fast: !!resolved?.raw?.fast, resolverVersion: SOURCE2_RESOLVER_VERSION
-    });
+    };
 }
 
 async function source2ResolveForItem(item, season, episode) {
@@ -9085,7 +9083,7 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
             source2Sources: sources,
             source2ExpiresAt: Number(r.raw?.expiresAt || 0) || 0
         };
-        await db.ref(`titles/${t.id}`).update(sanitizeFirebasePatch(patch));
+        await db.ref(`titles/${t.id}`).update(patch);
         onPartProgress?.(1, 1, { message: 'تم جلب مصادر الفيلم', batchDone: 1, batchTotal: 1, updated: 1, failed: 0 });
         return { updated: 1, failed: 0, sourceCount: sources.length };
     }
@@ -9611,7 +9609,7 @@ async function refreshSingleEpisodeSource2(t, seasonNumber, episodeNumber) {
 async function deleteSingleTitleSource2(t) {
     if (!t?.id) throw new Error('العمل غير معروف.');
     if (t.type === 'movie') {
-        await db.ref(`titles/${t.id}`).update(sanitizeFirebasePatch({
+        await db.ref(`titles/${t.id}`).update({
             source2: null,
             source2TmdbId: '',
             source2Provider: '',
@@ -9622,7 +9620,7 @@ async function deleteSingleTitleSource2(t) {
             source2Sources: [],
             source2ExpiresAt: 0,
             source2Coverage: null
-        }));
+        });
     } else {
         const seasons = normalizeSeasonsValue(t.seasons).map(s => ({
             ...s,
@@ -9640,7 +9638,7 @@ async function deleteSingleTitleSource2(t) {
                 source2LastError: ''
             }))
         }));
-        await db.ref(`titles/${t.id}`).update(sanitizeFirebasePatch({
+        await db.ref(`titles/${t.id}`).update({
             source2: null,
             source2TmdbId: '',
             source2Provider: '',
@@ -9650,7 +9648,7 @@ async function deleteSingleTitleSource2(t) {
             source2Providers: [],
             source2Coverage: { done: 0, total: seasons.reduce((n,s)=>n+(s.episodes||[]).length,0), complete: false, sourceCount: 0, checkedAt: Date.now() },
             seasons
-        }));
+        });
     }
     return true;
 }
