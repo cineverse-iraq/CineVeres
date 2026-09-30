@@ -668,9 +668,8 @@ function normalizeVideoSources(value) {
         const provider = String((x && (x.provider || x.providerName || x.sourceName)) || '').trim();
         const sourceTitle = String((x && (x.sourceTitle || x.originalTitle || x.title || '')) || '').trim();
         const sourceKind = String((x && (x.sourceKind || x.kind || x.format || x.type || x.mimeType || '')) || '').trim().toLowerCase();
-        const headers = x && x.headers && typeof x.headers === 'object' ? sanitizeFirebaseValue(x.headers) : null;
-        if (!url) return null;
-        return { label, resolution: label, url, subtitleUrl, source, sourceId, provider, sourceKind, sourceTitle, ...(headers ? { headers } : {}) };
+        return url ? { label, resolution: label, url, subtitleUrl, source, sourceId, provider, sourceKind } : null;
+        return url ? { label, resolution: label, url, subtitleUrl, source, sourceId, provider, sourceKind, sourceTitle } : null;
     })
         .filter(Boolean)
         .filter((x, i, a) => a.findIndex(y => y.url === x.url) === i);
@@ -830,9 +829,9 @@ function sanitizeFirebaseValue(value) {
     return value;
 }
 
-// Firebase RTDB update() must never receive undefined values. Keep nulls for intentional clears.
-function sanitizeFirebasePatch(patch) {
-    return sanitizeFirebaseValue(patch || {});
+// Alias used by every Source 2 Firebase write. Keeps undefined fields out of RTDB.
+function sanitizeFirebasePatch(value) {
+    return sanitizeFirebaseValue(value);
 }
 
 function isFirebaseStorageUrl(url) {
@@ -1667,19 +1666,26 @@ function setPreferredSource(v) {
 const CINADAM_SOURCE2_CONFIG = (() => {
     const cfg = (typeof window !== 'undefined' && window.CINADAM_SOURCE2_CONFIG && typeof window.CINADAM_SOURCE2_CONFIG === 'object')
         ? window.CINADAM_SOURCE2_CONFIG : {};
+    const host = String((typeof location !== 'undefined' && location.hostname) || '').toLowerCase();
+    const isLocalPage = host === 'localhost' || host === '127.0.0.1';
     const configured = Array.isArray(cfg.apiBases) ? cfg.apiBases : [];
     const single = (typeof window !== 'undefined' && window.CINADAM_SOURCE2_URL) || cfg.apiBase || '';
     let stored = '';
     try { stored = localStorage.getItem('cinadam_source2_url') || ''; } catch (_) {}
+    const publicDefault = 'https://api.cinadam.xyz';
     const localBases = ['http://localhost:8788', 'http://127.0.0.1:8788'];
-    const bases = [...configured, single, stored, ...localBases]
+    const candidates = isLocalPage
+        ? [...configured, single, stored, ...localBases]
+        : [...configured, single, stored, publicDefault];
+    const bases = candidates
         .flatMap(v => Array.isArray(v) ? v : [v])
         .map(v => String(v || '').trim().replace(/\/+$/, ''))
         .filter(Boolean)
-        .filter(v => !/YOUR[-_]?SOURCE2|YOUR[-_]?API|REPLACE[-_]?|example\.com/i.test(v));
+        .filter(v => !/YOUR[-_]?SOURCE2|YOUR[-_]?API|REPLACE[-_]?|example\.com/i.test(v))
+        .filter(v => isLocalPage || !/^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(v));
     return {
         apiBases: Array.from(new Set(bases)),
-        timeoutMs: 60000,
+        timeoutMs: Math.max(20000, Number(cfg.timeoutMs) || 60000),
         preferredProvider: String(cfg.preferredProvider || 'egybest').trim().toLowerCase()
     };
 })();
@@ -1689,7 +1695,7 @@ function source2Configured() {
 }
 async function source2FetchJson(path, timeoutMs = CINADAM_SOURCE2_CONFIG.timeoutMs) {
     if (!source2Configured())
-        throw new Error('Source 2 غير مضبوط. ضع رابط بروكسي Source 2 العام في source2-config.js؛ يوجد أيضًا fallback تلقائي على localhost:8788.');
+        throw new Error('Source 2 غير مضبوط. ضع رابط بروكسي Source 2 العام في source2-config.js؛ الموقع المنشور يستخدم الـAPI العام، والمحلي يستخدم localhost:8788 فقط على الجهاز نفسه.');
     let lastError = null;
     for (const base of CINADAM_SOURCE2_APIS) {
         const controller = new AbortController();
@@ -1850,7 +1856,7 @@ async function source2ExpandSourcesByQuality(sources) {
 // retain the three strongest providers. Verification happens against the public
 // Source 2/proxy URL so the browser checks the exact resource the player will use.
 const SOURCE2_TOP_SOURCE_LIMIT = 3;
-const SOURCE2_RESOLVER_VERSION = 14;
+const SOURCE2_RESOLVER_VERSION = 13;
 const SOURCE2_VERIFY_TIMEOUT = 30000;
 
 function source2ProviderKey(source) {
@@ -5922,7 +5928,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 if (requestId !== playRequestRef.current) return;
                 setPlayingUrl(url);
                 const picked = sources.find(s => s.url === url) || sources[0] || {};
-                setPlayingMeta({ ...title, source2Sources: title.source2Sources || title.source2?.sources || [], videoUrl: url, videoSources: sources, source: selectedSource || picked.source || '', playbackProvider: selectedSource || picked.source || '', sourceKind: picked.sourceKind || '', subtitleUrl: title.subtitleUrl || picked.subtitleUrl || '', subtitlePublicUrl: title.subtitlePublicUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
+                setPlayingMeta({ ...title, videoUrl: url, videoSources: sources, source: selectedSource || picked.source || '', playbackProvider: selectedSource || picked.source || '', sourceKind: picked.sourceKind || '', subtitleUrl: title.subtitleUrl || picked.subtitleUrl || '', subtitlePublicUrl: title.subtitlePublicUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
                 setPlayingLabel(title.name);
                 scrollToPlayer();
                 ensureVidApiSubtitlePublic({ ...title, videoUrl: url }).catch(() => {});
@@ -6002,7 +6008,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             if (requestId !== playRequestRef.current) return;
             setPlayingUrl(url);
             const picked = sources.find(s => s.url === url) || sources[0] || {};
-            setPlayingMeta({ ...ep, source2Sources: ep.source2Sources || ep.source2?.sources || [], videoUrl: url, videoSources: sources, source: selectedSource || picked.source || '', playbackProvider: selectedSource || picked.source || '', sourceKind: picked.sourceKind || '', subtitleUrl: ep.subtitleUrl || picked.subtitleUrl || '', subtitlePublicUrl: ep.subtitlePublicUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
+            setPlayingMeta({ ...ep, videoUrl: url, videoSources: sources, source: selectedSource || picked.source || '', playbackProvider: selectedSource || picked.source || '', sourceKind: picked.sourceKind || '', subtitleUrl: ep.subtitleUrl || picked.subtitleUrl || '', subtitlePublicUrl: ep.subtitlePublicUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
             setPlayingSeasonNumber(seasonNumber != null ? seasonNumber : null);
             setPlayingLabel(`${title.name} · ${ep.title || `الحلقة ${ep.number != null ? ep.number : ''}`}`);
             ensureVidApiSubtitlePublic({ ...ep, videoUrl: url }).catch(() => {});
@@ -6055,8 +6061,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         loadSkipDb();
         return () => { cancelled = true; };
     }, [title.id, title.type, title.sourceId, title.tmdbId, title.imdbId, playingSeasonNumber, playingMeta && playingMeta.number, playingDurationSec]);
-    const storedSource2Qualities = normalizeVideoSources(playingMeta && (playingMeta.source2Sources || playingMeta.source2?.sources) ? (playingMeta.source2Sources || playingMeta.source2?.sources) : []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable);
-    const playingQualities = normalizeVideoSources(playingMeta && playingMeta.videoSources ? playingMeta.videoSources : (storedSource2Qualities.length ? storedSource2Qualities : (title.type === 'movie' ? title.videoSources : [])));
+    const playingQualities = normalizeVideoSources(playingMeta && playingMeta.videoSources ? playingMeta.videoSources : (title.type === 'movie' ? title.videoSources : []));
     const activeSubtitleUrl = (playingMeta && playingMeta.subtitleUrl) || (playingQualities[0] && playingQualities[0].subtitleUrl) || (title.type === 'movie' ? title.subtitleUrl : '');
     const activeSubtitleOffset = Number((playingMeta && playingMeta.subtitleOffset) ?? (title.type === 'movie' ? title.subtitleOffset : 0)) || 0;
     const activeSubtitlePublicUrl = (playingMeta && playingMeta.subtitlePublicUrl) || (title.type === 'movie' ? title.subtitlePublicUrl : '');
@@ -9055,7 +9060,11 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
 
     if (t.type === 'movie') {
         const r = await source2ResolveMovie({ tmdbId });
-        const sources = normalizeVideoSources(r.sources).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable);
+        let sources = normalizeVideoSources(r.sources).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable);
+        try {
+            const expanded = await source2ExpandSourcesByQuality(sources);
+            if (expanded.length) sources = expanded;
+        } catch (_) {}
         const patch = {
             source2: source2StoredRecordFromResolved({ ...r, sources }, 1, 1, 'movie'),
             source2TmdbId: r.tmdbId,
@@ -9107,10 +9116,13 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
                     season: job.season,
                     episode: job.episode,
                     timeoutMs: SOURCE2_FAST_EPISODE_TIMEOUT,
-                    collectAll: true,
-                    expectedTitle: t.name || ''
+                    collectAll: true
                 });
-                const sources = normalizeVideoSources(r.sources).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable);
+                let sources = normalizeVideoSources(r.sources).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable);
+                try {
+                    const expanded = await source2ExpandSourcesByQuality(sources);
+                    if (expanded.length) sources = expanded;
+                } catch (_) {}
 
                 ep.source2TmdbId = r.tmdbId;
                 ep.source2Provider = 'egybest';
@@ -9175,13 +9187,13 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
 
     // Mark the parent work green only when every episode has at least one fast source.
     const coverage = getSource2Coverage({ ...t, seasons });
-    await db.ref(`titles/${t.id}/source2Coverage`).set(sanitizeFirebaseValue({
+    await db.ref(`titles/${t.id}/source2Coverage`).set({
         done: coverage.done,
         total: coverage.total,
         complete: coverage.complete,
         sourceCount: coverage.sources,
         checkedAt: Date.now()
-    }));
+    });
 
     if (total > 0 && updated === 0) {
         throw new Error(`Source 2 لم يجلب أي مصدر للحلقات (${done}/${total}).`);
@@ -9203,7 +9215,7 @@ async function bulkSyncAlternativeSourcesTitle(t) {
         patch.seasons = normalizeSeasonsValue(t.seasons).map(s => ({ ...s, episodes: (s.episodes || []).map(ep => ({ ...ep, alternativeSources: normalizeAlternativeSources(ep.alternativeSources) })) }));
     }
     patch.alternativeSourcesLastSyncedAt = Date.now();
-    await db.ref(`titles/${t.id}`).update(sanitizeFirebasePatch(patch));
+    await db.ref(`titles/${t.id}`).update(patch);
     return { updated: countAlternativeSources({ ...t, ...patch }) };
 }
 function AdminSourcesManager({ currentUser, titles }) {
@@ -9603,8 +9615,7 @@ async function deleteSingleTitleSource2(t) {
                 source2Season: Number(s.number) || 1,
                 source2Episode: Number(ep.number) || 1,
                 source2LastError: '',
-                source2ResolverVersion: 0,
-                source2ExpiresAt: 0
+                source2ResolverVersion: 0
             }))
         }));
         await db.ref(`titles/${t.id}`).update(sanitizeFirebasePatch({
