@@ -196,17 +196,16 @@
       .cv-row-thumb { position: absolute; top: 50%; width: 30px; height: 6px; border-radius: 999px; background: #00F0FF; transform: translate(-50%,-50%); box-shadow: 0 0 8px rgba(0,240,255,.35); pointer-events: none; }
     }
     .cv-skip-zone { position:absolute; top:18%; bottom:18%; width:31%; z-index:21; display:flex; align-items:center; justify-content:center; pointer-events:none; }
+    .cv-mobile-touch-controls { display:none; position:absolute; inset:0; z-index:32; pointer-events:none; align-items:center; justify-content:space-between; padding:0 12%; }
+    .cv-mobile-touch-controls.visible { display:flex; }
+    .cv-mobile-touch-controls .cv-mobile-touch-btn { width:72px; height:72px; border-radius:9999px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; background:rgba(12,14,18,.58); border:1px solid rgba(255,255,255,.16); color:#fff; box-shadow:0 8px 24px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.08); backdrop-filter:blur(7px); -webkit-backdrop-filter:blur(7px); pointer-events:auto; touch-action:manipulation; }
+    .cv-mobile-touch-controls .cv-mobile-touch-btn.center { width:82px; height:82px; }
+    .cv-mobile-touch-controls .cv-mobile-touch-btn:active { transform:scale(.93); }
+    .cv-mobile-touch-controls .cv-mobile-touch-btn span { font-size:11px; font-weight:900; line-height:1; direction:rtl; }
+    @media (min-width:768px) { .cv-mobile-touch-controls { display:none !important; } }
+    @media (max-width:767px) { .cv-skip-zone { display:none !important; } }
     .cv-skip-zone.left { left:0; } .cv-skip-zone.right { right:0; }
     .cv-skip-circle { width:74px; height:74px; border-radius:9999px; background:rgba(0,0,0,.58); border:1px solid rgba(255,255,255,.16); backdrop-filter:blur(5px); -webkit-backdrop-filter:blur(5px); display:flex; flex-direction:column; align-items:center; justify-content:center; color:#fff; box-shadow:0 8px 24px rgba(0,0,0,.28); animation:cvSkipPop .42s ease-out forwards; }
-    .cv-mobile-tap-controls { display:none; position:absolute; inset:0; z-index:32; pointer-events:none; align-items:center; justify-content:space-between; padding:0 12%; }
-    .cv-mobile-tap-controls .cv-mobile-circle { width:72px; height:72px; border-radius:9999px; display:flex; flex-direction:column; align-items:center; justify-content:center; background:rgba(12,14,18,.58); border:1px solid rgba(255,255,255,.16); color:#fff; box-shadow:0 8px 24px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.08); backdrop-filter:blur(7px); -webkit-backdrop-filter:blur(7px); pointer-events:auto; touch-action:manipulation; animation:cvMobileTapIn .22s ease-out both; }
-    .cv-mobile-tap-controls .cv-mobile-circle.center { width:82px; height:82px; animation-delay:.01s; }
-    .cv-mobile-tap-controls .cv-mobile-circle:active { transform:scale(.93); }
-    .cv-mobile-tap-controls .cv-mobile-circle span { font-size:11px; font-weight:900; line-height:1; margin-top:4px; direction:rtl; }
-    @keyframes cvMobileTapIn { from { opacity:0; transform:scale(.78); } to { opacity:1; transform:scale(1); } }
-    @media (max-width:767px) {
-      .cv-mobile-tap-controls.visible { display:flex; }
-    }
     .cv-skip-circle svg { width:25px; height:25px; }
     .cv-skip-circle span { font-size:11px; font-weight:900; line-height:1; margin-top:3px; direction:ltr; }
     @keyframes cvSkipPop { 0% { opacity:0; transform:scale(.65); } 25% { opacity:1; transform:scale(1.08); } 100% { opacity:0; transform:scale(1); } }
@@ -3798,8 +3797,8 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         try { const v = JSON.parse(localStorage.getItem('cinadam_player_pan') || '{}'); return { x: Number(v.x)||0, y: Number(v.y)||0 }; } catch (_) { return { x:0, y:0 }; }
     });
     const [gestureHint, setGestureHint] = useState('');
-    const [mobileTapControls, setMobileTapControls] = useState(false);
-    const mobileTapControlsTimerRef = useRef(null);
+    const mobileTouchControlsRef = useRef(null);
+    const mobileTouchControlsTimerRef = useRef(null);
     const gesturePointersRef = useRef(new Map());
     const pinchRef = useRef(null);
     const gestureWasUsedRef = useRef(false);
@@ -3809,10 +3808,14 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         if (gestureHintTimerRef.current) clearTimeout(gestureHintTimerRef.current);
         gestureHintTimerRef.current = setTimeout(() => setGestureHint(''), 850);
     };
-    const showMobileTapControls = () => {
-        if (mobileTapControlsTimerRef.current) clearTimeout(mobileTapControlsTimerRef.current);
-        setMobileTapControls(true);
-        mobileTapControlsTimerRef.current = setTimeout(() => setMobileTapControls(false), 1500);
+    const showMobileTouchControls = () => {
+        const el = mobileTouchControlsRef.current;
+        if (!el || !(window.matchMedia && window.matchMedia('(max-width: 767px)').matches)) return;
+        el.classList.add('visible');
+        if (mobileTouchControlsTimerRef.current) clearTimeout(mobileTouchControlsTimerRef.current);
+        mobileTouchControlsTimerRef.current = setTimeout(() => {
+            try { el.classList.remove('visible'); } catch (_) {}
+        }, 1500);
     };
     const savePlayerView = (mode, zoom, pan) => {
         try {
@@ -4131,12 +4134,12 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         clickState.current.count += 1;
         if (clickState.current.timer)
             clearTimeout(clickState.current.timer);
+        showMobileTouchControls();
         clickState.current.timer = setTimeout(() => {
             if (clickState.current.count === 1) {
-                // الهاتف: لمسة واحدة تشغّل/توقف وتُظهر دوائر التحكم مؤقتًا.
+                // الهاتف: لمسة واحدة = تشغيل/إيقاف، وتظهر دوائر التحكم مؤقتًا.
                 togglePlay();
                 showBarTemporarily();
-                showMobileTapControls();
             }
             clickState.current.count = 0;
         }, 260);
@@ -4144,7 +4147,6 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
             clickState.current.count = 0;
             if (clickState.current.timer)
                 clearTimeout(clickState.current.timer);
-            showMobileTapControls();
             if (relX < 0.35)
                 skip(-10);
             else if (relX > 0.65)
@@ -4197,7 +4199,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
     };
     useEffect(() => () => {
         if (gestureHintTimerRef.current) clearTimeout(gestureHintTimerRef.current);
-        if (mobileTapControlsTimerRef.current) clearTimeout(mobileTapControlsTimerRef.current);
+        if (mobileTouchControlsTimerRef.current) clearTimeout(mobileTouchControlsTimerRef.current);
     }, []);
 
     const effectivePlayerFit = playerDisplay === 'fill' ? 'fill' : (playerDisplay === 'cover' ? 'cover' : 'contain');
@@ -4294,23 +4296,17 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
                 React.createElement("svg", { viewBox: "0 0 24 24", className: "w-4 h-4 fill-current", "aria-hidden": "true" },
                     React.createElement("path", { d: "M5 5l9 7-9 7V5zm10 0h3v14h-3V5z" }))));
         })(),
-        skipFlash && !(typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 767px)').matches) && (React.createElement("div", { className: `cv-skip-zone ${skipFlash === 'fwd' ? 'right' : 'left'}` },
+        skipFlash && (React.createElement("div", { className: `cv-skip-zone ${skipFlash === 'fwd' ? 'right' : 'left'}` },
             React.createElement("div", { className: "cv-skip-circle" },
                 React.createElement(Icon, { name: skipFlash === 'fwd' ? 'rotateCw5' : 'rotateCcw5', className: "text-white" }),
                 React.createElement("span", null, "5 ث")))),
-        React.createElement("div", { className: `cv-mobile-tap-controls ${mobileTapControls ? 'visible' : ''}` },
-            React.createElement("button", { type: "button", className: "cv-mobile-circle",
-                onPointerDown: e => e.stopPropagation(),
-                onClick: e => { e.stopPropagation(); skip(-10); showMobileTapControls(); } },
+        React.createElement("div", { ref: mobileTouchControlsRef, className: "cv-mobile-touch-controls" },
+            React.createElement("button", { type: "button", className: "cv-mobile-touch-btn", onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); skip(-10); showMobileTouchControls(); showBarTemporarily(); } },
                 React.createElement(Icon, { name: "rotateCcw5", className: "w-7 h-7 text-white" }),
                 React.createElement("span", null, "10 ث")),
-            React.createElement("button", { type: "button", className: "cv-mobile-circle center",
-                onPointerDown: e => e.stopPropagation(),
-                onClick: e => { e.stopPropagation(); togglePlay(); showBarTemporarily(); showMobileTapControls(); } },
+            React.createElement("button", { type: "button", className: "cv-mobile-touch-btn center", onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); togglePlay(); showBarTemporarily(); showMobileTouchControls(); } },
                 React.createElement(Icon, { name: ctrl.playing ? "pause" : "play", className: ctrl.playing ? "w-9 h-9 text-white" : "w-8 h-8 text-white fill-current translate-x-0.5" })),
-            React.createElement("button", { type: "button", className: "cv-mobile-circle",
-                onPointerDown: e => e.stopPropagation(),
-                onClick: e => { e.stopPropagation(); skip(10); showMobileTapControls(); } },
+            React.createElement("button", { type: "button", className: "cv-mobile-touch-btn", onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); skip(10); showMobileTouchControls(); showBarTemporarily(); } },
                 React.createElement(Icon, { name: "rotateCw5", className: "w-7 h-7 text-white" }),
                 React.createElement("span", null, "10 ث"))),
         gestureHint && React.createElement("div", { className: "cv-gesture-hint" }, gestureHint),
@@ -4786,10 +4782,8 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const titleModalScrollRef = useRef(null);
     const scrollTitleModalToTop = () => {
         const el = titleModalScrollRef.current;
-        if (el && typeof el.scrollTo === 'function')
-            el.scrollTo({ top: 0, behavior: 'smooth' });
-        else if (el)
-            el.scrollTop = 0;
+        if (!el) return;
+        try { el.scrollTo({ top: 0, behavior: 'smooth' }); } catch (_) { el.scrollTop = 0; }
     };
 
     // Keep duration visible in the metadata row even when the saved title/episode
@@ -5428,7 +5422,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                                                 " دقيقة"))),
                                     done && React.createElement(Icon, { name: "check", className: "w-4 h-4 text-emerald-400 shrink-0 hidden xs:block" }),
                                     isCurrent && React.createElement("span", { className: "text-[10px] px-2 py-1 rounded-lg bg-accent-cyan/15 text-accent-cyan font-bold shrink-0" }, "\u0642\u064A\u062F \u0627\u0644\u062A\u0634\u063A\u064A\u0644"),
-                                    React.createElement("button", { onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); playEpisode(ep, seasons[activeSeason].number); }, className: "w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition" },
+                                    React.createElement("button", { onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); scrollTitleModalToTop(); playEpisode(ep, seasons[activeSeason].number); }, className: "w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition" },
                                         React.createElement(Icon, { name: "play", className: "w-4 h-4 text-white fill-current translate-x-0.5" }))));
                             }),
                             (!seasons[activeSeason] || !seasons[activeSeason].episodes || !seasons[activeSeason].episodes.length) && (React.createElement("p", { className: "text-sm text-slate-500 font-medium" }, "\u0644\u0627 \u062A\u0648\u062C\u062F \u062D\u0644\u0642\u0627\u062A \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0645\u0648\u0633\u0645 \u0628\u0639\u062F."))))))),
