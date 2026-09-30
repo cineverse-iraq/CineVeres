@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-  <!-- CineVeres Source 2 real fix: HLS proxy classification + deep provider episode refresh -->
   <meta charset="UTF-8" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
@@ -50,7 +49,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
-  <script src="./source2-config.js?v=20260930-egybest"></script>
 
   <style>
     html { scroll-behavior: smooth; }
@@ -274,44 +272,6 @@
       .yt-controls-bottom { padding-left:8px; padding-right:8px; }
     }
     </style>
-
-  <style id="cinadam-final-mobile-polish">
-    @media (max-width: 767px) {
-      html, body, #root { width:100%; min-width:0; overflow-x:hidden; }
-      body { padding-bottom: env(safe-area-inset-bottom); }
-      button, a { min-height:40px; }
-      input, textarea, select { max-width:100%; }
-      .glass-card, .glass-panel { max-width:100%; }
-      .profile-poster-grid { grid-template-columns: repeat(3,minmax(0,1fr)); gap:7px; }
-      .modal-panel, .sheet-panel { width:100% !important; max-width:100% !important; }
-      .cv-display-menu { min-width:0 !important; max-width:calc(100vw - 24px) !important; }
-      .cv-player-menu { max-width:calc(100vw - 16px) !important; }
-      .yt-btn { min-height:36px; }
-      .yt-controls-bottom { padding-bottom:calc(10px + env(safe-area-inset-bottom)); }
-      .video-crop-wrap { min-height:180px; }
-      [class*="grid-cols-3"] { grid-template-columns:1fr 1fr !important; }
-      [class*="grid-cols-4"] { grid-template-columns:1fr 1fr !important; }
-      .cv-row-dragger { display:none !important; }
-    }
-    @media (max-width: 430px) {
-      h1 { font-size:1.2rem !important; }
-      .profile-poster-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
-      .yt-controls-bottom { padding-left:6px; padding-right:6px; }
-      [class*="grid-cols-2"] { grid-template-columns:1fr !important; }
-      [class*="flex-wrap"] > button { flex:0 1 auto; max-width:100%; }
-    }
-  </style>
-
-
-<style id="cinadam-mobile-polish-final">
-  html, body, #root { min-height:100%; min-height:100dvh; }
-  @media (max-width:767px) {
-    .glass-panel, .glass-card { -webkit-backdrop-filter:none !important; backdrop-filter:none !important; }
-    .glass-card:hover { transform:none !important; }
-    .fixed.inset-0 { padding:8px !important; }
-    .cv-player-menu { max-width:calc(100vw - 16px); }
-  }
-</style>
 </head>
 <body class="bg-glass-950 text-slate-100 min-h-screen selection:bg-accent-red selection:text-white">
   <style>
@@ -355,24 +315,36 @@
 
   <script>
     (function () {
-      // لا نحول أي خطأ عابر من خط/سكربت خارجي إلى شاشة "إعادة المحاولة".
-      // نعرض رسالة واحدة فقط إذا بقي التطبيق نفسه دون إقلاع فترة طويلة.
-      setTimeout(function () {
+      var forceHideTimeout = setTimeout(function () {
         var loader = document.getElementById('bootLoader');
-        var root = document.getElementById('root');
-        if (loader && root && !root.firstElementChild) {
+        if (loader && !loader.classList.contains('fading')) {
           loader.innerHTML =
-            '<div style="text-align:center;padding:24px;max-width:330px;">' +
-            '<p style="color:#F8FAFC;font-family:Cairo,sans-serif;font-weight:800;font-size:15px;margin-bottom:16px;line-height:1.6;">تعذّر تشغيل الموقع. تأكد من اتصال الإنترنت ثم أعد المحاولة.</p>' +
+            '<div style="text-align:center;padding:24px;max-width:320px;">' +
+            '<p style="color:#F8FAFC;font-family:Cairo,sans-serif;font-weight:800;font-size:15px;margin-bottom:16px;line-height:1.6;">تعذّر تحميل الموقع، تحقق من اتصال الإنترنت وحاول مجددًا.</p>' +
             '<button onclick="location.reload()" style="background:#FF334B;color:#fff;font-family:Cairo,sans-serif;font-weight:700;padding:12px 28px;border:none;border-radius:14px;font-size:14px;">إعادة المحاولة</button>' +
             '</div>';
         }
-      }, 30000);
+      }, 18000);
+
+      window.addEventListener('error', function (e) {
+        if (e && e.target && e.target.tagName === 'SCRIPT') {
+          var loader = document.getElementById('bootLoader');
+          if (loader && !loader.classList.contains('fading')) {
+            clearTimeout(forceHideTimeout);
+            loader.innerHTML =
+              '<div style="text-align:center;padding:24px;max-width:320px;">' +
+              '<p style="color:#F8FAFC;font-family:Cairo,sans-serif;font-weight:800;font-size:15px;margin-bottom:16px;line-height:1.6;">تعذّر تحميل أحد ملفات الموقع الأساسية. تحقق من اتصال الإنترنت أو جرّب متصفحًا آخر.</p>' +
+              '<button onclick="location.reload()" style="background:#FF334B;color:#fff;font-family:Cairo,sans-serif;font-weight:700;padding:12px 28px;border:none;border-radius:14px;font-size:14px;">إعادة المحاولة</button>' +
+              '</div>';
+          }
+        }
+      }, true);
     })();
   </script>
 
   <div id="root"></div>
 
+  <script src="./source2-config.js"></script>
 <script>const { useState, useEffect, useRef, useLayoutEffect } = React;
 const firebaseConfig = {
     databaseURL: "https://mnste-36ca4-default-rtdb.europe-west1.firebasedatabase.app",
@@ -666,27 +638,11 @@ function normalizeVideoSources(value) {
         const source = String((x && (x.source || x.provider || x.playbackProvider)) || '').trim().toLowerCase();
         const sourceId = String((x && (x.sourceId || x.subjectId || x.subject_id || x.cinemanaId)) || '').trim();
         const provider = String((x && (x.provider || x.providerName || x.sourceName)) || '').trim();
-        const sourceTitle = String((x && (x.sourceTitle || x.originalTitle || x.title || '')) || '').trim();
         const sourceKind = String((x && (x.sourceKind || x.kind || x.format || x.type || x.mimeType || '')) || '').trim().toLowerCase();
         return url ? { label, resolution: label, url, subtitleUrl, source, sourceId, provider, sourceKind } : null;
-        return url ? { label, resolution: label, url, subtitleUrl, source, sourceId, provider, sourceKind, sourceTitle } : null;
     })
         .filter(Boolean)
         .filter((x, i, a) => a.findIndex(y => y.url === x.url) === i);
-}
-function normalizeAlternativeSources(value) {
-    let arr = [];
-    if (Array.isArray(value)) arr = value;
-    else if (value && typeof value === 'object') arr = Object.keys(value).map(k => value[k]);
-    else if (typeof value === 'string' && value.trim()) arr = [{ url: value.trim() }];
-    return arr.map((x, i) => {
-        const url = normalizeVideoUrl(x && (x.url || x.videoUrl || x.src || x.file || ''));
-        if (!url) return null;
-        const label = String((x && (x.label || x.name || x.quality || x.resolution)) || `مصدر بديل ${i + 1}`).trim();
-        const ext = url.match(/\.(mp4|webm|mkv)(?:[?#]|$)/i);
-        const sourceKind = String((x && (x.sourceKind || x.kind || x.format || x.type)) || (/(?:m3u8|\.m3u8)(?:[?#]|$)/i.test(url) ? 'hls' : ext ? ext[1] : /\/embed(?:\/|[?#]|$)/i.test(url) ? 'iframe' : '')).toLowerCase();
-        return { label, resolution: label, url, source: 'alternative', provider: String((x && (x.provider || x.providerName)) || 'مصدر بديل'), sourceKind };
-    }).filter(Boolean).filter((x, i, a) => a.findIndex(y => y.url === x.url) === i);
 }
 function asSafeArray(value, { splitString = false } = {}) {
     if (Array.isArray(value)) return value;
@@ -727,25 +683,8 @@ function normalizeTitlePlaybackData(title) {
     clean.genres = normalizeGenresValue(clean.genres);
     clean.videoUrl = normalizeVideoUrl(clean.videoUrl || '');
     clean.videoSources = normalizeVideoSources(clean.videoSources);
-    clean.alternativeSources = normalizeAlternativeSources(clean.alternativeSources);
     clean.subtitleUrl = normalizeSubtitleUrl(clean.subtitleUrl || clean.subtitleURL || '');
     clean.subtitleOffset = Number(clean.subtitleOffset) || 0;
-    clean.source2TmdbId = String(clean.source2TmdbId || clean.tmdbId || clean.source2?.tmdbId || '').replace(/\D/g, '');
-    clean.source2Provider = String(clean.source2Provider || clean.source2?.provider || '').trim();
-    clean.source2Mode = String(clean.source2Mode || clean.source2?.mode || (clean.source2TmdbId ? 'live' : '')).trim();
-    clean.source2LastCheckedAt = Number(clean.source2LastCheckedAt) || 0;
-    clean.source2SourceCount = Number(clean.source2SourceCount) || 0;
-    clean.source2Providers = normalizeGenresValue(clean.source2Providers);
-    clean.source2Sources = normalizeVideoSources(clean.source2Sources || clean.source2?.sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable);
-    clean.source2Providers = clean.source2Sources.length ? ['egybest'] : [];
-    if (!clean.source2Sources.length && clean.source2TmdbId) clean.source2SourceCount = 0;
-    if (clean.source2 && typeof clean.source2 === 'object') {
-        clean.source2 = {
-            ...clean.source2,
-            sources: normalizeVideoSources(clean.source2.sources || clean.source2Sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable),
-            sourceCount: normalizeVideoSources(clean.source2.sources || clean.source2Sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable).length
-        };
-    }
     clean.seasons = normalizeSeasonsValue(clean.seasons).map(season => ({
         ...season,
         episodes: season.episodes.map(ep => ({
@@ -754,23 +693,8 @@ function normalizeTitlePlaybackData(title) {
             runtimeMinutes: Number(ep.runtimeMinutes ?? ep.runtime) || 0,
             videoUrl: normalizeVideoUrl(ep.videoUrl || ''),
             videoSources: normalizeVideoSources(ep.videoSources),
-            alternativeSources: normalizeAlternativeSources(ep.alternativeSources),
             subtitleUrl: normalizeSubtitleUrl(ep.subtitleUrl || ep.subtitleURL || ''),
             subtitleOffset: Number(ep.subtitleOffset) || 0,
-            source2TmdbId: String(ep.source2TmdbId || clean.source2TmdbId || clean.tmdbId || '').replace(/\D/g, ''),
-            source2Provider: String(ep.source2Provider || clean.source2Provider || '').trim(),
-            source2Mode: String(ep.source2Mode || (ep.source2TmdbId || clean.source2TmdbId ? 'live' : '')).trim(),
-            source2LastCheckedAt: Number(ep.source2LastCheckedAt) || 0,
-            source2SourceCount: normalizeVideoSources(ep.source2Sources || ep.source2?.sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable).length,
-            source2Providers: normalizeVideoSources(ep.source2Sources || ep.source2?.sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable).length ? ['egybest'] : [],
-            source2Sources: normalizeVideoSources(ep.source2Sources || ep.source2?.sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable),
-            source2: ep.source2 && typeof ep.source2 === 'object' ? {
-                ...ep.source2,
-                provider: 'egybest',
-                providers: normalizeVideoSources(ep.source2.sources || ep.source2Sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable).length ? ['egybest'] : [],
-                sources: normalizeVideoSources(ep.source2.sources || ep.source2Sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable),
-                sourceCount: normalizeVideoSources(ep.source2.sources || ep.source2Sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable).length
-            } : ep.source2,
             number: Number(ep.number) || 1
         }))
     }));
@@ -810,30 +734,6 @@ function shiftVttTimings(vtt, offsetMs) {
     };
     return String(vtt || '').split('\n').map(line => line.replace(/(\d{1,2}):(\d{2}):(\d{2})[.,](\d{3})\s+-->\s+(\d{1,2}):(\d{2}):(\d{2})[.,](\d{3})/, (_, h1, m1, s1, ms1, h2, m2, s2, ms2) => `${fmt(toMs(h1, m1, s1, ms1) + ms)} --> ${fmt(toMs(h2, m2, s2, ms2) + ms)}`)).join('\n');
 }
-// Firebase RTDB rejects undefined values. Recursively sanitize objects/arrays
-// before reading/writing records so admin Source 2 actions never fail on
-// optional fields that are missing. Undefined object properties are omitted;
-// undefined array slots become null to preserve indexes.
-function sanitizeFirebaseValue(value) {
-    if (value === undefined) return null;
-    if (value === null) return null;
-    if (Array.isArray(value)) return value.map(sanitizeFirebaseValue);
-    if (typeof value === 'object') {
-        const out = {};
-        Object.keys(value).forEach((key) => {
-            if (value[key] === undefined) return;
-            out[key] = sanitizeFirebaseValue(value[key]);
-        });
-        return out;
-    }
-    return value;
-}
-
-// Alias used by every Source 2 Firebase write. Keeps undefined fields out of RTDB.
-function sanitizeFirebasePatch(value) {
-    return sanitizeFirebaseValue(value);
-}
-
 function isFirebaseStorageUrl(url) {
     const s = String(url || '').trim();
     return /^https:\/\/(?:firebasestorage\.googleapis\.com|storage\.googleapis\.com)\//i.test(s)
@@ -1294,8 +1194,7 @@ function isDirectVideo(url) {
     return /\.(mp4|webm|ogg|mov|m3u8)(?:[?#]|$)/i.test(s)
         || /(?:\/)(?:master|playlist|index)(?:\.m3u8)?(?:[?#]|$)/i.test(s)
         || /(?:m3u8|manifest|stream|video)(?:[/?#]|$)/i.test(s)
-        || /\/v1\/proxy\?data=/i.test(s)
-        || /\/m3u8-proxy(?:[/?#]|$)/i.test(s);
+        || /\/v1\/proxy\?data=/i.test(s);
 }
 function isCinemanaPlayback(meta, url) {
     const m = meta || {};
@@ -1307,7 +1206,9 @@ function isSource2Playback(meta, url) {
     const m = meta || {};
     return String(m.playbackProvider || '').toLowerCase() === 'source2'
         || String(m.source || '').toLowerCase() === 'source2'
-        || /egybest|source2/i.test(String(url || ''));
+        || String(m.sourceKind || '').toLowerCase() === 'hls'
+        || /\/v1\/proxy\?data=/i.test(String(url || ''))
+        || /cinepro/i.test(String(url || ''));
 }
 const VIDAPI_EMBED_HOST = 'https://player.cinadam.xyz';
 let _hlsLoader = null;
@@ -1663,525 +1564,118 @@ function setPreferredSource(v) {
     try { localStorage.setItem('cv_preferred_source', v); } catch (e) { }
 }
 
-const CINADAM_SOURCE2_CONFIG = (() => {
-    const cfg = (typeof window !== 'undefined' && window.CINADAM_SOURCE2_CONFIG && typeof window.CINADAM_SOURCE2_CONFIG === 'object')
-        ? window.CINADAM_SOURCE2_CONFIG : {};
-    const host = String((typeof location !== 'undefined' && location.hostname) || '').toLowerCase();
-    const isLocalPage = host === 'localhost' || host === '127.0.0.1';
-    const configured = Array.isArray(cfg.apiBases) ? cfg.apiBases : [];
-    const single = (typeof window !== 'undefined' && window.CINADAM_SOURCE2_URL) || cfg.apiBase || '';
-    let stored = '';
-    try { stored = localStorage.getItem('cinadam_source2_url') || ''; } catch (_) {}
-    const publicDefault = 'https://api.cinadam.xyz';
-    const localBases = ['http://localhost:8788', 'http://127.0.0.1:8788'];
-    const candidates = isLocalPage
-        ? [...configured, single, stored, ...localBases]
-        : [...configured, single, stored, publicDefault];
-    const bases = candidates
-        .flatMap(v => Array.isArray(v) ? v : [v])
-        .map(v => String(v || '').trim().replace(/\/+$/, ''))
-        .filter(Boolean)
-        .filter(v => !/YOUR[-_]?SOURCE2|YOUR[-_]?API|REPLACE[-_]?|example\.com/i.test(v))
-        .filter(v => isLocalPage || !/^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(v));
-    return {
-        apiBases: Array.from(new Set(bases)),
-        timeoutMs: Math.max(20000, Number(cfg.timeoutMs) || 60000),
-        preferredProvider: String(cfg.preferredProvider || 'egybest').trim().toLowerCase()
-    };
+const CINADAM_SOURCE2_API = (() => {
+    const explicit = (typeof window !== 'undefined' && (window.CINADAM_SOURCE2_URL || window.CINEPRO_API_URL)) || '';
+    const stored = (typeof localStorage !== 'undefined' ? localStorage.getItem('cinadam_source2_url') : '') || '';
+    return String(explicit || stored || '').trim().replace(/\/+$/, '');
 })();
-const CINADAM_SOURCE2_APIS = CINADAM_SOURCE2_CONFIG.apiBases;
 function source2Configured() {
-    return CINADAM_SOURCE2_APIS.length > 0;
+    return !!CINADAM_SOURCE2_API && !/YOUR[-_]?CINEPRO|REPLACE[-_]?/i.test(CINADAM_SOURCE2_API);
 }
-async function source2FetchJson(path, timeoutMs = CINADAM_SOURCE2_CONFIG.timeoutMs) {
+async function source2FetchJson(path, timeoutMs = 60000) {
     if (!source2Configured())
-        throw new Error('Source 2 غير مضبوط. ضع رابط بروكسي Source 2 العام في source2-config.js؛ الموقع المنشور يستخدم الـAPI العام، والمحلي يستخدم localhost:8788 فقط على الجهاز نفسه.');
-    let lastError = null;
-    for (const base of CINADAM_SOURCE2_APIS) {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
-        try {
-            const url = `${base}${String(path).startsWith('/') ? '' : '/'}${path}`;
-            const res = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' }, signal: controller.signal, redirect: 'follow', cache: 'no-store' });
-            const raw = await res.text();
-            let data = {};
-            try { data = raw ? JSON.parse(raw) : {}; } catch (_) {
-                throw new Error(`Source 2 رجّع استجابة غير JSON (HTTP ${res.status}).`);
-            }
-            if (!res.ok) {
-                const detail = data?.message || data?.error || `HTTP ${res.status}`;
-                throw new Error(`Source 2 HTTP ${res.status}: ${detail}`);
-            }
-            try { Object.defineProperty(data, '__source2Base', { value: base, enumerable: false, configurable: true }); } catch (_) { data.__source2Base = base; }
-            return data;
-        } catch (e) {
-            lastError = e && e.name === 'AbortError' ? new Error(`انتهت مهلة Source 2 على ${base}`) : e;
-        } finally {
-            clearTimeout(timer);
-        }
-    }
-    throw lastError || new Error('تعذر الاتصال بكل خوادم Source 2.');
-}
-function source2AbsoluteUrl(raw, baseOverride = '') {
-    const value = String(raw || '').trim();
-    if (!value) return '';
-    try { return new URL(value, `${String(baseOverride || CINADAM_SOURCE2_APIS[0] || '').replace(/\/+$/, '')}/`).toString(); } catch (_) { return value; }
-}
-function source2Resolution(value) {
-    if (typeof value === 'number') return value;
-    const match = String(value ?? '').match(/\b(2160|1440|1080|900|720|576|540|480|360|240)\b/i);
-    return match ? Number(match[1]) : 0;
-}
-function source2ProviderName(item) {
-    const p = item?.provider;
-    if (typeof p === 'string') return p.trim() || 'Source 2';
-    return String(p?.name || p?.id || item?.providerName || item?.sourceName || item?.name || 'Source 2').trim();
-}
-function source2IsEgyBestSource(source) {
-    const provider = source2NormalizeName(source?.provider || source?.providerName || source?.sourceName || '');
-    if (provider === 'egybest' || provider === 'egy best') return true;
-    const url = String(source?.url || '');
-    const target = source2ProxyTargetUrl(url);
-    try {
-        const host = new URL(target || url).hostname.toLowerCase();
-        return /(?:^|\.)egybestvid\.com$/.test(host) || /(?:^|\.)egybest\.la$/.test(host);
-    } catch (_) {
-        return /egybestvid\.com|egybest\.la/i.test(target || url);
-    }
-}
-function source2NormalizeName(value) {
-    return String(value || '')
-        .toLowerCase()
-        .replace(/[ًٌٍَُِّْـ]/g, '')
-        .replace(/[^a-z0-9\u0600-\u06ff]+/gi, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-}
-function source2LooksGenericTitle(value) {
-    const t = source2NormalizeName(value);
-    if (!t) return true;
-    return /^(?:source ?2|hls|auto|ost)(?:\s|$)/i.test(t)
-        || /\b(?:2160|1440|1080|720|576|540|480|360|240)p?\b/i.test(t)
-        || /\b(?:hls|source|ost|auto)\b/i.test(t);
-}
-function source2ExtractExplicitTitle(source) {
-    const raw = String(source?.sourceTitle || '').trim();
-    if (!raw) return '';
-    const cleaned = raw
-        .replace(/\([^)]*\b(?:19|20)\d{2}\b[^)]*\)/g, ' ')
-        .replace(/\[[^\]]*\]/g, ' ')
-        .replace(/\bS\d{1,2}E\d{1,3}\b.*$/i, ' ')
-        .replace(/\b(?:2160|1440|1080|720|576|540|480|360|240)p?\b.*$/i, ' ')
-        .replace(/[|·•/\\:]+/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-    return source2LooksGenericTitle(cleaned) ? '' : cleaned;
-}
-function source2MatchesExpectedTitle(source, expectedTitle) {
-    const expected = source2NormalizeName(expectedTitle);
-    if (!expected) return true;
-    const explicit = source2NormalizeName(source2ExtractExplicitTitle(source));
-    if (!explicit) return true;
-    if (explicit === expected || explicit.includes(expected) || expected.includes(explicit)) return true;
-    const expectedWords = expected.split(' ').filter(w => w.length >= 4);
-    const overlap = expectedWords.filter(w => explicit.split(' ').includes(w)).length;
-    return overlap > 0;
-}
-const SOURCE2_REQUESTED_QUALITIES = [2160, 1080, 720, 480];
-const source2QualityExpansionCache = new Map();
-async function source2ExpandHlsSourceQualities(source) {
-    const base = String(source?.url || '').trim();
-    if (!base || String(source?.sourceKind || '').toLowerCase() !== 'hls') return [];
-    if (!/\/m3u8-proxy(?:[/?#]|$)|\.m3u8(?:[?#]|$)/i.test(source2DecodeUrl(base))) return [];
-    if (source2QualityExpansionCache.has(base)) return source2QualityExpansionCache.get(base);
-    const promise = (async () => {
-        try {
-            const response = await fetch(base, { method: 'GET', headers: { Accept: 'application/vnd.apple.mpegurl, application/x-mpegURL, */*' }, cache: 'no-store' });
-            if (!response.ok) return [];
-            const body = await response.text();
-            const lines = body.split(/\r?\n/);
-            const variants = [];
-            for (let i = 0; i < lines.length; i++) {
-                const info = lines[i].trim();
-                if (!/^#EXT-X-STREAM-INF:/i.test(info)) continue;
-                const rm = info.match(/(?:^|,)RESOLUTION=(\d+)x(\d+)(?:,|$)/i);
-                if (!rm) continue;
-                const height = Number(rm[2]) || 0;
-                if (!SOURCE2_REQUESTED_QUALITIES.includes(height)) continue;
-                let rawUrl = '';
-                for (let j = i + 1; j < lines.length; j++) {
-                    const candidate = lines[j].trim();
-                    if (!candidate || candidate.startsWith('#')) continue;
-                    rawUrl = candidate;
-                    break;
-                }
-                if (!rawUrl) continue;
-                let variantUrl = rawUrl;
-                try { variantUrl = new URL(rawUrl, base).toString(); } catch (_) {}
-                variants.push({ ...source, url: variantUrl, resolution: height, label: `${source.provider || source.label || 'Source 2'} · ${height}p`, sourceKind: 'hls' });
-            }
-            return variants;
-        } catch (_) { return []; }
-    })();
-    source2QualityExpansionCache.set(base, promise);
-    return promise;
-}
-async function source2ExpandSourcesByQuality(sources) {
-    const input = normalizeVideoSources(sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable);
-    if (!input.length) return [];
-    const out = [];
-    for (const source of input) {
-        const kind = String(source?.sourceKind || '').toLowerCase();
-        if (kind === 'hls') {
-            const variants = await source2ExpandHlsSourceQualities(source);
-            if (variants.length) out.push(...variants);
-            else {
-                const resolution = source2Resolution(source.resolution) || source2Resolution(source.label);
-                if (SOURCE2_REQUESTED_QUALITIES.includes(resolution)) out.push({ ...source, resolution, label: `${source.provider || source.label || 'Source 2'} · ${resolution}p` });
-            }
-        } else {
-            const resolution = source2Resolution(source.resolution) || source2Resolution(source.label);
-            if (SOURCE2_REQUESTED_QUALITIES.includes(resolution)) out.push({ ...source, resolution, label: `${source.provider || source.label || 'Source 2'} · ${resolution}p` });
-        }
-    }
-    const deduped = out.filter((x, i, a) => normalizeVideoUrl(x.url) && a.findIndex(y => normalizeVideoUrl(y.url) === normalizeVideoUrl(x.url)) === i);
-    if (deduped.length) {
-        return deduped.sort((a, b) => SOURCE2_REQUESTED_QUALITIES.indexOf(source2Resolution(b.resolution)) - SOURCE2_REQUESTED_QUALITIES.indexOf(source2Resolution(a.resolution)));
-    }
-    return input;
-}
-
-// ===== Source 2 TOP-3 VERIFIED SOURCES =====
-// We keep at most one candidate per provider, verify real media access, then
-// retain the three strongest providers. Verification happens against the public
-// Source 2/proxy URL so the browser checks the exact resource the player will use.
-const SOURCE2_TOP_SOURCE_LIMIT = 3;
-const SOURCE2_RESOLVER_VERSION = 13;
-const SOURCE2_VERIFY_TIMEOUT = 30000;
-
-function source2ProviderKey(source) {
-    const provider = source2NormalizeName(source?.provider || '');
-    if (provider && !source2LooksGenericTitle(provider)) return provider;
-    try {
-        return new URL(normalizeVideoUrl(source?.url || ''), location.href).hostname.toLowerCase();
-    } catch (_) {
-        return source2NormalizeName(source?.url || '').slice(0, 120);
-    }
-}
-
-function source2QualityScore(source) {
-    const q = source2Resolution(source?.resolution) || source2Resolution(source?.label);
-    const kind = String(source?.sourceKind || '').toLowerCase();
-    const formatBonus = kind === 'hls' ? 700 : (kind === 'mp4' ? 500 : (kind === 'webm' ? 300 : 100));
-    const preferred = CINADAM_SOURCE2_CONFIG.preferredProvider
-        && String(source?.provider || '').toLowerCase().includes(String(CINADAM_SOURCE2_CONFIG.preferredProvider).toLowerCase()) ? 2000 : 0;
-    return preferred + (q * 100) + formatBonus;
-}
-
-async function source2FetchWithTimeout(url, init = {}, timeoutMs = SOURCE2_VERIFY_TIMEOUT) {
+        throw new Error('Source 2 غير مضبوط. ضع رابط CinePro العام في source2-config.js.');
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), Math.max(5000, Number(timeoutMs) || SOURCE2_VERIFY_TIMEOUT));
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-        return await fetch(url, { ...init, signal: controller.signal, cache: 'no-store' });
+        const url = `${CINADAM_SOURCE2_API}${String(path).startsWith('/') ? '' : '/'}${path}`;
+        const res = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' }, signal: controller.signal, redirect: 'follow' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            const detail = data?.message || data?.error || `HTTP ${res.status}`;
+            throw new Error(`Source 2 HTTP ${res.status}: ${detail}`);
+        }
+        return data;
+    } catch (e) {
+        if (e && e.name === 'AbortError') throw new Error('انتهت مهلة Source 2.');
+        throw e;
     } finally {
         clearTimeout(timer);
     }
 }
-
-async function source2ProbeBinary(url) {
-    const response = await source2FetchWithTimeout(url, {
-        method: 'GET',
-        headers: { Accept: 'video/*,application/octet-stream,*/*', Range: 'bytes=0-65535' }
-    });
-    if (!response.ok && response.status !== 206) throw new Error(`HTTP ${response.status}`);
-    const ct = String(response.headers.get('content-type') || '').toLowerCase();
-    if (/text\/html|application\/(?:json|javascript)/i.test(ct)) throw new Error('رجعت استجابة نصية بدل فيديو');
-    if (!response.body?.getReader) {
-        const buf = await response.arrayBuffer();
-        if (!buf || buf.byteLength < 64) throw new Error('البيانات المرئية قصيرة');
-        return true;
-    }
-    const reader = response.body.getReader();
-    try {
-        const first = await reader.read();
-        const value = first?.value;
-        if (!value || value.byteLength < 64) throw new Error('البيانات المرئية قصيرة');
-        return true;
-    } finally {
-        try { await reader.cancel(); } catch (_) {}
-    }
-}
-
-function source2FirstMediaUrl(body, baseUrl) {
-    const lines = String(body || '').split(/\r?\n/);
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!/^#EXT-X-STREAM-INF:/i.test(line)) continue;
-        for (let j = i + 1; j < lines.length; j++) {
-            const candidate = lines[j].trim();
-            if (!candidate || candidate.startsWith('#')) continue;
-            try { return new URL(candidate, baseUrl).toString(); } catch (_) { return candidate; }
-        }
-    }
-    for (const line of lines) {
-        const candidate = line.trim();
-        if (!candidate || candidate.startsWith('#')) continue;
-        try { return new URL(candidate, baseUrl).toString(); } catch (_) { return candidate; }
-    }
-    return '';
-}
-
-async function source2ProbeHls(url) {
-    const response = await source2FetchWithTimeout(url, {
-        method: 'GET',
-        headers: { Accept: 'application/vnd.apple.mpegurl, application/x-mpegURL, */*' }
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const body = await response.text();
-    if (!/#EXTM3U/i.test(body)) throw new Error('رابط HLS لم يرجع playlist صالح');
-    const next = source2FirstMediaUrl(body, url);
-    if (!next) throw new Error('لا يوجد مسار وسائط داخل playlist');
-    if (/#EXT-X-STREAM-INF:/i.test(body)) {
-        const variantResponse = await source2FetchWithTimeout(next, {
-            method: 'GET',
-            headers: { Accept: 'application/vnd.apple.mpegurl, application/x-mpegURL, */*' }
-        });
-        if (!variantResponse.ok) throw new Error(`variant HTTP ${variantResponse.status}`);
-        const variantBody = await variantResponse.text();
-        if (!/#EXTM3U/i.test(variantBody)) throw new Error('variant playlist غير صالح');
-        const segment = source2FirstMediaUrl(variantBody, next);
-        if (!segment) throw new Error('لا يوجد segment داخل variant');
-        await source2ProbeBinary(segment);
-        return true;
-    }
-    await source2ProbeBinary(next);
-    return true;
-}
-
-async function source2VerifyCandidate(source) {
-    const clean = { ...source, url: normalizeVideoUrl(source?.url || '') };
-    if (!clean.url || !source2IsBrowserPlayable(clean)) return { ok: false, source: clean };
-    try {
-        const hls = String(clean.sourceKind || '').toLowerCase() === 'hls' || source2LooksLikeHlsUrl(clean.url);
-        if (hls) await source2ProbeHls(clean.url);
-        else await source2ProbeBinary(clean.url);
-        return { ok: true, source: { ...clean, verified: true, verifiedAt: Date.now() } };
-    } catch (error) {
-        return { ok: false, source: clean, error: error instanceof Error ? error.message : String(error || 'failed') };
-    }
-}
-
-async function source2VerifyAndSelectTop3(sources) {
-    const input = normalizeVideoSources(sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable);
-    if (!input.length) return [];
-    const checks = await Promise.all(input.map(source2VerifyCandidate));
-    const verified = checks.filter(x => x.ok).map(x => x.source);
-    if (!verified.length) return [];
-
-    // One best source per provider: this prevents 1080/720/480 variants from the
-    // same provider filling all three slots. The user gets three real alternatives.
-    const bestByProvider = new Map();
-    for (const source of verified) {
-        const key = source2ProviderKey(source);
-        const current = bestByProvider.get(key);
-        if (!current || source2QualityScore(source) > source2QualityScore(current)) bestByProvider.set(key, source);
-    }
-    return Array.from(bestByProvider.values())
-        .sort((a, b) => source2QualityScore(b) - source2QualityScore(a))
-        .slice(0, SOURCE2_TOP_SOURCE_LIMIT);
-}
-
-function source2DecodeUrl(value) {
-    let out = String(value || '').trim();
-    for (let i = 0; i < 3; i++) {
-        try {
-            const next = decodeURIComponent(out);
-            if (next === out) break;
-            out = next;
-        } catch (_) { break; }
-    }
-    return out;
-}
-function source2ProxyTargetUrl(rawUrl) {
-    const value = String(rawUrl || '').trim();
+function source2AbsoluteUrl(raw) {
+    const value = String(raw || '').trim();
     if (!value) return '';
-    try {
-        const u = new URL(value, typeof location !== 'undefined' ? location.href : undefined);
-        const q = u.searchParams.get('url');
-        if (q) return source2DecodeUrl(q);
-    } catch (_) {}
-    const decoded = source2DecodeUrl(value);
-    const m = decoded.match(/[?&]url=([^&]+)/i);
-    return m ? source2DecodeUrl(m[1]) : decoded;
+    try { return new URL(value, `${CINADAM_SOURCE2_API}/`).toString(); } catch (_) { return value; }
 }
-function source2LooksLikeHlsUrl(url) {
-    const value = source2DecodeUrl(url).toLowerCase();
-    return /(?:^|[/?_-])m3u8(?:[/?._-]|$)/i.test(value)
-        || /(?:^|\/)master\.m3u8(?:$|[?#])/i.test(value)
-        || /(?:^|\/)playlist\.m3u8(?:$|[?#])/i.test(value)
-        || /(?:^|\/)index\.m3u8(?:$|[?#])/i.test(value)
-        || /\/m3u8-proxy(?:[/?#]|$)/i.test(value)
-        || /[?&](?:format|type)=mpegurl(?:&|$)/i.test(value)
-        || /application\/(?:vnd\.apple\.)?mpegurl/i.test(value);
+function source2Resolution(value) {
+    if (typeof value === 'number') return value;
+    const match = String(value ?? '').match(/\b(\d{3,4})\b/);
+    return match ? Number(match[1]) : 0;
+}
+function source2ProviderName(item) {
+    const p = item?.provider;
+    if (typeof p === 'string') return p;
+    return String(p?.name || p?.id || item?.providerName || item?.sourceName || item?.name || 'Source 2').trim();
 }
 function source2SourceKind(item) {
     const raw = String(item?.type || item?.format || item?.mimeType || item?.mime || '').toLowerCase();
+    if (raw.includes('hls') || raw.includes('mpegurl') || raw.includes('m3u8')) return 'hls';
+    if (raw.includes('mp4')) return 'mp4';
     const url = String(item?.url || item?.link || item?.source || item?.streamUrl || '');
-    const target = source2ProxyTargetUrl(url);
-    const targetDecoded = source2DecodeUrl(target);
-    // IMPORTANT: classify from the actual stream URL/proxy target BEFORE looking at title/name.
-    // A VaPlayer/Vixsrc HLS URL may have a .mkv filename in its descriptive title.
-    if (raw.includes('hls') || raw.includes('mpegurl') || raw.includes('m3u8') || source2LooksLikeHlsUrl(url) || source2LooksLikeHlsUrl(targetDecoded)) return 'hls';
-    if (raw.includes('mp4') || /\.mp4(?:$|[?#])/i.test(targetDecoded)) return 'mp4';
-    if (raw.includes('webm') || /\.webm(?:$|[?#])/i.test(targetDecoded)) return 'webm';
-    if (raw.includes('mkv') || /\.mkv(?:$|[?#])/i.test(targetDecoded)) return 'mkv';
-    if (raw.includes('avi') || /\.avi(?:$|[?#])/i.test(targetDecoded)) return 'avi';
-    if (raw.includes('mov') || /\.mov(?:$|[?#])/i.test(targetDecoded)) return 'mov';
-    const descriptive = [item?.title, item?.name, item?.label].map(v => String(v || '')).join(' ');
-    const descDecoded = source2DecodeUrl(descriptive);
-    if (/^(https?:)?\/\//i.test(url)) return 'direct';
-    if (/\.mkv(?:$|[?#\s])/i.test(descDecoded)) return 'mkv';
-    if (/\.avi(?:$|[?#\s])/i.test(descDecoded)) return 'avi';
-    if (/\.mov(?:$|[?#\s])/i.test(descDecoded)) return 'mov';
+    if (/\.m3u8(?:$|[?#])/i.test(url)) return 'hls';
+    if (/\.mp4(?:$|[?#])/i.test(url)) return 'mp4';
     return raw;
 }
-function source2IsBrowserPlayable(source) {
-    const url = String(source?.url || '');
-    const target = source2ProxyTargetUrl(url);
-    const kind = String(source?.sourceKind || '').toLowerCase();
-    // URL/proxy truth wins over descriptive labels that may mention .mkv/.avi.
-    if (source2LooksLikeHlsUrl(url) || source2LooksLikeHlsUrl(target)) return true;
-    if (/\.mp4(?:$|[?#])/i.test(target) || /\.mp4(?:$|[?#])/i.test(url)) return true;
-    if (/\.webm(?:$|[?#])/i.test(target) || /\.webm(?:$|[?#])/i.test(url)) return true;
-    if (kind === 'hls' || kind === 'mp4' || kind === 'webm' || kind === 'direct') return true;
-    if (kind === 'mkv' || kind === 'avi' || kind === 'mov') return false;
-    const text = [source?.label, source?.provider].map(v => String(v || '')).join(' ');
-    const decoded = source2DecodeUrl(text);
-    if (/\.(?:mkv|avi|mov)(?:$|[?#\s])/i.test(decoded)) return false;
-    return /^https?:\/\//i.test(url);
-}
-function source2SourcesFromResponse(data, expectedTitle = '') {
-    const base = data?.__source2Base || CINADAM_SOURCE2_APIS[0] || '';
-    const raw = Array.isArray(data?.streams) ? data.streams
-        : Array.isArray(data?.sources) ? data.sources
-        : Array.isArray(data?.data?.streams) ? data.data.streams
-        : Array.isArray(data?.data?.sources) ? data.data.sources : [];
+function source2SourcesFromResponse(data) {
+    const raw = Array.isArray(data?.sources) ? data.sources : (Array.isArray(data?.data?.sources) ? data.data.sources : []);
     const out = [];
     const seen = new Set();
     raw.forEach((item, index) => {
-        const url = source2AbsoluteUrl(item?.url || item?.link || item?.source || item?.streamUrl || '', base);
+        const url = source2AbsoluteUrl(item?.url || item?.link || item?.source || item?.streamUrl || '');
         if (!/^https?:\/\//i.test(url) || seen.has(url)) return;
         seen.add(url);
-        const resolution = source2Resolution(item?.resolution || item?.quality?.resolution || item?.quality || item?.label);
+        const resolution = source2Resolution(item?.resolution || item?.quality?.resolution || item?.quality);
         const q = typeof item?.quality === 'object' ? (item.quality?.label || item.quality?.name || '') : String(item?.quality || '');
-        const sourceKind = source2SourceKind(item);
-        const label = String(q || item?.label || item?.title || item?.name || (resolution ? `${resolution}p` : `Source 2 ${index + 1}`)).trim();
+        const label = String(q || item?.label || item?.name || (resolution ? `${resolution}p` : `Source 2 ${index + 1}`)).trim();
         out.push({
             url,
             label,
             resolution: resolution || label,
             source: 'source2',
-            sourceId: String(item?.id || item?.sourceId || item?.providerId || '').trim(),
+            sourceId: String(item?.id || item?.sourceId || item?.providerId || ''),
             provider: source2ProviderName(item),
-            sourceKind,
-            sourceTitle: String(item?.title || item?.name || item?.label || '').trim(),
-            subtitleUrl: String(item?.subtitleUrl || item?.subtitle_url || item?.subtitle || '').trim(),
-            headers: item?.headers && typeof item.headers === 'object' ? item.headers : undefined
+            sourceKind: source2SourceKind(item)
         });
     });
-    const egyBestOnly = out.filter(source2IsEgyBestSource);
-    const titleSafe = expectedTitle ? egyBestOnly.filter(source => source2MatchesExpectedTitle(source, expectedTitle)) : egyBestOnly;
-    const playable = titleSafe.filter(source2IsBrowserPlayable);
-    const pool = playable.length ? playable : titleSafe;
-    const rank = s => {
-        const providerScore = CINADAM_SOURCE2_CONFIG.preferredProvider && String(s.provider || '').toLowerCase().includes(CINADAM_SOURCE2_CONFIG.preferredProvider) ? 100000 : 0;
-        const kindScore = s.sourceKind === 'hls' ? 50000 : (s.sourceKind === 'mp4' ? 40000 : (s.sourceKind === 'webm' ? 30000 : 0));
-        return providerScore + kindScore + (source2Resolution(s.resolution) || source2Resolution(s.label));
-    };
-    return pool.sort((a,b) => rank(b) - rank(a));
+    return out.sort((a,b) => (source2Resolution(b.resolution) || source2Resolution(b.label)) - (source2Resolution(a.resolution) || source2Resolution(a.label)));
 }
 function source2DiagnosticText(data) {
     const list = Array.isArray(data?.diagnostics) ? data.diagnostics : (Array.isArray(data?.data?.diagnostics) ? data.data.diagnostics : []);
-    return list.map(x => String(x?.message || x?.code || '').trim()).filter(Boolean).slice(0, 6).join(' | ');
+    return list.map(x => String(x?.message || x?.code || '').trim()).filter(Boolean).slice(0, 4).join(' | ');
 }
-async function source2ResolveMovie({ tmdbId, expectedTitle = '' }) {
+async function source2ResolveMovie({ tmdbId }) {
     const id = String(tmdbId || '').replace(/\D/g, '');
-    if (!id) throw new Error('EgyBest يحتاج TMDB ID للفيلم.');
-    const data = await source2FetchJson(`/source2/resolve/movie?tmdb=${encodeURIComponent(id)}`, 60000);
-    const sources = source2SourcesFromResponse(data, expectedTitle).filter(source => String(source.provider || '').toLowerCase() === 'egybest');
-    if (!sources.length) throw new Error(source2DiagnosticText(data) || 'EgyBest لم يُرجع مصدرًا للفيلم.');
-    return { ok:true, type:'movie', tmdbId:id, providers:['egybest'], count:sources.length, sources, url:sources[0].url, raw:data };
-}
-
-async function source2ResolveEpisode({ tmdbId, season, episode, expectedTitle = '' }) {
-    return source2ResolveEpisodeFast({ tmdbId, season, episode, expectedTitle, collectAll:true });
-}
-
-const SOURCE2_FAST_EPISODE_PROVIDERS = ['egybest'];
-const SOURCE2_FAST_EPISODE_TIMEOUT = 25000;
-const SOURCE2_AGGREGATE_EPISODE_TIMEOUT = 25000;
-
-async function source2ResolveEpisodeFast({ tmdbId, season, episode, timeoutMs = SOURCE2_FAST_EPISODE_TIMEOUT, collectAll = true, expectedTitle = '' }) {
-    const id = String(tmdbId || '').replace(/\D/g, '');
-    const se = Math.max(1, Number(season) || 1);
-    const ep = Math.max(1, Number(episode) || 1);
-    if (!id) throw new Error('EgyBest يحتاج TMDB ID للمسلسل.');
-
-    // Source 2 is intentionally a single provider now. The backend provider
-    // returns the real available quality playlists from EgyBest.
-    const path = `/source2/resolve/episode?tmdb=${encodeURIComponent(id)}&season=${encodeURIComponent(se)}&episode=${encodeURIComponent(ep)}`;
-    const data = await source2FetchJson(path, Math.max(10000, Number(timeoutMs) || 60000));
-    let sources = source2SourcesFromResponse(data, expectedTitle)
-        .filter(source => String(source.provider || '').toLowerCase() === 'egybest');
-
-    const dedupe = new Map();
-    for (const source of sources) {
-        const url = normalizeVideoUrl(source.url);
-        if (!url || !source2IsBrowserPlayable(source)) continue;
-        const q = source2Resolution(source.resolution) || source2Resolution(source.label);
-        const current = dedupe.get(url);
-        if (!current || q > (source2Resolution(current.resolution) || source2Resolution(current.label))) {
-            dedupe.set(url, { ...source, source:'source2', provider:'egybest', sourceKind: source.sourceKind || 'hls' });
-        }
+    if (!id) throw new Error('Source 2 يحتاج TMDB ID للفيلم.');
+    let last = null;
+    for (const platform of ['web', 'native']) {
+        try {
+            const data = await source2FetchJson(`/v1/movies/${encodeURIComponent(id)}?platform=${platform}`);
+            const sources = source2SourcesFromResponse(data);
+            if (sources.length) return { ok: true, type: 'movie', tmdbId: id, sources, url: sources[0].url, raw: data };
+            last = new Error(source2DiagnosticText(data) || 'Source 2 لم يُرجع مصادر للفيلم.');
+        } catch (e) { last = e; }
     }
-    sources = Array.from(dedupe.values()).sort((a,b) =>
-        (source2Resolution(b.resolution) || source2Resolution(b.label)) -
-        (source2Resolution(a.resolution) || source2Resolution(a.label))
-    );
-    if (!sources.length) throw new Error(source2DiagnosticText(data) || `EgyBest لم يُرجع مصدرًا للحلقة S${se}E${ep}.`);
-
-    return {
-        ok:true,
-        type:'tv',
-        tmdbId:id,
-        season:se,
-        episode:ep,
-        providers:['egybest'],
-        count:sources.length,
-        sources,
-        url:sources[0].url,
-        raw:{ ...(data || {}), provider:'egybest', fast:true, resolverVersion:10 }
-    };
+    throw last || new Error('تعذر الحصول على مصدر Source 2 للفيلم.');
 }
-
-function source2StoredRecordFromResolved(resolved, season, episode, mediaType = 'tv') {
-    const sources = normalizeVideoSources(resolved?.sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable);
-    const tmdbId = String(resolved?.tmdbId || '').replace(/\D/g, '');
-    return {
-        enabled: !!tmdbId && sources.length > 0,
-        provider: 'egybest', tmdbId, mode: 'live',
-        type: mediaType === 'movie' ? 'movie' : 'tv',
-        season: Number(season) || 1, episode: Number(episode) || 1,
-        url: sources[0]?.url || '', sources,
-        sourceCount: sources.length,
-        providers: Array.from(new Set(sources.map(s => s.provider).filter(Boolean))),
-        expiresAt: Number(resolved?.raw?.expiresAt || resolved?.expiresAt || 0) || 0,
-        savedAt: Date.now(), fast: !!resolved?.raw?.fast, resolverVersion: SOURCE2_RESOLVER_VERSION
-    };
+async function source2ResolveEpisode({ tmdbId, season, episode }) {
+    const id = String(tmdbId || '').replace(/\D/g, '');
+    const se = Number(season) || 1;
+    const ep = Number(episode) || 1;
+    if (!id) throw new Error('Source 2 يحتاج TMDB ID للمسلسل.');
+    let last = null;
+    for (const platform of ['web', 'native']) {
+        try {
+            const data = await source2FetchJson(`/v1/tv/${encodeURIComponent(id)}/seasons/${se}/episodes/${ep}?platform=${platform}`);
+            const sources = source2SourcesFromResponse(data);
+            if (sources.length) return { ok: true, type: 'tv', tmdbId: id, season: se, episode: ep, sources, url: sources[0].url, raw: data };
+            last = new Error(source2DiagnosticText(data) || `Source 2 لم يُرجع مصادر للحلقة S${se}E${ep}.`);
+        } catch (e) { last = e; }
+    }
+    throw last || new Error('تعذر الحصول على مصدر Source 2 للحلقة.');
 }
-
 async function source2ResolveForItem(item, season, episode) {
-    let id = String(item?.tmdbId || item?.source2TmdbId || item?.source2?.tmdbId || '').replace(/\D/g, '');
+    let id = String(item?.tmdbId || item?.source2TmdbId || '').replace(/\D/g, '');
     if (!id && item?.name) {
         try {
             const best = await tmdbFindBestByTitle(item.name, item.type === 'movie' ? 'movie' : 'tv', item.year);
@@ -2189,13 +1683,12 @@ async function source2ResolveForItem(item, season, episode) {
         } catch (_) {}
     }
     if (!id) throw new Error('لا يوجد TMDB ID محفوظ لـSource 2.');
-    if (item?.type === 'movie' || item?.mediaType === 'movie') {
-        return source2ResolveMovie({ tmdbId: id, expectedTitle: item?.name || '' });
-    }
-    return source2ResolveEpisodeFast({ tmdbId: id, season, episode, collectAll: true, expectedTitle: item?.name || '' });
+    return (item?.type === 'movie' || item?.mediaType === 'movie')
+        ? source2ResolveMovie({ tmdbId: id })
+        : source2ResolveEpisode({ tmdbId: id, season, episode });
 }
 async function source2EnsureTmdbId(form, fallbackSourceId) {
-    let id = String(form?.tmdbId || form?.source2TmdbId || '').replace(/\D/g, '');
+    let id = String(form?.tmdbId || '').replace(/\D/g, '');
     if (!id && /^\d+$/.test(String(fallbackSourceId || '').trim())) id = String(fallbackSourceId).trim();
     if (!id) {
         try {
@@ -2207,43 +1700,7 @@ async function source2EnsureTmdbId(form, fallbackSourceId) {
 }
 function source2InfoForPayload(tmdbId) {
     const id = String(tmdbId || '').replace(/\D/g, '');
-    return { enabled: !!id, provider: 'egybest', tmdbId: id, mode: 'live', urlsExpire: true };
-}
-
-function Source2Helper({ kind, tmdbId, season, episode, defaultTitle = '', defaultYear = '', onChange }) {
-    const [loading, setLoading] = useState(false);
-    const [msg, setMsg] = useState('');
-    const [result, setResult] = useState(null);
-    const run = async () => {
-        if (!source2Configured()) { setMsg('ضع رابط بروكسي Source 2 العام في source2-config.js أولًا.'); return; }
-        setLoading(true); setMsg('جاري مطابقة العمل ثم اختبار مصدر EgyBest...'); setResult(null);
-        try {
-            let id = String(tmdbId || '').replace(/\D/g, '');
-            if (!id && String(defaultTitle || '').trim()) {
-                const best = await tmdbFindBestByTitle(defaultTitle, kind === 'movie' ? 'movie' : 'tv', defaultYear);
-                if (best?.id) id = String(best.id);
-            }
-            if (!id) throw new Error('لم أجد تطابق TMDB تلقائيًا. تأكد من اسم العمل والسنة.');
-            const r = kind === 'movie' ? await source2ResolveMovie({ tmdbId: id }) : await source2ResolveEpisodeFast({ tmdbId: id, season, episode, collectAll: true });
-            const providers = ['egybest'];
-            setResult(r);
-            onChange && onChange({ source2TmdbId: id, source2Provider: 'egybest', source2Mode: 'live', source2LastCheckedAt: Date.now(), source2SourceCount: r.count || r.sources.length, source2Providers: providers, source2Sources: normalizeVideoSources(r.sources).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable), source2: source2StoredRecordFromResolved(r, season, episode, kind === 'movie' ? 'movie' : 'tv') });
-            setMsg(`نجح الاختبار: ${r.count || r.sources.length} رابط EgyBest · TMDB ${id}`);
-        } catch (e) {
-            setMsg(e.message || 'فشل اختبار EgyBest.');
-        } finally { setLoading(false); }
-    };
-    return React.createElement('div', { className: 'mt-3.5 glass-card rounded-2xl p-3.5 border border-accent-cyan/20' },
-        React.createElement('div', { className: 'flex items-center justify-between gap-2 flex-wrap' },
-            React.createElement('div', null,
-                React.createElement('p', { className: 'text-[11px] font-black text-accent-cyan' }, 'Source 2 — EgyBest'),
-                React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, 'يُطابق TMDB تلقائيًا من اسم العمل والسنة؛ روابط التشغيل تُجلب وقت المشاهدة ولا تُحفظ كروابط دائمة.')),
-            React.createElement('button', { type: 'button', onClick: run, disabled: loading, className: 'px-4 py-2 rounded-xl bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan text-xs font-black disabled:opacity-40' }, loading ? 'جاري الاختبار...' : 'اختبار EgyBest')),
-        msg && React.createElement('p', { className: `text-[10px] font-bold mt-2 ${result ? 'text-emerald-400' : 'text-slate-400'}` }, msg),
-        result && React.createElement('div', { className: 'mt-2.5 flex flex-wrap gap-1.5' }, (['egybest']).map((p, i) => React.createElement('span', { key: `${p}-${i}`, className: 'px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-[9px] text-slate-300 font-bold' }, p))),
-        result?.url && React.createElement('div', { className: 'mt-2' },
-            React.createElement('a', { href: result.url, target: '_blank', rel: 'noreferrer', className: 'text-[10px] text-cyan-300 hover:underline break-all', dir: 'ltr' }, 'فتح أول رابط مؤقت للاختبار'))
-    );
+    return { enabled: !!id, provider: 'cinepro', tmdbId: id, mode: 'live' };
 }
 
 function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGenerate, onGenerateQualities, onGenerateSubtitle, onPickedNb, onImportTmdb }) {
@@ -4208,7 +3665,6 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
     const videoRef = useRef(null);
     const wrapRef = useRef(null);
     const hideTimerRef = useRef(null);
-    const interactionHudTimerRef = useRef(null);
     const bufferingTimerRef = useRef(null);
     const stallFailTimerRef = useRef(null);
     const lastUiTickRef = useRef(0);
@@ -4392,7 +3848,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
         let hls = null;
         let fatalRetries = 0;
         let cancelled = false;
-        const isM3u8 = String(sourceKind || '').toLowerCase() === 'hls' || source2LooksLikeHlsUrl(src) || /\.m3u8(?:[?#]|$)/i.test(source2ProxyTargetUrl(src));
+        const isM3u8 = String(sourceKind || '').toLowerCase() === 'hls' || /\.m3u8(\?.*)?$/i.test(src);
         const hlsConfig = {
             enableWorker: !CV_VERY_LOW_POWER,
             capLevelToPlayerSize: true,
@@ -4573,11 +4029,9 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
     }, [src, trimStart, trimEnd, startAt, outroStart, outroEnd, hasNextEpisode, onOutroStart]);
     const [ctrl, setCtrl] = useState({ playing: false, muted: false, volume: 1, current: 0, duration: 0, buffered: 0, rate: 1 });
     const [barVisible, setBarVisible] = useState(true);
-    const [interactionHudVisible, setInteractionHudVisible] = useState(false);
     const [skipFlash, setSkipFlash] = useState(null);
     const [showSpeedMenu, setShowSpeedMenu] = useState(false);
     const [showQualityMenu, setShowQualityMenu] = useState(false);
-    const [showSourceMenu, setShowSourceMenu] = useState(false);
     const [showDisplayMenu, setShowDisplayMenu] = useState(false);
     const [fakeFullscreen, setFakeFullscreen] = useState(false);
     const [playerDisplay, setPlayerDisplay] = useState(() => {
@@ -4808,10 +4262,8 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
     }, [fakeFullscreen]);
     const showBarTemporarily = () => {
         setBarVisible(true);
-        setInteractionHudVisible(true);
-        if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-        if (interactionHudTimerRef.current) clearTimeout(interactionHudTimerRef.current);
-        interactionHudTimerRef.current = setTimeout(() => setInteractionHudVisible(false), 2500);
+        if (hideTimerRef.current)
+            clearTimeout(hideTimerRef.current);
         hideTimerRef.current = setTimeout(() => { if (videoRef.current && !videoRef.current.paused)
             setBarVisible(false); }, 3000);
     };
@@ -4820,14 +4272,13 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
         if (ctrl.playing) {
             setShowSubtitleMenu(false);
             setShowQualityMenu(false);
-            setShowSourceMenu(false);
             setShowSpeedMenu(false);
             setShowDisplayMenu(false);
         }
         if (!ctrl.playing) {
             setBarVisible(true);
             if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-        } else if (!showSubtitleMenu && !showQualityMenu && !showSourceMenu && !showSpeedMenu) {
+        } else if (!showSubtitleMenu && !showQualityMenu && !showSpeedMenu) {
             showBarTemporarily();
         }
         // eslint-disable-next-line
@@ -4843,14 +4294,12 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
             if (insideMenu || menuButton || menuTrigger) return;
             setShowSubtitleMenu(false);
             setShowQualityMenu(false);
-            setShowSourceMenu(false);
             setShowSpeedMenu(false);
         };
         const onKey = (e) => {
             if (e.key === 'Escape') {
                 setShowSubtitleMenu(false);
                 setShowQualityMenu(false);
-                setShowSourceMenu(false);
                 setShowSpeedMenu(false);
                 setShowDisplayMenu(false);
             }
@@ -4864,12 +4313,13 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
     }, []);
 
     useEffect(() => {
-        if (showSubtitleMenu || showQualityMenu || showSpeedMenu || showSourceMenu || showDisplayMenu) {
+        if (showSubtitleMenu || showQualityMenu || showSpeedMenu || showDisplayMenu) {
             setBarVisible(true);
             if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
         }
-    }, [showSubtitleMenu, showQualityMenu, showSpeedMenu, showSourceMenu, showDisplayMenu]);
-    useEffect(() => () => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current); if (interactionHudTimerRef.current) clearTimeout(interactionHudTimerRef.current); }, []);
+    }, [showSubtitleMenu, showQualityMenu, showSpeedMenu, showDisplayMenu]);
+    useEffect(() => () => { if (hideTimerRef.current)
+        clearTimeout(hideTimerRef.current); }, []);
     useEffect(() => {
         const onKeyDown = (e) => {
             const active = document.activeElement;
@@ -4913,14 +4363,14 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
         if (gestureWasUsedRef.current) return;
         if (e.target.closest && e.target.closest('.yt-controls-bottom'))
             return;
-        showBarTemporarily();
         const rect = wrapRef.current.getBoundingClientRect();
         const relX = (e.clientX - rect.left) / rect.width;
         const pt = e.nativeEvent && e.nativeEvent.pointerType;
         const isMouse = pt ? pt === 'mouse' : !!(window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches);
-        if (isMouse) { // ماوس: الحركة/النقرة تُظهر الدوائر والإعدادات فقط؛ لا توقف التشغيل بنقرة واحدة.
+        if (isMouse) { // ماوس: كلك يسار = إيقاف/تشغيل. النقر المزدوج يلغي التبديل ويبقى تقديم/تأخير 5 ثوان على الأطراف
             if (e.button !== undefined && e.button !== 0)
                 return;
+            togglePlay();
             if (e.detail === 2) {
                 if (relX < 0.35)
                     skip(-5);
@@ -4935,7 +4385,8 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
             clearTimeout(clickState.current.timer);
         clickState.current.timer = setTimeout(() => {
             if (clickState.current.count === 1) {
-                // لمسة واحدة على الفيديو تُظهر الدوائر والإعدادات فقط؛ لا توقف التشغيل.
+                // لمسة واحدة على الفيديو = تشغيل/إيقاف مؤقت، مع إظهار الشريط مؤقتًا.
+                togglePlay();
                 showBarTemporarily();
             }
             clickState.current.count = 0;
@@ -4949,16 +4400,14 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
             else if (relX > 0.65)
                 skip(5);
             else
-                showBarTemporarily();
+                togglePlay();
         }
     };
     const updateGesturePoint = (e) => {
         if (e && e.pointerType === 'touch') gesturePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     };
     const onPlayerPointerDown = (e) => {
-        if (!e) return;
-        showBarTemporarily();
-        if (e.pointerType !== 'touch') return;
+        if (!e || e.pointerType !== 'touch') return;
         if (e.target && e.target.closest && e.target.closest('.yt-controls-bottom,button,input,select,.cv-player-menu')) return;
         gesturePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
         const pts = [...gesturePointersRef.current.values()];
@@ -4970,9 +4419,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
         }
     };
     const onPlayerPointerMove = (e) => {
-        if (!e) return;
-        showBarTemporarily();
-        if (e.pointerType !== 'touch') return;
+        if (!e || e.pointerType !== 'touch') return;
         if (!gesturePointersRef.current.has(e.pointerId)) return;
         updateGesturePoint(e);
         const pts = [...gesturePointersRef.current.values()];
@@ -5038,18 +4485,11 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
     }
     const qualityOptions = normalizeVideoSources(qualities);
     const currentQuality = qualityOptions.find(q => q.url === src) || qualityOptions[0] || null;
-    const sourceGroups = Array.from(qualityOptions.reduce((map, q) => {
-        const key = String(q.provider || q.source || 'مصدر').trim() || 'مصدر';
-        if (!map.has(key)) map.set(key, []);
-        map.get(key).push(q);
-        return map;
-    }, new Map()).entries()).map(([provider, items]) => ({ provider, item: items.slice().sort((a,b) => (source2Resolution(b.resolution)||source2Resolution(b.label)||0) - (source2Resolution(a.resolution)||source2Resolution(a.label)||0))[0], count: items.length }));
     const changeQuality = (q) => {
         setShowSubtitleMenu(false);
         setShowSpeedMenu(false);
         const at = videoRef.current ? Number(videoRef.current.currentTime) || 0 : 0;
         setShowQualityMenu(false);
-        setShowSourceMenu(false);
         if (q && onQualityChange)
             onQualityChange(q.url, at, q);
     };
@@ -5100,15 +4540,6 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
                 React.createElement("svg", { viewBox: "0 0 24 24", className: "w-4 h-4 fill-current", "aria-hidden": "true" },
                     React.createElement("path", { d: "M5 5l9 7-9 7V5zm10 0h3v14h-3V5z" }))));
         })(),
-        interactionHudVisible ? React.createElement("div", { className: "absolute inset-0 z-30 pointer-events-none flex items-center justify-between px-8 md:px-16" },
-            React.createElement("button", { type: "button", onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); skip(-10); showBarTemporarily(); }, className: "pointer-events-auto w-14 h-14 md:w-16 md:h-16 rounded-full bg-black/55 backdrop-blur-md border border-white/20 flex flex-col items-center justify-center text-white shadow-xl hover:bg-black/70 transition", title: "رجوع 10 ثواني" },
-                React.createElement(Icon, { name: "rotateCcw5", className: "w-7 h-7 md:w-8 md:h-8" }),
-                React.createElement("span", { className: "text-[9px] font-black -mt-1" }, "10")),
-            React.createElement("button", { type: "button", onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); togglePlay(); showBarTemporarily(); }, className: "pointer-events-auto w-16 h-16 md:w-20 md:h-20 rounded-full bg-black/55 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-2xl hover:bg-black/70 transition", title: ctrl.playing ? "إيقاف مؤقت" : "تشغيل" },
-                React.createElement(Icon, { name: ctrl.playing ? 'pause' : 'play', className: "w-7 h-7 md:w-9 md:h-9 fill-current" })),
-            React.createElement("button", { type: "button", onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); skip(10); showBarTemporarily(); }, className: "pointer-events-auto w-14 h-14 md:w-16 md:h-16 rounded-full bg-black/55 backdrop-blur-md border border-white/20 flex flex-col items-center justify-center text-white shadow-xl hover:bg-black/70 transition", title: "تقديم 10 ثواني" },
-                React.createElement(Icon, { name: "rotateCw5", className: "w-7 h-7 md:w-8 md:h-8" }),
-                React.createElement("span", { className: "text-[9px] font-black -mt-1" }, "10"))) : null,
         skipFlash && (React.createElement("div", { className: `cv-skip-zone ${skipFlash === 'fwd' ? 'right' : 'left'}` },
             React.createElement("div", { className: "cv-skip-circle" },
                 React.createElement(Icon, { name: skipFlash === 'fwd' ? 'rotateCw5' : 'rotateCcw5', className: "text-white" }),
@@ -5213,17 +4644,8 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, sourceKind = '', on
                                     catch (e) { } syncSubPrefsRemote({ ...SUB_PREF_DEFAULTS }); }, className: "px-2 py-1.5 rounded-lg bg-white/5 text-white text-[10px] font-bold hover:bg-white/10" }, "\u0627\u0644\u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u0627\u0641\u062A\u0631\u0627\u0636\u064A\u0629")),
                             localSub && React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => { setLocalSub(null); setSubAdj(subtitleUrl ? readSubAdj(subtitleUrl) : 0); }, className: "w-full mt-1 px-2 py-1.5 rounded-lg bg-rose-500/20 text-rose-300 text-[10px] font-bold" }, "\u0625\u0632\u0627\u0644\u0629 \u0645\u0644\u0641 \u062C\u0647\u0627\u0632\u0643"),
                             React.createElement("input", { ref: localFileRef, type: "file", accept: ".srt,.vtt,text/vtt,application/x-subrip", onChange: onLocalSub, className: "hidden" })))),
-                    sourceGroups.length > 1 && React.createElement("div", { className: "relative shrink-0" },
-                        React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => { setShowSourceMenu(v => !v); setShowQualityMenu(false); setShowSpeedMenu(false); }, className: "yt-btn cv-player-menu-button h-7 px-2 gap-1 text-[11px] font-bold", "data-player-menu-trigger": true, title: "اختيار المصدر" },
-                            React.createElement("span", { className: "text-[10px] font-black" }, "مصدر"),
-                            React.createElement("span", { className: "text-[9px] opacity-60" }, sourceGroups.length)),
-                        showSourceMenu && React.createElement("div", { className: "cv-player-menu absolute bottom-10 left-0 bg-black/95 backdrop-blur-md rounded-xl border border-white/10 p-1.5 flex flex-col gap-0.5 shadow-2xl min-w-[170px] z-50", onPointerDown: e => e.stopPropagation(), onClick: e => e.stopPropagation() },
-                            React.createElement("div", { className: "px-2 py-1 text-[9px] text-slate-500 font-black" }, "اختر مزوّد المصدر"),
-                            sourceGroups.map((g, i) => React.createElement("button", { key: `${g.provider}-${i}`, type: "button", onClick: () => changeQuality(g.item), className: `text-[10px] font-bold px-3 py-2 rounded-lg text-right transition ${currentQuality && currentQuality.provider === g.provider ? 'bg-accent-cyan text-glass-950' : 'text-white hover:bg-white/10'}` },
-                                React.createElement("span", { className: "block truncate" }, g.provider),
-                                React.createElement("span", { className: "float-left opacity-60 text-[9px]" }, `${g.count} رابط`))))),
                     qualityOptions.length > 1 && (React.createElement("div", { className: "relative shrink-0" },
-                        React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => { setShowQualityMenu(v => !v); setShowSourceMenu(false); setShowSpeedMenu(false); }, className: "yt-btn cv-player-menu-button h-7 px-2 gap-1 text-[11px] font-bold", "data-player-menu-trigger": true, title: "\u0627\u062E\u062A\u064A\u0627\u0631 \u0627\u0644\u062C\u0648\u062F\u0629" },
+                        React.createElement("button", { type: "button", onPointerDown: blurPlayerButton, onClick: () => { setShowQualityMenu(v => !v); setShowSpeedMenu(false); }, className: "yt-btn cv-player-menu-button h-7 px-2 gap-1 text-[11px] font-bold", "data-player-menu-trigger": true, title: "\u0627\u062E\u062A\u064A\u0627\u0631 \u0627\u0644\u062C\u0648\u062F\u0629" },
                             React.createElement(Icon, { name: "sliders-horizontal", className: "w-3.5 h-3.5" }),
                             React.createElement("span", null, currentQuality ? currentQuality.label : 'جودة')),
                         showQualityMenu && (React.createElement("div", { className: "cv-player-menu absolute bottom-10 left-0 bg-black/95 backdrop-blur-md rounded-xl border border-white/10 p-1.5 flex flex-col gap-0.5 shadow-2xl min-w-[88px] z-50" }, qualityOptions.map((q, i) => (React.createElement("button", { key: i, type: "button", onClick: () => changeQuality(q), className: `text-[11px] font-bold px-3 py-1.5 rounded-lg text-right transition ${currentQuality && currentQuality.url === q.url ? 'bg-accent-cyan text-glass-950' : 'text-white hover:bg-white/10'}` }, q.label))))))),
@@ -5461,7 +4883,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const [playerRetryCount, setPlayerRetryCount] = useState(0);
     // أي مصدر شغّال حاليًا: 'cinemana' أو 'source2' — يحدد اتجاه التبديل عند الفشل
     // (نبدّل للمصدر الآخر، مو نفس المصدر مرتين).
-    const [activeSource, setActiveSource] = useState('source2');
+    const [activeSource, setActiveSource] = useState('cinemana');
     const retryPlayback = () => { setVideoError(false); setPlayerRetryCount(c => c + 1); };
     const [copied, setCopied] = useState(false);
     const [resumeAt, setResumeAt] = useState(0);
@@ -5474,26 +4896,8 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const [reviewReplyText, setReviewReplyText] = useState('');
     const [myFollowingSet, setMyFollowingSet] = useState({});
     const [showAddToList, setShowAddToList] = useState(false);
-    const playerAnchorRef = useRef(null);
-    const scrollToPlayer = () => requestAnimationFrame(() => {
-        try {
-            const el = playerAnchorRef.current;
-            if (!el) return;
-            const panel = el.closest('.sheet-panel');
-            if (panel && typeof panel.scrollTo === 'function') { panel.scrollTo({ top: 0, behavior: 'smooth' }); return; }
-            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        } catch (_) {}
-    });
-    useEffect(() => {
-        if (!playingUrl) return;
-        const a = requestAnimationFrame(() => requestAnimationFrame(scrollToPlayer));
-        const t = setTimeout(scrollToPlayer, 180);
-        return () => { cancelAnimationFrame(a); clearTimeout(t); };
-    }, [playingUrl, playingSeasonNumber, playingMeta && playingMeta.number]);
-
     const playRequestRef = useRef(0);
-    const triedFallbackRef = useRef(0);
-    const sourceLockedRef = useRef(false);
+    const triedFallbackRef = useRef(false);
     const explicitContinueTarget = title.__continueTarget && title.__continueTarget.season != null && title.__continueTarget.episode != null
         ? { kind: 'episode', progress: { season: Number(title.__continueTarget.season), episode: Number(title.__continueTarget.episode), position: 0, completed: false, updatedAt: Date.now() } }
         : null;
@@ -5525,7 +4929,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         setCommentText('');
         setReplyingTo(null);
         setVideoError(false);
-        triedFallbackRef.current = 0;
+        triedFallbackRef.current = false;
         setActiveSource('cinemana');
         setResumeAt(0);
         const ref = db.ref(`comments/${title.id}`);
@@ -5807,14 +5211,13 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     };
     const getSavedVideoUrl = (item) => normalizeVideoUrl((item && item.videoUrl) || (((item && item.videoSources) || [])[0] || {}).url || '');
     const getSavedSourceRecord = (item, preferred = '') => {
-        const arr = [...normalizeVideoSources(item && item.videoSources), ...normalizeAlternativeSources(item && item.alternativeSources)];
+        const arr = normalizeVideoSources(item && item.videoSources);
         const pref = String(preferred || '').toLowerCase();
         if (pref) {
             const exact = arr.find(s => String(s.source || '').toLowerCase() === pref);
             if (exact) return exact;
         }
-        const alt = arr.find(s => String(s.source || '').toLowerCase() === 'alternative');
-        return arr[0] || alt || null;
+        return arr[0] || null;
     };
     const getSavedSourceUrl = (item, preferred) => {
         const rec = getSavedSourceRecord(item, preferred);
@@ -5866,8 +5269,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const handlePlay = async (forceStart = false) => {
         const requestId = ++playRequestRef.current;
         setVideoError(false);
-        triedFallbackRef.current = 0;
-        sourceLockedRef.current = false;
+        triedFallbackRef.current = false;
         const target = forceStart ? null : continueTarget;
         const movieResume = target && target.kind === 'movie' && target.progress ? Number(target.progress.position)||0 : 0;
         setResumeAt(movieResume);
@@ -5875,65 +5277,34 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             if (title.type === 'movie') {
                 let url = '';
                 let sources = [];
-                let selectedSource = '';
-
-                // Movie playback keeps the original CineVeres path first so existing movies
-                // continue to use their saved/Cinemana URLs. Source 2 is the live fallback
-                // when that path is unavailable on the current network.
-                const primarySaved = getSavedSourceRecord(title, 'cinemana') || getSavedSourceRecord(title, '');
-                if (primarySaved?.url) {
-                    url = normalizeVideoUrl(primarySaved.url);
-                    selectedSource = String(primarySaved.source || 'cinemana').toLowerCase();
-                    setActiveSource(selectedSource);
-                    sources = [...normalizeVideoSources(title.videoSources), ...normalizeAlternativeSources(title.alternativeSources)];
-                }
-
-                if (!url) {
-                    const manualUrl = normalizeVideoUrl(title.videoUrl || '');
-                    if (manualUrl) {
-                        url = manualUrl;
-                        selectedSource = String(title.playbackProvider || (title.cinemanaId ? 'cinemana' : 'saved')).toLowerCase();
-                        setActiveSource(selectedSource);
-                        sources = [...normalizeVideoSources(title.videoSources), ...normalizeAlternativeSources(title.alternativeSources)];
-                    }
-                }
-
-                const source2Warmup = (!url)
-                    ? source2ResolveMovie({ tmdbId: title.tmdbId || title.source2TmdbId, expectedTitle: title.name }).catch(() => null)
-                    : Promise.resolve(null);
-
-                if (!url) {
+                // إذا كان آخر تشغيل ناجح بهذا الجهاز صار عبر محرك ذيب (يعني سينمانا
+                // محجوب بهذي الشبكة)، نجرب ذيب أولًا مباشرة بدل ما نضيّع وقت بمحاولة
+                // سينمانا نعرف مسبقًا انها راح تفشل.
+                const preferred = getPreferredSource();
+                if (preferred === 'source2') {
                     try {
-                        const recovered = await recoverMovieVideo();
-                        if (requestId !== playRequestRef.current) return;
-                        url = recovered.url;
-                        sources = recovered.sources;
-                        selectedSource = 'cinemana';
-                        setActiveSource('cinemana');
+                        const resolved = await source2ResolveForItem(title);
+                        sources = normalizeVideoSources(resolved.sources);
+                        url = sources[0]?.url || resolved.url;
+                        if (url) setActiveSource('source2');
                     } catch (_) {}
                 }
-
                 if (!url) {
-                    try {
-                        const resolved = await source2Warmup;
-                        const source2s = normalizeVideoSources(resolved?.sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable);
-                        if (source2s.length) {
-                            sources = source2s;
-                            url = source2s[0].url;
-                            selectedSource = 'source2';
-                            setActiveSource('source2');
-                        }
-                    } catch (_) {}
+                    const primarySaved = getSavedSourceRecord(title, 'cinemana') || getSavedSourceRecord(title, '');
+                    if (primarySaved) { url = primarySaved.url; setActiveSource(primarySaved.source || 'cinemana'); }
+                    sources = normalizeVideoSources(title.videoSources);
+                }
+                if (!url) {
+                    const recovered = await recoverMovieVideo();
+                    if (requestId !== playRequestRef.current) return;
+                    url = recovered.url;
+                    sources = recovered.sources;
                 }
                 if (requestId !== playRequestRef.current) return;
                 setPlayingUrl(url);
-                const picked = sources.find(s => s.url === url) || sources[0] || {};
-                setPlayingMeta({ ...title, videoUrl: url, videoSources: sources, source: selectedSource || picked.source || '', playbackProvider: selectedSource || picked.source || '', sourceKind: picked.sourceKind || '', subtitleUrl: title.subtitleUrl || picked.subtitleUrl || '', subtitlePublicUrl: title.subtitlePublicUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
+                setPlayingMeta({ ...title, videoUrl: url, videoSources: sources, source: activeSource, playbackProvider: activeSource, sourceKind: (sources.find(s => s.url === url) || {}).sourceKind || '', subtitleUrl: title.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: title.subtitlePublicUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
                 setPlayingLabel(title.name);
-                scrollToPlayer();
                 ensureVidApiSubtitlePublic({ ...title, videoUrl: url }).catch(() => {});
-                // روابط EgyBest مؤقتة؛ لا نعيد جلبها في الخلفية بعد بدء التشغيل ولا نبدّل المصدر.
-                // الجلب الجديد يحدث عند الضغط على تشغيل في الجلسة التالية.
             }
             else {
                 let found = firstEpisode();
@@ -5960,58 +5331,39 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const playEpisode = async (ep, seasonNumber, resumeOverride = null) => {
         const requestId = ++playRequestRef.current;
         setVideoError(false);
-        triedFallbackRef.current = 0;
-        sourceLockedRef.current = false;
+        triedFallbackRef.current = false;
         const savedProgress = currentEpisodeProgress(seasonNumber, ep && ep.number);
         const requestedResume = resumeOverride != null ? Number(resumeOverride)||0 : (savedProgress && !savedProgress.completed ? Number(savedProgress.position)||0 : 0);
         setResumeAt(requestedResume);
         try {
             let url = '';
             let sources = [];
-            let selectedSource = '';
-            const fallbackSaved = getSavedSourceRecord(ep, 'cinemana') || getSavedSourceRecord(ep, '');
-            if (fallbackSaved) {
-                url = fallbackSaved.url;
-                selectedSource = String(fallbackSaved.source || 'saved').toLowerCase();
-                setActiveSource(selectedSource);
-                sources = [...normalizeVideoSources(ep.videoSources), ...normalizeAlternativeSources(ep.alternativeSources)];
-            }
-            const source2Warmup = (!url)
-                ? source2ResolveEpisodeFast({ tmdbId: ep.tmdbId || ep.source2TmdbId || title.tmdbId || title.source2TmdbId, season: seasonNumber, episode: ep && ep.number, collectAll: true, expectedTitle: title.name }).catch(() => null)
-                : Promise.resolve(null);
-
-            if (!url) {
+            const preferred = getPreferredSource();
+            if (preferred === 'source2') {
                 try {
-                    const recovered = await recoverEpisodeVideo(ep, seasonNumber);
-                    if (requestId !== playRequestRef.current) return;
-                    url = recovered.url;
-                    sources = recovered.sources;
-                    selectedSource = 'cinemana';
-                    setActiveSource('cinemana');
+                    const resolved = await source2ResolveForItem(ep, seasonNumber, ep && ep.number);
+                    sources = normalizeVideoSources(resolved.sources);
+                    url = sources[0]?.url || resolved.url;
+                    if (url) setActiveSource('source2');
                 } catch (_) {}
             }
-
             if (!url) {
-                try {
-                    const resolved = await source2Warmup;
-                    if (resolved) {
-                        const source2s = normalizeVideoSources(resolved.sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable);
-                        if (source2s.length) {
-                            sources = source2s;
-                            url = source2s[0].url;
-                            selectedSource = 'source2';
-                            setActiveSource('source2');
-                        }
-                    }
-                } catch (_) {}
+                const primarySaved = getSavedSourceRecord(ep, 'cinemana') || getSavedSourceRecord(ep, '');
+                if (primarySaved) { url = primarySaved.url; setActiveSource(primarySaved.source || 'cinemana'); }
+                sources = normalizeVideoSources(ep.videoSources);
+            }
+            if (!url) {
+                const recovered = await recoverEpisodeVideo(ep, seasonNumber);
+                if (requestId !== playRequestRef.current) return;
+                url = recovered.url;
+                sources = recovered.sources;
             }
             if (requestId !== playRequestRef.current) return;
             setPlayingUrl(url);
-            const picked = sources.find(s => s.url === url) || sources[0] || {};
-            setPlayingMeta({ ...ep, videoUrl: url, videoSources: sources, source: selectedSource || picked.source || '', playbackProvider: selectedSource || picked.source || '', sourceKind: picked.sourceKind || '', subtitleUrl: ep.subtitleUrl || picked.subtitleUrl || '', subtitlePublicUrl: ep.subtitlePublicUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
+            setPlayingMeta({ ...ep, videoUrl: url, videoSources: sources, source: activeSource, playbackProvider: activeSource, sourceKind: (sources.find(s => s.url === url) || {}).sourceKind || '', subtitleUrl: ep.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: ep.subtitlePublicUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
             setPlayingSeasonNumber(seasonNumber != null ? seasonNumber : null);
             setPlayingLabel(`${title.name} · ${ep.title || `الحلقة ${ep.number != null ? ep.number : ''}`}`);
-            ensureVidApiSubtitlePublic({ ...ep, videoUrl: url }).catch(() => {});
+                ensureVidApiSubtitlePublic({ ...ep, videoUrl: url }).catch(() => {});
         }
         catch (e) {
             setVideoError(true);
@@ -6076,55 +5428,58 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         setPlayingMeta(prev => ({ ...prev, videoUrl: url, videoSources: normalizeVideoSources((prev && prev.videoSources) || []), source: String((quality && quality.source) || prev.source || activeSource || 'cinemana').toLowerCase(), playbackProvider: String((quality && quality.source) || prev.playbackProvider || activeSource || 'cinemana').toLowerCase(), sourceKind: String((quality && quality.sourceKind) || prev.sourceKind || '').toLowerCase(), subtitleUrl: normalizeSubtitleUrl((quality && quality.subtitleUrl) || prev.subtitleUrl || '') }));
         setPlayingUrl(normalizeVideoUrl(url));
     };
-    // Source 2 exposes several independent providers. On playback error we cycle through them
-    // before falling back to an old saved/manual URL. This avoids making Cinemana mandatory.
+    // فشل سينمانا (شبكة العميل تحجب الـCDN مثلًا) → نجرب Source 2 حي كمصدر ثاني
+    // حي، دون أي حاجة لرابط مرفوع مسبقًا. تُجرَّب مرة واحدة فقط بكل جلسة تشغيل
+    // (triedFallbackRef) حتى ما ندخل بحلقة تبديل لا نهائية إذا فشل المصدرين.
     const attemptFallback = async () => {
         try {
             const item = title.type === 'movie'
                 ? title
                 : (allEpisodesFlat.find(x => Number(x.number) === Number(playingMeta && playingMeta.number) && Number(x.seasonNumber) === Number(playingSeasonNumber)) || playingMeta);
-            const currentUrl = normalizeVideoUrl(playingUrl);
-            const currentSources = normalizeVideoSources(playingMeta && playingMeta.videoSources ? playingMeta.videoSources : []).filter(source2IsBrowserPlayable);
-            let next = null;
-            if (activeSource === 'source2') {
-                next = currentSources.find(s => String(s.source || '').toLowerCase() === 'source2' && normalizeVideoUrl(s.url) && normalizeVideoUrl(s.url) !== currentUrl) || null;
+            let nextSource = '';
+            let url = '';
+            let sources = [];
+
+            if (activeSource !== 'source2') {
+                const resolved = await source2ResolveForItem(item, playingSeasonNumber, playingMeta && playingMeta.number);
+                sources = normalizeVideoSources(resolved.sources);
+                url = sources[0]?.url || resolved.url;
+                nextSource = 'source2';
+            } else {
+                const cin = getSavedSourceRecord(item, 'cinemana');
+                if (!cin) throw new Error('لا يوجد رابط سينمانا محفوظ لهذا العمل.');
+                url = cin.url;
+                sources = normalizeVideoSources(item && item.videoSources);
+                nextSource = 'cinemana';
             }
-            if (!next && activeSource !== 'source2') {
-                try {
-                    const resolved = await source2ResolveForItem(item, playingSeasonNumber, playingMeta && playingMeta.number);
-                    const fresh = normalizeVideoSources(resolved.sources).filter(s => source2IsBrowserPlayable(s) && normalizeVideoUrl(s.url) !== currentUrl);
-                    if (fresh.length) next = fresh[0];
-                } catch (_) {}
-            }
-            if (!next) {
-                const saved = normalizeVideoSources(item && item.videoSources).find(s => normalizeVideoUrl(s.url) && normalizeVideoUrl(s.url) !== currentUrl) || null;
-                const manualUrl = normalizeVideoUrl(item && item.videoUrl);
-                if (saved) next = { ...saved, source: String(saved.source || 'saved').toLowerCase() };
-                else if (manualUrl && manualUrl !== currentUrl) next = { url: manualUrl, source: 'saved', sourceKind: '' };
-            }
-            if (!next || !next.url) throw new Error('لم يتم العثور على رابط تشغيل بديل صالح.');
-            const nextSource = String(next.source || 'saved').toLowerCase();
-            const mergedSources = [...currentSources, next].filter((x, i, a) => normalizeVideoUrl(x.url) && a.findIndex(y => normalizeVideoUrl(y.url) === normalizeVideoUrl(x.url)) === i);
-            setPlayingMeta(prev => ({ ...prev, videoUrl: next.url, videoSources: mergedSources, source: nextSource, playbackProvider: nextSource, sourceKind: next.sourceKind || '' }));
-            setPlayingUrl(normalizeVideoUrl(next.url));
+
+            if (!url) throw new Error('لم يتم العثور على رابط تشغيل بديل.');
+            const picked = sources.find(s => s.url === url) || sources[0] || null;
+            setPlayingMeta(prev => ({
+                ...prev,
+                videoUrl: url,
+                videoSources: sources,
+                source: nextSource,
+                playbackProvider: nextSource,
+                sourceKind: picked?.sourceKind || ''
+            }));
+            setPlayingUrl(url);
             setVideoError(false);
             setActiveSource(nextSource);
             setPlayerRetryCount(c => c + 1);
-            showToast(nextSource === 'source2' ? `تم التبديل لمزوّد Source 2 آخر${next.provider ? `: ${next.provider}` : ''}` : 'تم التبديل لمصدر محفوظ احتياطي', 'success');
+            showToast('تم التبديل لمصدر تشغيل بديل', 'success');
         } catch (e) {
             setVideoError(true);
             showToast(e.message || 'تعذّر إيجاد مصدر تشغيل بديل', 'error');
         }
     };
     const handlePlaybackError = () => {
-        // The selected EgyBest source is sticky. Never switch sources after
-        // the browser has begun using it; a transient media error must not
-        // silently move the viewer to another stream.
-        setVideoError(true);
-        if (sourceLockedRef.current) {
-            showToast('حدث خطأ في المصدر الحالي؛ لن يتم تبديله تلقائيًا.', 'error');
+        if (triedFallbackRef.current) {
+            setVideoError(true);
             return;
         }
+        triedFallbackRef.current = true;
+        attemptFallback();
     };
     const shareLink = () => {
         const url = `${location.origin}${location.pathname}?t=${title.id}`;
@@ -6244,10 +5599,10 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const centerButton = React.createElement("button", { onClick: () => handlePlay(false), className: `max-w-[88%] rounded-3xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center gap-2.5 px-5 py-3.5 shadow-[0_0_30px_rgba(255,51,75,0.6)] transform hover:scale-105 transition text-white ${centerResumeMode ? 'min-w-[235px]' : 'w-[72px] h-[72px] px-0'}` }, ...centerButtonChildren);
     const centerOverlay = React.createElement("div", { className: "absolute inset-0 bg-gradient-to-t from-glass-950 via-black/40 to-transparent flex items-center justify-center px-4" }, centerButton);
     return (React.createElement("div", { className: `${closing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-50 bg-black/90 md:p-6 md:flex md:items-center md:justify-center overflow-y-auto`, onClick: requestClose },
-        React.createElement("div", { onClick: e => e.stopPropagation(), className: `${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl` },
-            React.createElement("div", { className: "relative", ref: playerAnchorRef },
+        React.createElement("div", { onClick: e => e.stopPropagation(), className: `${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl` },
+            React.createElement("div", { className: "relative" },
                 playingUrl ? (React.createElement("div", { className: "relative" },
-                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl) || isSource2Playback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: 'cinadam-player-' + title.id + '-' + playerRetryCount, src: normalizeVideoUrl(playingUrl), sourceKind: playingMeta.sourceKind || '', onSourcePlaying: () => { sourceLockedRef.current = true; setVideoError(false); setPreferredSource(String(activeSource || 'cinemana').toLowerCase() === 'source2' ? 'source2' : 'cinemana'); }, subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: handlePlaybackError, onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : Number(playingMeta.introStart) || 0, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : Number(playingMeta.introEnd) || 0, recapStart: skipDbSegments.recap ? Number(skipDbSegments.recap.start_ms) / 1000 : Number(playingMeta.recapStart) || 0, recapEnd: skipDbSegments.recap ? Number(skipDbSegments.recap.end_ms) / 1000 : Number(playingMeta.recapEnd) || 0, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : Number(playingMeta.outroStart) || 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : Number(playingMeta.outroEnd) || 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onOutroStart: handleEpisodeComplete, onPreviousEpisode: playPreviousEpisode, onNextEpisode: playNextEpisode, hasPreviousEpisode: !!getPreviousEpisodeInfo(), hasNextEpisode: !!getNextEpisodeInfo(), previousEpisodeLabel: (() => { const p = getPreviousEpisodeInfo(); return p ? `الحلقة السابقة · ${p.title || `الحلقة ${p.number}`}` : 'الحلقة السابقة'; })(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete, onProgressSave: onSaveWatchProgress ? (r => onSaveWatchProgress(title.id, title.type === 'movie' ? { kind: 'movie', ...r, titleName: title.name, poster: title.poster } : { kind: 'episode', season: playingSeasonNumber, episode: playingMeta && playingMeta.number, ...r, titleName: title.name, poster: title.poster, label: playingLabel })) : null })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
+                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl) || isSource2Playback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: 'cinadam-player-' + title.id + '-' + playerRetryCount, src: normalizeVideoUrl(playingUrl), sourceKind: playingMeta.sourceKind || '', onSourcePlaying: () => setPreferredSource(String(activeSource || 'cinemana').toLowerCase() === 'source2' ? 'source2' : 'cinemana'), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: handlePlaybackError, onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : Number(playingMeta.introStart) || 0, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : Number(playingMeta.introEnd) || 0, recapStart: skipDbSegments.recap ? Number(skipDbSegments.recap.start_ms) / 1000 : Number(playingMeta.recapStart) || 0, recapEnd: skipDbSegments.recap ? Number(skipDbSegments.recap.end_ms) / 1000 : Number(playingMeta.recapEnd) || 0, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : Number(playingMeta.outroStart) || 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : Number(playingMeta.outroEnd) || 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onOutroStart: handleEpisodeComplete, onPreviousEpisode: playPreviousEpisode, onNextEpisode: playNextEpisode, hasPreviousEpisode: !!getPreviousEpisodeInfo(), hasNextEpisode: !!getNextEpisodeInfo(), previousEpisodeLabel: (() => { const p = getPreviousEpisodeInfo(); return p ? `الحلقة السابقة · ${p.title || `الحلقة ${p.number}`}` : 'الحلقة السابقة'; })(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete, onProgressSave: onSaveWatchProgress ? (r => onSaveWatchProgress(title.id, title.type === 'movie' ? { kind: 'movie', ...r, titleName: title.name, poster: title.poster } : { kind: 'episode', season: playingSeasonNumber, episode: playingMeta && playingMeta.number, ...r, titleName: title.name, poster: title.poster, label: playingLabel })) : null })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
                     videoError && (React.createElement("div", { className: "absolute inset-0 bg-black/90 flex flex-col items-center justify-center gap-3 p-6 text-center" },
                         React.createElement("p", { className: "text-sm text-slate-200 font-bold" }, "\u062A\u0639\u0630\u0651\u0631 \u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u0639\u0644\u0649 \u0647\u0630\u0627 \u0627\u0644\u062C\u0647\u0627\u0632."),
                         isIOS && (React.createElement("p", { className: "text-xs text-slate-400 max-w-xs leading-relaxed" }, "\u063A\u0627\u0644\u0628\u064B\u0627 \u0627\u0644\u0633\u0628\u0628 \u0623\u0646 \u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u063A\u064A\u0631 \u0645\u0631\u0641\u0648\u0639 \u0628\u0635\u064A\u063A\u0629 \u064A\u062F\u0639\u0645\u0647\u0627 \u0627\u0644\u0622\u064A\u0641\u0648\u0646 \u0645\u0628\u0627\u0634\u0631\u0629. \u0627\u0644\u0623\u0639\u0645\u0627\u0644 \u0627\u0644\u062A\u064A \u062A\u064F\u0631\u0641\u0639 \u0645\u0646 \u0644\u0648\u062D\u0629 \u0627\u0644\u062A\u062D\u0643\u0645 \u0639\u0628\u0631 \u0632\u0631 \"\u0631\u0641\u0639 \u0645\u0646 \u0627\u0644\u062C\u0647\u0627\u0632\" \u062A\u0639\u0645\u0644 \u0628\u0634\u0643\u0644 \u0635\u062D\u064A\u062D \u0639\u0644\u0649 \u0643\u0644 \u0627\u0644\u0623\u062C\u0647\u0632\u0629.")),
@@ -6346,8 +5701,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                                             formatRuntimeMinutesSeconds(getDisplayRuntime(ep, `${title.id}:${ep.seasonNumber}:${ep.number}`)), " دقيقة"))),
                                 done && React.createElement(Icon, { name: "check", className: "w-4 h-4 text-emerald-400 shrink-0 hidden xs:block" }),
                                 isCurrent && React.createElement("span", { className: "text-[10px] px-2 py-1 rounded-lg bg-accent-cyan/15 text-accent-cyan font-bold shrink-0 hidden sm:inline" }, "\u0642\u064A\u062F \u0627\u0644\u062A\u0634\u063A\u064A\u0644"),
-                                React.createElement("button", { onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); playEpisode(ep, ep.seasonNumber); scrollToPlayer(); }, className: "px-3 h-9 rounded-xl bg-accent-cyan/15 border border-accent-cyan/30 hover:bg-accent-cyan/25 text-accent-cyan text-[10px] font-black flex items-center gap-1.5 shrink-0 transition" }, React.createElement(Icon, { name: "arrowUp", className: "w-3.5 h-3.5" }), "مشاهدة من هنا"),
-                                React.createElement("button", { onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); playEpisode(ep, ep.seasonNumber); scrollToPlayer(); }, className: "w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition" },
+                                React.createElement("button", { onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); playEpisode(ep, ep.seasonNumber); }, className: "w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition" },
                                     React.createElement(Icon, { name: "play", className: "w-4 h-4 text-white fill-current translate-x-0.5" }))));
                         }),
                         allEpisodesFlat.length === 0 && React.createElement("p", { className: "text-sm text-slate-500 font-medium" }, "\u0644\u0627 \u062A\u0648\u062C\u062F \u062D\u0644\u0642\u0627\u062A \u0628\u0639\u062F."))) : !seasonView ? (React.createElement("div", { className: "grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3.5" }, seasons.map((s, i) => {
@@ -6401,7 +5755,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                                                 " دقيقة"))),
                                     done && React.createElement(Icon, { name: "check", className: "w-4 h-4 text-emerald-400 shrink-0 hidden xs:block" }),
                                     isCurrent && React.createElement("span", { className: "text-[10px] px-2 py-1 rounded-lg bg-accent-cyan/15 text-accent-cyan font-bold shrink-0" }, "\u0642\u064A\u062F \u0627\u0644\u062A\u0634\u063A\u064A\u0644"),
-                                    React.createElement("button", { onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); playEpisode(ep, seasons[activeSeason].number); scrollToPlayer(); }, className: "w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition" },
+                                    React.createElement("button", { onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); playEpisode(ep, seasons[activeSeason].number); }, className: "w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition" },
                                         React.createElement(Icon, { name: "play", className: "w-4 h-4 text-white fill-current translate-x-0.5" }))));
                             }),
                             (!seasons[activeSeason] || !seasons[activeSeason].episodes || !seasons[activeSeason].episodes.length) && (React.createElement("p", { className: "text-sm text-slate-500 font-medium" }, "\u0644\u0627 \u062A\u0648\u062C\u062F \u062D\u0644\u0642\u0627\u062A \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0645\u0648\u0633\u0645 \u0628\u0639\u062F."))))))),
@@ -7754,10 +7108,10 @@ function VideoDisplaySettings({ value, onChange }) {
         showCropStudio && (React.createElement(CropStudioModal, { videoUrl: normalizeVideoUrl(v.videoUrl), initial: crop, onCancel: () => setShowCropStudio(false), onSave: (newCrop) => { set('crop', newCrop); setShowCropStudio(false); } }))));
 }
 function emptyForm(type) {
-    return { name: '', type: type || 'movie', tmdbId: '', imdbId: '', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', runtimeMinutes: 0, rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, source2TmdbId: '', source2Provider: 'egybest', source2Mode: 'live', source2LastCheckedAt: 0, source2SourceCount: 0, source2Providers: [], trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, alternativeSources: [], seasons: [] };
+    return { name: '', type: type || 'movie', tmdbId: '', imdbId: '', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', runtimeMinutes: 0, rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
 }
 function emptyEpisode(num) {
-    return { number: num, title: '', tmdbId: '', runtimeMinutes: 0, videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, source2TmdbId: '', source2Provider: 'egybest', source2Mode: 'live', source2LastCheckedAt: 0, source2SourceCount: 0, source2Providers: [], imdb: '', tmdbRating: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, alternativeSources: [], finality: 'none' };
+    return { number: num, title: '', tmdbId: '', runtimeMinutes: 0, videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, imdb: '', tmdbRating: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
 }
 function SubtitleHelper({ value, onChange, sourceId, title, type, season, episode, year, cinemanaId, offset = 0, onOffsetChange }) {
     const [loading, setLoading] = useState(false);
@@ -7829,113 +7183,7 @@ function SubtitleHelper({ value, onChange, sourceId, title, type, season, episod
         warn && React.createElement("p", { className: "text-[10px] font-bold text-amber-400 mt-1" }, warn),
         React.createElement("p", { className: "text-[10px] text-slate-500 mt-1.5" }, "\u064A\u0628\u062D\u062B \u0623\u0648\u0644\u064B\u0627 \u0641\u064A \u062A\u0631\u062C\u0645\u0629 \u0633\u064A\u0646\u0645\u0627\u0646\u0627 \u0646\u0641\u0633\u0647\u0627 (\u0646\u0641\u0633 \u0646\u0633\u062E\u0629 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 = \u0623\u062F\u0642 \u062A\u0648\u0642\u064A\u062A) \u062B\u0645 SubDL. \u062A\u064F\u062D\u0641\u0638 \u0641\u064A Firebase \u0648\u0644\u0627 \u062A\u0633\u062A\u0647\u0644\u0643 \u0623\u064A \u0645\u0633\u0627\u062D\u0629 \u0645\u0646 \u062C\u0647\u0627\u0632\u0643.")));
 }
-function AlternativeSourcesEditor({ value, onChange, folder = 'alternative-videos', compact = false }) {
-    const rows = normalizeAlternativeSources(value);
-    const update = (idx, key, val) => onChange(rows.map((r, i) => i === idx ? { ...r, [key]: val, source: 'alternative' } : r));
-    const add = () => onChange([...rows, { label: `مصدر بديل ${rows.length + 1}`, url: '', source: 'alternative', provider: 'مصدر بديل', sourceKind: '' }]);
-    const remove = (idx) => onChange(rows.filter((_, i) => i !== idx));
-    return React.createElement('div', { className: `${compact ? 'mt-3' : 'mt-5'} glass-card rounded-2xl p-3.5 border border-accent-purple/20` },
-        React.createElement('div', { className: 'flex items-center justify-between gap-2 mb-2.5 flex-wrap' },
-            React.createElement('div', null,
-                React.createElement('p', { className: 'text-[11px] font-black text-accent-purple' }, 'المصادر البديلة'),
-                React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, 'أضف أكثر من رابط احتياطي، ويمكن رفع فيديو من الجهاز لكل مصدر.')),
-            React.createElement('span', { className: 'text-[10px] px-2 py-1 rounded-lg bg-accent-purple/10 border border-accent-purple/20 text-accent-purple font-black' }, `${rows.length} مصدر`)),
-        rows.map((row, idx) => React.createElement('div', { key: `${idx}-${row.url}`, className: 'glass-panel rounded-xl p-2.5 border border-white/5 mb-2.5' },
-            React.createElement('div', { className: 'flex items-center gap-2 mb-2' },
-                React.createElement('span', { className: 'w-7 h-7 rounded-lg bg-accent-purple/10 text-accent-purple flex items-center justify-center text-[10px] font-black shrink-0' }, idx + 1),
-                React.createElement('input', { value: row.label || '', onChange: e => update(idx, 'label', e.target.value), placeholder: 'اسم المصدر / الجودة', className: 'flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-purple' }),
-                React.createElement('button', { type: 'button', onClick: () => remove(idx), className: 'w-8 h-8 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center shrink-0', title: 'حذف المصدر' }, React.createElement(Icon, { name: 'trash-2', className: 'w-3.5 h-3.5' }))),
-            React.createElement(FileUploadField, { compact: true, label: 'الرابط أو الملف', value: row.url || '', onChange: v => update(idx, 'url', v), folder, accept: 'video/*' }))),
-        React.createElement('button', { type: 'button', onClick: add, className: 'w-full px-3 py-2 rounded-xl bg-accent-purple/10 border border-accent-purple/20 text-accent-purple text-[11px] font-black hover:bg-accent-purple/20 transition flex items-center justify-center gap-1.5' }, React.createElement(Icon, { name: 'plus', className: 'w-3.5 h-3.5' }), 'إضافة مصدر بديل'));
-}
-
-async function translateOverviewToArabic(text) {
-    const raw = String(text || '').trim();
-    if (!raw) return '';
-    const chunks = [];
-    let current = '';
-    const words = raw.split(/\s+/);
-    const maxBytes = 470;
-    const bytes = str => new TextEncoder().encode(str).length;
-    for (const word of words) {
-        const candidate = current ? `${current} ${word}` : word;
-        if (bytes(candidate) > maxBytes && current) { chunks.push(current); current = word; }
-        else current = candidate;
-    }
-    if (current) chunks.push(current);
-    const translated = [];
-    for (const chunk of chunks) {
-        try {
-            const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(chunk)}&langpair=en|ar`;
-            const res = await fetch(url, { headers: { Accept: 'application/json' } });
-            const data = await res.json();
-            const value = String(data?.responseData?.translatedText || '').trim();
-            if (res.ok && value) translated.push(value);
-        } catch (_) {}
-    }
-    return translated.join(' ').replace(/\s+/g, ' ').trim();
-}
-
-async function generateSmartArabicDescription(form) {
-    const endpoint = String((typeof window !== 'undefined' && window.CINADAM_SOURCE2_CONFIG && window.CINADAM_SOURCE2_CONFIG.aiDescriptionEndpoint) || (typeof window !== 'undefined' && window.CINADAM_AI_DESCRIPTION_ENDPOINT) || '').trim();
-    let id = String(form?.tmdbId || form?.source2TmdbId || '').replace(/\D/g, '');
-    const currentType = form?.type === 'movie' ? 'movie' : 'tv';
-    let best = null;
-    if (!id && form?.name) {
-        try { best = await tmdbFindBestByTitle(form.name, currentType, form.year); id = String(best?.id || '').replace(/\D/g, ''); } catch (_) {}
-    }
-    let arabicDetails = {};
-    let englishDetails = {};
-    if (id) {
-        try { arabicDetails = await tmdbFetch(`${currentType}/${encodeURIComponent(id)}`, { language: 'ar-SA' }); } catch (_) {}
-        if (!String(arabicDetails?.overview || '').trim()) {
-            try { englishDetails = await tmdbFetch(`${currentType}/${encodeURIComponent(id)}`, { language: 'en-US' }); } catch (_) {}
-        }
-    }
-    const details = Object.keys(arabicDetails || {}).length ? arabicDetails : englishDetails;
-    const title = String(form?.name || details?.title || details?.name || '').trim();
-    const nativeArabic = String(arabicDetails?.overview || '').trim();
-    const englishOverview = String(englishDetails?.overview || details?.overview || '').trim();
-    const year = Number(form?.year) || Number(String(details?.release_date || details?.first_air_date || '').slice(0, 4)) || 0;
-
-    // Optional server-side AI endpoint stays supported. The secret must remain on the server.
-    if (endpoint) {
-        try {
-            const payload = { title, type: form?.type || currentType, year, genres: Array.isArray(details?.genres) ? details.genres.map(g => g?.name).filter(Boolean) : normalizeGenresValue(form?.genresText), overview: nativeArabic || englishOverview, language: 'ar' };
-            const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(payload) });
-            const raw = await response.text();
-            let data = {}; try { data = raw ? JSON.parse(raw) : {}; } catch (_) {}
-            const generated = String(data.description || data.text || data.content || data.result || '').trim();
-            if (response.ok && generated) return { text: generated, mode: 'ai', id };
-        } catch (_) {}
-    }
-    if (nativeArabic) return { text: nativeArabic, mode: 'tmdb-ar', id };
-    if (englishOverview) {
-        const translated = await translateOverviewToArabic(englishOverview);
-        if (translated) return { text: translated, mode: 'mymemory', id };
-        return { text: englishOverview, mode: 'tmdb-en', id };
-    }
-    return { text: `وصف غير متوفر حاليًا لهذا العمل${title ? `: ${title}` : ''}.`, mode: 'empty', id };
-}
-function SmartDescriptionHelper({ form, onChange }) {
-    const [loading, setLoading] = useState(false);
-    const [msg, setMsg] = useState('');
-    const run = async () => {
-        if (!String(form?.name || '').trim()) { setMsg('اكتب اسم العمل أولًا.'); return; }
-        setLoading(true); setMsg('جاري توليد وصف مناسب...');
-        try {
-            const r = await generateSmartArabicDescription(form);
-            onChange && onChange(r.text);
-            setMsg(r.mode === 'ai' ? '✓ تم توليد الوصف عبر نقطة الذكاء الاصطناعي المضبوطة.' : (r.mode === 'tmdb-ar' ? '✓ تم جلب الوصف العربي الأصلي من TMDB.' : (r.mode === 'mymemory' ? '✓ تمت ترجمة الوصف إلى العربية تلقائيًا.' : '✓ تم استخدام وصف TMDB المتاح.')));
-        } catch (e) { setMsg(e?.message || 'تعذر توليد الوصف.'); }
-        finally { setLoading(false); }
-    };
-    return React.createElement('div', { className: 'mt-2.5 flex items-center gap-2 flex-wrap' },
-        React.createElement('button', { type: 'button', onClick: run, disabled: loading, className: 'px-3 py-1.5 rounded-xl bg-accent-purple/10 border border-accent-purple/25 text-accent-purple text-[11px] font-black disabled:opacity-40 flex items-center gap-1.5' }, React.createElement(Icon, { name: 'sparkles', className: 'w-3.5 h-3.5' }), loading ? 'جاري التوليد...' : 'توليد وصف ذكي'),
-        msg && React.createElement('span', { className: `text-[10px] font-bold ${msg.startsWith('✓') ? 'text-emerald-400' : 'text-slate-400'}` }, msg));
-}
-
-function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sourceId, seriesName, seriesTmdbId }) {
+function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sourceId, seriesName }) {
     const e = episode;
     const eRef = useRef(e);
     const [tmdbRatingLoading, setTmdbRatingLoading] = useState(false);
@@ -7985,8 +7233,6 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
                 "\u00BB")),
         React.createElement("div", { className: "mt-3.5" },
             React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u062D\u0644\u0642\u0629 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: e.videoUrl, onChange: v => set('videoUrl', v), folder: "episodes", accept: "video/*" })),
-        React.createElement(AlternativeSourcesEditor, { value: e.alternativeSources || [], onChange: v => set('alternativeSources', v), folder: 'episode-alternatives' }),
-        React.createElement(Source2Helper, { kind: "tv", tmdbId: seriesTmdbId || e.source2TmdbId || e.tmdbId || '', defaultTitle: seriesName, season: seasonNumber, episode: e.number, onChange: patch => onChange({ ...eRef.current, ...patch }) }),
         React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb) }),
         React.createElement("div", { className: "mt-3.5 flex items-center gap-2" },
             React.createElement("div", { className: "h-px flex-1 bg-white/10" }),
@@ -8332,17 +7578,12 @@ function AdminContentForm({ initial, defaultType, onDone }) {
         if (form.type === 'movie') {
             payload.videoUrl = normalizeVideoUrl(form.videoUrl.trim());
             payload.videoSources = normalizeVideoSources(form.videoSources);
-            payload.alternativeSources = normalizeAlternativeSources(form.alternativeSources);
             const source2TmdbId = await source2EnsureTmdbId(form, sourceId);
             payload.tmdbId = source2TmdbId || String(form.tmdbId || '');
             payload.imdbId = String(form.imdbId || (/^tt\d+$/i.test(String(sourceId || '')) ? sourceId : ''));
             payload.source2 = source2InfoForPayload(payload.tmdbId);
-            payload.source2Provider = 'egybest';
+            payload.source2Provider = 'cinepro';
             payload.source2TmdbId = String(payload.tmdbId || '');
-            payload.source2Mode = 'live';
-            payload.source2LastCheckedAt = Number(form.source2LastCheckedAt) || 0;
-            payload.source2SourceCount = Number(form.source2SourceCount) || 0;
-            payload.source2Providers = normalizeGenresValue(form.source2Providers);
 
             // مهم جدًا للأفلام: لا نحفظ cinemanaId وحده ونترك videoUrl/videoSources فارغة.
             // الهاتف لا يستطيع الوصول إلى Node المحلي حتى يسترجع الرابط، بينما الحلقات
@@ -8386,7 +7627,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 poster: (s.poster || '').trim(),
                 episodeThumbnail: (s.episodeThumbnail || '').trim(),
                 episodes: (s.episodes || []).map(e => ({
-                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), alternativeSources: normalizeAlternativeSources(e.alternativeSources), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || ''), source2TmdbId: String(e.source2TmdbId || '').replace(/\D/g, ''), source2Provider: String(e.source2Provider || 'egybest'), source2Mode: String(e.source2Mode || (e.source2TmdbId ? 'live' : '')), source2LastCheckedAt: Number(e.source2LastCheckedAt) || 0, source2SourceCount: normalizeVideoSources(e.source2Sources || e.source2?.sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable).length, source2Providers: normalizeVideoSources(e.source2Sources || e.source2?.sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable).length ? ['egybest'] : [], source2Sources: normalizeVideoSources(e.source2Sources || e.source2?.sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable), source2: e.source2 && typeof e.source2 === 'object' ? { ...e.source2, provider: 'egybest', sources: normalizeVideoSources(e.source2.sources || e.source2Sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable), sourceCount: normalizeVideoSources(e.source2.sources || e.source2Sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable).length } : e.source2, imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
+                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || ''), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
                     trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, introStart: Number(e.introStart) || 0, introEnd: Number(e.introEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
                 }))
             }));
@@ -8394,22 +7635,14 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.tmdbId = source2TmdbId || String(form.tmdbId || '');
             payload.imdbId = String(form.imdbId || (/^tt\d+$/i.test(String(sourceId || '')) ? sourceId : ''));
             payload.source2 = source2InfoForPayload(payload.tmdbId);
-            payload.source2Provider = 'egybest';
+            payload.source2Provider = 'cinepro';
             payload.source2TmdbId = String(payload.tmdbId || '');
-            payload.source2Mode = 'live';
-            payload.source2LastCheckedAt = Number(form.source2LastCheckedAt) || 0;
-            payload.source2SourceCount = Number(form.source2SourceCount) || 0;
-            payload.source2Providers = normalizeGenresValue(form.source2Providers);
             payload.seasons = payload.seasons.map(se => ({
                 ...se,
                 episodes: (se.episodes || []).map(ep => ({
                     ...ep,
                     source2TmdbId: String(payload.tmdbId || ''),
-                    source2Provider: 'egybest',
-                    source2Mode: 'live',
-                    source2LastCheckedAt: Number(ep.source2LastCheckedAt) || 0,
-                    source2SourceCount: Number(ep.source2SourceCount) || 0,
-                    source2Providers: normalizeGenresValue(ep.source2Providers),
+                    source2Provider: 'cinepro',
                     source2Season: Number(se.number) || 1,
                     source2Episode: Number(ep.number) || 1
                 }))
@@ -8479,19 +7712,16 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 React.createElement("input", { value: form.rtRating, onChange: e => set('rtRating', e.target.value), placeholder: "92", className: inputCls }))),
         React.createElement("div", { className: "mt-5" },
             React.createElement("label", { className: labelCls }, "\u0627\u0644\u0648\u0635\u0641"),
-            React.createElement("textarea", { value: form.description, onChange: e => set('description', e.target.value), rows: 3, className: inputCls }),
-            React.createElement(SmartDescriptionHelper, { form: form, onChange: v => set('description', v) })),
+            React.createElement("textarea", { value: form.description, onChange: e => set('description', e.target.value), rows: 3, className: inputCls })),
         form.type === 'movie' ? (React.createElement("div", null,
             React.createElement("div", { className: "mt-5" },
                 React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u0644\u0645 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: form.videoUrl, onChange: v => set('videoUrl', v), folder: "videos", accept: "video/*" })),
-            React.createElement(AlternativeSourcesEditor, { value: form.alternativeSources || [], onChange: v => set('alternativeSources', v), folder: 'alternative-videos' }),
-            React.createElement(Source2Helper, { kind: 'movie', tmdbId: form.tmdbId || form.source2TmdbId || '', defaultTitle: form.name, defaultYear: form.year, onChange: patch => setForm(prev => ({ ...prev, ...patch })) }),
             React.createElement(CinemanaHelper, { kind: form.type === 'anime' ? 'anime' : 'movie', defaultTitle: form.name, defaultYear: form.year, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb), onImportTmdb: async (item) => {
                     if (sourceId) return { patch: {}, sourceId, imdbId: '', tmdbId: '' };
                     const r = await importFromTmdbTitle(cinemanaTitle(item), form.type, cinemanaYear(item) || form.year, { withEpisodes: false });
                     setSourceId(r.sourceId || '');
                     setSubtitleSourceIds([r.imdbId, r.tmdbId].filter(Boolean));
-                    setForm(prev => ({ ...prev, ...r.patch, videoUrl: prev.videoUrl, videoSources: prev.videoSources, alternativeSources: prev.alternativeSources }));
+                    setForm(prev => ({ ...prev, ...r.patch, videoUrl: prev.videoUrl, videoSources: prev.videoSources }));
                     setBannerData(r.bannerData || null);
                     return r;
                   } }),
@@ -8617,7 +7847,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                             activeSeason.episodes.length === 0 && React.createElement("p", { className: "text-xs text-slate-500 font-medium py-2" }, "\u0644\u0627 \u062A\u0648\u062C\u062F \u062D\u0644\u0642\u0627\u062A \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0645\u0648\u0633\u0645 \u0628\u0639\u062F.")),
                         React.createElement("button", { onClick: () => { addEpisode(activeSeasonIdx); setEditingEpisodeIdx(activeSeason.episodes.length); }, className: "mt-3 flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl glass-card border border-white/10 hover:border-accent-cyan text-slate-200 font-bold transition" },
                             React.createElement(Icon, { name: "plus", className: "w-3.5 h-3.5 text-accent-cyan" }),
-                            "\u0625\u0636\u0627\u0641\u0629 \u062D\u0644\u0642\u0629 \u062C\u062F\u064A\u062F\u0629"))) : (React.createElement(EpisodeEditor, { episode: activeSeason.episodes[editingEpisodeIdx], seasonNumber: activeSeason.number, sourceId: sourceId, seriesName: form.name, seriesTmdbId: form.tmdbId || form.source2TmdbId || '', onChange: (newEp) => replaceEpisode(activeSeasonIdx, editingEpisodeIdx, newEp), onBack: () => setEditingEpisodeIdx(null), onDelete: () => { removeEpisode(activeSeasonIdx, editingEpisodeIdx); setEditingEpisodeIdx(null); } }))))))))),
+                            "\u0625\u0636\u0627\u0641\u0629 \u062D\u0644\u0642\u0629 \u062C\u062F\u064A\u062F\u0629"))) : (React.createElement(EpisodeEditor, { episode: activeSeason.episodes[editingEpisodeIdx], seasonNumber: activeSeason.number, sourceId: sourceId, seriesName: form.name, onChange: (newEp) => replaceEpisode(activeSeasonIdx, editingEpisodeIdx, newEp), onBack: () => setEditingEpisodeIdx(null), onDelete: () => { removeEpisode(activeSeasonIdx, editingEpisodeIdx); setEditingEpisodeIdx(null); } }))))))))),
         React.createElement("div", { className: "flex items-center gap-6 mt-6 flex-wrap" },
             React.createElement("label", { className: "flex items-center gap-2.5 text-sm font-bold text-slate-200 cursor-pointer" },
                 React.createElement("input", { type: "checkbox", checked: form.featured, onChange: e => set('featured', e.target.checked), className: "w-4 h-4 rounded accent-accent-cyan" }),
@@ -8974,704 +8204,11 @@ function getSubtitleProgress(title) {
     const episodes = (title.seasons || []).flatMap(se => Array.isArray(se.episodes) ? se.episodes : []);
     return { done: episodes.filter(ep => normalizeSubtitleUrl(ep.subtitleUrl || '')).length, total: episodes.length };
 }
-function countCinemanaSources(item) {
-    const direct = normalizeVideoSources(item?.videoSources).filter(s => String(s.source || '').toLowerCase() === 'cinemana');
-    const episodes = (item?.seasons || []).flatMap(s => (s.episodes || [])).flatMap(ep => normalizeVideoSources(ep.videoSources)).filter(s => String(s.source || '').toLowerCase() === 'cinemana');
-    return direct.length + episodes.length;
-}
-function countAlternativeSources(item) {
-    const direct = normalizeAlternativeSources(item?.alternativeSources).length;
-    const episodes = (item?.seasons || []).flatMap(s => (s.episodes || [])).reduce((n, ep) => n + normalizeAlternativeSources(ep.alternativeSources).length, 0);
-    return direct + episodes;
-}
-function countSource2Entries(item) {
-    if (!item) return 0;
-    if (item.type === 'movie') return normalizeVideoSources(item.source2Sources || item.source2?.sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable).length;
-    return (item.seasons || []).flatMap(s => (s.episodes || [])).reduce((n, ep) => n + normalizeVideoSources(ep.source2Sources || ep.source2?.sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable).length, 0);
-}
-function getSource2Coverage(item) {
-    if (!item) return { done: 0, total: 0, complete: false, sources: 0 };
-    if (item.type === 'movie') {
-        const sources = countSource2Entries(item);
-        return { done: sources > 0 ? 1 : 0, total: 1, complete: sources > 0, sources };
-    }
-    const episodes = (item.seasons || []).flatMap(s => (s.episodes || []));
-    const done = episodes.filter(ep => normalizeVideoSources(ep.source2Sources || ep.source2?.sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable).length > 0).length;
-    const sources = episodes.reduce((n, ep) => n + normalizeVideoSources(ep.source2Sources || ep.source2?.sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable).length, 0);
-    return { done, total: episodes.length, complete: episodes.length > 0 && done === episodes.length, sources };
-}
-function countAlternativeDisplaySources(item) {
-    return countSource2Entries(item);
-}
-
-async function resolveCinemanaRecordForTitle(t) {
-    const saved = String(t?.cinemanaId || '').trim();
-    if (saved) return { nb: saved };
-    const kind = t?.type === 'movie' ? 'movie' : (t?.type === 'anime' ? 'anime' : 'tv');
-    const results = await cinemanaSearch(t?.name || '', kind);
-    const sameYear = results.find(r => String(cinemanaYear(r) || '') === String(t?.year || ''));
-    const pick = sameYear || results[0];
-    if (!pick?.nb) throw new Error('لم يتم العثور على العمل في سينمانا');
-    return pick;
-}
-async function bulkRefreshCinemanaTitle(t) {
-    const picked = await resolveCinemanaRecordForTitle(t);
-    const patch = { cinemanaId: String(picked.nb) };
-    if (t.type === 'movie') {
-        const sources = cinemanaVideoSources(await cinemanaVideos(String(picked.nb), 'movie'));
-        if (!sources.length) throw new Error('سينمانا لم تُرجع مصادر لهذا الفيلم');
-        patch.videoSources = sources;
-        patch.videoUrl = sources[0].url;
-        patch.playbackProvider = 'cinemana';
-    } else {
-        const cinEpisodes = await cinemanaEpisodes(String(picked.nb));
-        const seasons = normalizeSeasonsValue(t.seasons).map(s => ({ ...s, episodes: (s.episodes || []).map(e => ({ ...e })) }));
-        let matched = 0;
-        for (const season of seasons) {
-            for (const ep of (season.episodes || [])) {
-                const match = cinEpisodes.find(x => cinemanaEpisodeSeason(x) === Number(season.number) && cinemanaEpisodeNumber(x) === Number(ep.number));
-                if (!match?.nb) continue;
-                try {
-                    const sources = cinemanaVideoSources(await cinemanaVideos(String(match.nb), 'tv'));
-                    if (sources.length) {
-                        ep.cinemanaId = String(match.nb);
-                        ep.videoSources = sources;
-                        ep.videoUrl = sources[0].url;
-                        ep.playbackProvider = 'cinemana';
-                        matched++;
-                    }
-                } catch (_) {}
-            }
-        }
-        patch.seasons = seasons;
-        if (!matched) throw new Error('لم يتم تحديث أي حلقة من سينمانا');
-    }
-    patch.cinemanaLastUpdatedAt = Date.now();
-    await db.ref(`titles/${t.id}`).update(patch);
-    return { updated: true, count: t.type === 'movie' ? 1 : (patch.seasons || []).reduce((n, s) => n + (s.episodes || []).filter(e => e.videoUrl).length, 0) };
-}
-async function bulkRefreshSource2Title(t, onPartProgress) {
-    let tmdbId = String(t.tmdbId || t.source2TmdbId || t.source2?.tmdbId || '').replace(/\D/g, '');
-    if (!tmdbId) {
-        const best = await tmdbFindBestByTitle(t.name, t.type === 'movie' ? 'movie' : 'tv', t.year);
-        tmdbId = best?.id ? String(best.id) : '';
-    }
-    if (!tmdbId) throw new Error('لم أجد TMDB ID تلقائيًا لهذا العمل.');
-
-    if (t.type === 'movie') {
-        const r = await source2ResolveMovie({ tmdbId });
-        let sources = normalizeVideoSources(r.sources).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable);
-        try {
-            const expanded = await source2ExpandSourcesByQuality(sources);
-            if (expanded.length) sources = expanded;
-        } catch (_) {}
-        const patch = {
-            source2: source2StoredRecordFromResolved({ ...r, sources }, 1, 1, 'movie'),
-            source2TmdbId: r.tmdbId,
-            tmdbId: r.tmdbId,
-            source2Provider: 'egybest',
-            source2Mode: 'live',
-            source2LastCheckedAt: Date.now(),
-            source2SourceCount: sources.length,
-            source2Providers: Array.from(new Set(sources.map(s => s.provider).filter(Boolean))),
-            source2Sources: sources,
-            source2ExpiresAt: Number(r.raw?.expiresAt || 0) || 0
-        };
-        await db.ref(`titles/${t.id}`).update(sanitizeFirebasePatch(patch));
-        onPartProgress?.(1, 1, { message: 'تم جلب مصادر الفيلم', batchDone: 1, batchTotal: 1, updated: 1, failed: 0 });
-        return { updated: 1, failed: 0, sourceCount: sources.length };
-    }
-
-    // TV/Anime: process every episode in small parallel batches.
-    // Each episode first uses the aggregate Source 2 route, then all known
-    // provider-specific routes as fallback.
-    const seasons = normalizeSeasonsValue(t.seasons).map(s => ({
-        ...s,
-        episodes: (s.episodes || []).map(e => ({ ...e }))
-    }));
-    const jobs = [];
-    seasons.forEach((season, si) => {
-        (season.episodes || []).forEach((ep, ei) => {
-            jobs.push({
-                si,
-                ei,
-                season: Number(season.number) || 1,
-                episode: Number(ep.number) || 1
-            });
-        });
-    });
-
-    const total = jobs.length;
-    let done = 0, updated = 0, failed = 0;
-    const BATCH_SIZE = 2;
-
-    for (let offset = 0; offset < jobs.length; offset += BATCH_SIZE) {
-        const batch = jobs.slice(offset, offset + BATCH_SIZE);
-
-        const results = await Promise.all(batch.map(async job => {
-            const ep = seasons[job.si].episodes[job.ei];
-            try {
-                const r = await source2ResolveEpisodeFast({
-                    tmdbId,
-                    season: job.season,
-                    episode: job.episode,
-                    timeoutMs: SOURCE2_FAST_EPISODE_TIMEOUT,
-                    collectAll: true
-                });
-                let sources = normalizeVideoSources(r.sources).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable);
-                try {
-                    const expanded = await source2ExpandSourcesByQuality(sources);
-                    if (expanded.length) sources = expanded;
-                } catch (_) {}
-
-                ep.source2TmdbId = r.tmdbId;
-                ep.source2Provider = 'egybest';
-                ep.source2Mode = 'live';
-                ep.source2LastCheckedAt = Date.now();
-                ep.source2Season = job.season;
-                ep.source2Episode = job.episode;
-                ep.source2ResolverVersion = SOURCE2_RESOLVER_VERSION;
-                ep.source2SourceCount = sources.length;
-                ep.source2Providers = Array.from(new Set(sources.map(s => s.provider).filter(Boolean)));
-                ep.source2 = source2StoredRecordFromResolved(r, job.season, job.episode, 'tv');
-                ep.source2Sources = sources;
-
-                return { ok: true, job, sourceCount: sources.length };
-            } catch (error) {
-                ep.source2LastCheckedAt = Date.now();
-                ep.source2LastError = error?.message || 'تعذر جلب البديل';
-                // Do not fall back to the slow 13-provider aggregate here.
-                // The individual episode can retry later when the user watches it.
-                return { ok: false, job, error };
-            }
-        }));
-
-        const batchUpdated = results.filter(x => x.ok).length;
-        const batchFailed = results.length - batchUpdated;
-        updated += batchUpdated;
-        failed += batchFailed;
-        done += results.length;
-
-        const sourceCount = seasons.reduce(
-            (n, s) => n + (s.episodes || []).reduce((m, e) => m + (Number(e.source2SourceCount) || 0), 0),
-            0
-        );
-        const providers = Array.from(new Set(
-            seasons.flatMap(s => (s.episodes || []).flatMap(e => e.source2Providers || []))
-        ));
-
-        await db.ref(`titles/${t.id}`).update(sanitizeFirebasePatch({
-            source2: source2InfoForPayload(tmdbId),
-            tmdbId,
-            source2TmdbId: tmdbId,
-            source2Provider: 'egybest',
-            source2Mode: 'live',
-            source2LastCheckedAt: Date.now(),
-            source2SourceCount: sourceCount,
-            source2Providers: providers,
-            seasons
-        }));
-
-        const batchMessage = batchUpdated === batch.length
-            ? `تم جلب مصادر ${batch.length} حلقة`
-            : `تم فحص ${batch.length} حلقات — نجح ${batchUpdated} وفشل ${batchFailed}`;
-
-        onPartProgress?.(done, total, {
-            message: `${batchMessage} · ${done}/${total}`,
-            batchDone: batch.length,
-            batchTotal: BATCH_SIZE,
-            updated: batchUpdated,
-            failed: batchFailed
-        });
-    }
-
-    // Mark the parent work green only when every episode has at least one fast source.
-    const coverage = getSource2Coverage({ ...t, seasons });
-    await db.ref(`titles/${t.id}/source2Coverage`).set({
-        done: coverage.done,
-        total: coverage.total,
-        complete: coverage.complete,
-        sourceCount: coverage.sources,
-        checkedAt: Date.now()
-    });
-
-    if (total > 0 && updated === 0) {
-        throw new Error(`Source 2 لم يجلب أي مصدر للحلقات (${done}/${total}).`);
-    }
-    return {
-        updated,
-        failed,
-        sourceCount: coverage.sources,
-        episodeDone: coverage.done,
-        episodeTotal: coverage.total,
-        complete: coverage.complete
-    };
-}
-async function bulkSyncAlternativeSourcesTitle(t) {
-    const patch = {};
-    if (t.type === 'movie') {
-        patch.alternativeSources = normalizeAlternativeSources(t.alternativeSources);
-    } else {
-        patch.seasons = normalizeSeasonsValue(t.seasons).map(s => ({ ...s, episodes: (s.episodes || []).map(ep => ({ ...ep, alternativeSources: normalizeAlternativeSources(ep.alternativeSources) })) }));
-    }
-    patch.alternativeSourcesLastSyncedAt = Date.now();
-    await db.ref(`titles/${t.id}`).update(patch);
-    return { updated: countAlternativeSources({ ...t, ...patch }) };
-}
-function AdminSourcesManager({ currentUser, titles }) {
-    const [kind, setKind] = useState('all');
-    const [running, setRunning] = useState(false);
-    const [mode, setMode] = useState('all');
-    const [done, setDone] = useState(0);
-    const [total, setTotal] = useState(0);
-    const [success, setSuccess] = useState(0);
-    const [failed, setFailed] = useState(0);
-    const [current, setCurrent] = useState('');
-    const [part, setPart] = useState({ done: 0, total: 0 });
-    const [lastError, setLastError] = useState('');
-    const stopRef = useRef(false);
-    const list = (titles || []).filter(t => !t.deleted && (kind === 'all' || t.type === kind));
-    const stats = { cinemana: list.filter(t => countCinemanaSources(t) > 0).length, source2: list.filter(t => countSource2Entries(t) > 0).length, alternative: list.filter(t => countAlternativeSources(t) > 0).length };
-    const run = async (jobMode) => {
-        if (running || !list.length) return;
-        setRunning(true); setMode(jobMode); setDone(0); setTotal(list.length); setSuccess(0); setFailed(0); setCurrent(''); setLastError(''); setPart({ done: 0, total: 0 }); stopRef.current = false;
-        for (let i = 0; i < list.length; i++) {
-            if (stopRef.current) break;
-            const t = list[i]; setCurrent(t.name || `#${i + 1}`); setPart({ done: 0, total: t.type === 'movie' ? 1 : (t.seasons || []).reduce((n, s) => n + (s.episodes || []).length, 0) });
-            try {
-                if (jobMode === 'cinemana' || jobMode === 'all') await bulkRefreshCinemanaTitle(t);
-                if (stopRef.current) break;
-                if (jobMode === 'source2' || jobMode === 'all') await bulkRefreshSource2Title(t, (d, n, info) => { setPart({ done: d, total: n }); if (info?.message) setCurrent(`${t.name || ''} — ${info.message}`); });
-                if (jobMode === 'alternative' || jobMode === 'all') await bulkSyncAlternativeSourcesTitle(t);
-                setSuccess(x => x + 1);
-            } catch (e) { setFailed(x => x + 1); setLastError(`${t.name}: ${e?.message || 'خطأ غير معروف'}`); }
-            setDone(i + 1);
-        }
-        if (stopRef.current) setCurrent('تم إيقاف العملية يدويًا.');
-        else setCurrent('اكتملت العملية.');
-        setRunning(false);
-        logAuditAction(currentUser, `تحديث مصادر جماعي: ${jobMode}`, `${done}/${total}`);
-        showToast(stopRef.current ? 'تم إيقاف تحديث المصادر.' : 'اكتمل تحديث المصادر الجماعي.');
-    };
-    return React.createElement('div', { className: 'glass-card rounded-2xl p-4 md:p-5 border border-accent-cyan/20 mb-5' },
-        React.createElement('div', { className: 'flex items-start justify-between gap-3 flex-wrap mb-4' },
-            React.createElement('div', null,
-                React.createElement('h3', { className: 'font-black text-white text-base flex items-center gap-2' }, React.createElement(Icon, { name: 'refreshCw', className: 'w-4 h-4 text-accent-cyan' }), 'إدارة مصادر جميع الأعمال'),
-                React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, 'تحديث روابط سينمانا، تحديث Source 2 البديل، ومزامنة المصادر البديلة المحفوظة.')),
-            React.createElement('div', { className: 'flex gap-1.5 flex-wrap' }, ['all','movie','series','anime'].map(k => React.createElement('button', { key:k, type:'button', onClick: () => !running && setKind(k), className:`px-2.5 py-1.5 rounded-lg text-[10px] font-black border ${kind===k ? 'bg-accent-cyan text-glass-950 border-accent-cyan' : 'bg-white/5 text-slate-300 border-white/10'}` }, k === 'all' ? 'الكل' : TYPE_LABELS[k])))),
-        React.createElement('div', { className: 'grid grid-cols-3 gap-2 mb-4' },
-            React.createElement('div', { className:'rounded-xl bg-white/5 border border-white/10 p-3 text-center' }, React.createElement('p',{className:'text-[10px] text-slate-500'},'سينمانا'), React.createElement('p',{className:'text-lg font-black text-white mt-1'},`${stats.cinemana}/${list.length}`)),
-            React.createElement('div', { className:'rounded-xl bg-white/5 border border-white/10 p-3 text-center' }, React.createElement('p',{className:'text-[10px] text-slate-500'},'Source 2'), React.createElement('p',{className:'text-lg font-black text-white mt-1'},`${stats.source2}/${list.length}`)),
-            React.createElement('div', { className:'rounded-xl bg-white/5 border border-white/10 p-3 text-center' }, React.createElement('p',{className:'text-[10px] text-slate-500'},'البدائل المحفوظة'), React.createElement('p',{className:'text-lg font-black text-white mt-1'},`${stats.alternative}/${list.length}`))),
-        React.createElement('div', { className:'flex flex-wrap gap-2' },
-            React.createElement('button',{type:'button',disabled:running||!list.length,onClick:()=>run('cinemana'),className:'px-3.5 py-2 rounded-xl bg-accent-red/15 border border-accent-red/30 text-accent-red text-xs font-black disabled:opacity-40'},'تحديث روابط سينمانا'),
-            React.createElement('button',{type:'button',disabled:running||!list.length,onClick:()=>run('source2'),className:'px-3.5 py-2 rounded-xl bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan text-xs font-black disabled:opacity-40'},'تحديث المصادر البديلة / Source 2'),
-            React.createElement('button',{type:'button',disabled:running||!list.length,onClick:()=>run('alternative'),className:'px-3.5 py-2 rounded-xl bg-accent-purple/15 border border-accent-purple/30 text-accent-purple text-xs font-black disabled:opacity-40'},'مزامنة البدائل المحفوظة'),
-            React.createElement('button',{type:'button',disabled:running||!list.length,onClick:()=>run('all'),className:'px-3.5 py-2 rounded-xl bg-white/10 border border-white/15 text-white text-xs font-black disabled:opacity-40'},'تحديث الكل'),
-            running && React.createElement('button',{type:'button',onClick:()=>{stopRef.current=true;},className:'px-3.5 py-2 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-black'},'إيقاف')),
-        React.createElement('div',{className:'mt-4'},
-            React.createElement('div',{className:'flex justify-between text-[10px] font-bold text-slate-400 mb-1'}, React.createElement('span',null,running?`جاري: ${current}`:current), React.createElement('span',null,`${done}/${total}`)),
-            React.createElement('div',{className:'h-2 rounded-full bg-glass-900 overflow-hidden border border-white/5'},React.createElement('div',{className:'h-full bg-accent-cyan transition-all duration-300',style:{width:`${total ? Math.min(100,(done/total)*100) : 0}%`}})),
-            React.createElement('div',{className:'flex gap-3 mt-2 text-[10px] font-bold'},React.createElement('span',{className:'text-emerald-400'},`نجح ${success}`),React.createElement('span',{className:'text-rose-400'},`فشل ${failed}`),part.total>0&&React.createElement('span',{className:'text-accent-purple'},`العمل الداخلي ${part.done}/${part.total}`))),
-        lastError && React.createElement('p',{className:'text-[10px] text-amber-400 font-bold mt-2 break-words'},`آخر خطأ: ${lastError}`));
-}
-
-function AdminSourcesQuickActions({ currentUser, titles, contentType }) {
-    const [running, setRunning] = useState(false);
-    const [done, setDone] = useState(0);
-    const [total, setTotal] = useState(0);
-    const [success, setSuccess] = useState(0);
-    const [failed, setFailed] = useState(0);
-    const [current, setCurrent] = useState('');
-    const [part, setPart] = useState({ done: 0, total: 0 });
-    const list = (titles || []).filter(t => !t.deleted && ['movie','series','anime'].includes(t.type));
-    const alternativeCount = list.reduce((n, t) => n + countAlternativeDisplaySources(t), 0);
-    const cinemanaCount = list.reduce((n, t) => n + countCinemanaSources(t), 0);
-    const perType = ['movie','series','anime'].map(k => ({ key:k, label:TYPE_LABELS[k], count:list.filter(t => t.type === k).length }));
-    const run = async (jobMode) => {
-        if (running || !list.length) return;
-        setRunning(true); setDone(0); setTotal(list.length); setSuccess(0); setFailed(0); setCurrent(''); setPart({ done: 0, total: 0 });
-        for (let i = 0; i < list.length; i++) {
-            const t = list[i];
-            setCurrent(t.name || `#${i + 1}`);
-            setPart({ done: 0, total: t.type === 'movie' ? 1 : (t.seasons || []).reduce((n, ss) => n + (ss.episodes || []).length, 0) });
-            try {
-                if (jobMode === 'alternative') await bulkRefreshSource2Title(t, (d, n, info) => { setPart({ done: d, total: n }); if (info?.message) setCurrent(`${t.name || ''} — ${info.message}`); });
-                else {
-                    await bulkRefreshCinemanaTitle(t);
-                    await bulkRefreshSource2Title(t, (d, n, info) => { setPart({ done: d, total: n }); if (info?.message) setCurrent(`${t.name || ''} — ${info.message}`); });
-                }
-                setSuccess(v => v + 1);
-            } catch (e) {
-                setFailed(v => v + 1);
-                setCurrent(`${t.name || 'عمل'} — ${e?.message || 'خطأ'}`);
-            }
-            setDone(i + 1);
-        }
-        setRunning(false);
-        setCurrent('اكتملت العملية.');
-        logAuditAction(currentUser, jobMode === 'alternative' ? 'إضافة مصدر بديل جماعي' : 'تحديث جميع الروابط', `${list.length} أعمال`);
-        showToast(jobMode === 'alternative' ? 'تم فحص/إضافة المصادر البديلة للأعمال.' : 'تم تحديث سينمانا والمصادر البديلة.');
-    };
-    const pct = total ? Math.round((done / total) * 100) : 0;
-    return React.createElement('div', { className: 'glass-card rounded-2xl p-3.5 md:p-4 border border-accent-cyan/15 mb-5' },
-        React.createElement('div', { className: 'grid md:grid-cols-2 gap-2.5' },
-            React.createElement('button', { type:'button', disabled: running || !list.length, onClick: () => run('alternative'), className:'text-right rounded-xl border border-accent-cyan/25 bg-accent-cyan/10 hover:bg-accent-cyan/15 px-3.5 py-3 transition disabled:opacity-40' },
-                React.createElement('div',{className:'flex items-center justify-between gap-3'},
-                    React.createElement('div',null,React.createElement('p',{className:'text-xs font-black text-accent-cyan'},'إضافة مصدر بديل لجميع الأعمال'),React.createElement('p',{className:'text-[10px] text-slate-500 mt-1'},'كل الأفلام والمسلسلات والأنمي — مطابقة الاسم تلقائيًا مع TMDB ثم جلب المصادر الحية')),
-                    React.createElement('span',{className:'min-w-9 h-9 px-2 rounded-xl bg-accent-cyan/15 border border-accent-cyan/20 text-accent-cyan font-black text-sm flex items-center justify-center'},alternativeCount)),
-            React.createElement('div',{className:'mt-1.5 text-[9px] text-slate-500'},`المصادر البديلة الحالية: ${alternativeCount} · ${perType.map(x => `${x.label} ${x.count}`).join(' · ')}`)),
-            React.createElement('button', { type:'button', disabled: running || !list.length, onClick: () => run('all'), className:'text-right rounded-xl border border-accent-red/25 bg-accent-red/10 hover:bg-accent-red/15 px-3.5 py-3 transition disabled:opacity-40' },
-                React.createElement('div',{className:'flex items-center justify-between gap-3'},
-                    React.createElement('div',null,React.createElement('p',{className:'text-xs font-black text-accent-red'},'تحديث جميع الروابط'),React.createElement('p',{className:'text-[10px] text-slate-500 mt-1'},'كل الأفلام والمسلسلات والأنمي — سينمانا + المصادر البديلة / Source 2')),
-                    React.createElement('span',{className:'min-w-9 h-9 px-2 rounded-xl bg-accent-red/15 border border-accent-red/20 text-accent-red font-black text-sm flex items-center justify-center'},cinemanaCount)),
-            React.createElement('div',{className:'mt-1.5 text-[9px] text-slate-500'},`سينمانا الحالية: ${cinemanaCount} · ${perType.map(x => `${x.label} ${x.count}`).join(' · ')}`))),
-        React.createElement('div',{className:'mt-3 flex items-center justify-between text-[10px] font-bold text-slate-400'},React.createElement('span',null,running ? `جاري: ${current}` : current),React.createElement('span',null,`${done}/${total}`)),
-        React.createElement('div',{className:'h-1.5 rounded-full bg-glass-900 overflow-hidden border border-white/5 mt-1.5'},React.createElement('div',{className:'h-full bg-accent-cyan transition-all duration-300',style:{width:`${pct}%`}})),
-        React.createElement('div',{className:'flex flex-wrap gap-3 mt-2 text-[9px] font-bold'},React.createElement('span',{className:'text-emerald-400'},`نجح ${success}`),React.createElement('span',{className:'text-rose-400'},`فشل ${failed}`),part.total>0&&React.createElement('span',{className:'text-accent-purple'},`العمل ${part.done}/${part.total}`)))
-}
-
-function Source2LinksViewer({ title, onClose }) {
-    const [local, setLocal] = useState(() => normalizeTitlePlaybackData(title));
-    const [loadingFresh, setLoadingFresh] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
-    const [episodeBusy, setEpisodeBusy] = useState('');
-    const [previewSource, setPreviewSource] = useState(null);
-    const loadFresh = async () => {
-        setLoadingFresh(true);
-        try {
-            if (title?.id && typeof db !== 'undefined') {
-                const snap = await db.ref(`titles/${title.id}`).once('value');
-                if (snap.exists()) setLocal(normalizeTitlePlaybackData({ id: title.id, ...(snap.val() || {}) }));
-            }
-        } catch (_) {}
-        finally { setLoadingFresh(false); }
-    };
-    const refreshLinksNow = async () => {
-        if (!title?.id || refreshing) return;
-        setRefreshing(true);
-        try {
-            await bulkRefreshSource2Title(local, () => {});
-            await loadFresh();
-            showToast('تم تحديث روابط البدائل.');
-        } catch (e) {
-            showToast(e?.message || 'تعذر تحديث روابط البدائل.', 'error');
-        } finally { setRefreshing(false); }
-    };
-    const refreshMissingEpisodesNow = async () => {
-        if (!local?.id || refreshing || episodeBusy) return;
-        const missing = normalizeSeasonsValue(local.seasons).flatMap(season =>
-            (season.episodes || [])
-                .filter(ep => Number(ep.source2ResolverVersion || ep.source2?.resolverVersion) !== SOURCE2_RESOLVER_VERSION || normalizeVideoSources(ep.source2?.sources || ep.source2Sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable).length === 0)
-                .map(ep => ({ season: Number(season.number) || 1, episode: Number(ep.number) || 1 }))
-        );
-        if (!missing.length) {
-            showToast('كل الحلقات لديها بدائل محفوظة.');
-            return;
-        }
-        setRefreshing(true);
-        let ok = 0, failed = 0;
-        try {
-            for (const item of missing) {
-                try {
-                    await refreshSingleEpisodeSource2(local, item.season, item.episode);
-                    ok++;
-                } catch (_) { failed++; }
-                await loadFresh();
-            }
-            showToast(failed ? `تمت معالجة ${ok} حلقة، وتعذرت ${failed}.` : `تمت إضافة البدائل إلى ${ok} حلقة.`);
-        } finally { setRefreshing(false); }
-    };
-
-    const clearLinksNow = async () => {
-        if (!title?.id) return;
-        const ok = window.confirm(`حذف روابط Source 2 البديلة من «${title?.name || 'هذا العمل'}»؟`);
-        if (!ok) return;
-        try {
-            await deleteSingleTitleSource2(title);
-            await loadFresh();
-            showToast('تم حذف روابط البدائل.');
-        } catch (e) {
-            showToast(e?.message || 'تعذر حذف الروابط.', 'error');
-        }
-    };
-    useEffect(() => {
-        let alive = true;
-        loadFresh().catch(() => {});
-        return () => { alive = false; };
-    }, [title?.id]);
-    const copy = async (url) => { try { await navigator.clipboard.writeText(String(url || '')); } catch (_) {} };
-    const box = (source, key) => React.createElement('div',{key,className:'glass-card rounded-xl p-3 border border-white/10'},
-        React.createElement('div',{className:'flex items-center justify-between gap-2 flex-wrap'},
-            React.createElement('b',{className:'text-xs text-white'},source.provider || 'EgyBest'),
-            React.createElement('span',{className:'text-[10px] text-accent-cyan font-black'},String(source.label || source.resolution || 'Auto'))),
-        React.createElement('div',{className:'mt-2 flex items-center gap-2'},
-            React.createElement('input',{readOnly:true,value:source.url || '',dir:'ltr',className:'flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-lg px-2.5 py-2 text-[10px] text-slate-300'}),
-            React.createElement('button',{type:'button',onClick:()=>copy(source.url),className:'px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-[10px] font-black text-white'},'نسخ'),
-            React.createElement('button',{type:'button',onClick:()=>setPreviewSource(source),className:'px-3 py-2 rounded-lg bg-accent-cyan/10 border border-accent-cyan/20 text-accent-cyan text-[10px] font-black'},'تشغيل')));
-
-    const sections=[];
-    if (local.type === 'movie') {
-        const sources = normalizeVideoSources(local.source2Sources || local.source2?.sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable);
-        sections.push(React.createElement('div',{key:'movie',className:'space-y-2'},
-            React.createElement('div',{className:'flex items-center justify-between'},React.createElement('b',{className:'text-sm text-white'},'الفيلم'),React.createElement('span',{className:'text-[10px] text-accent-cyan font-black'},`${sources.length} مصدر`)),
-            ...(sources.length ? sources.map((s,i)=>box(s,`m-${i}`)) : [React.createElement('p',{key:'empty',className:'text-xs text-slate-500'},'لا توجد روابط Source 2 محفوظة لهذا الفيلم.')])));
-    } else {
-        const episodes = normalizeSeasonsValue(local.seasons).flatMap(s => (s.episodes || []).map(ep => ({...ep, seasonNumber:s.number})));
-        for (const ep of episodes) {
-            const episodeKey = `e-${ep.seasonNumber}-${ep.number}`;
-            const sources = normalizeVideoSources(ep.source2?.sources || ep.source2Sources || []).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable);
-            const busyKey = episodeBusy === episodeKey;
-            const refreshEpisode = async () => {
-                if (episodeBusy) return;
-                setEpisodeBusy(episodeKey);
-                try {
-                    await refreshSingleEpisodeSource2(local, ep.seasonNumber, ep.number);
-                    await loadFresh();
-                    showToast(sources.length ? `تم تحديث بدائل الموسم ${ep.seasonNumber} الحلقة ${ep.number}.` : `تمت إضافة بديل للموسم ${ep.seasonNumber} الحلقة ${ep.number}.`);
-                } catch (e) {
-                    showToast(e?.message || 'تعذر جلب بديل الحلقة.', 'error');
-                } finally { setEpisodeBusy(''); }
-            };
-            sections.push(
-                React.createElement('div',{key:episodeKey,className:'glass-card rounded-xl p-3 border border-white/10'},
-                    React.createElement('div',{className:'flex items-center justify-between gap-2 flex-wrap'},
-                        React.createElement('div',null,
-                            React.createElement('b',{className:'text-xs text-white'},`الموسم ${ep.seasonNumber} · الحلقة ${ep.number}`),
-                            React.createElement('p',{className:`text-[10px] font-black mt-1 ${sources.length ? 'text-emerald-400':'text-rose-400'}`},sources.length ? `بدائل ${sources.length}` : 'بدون بديل')
-                        ),
-                        React.createElement('span',{className:'text-[10px] text-slate-500'},ep.title || '')
-                    ),
-                    React.createElement('div',{className:'mt-2 flex items-center gap-2 flex-wrap'},
-                        React.createElement('button',{
-                            type:'button',
-                            disabled:!!episodeBusy || refreshing,
-                            onClick:refreshEpisode,
-                            className:`px-3 py-1.5 rounded-lg ${sources.length ? 'bg-accent-cyan/10 border-accent-cyan/20 text-accent-cyan':'bg-accent-purple/10 border-accent-purple/20 text-accent-purple'} border text-[10px] font-black disabled:opacity-40`
-                        },busyKey ? 'جاري...' : (sources.length ? 'تحديث البديل' : 'إضافة بديل'))
-                    ),
-                    React.createElement('div',{className:'mt-2 space-y-2'},
-                        ...(sources.length
-                            ? sources.map((source,i)=>box(source,`${episodeKey}-${i}`))
-                            : [React.createElement('p',{key:'empty',className:'text-xs text-slate-500'},'لا توجد روابط محفوظة لهذه الحلقة. اضغط «إضافة بديل» لجلبها الآن.')]
-                        )
-                    )
-                )
-            );
-        }
-    }
-    return React.createElement('div',{className:'fixed inset-0 z-[10030] bg-black/75 backdrop-blur-md p-3 md:p-6 flex items-center justify-center'},
-        React.createElement('div',{className:'w-full max-w-6xl max-h-[90vh] glass-panel rounded-2xl border border-accent-cyan/25 overflow-hidden flex flex-col'},
-            React.createElement('div',{className:'p-4 border-b border-white/10 flex items-center justify-between gap-3 flex-wrap'},
-                React.createElement('div',null,React.createElement('h3',{className:'font-black text-white'},`روابط البدائل — ${local.name || ''}`),React.createElement('p',{className:'text-[10px] text-slate-500 mt-1'},'يمكنك فتح أو نسخ كل رابط للتحقق منه.')),
-                React.createElement('div',{className:'flex items-center gap-1.5 flex-wrap'},
-                    React.createElement('button',{type:'button',disabled:refreshing,onClick:refreshLinksNow,className:'px-3 py-2 rounded-lg bg-accent-cyan/10 border border-accent-cyan/20 text-accent-cyan text-[10px] font-black disabled:opacity-40'},refreshing?'جاري التحديث...':'تحديث البدائل'),
-                    local.type !== 'movie' && React.createElement('button',{type:'button',disabled:refreshing || !!episodeBusy,onClick:refreshMissingEpisodesNow,className:'px-3 py-2 rounded-lg bg-accent-purple/10 border border-accent-purple/20 text-accent-purple text-[10px] font-black disabled:opacity-40'},'إضافة البدائل للحلقات الناقصة'),
-                    React.createElement('button',{type:'button',onClick:clearLinksNow,className:'px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-[10px] font-black'},'حذف البدائل'),
-                    React.createElement('button',{type:'button',onClick:onClose,className:'w-9 h-9 rounded-xl glass-card border border-white/10 text-slate-300'},'×'))),
-            React.createElement('div',{className:'p-4 overflow-y-auto space-y-3'}, loadingFresh ? React.createElement('p',{className:'text-sm text-slate-500'},'جاري تحميل روابط البدائل...') : (sections.length ? sections : React.createElement('p',{className:'text-sm text-slate-500'},'لا توجد بيانات بديلة محفوظة.')))
-        ),
-        previewSource && React.createElement('div',{className:'fixed inset-0 z-[10060] bg-black/90 backdrop-blur-sm p-3 md:p-6 flex items-center justify-center',onClick:()=>setPreviewSource(null)},
-            React.createElement('div',{className:'w-full max-w-6xl glass-panel rounded-2xl border border-accent-cyan/25 overflow-hidden',onClick:e=>e.stopPropagation()},
-                React.createElement('div',{className:'p-3 md:p-4 border-b border-white/10 flex items-center justify-between gap-3'},
-                    React.createElement('div',null,
-                        React.createElement('b',{className:'text-sm text-white'},previewSource.provider || 'Source 2'),
-                        React.createElement('p',{className:'text-[10px] text-slate-500 mt-1'},previewSource.label || previewSource.resolution || 'Auto')),
-                    React.createElement('button',{type:'button',onClick:()=>setPreviewSource(null),className:'w-9 h-9 rounded-xl glass-card border border-white/10 text-slate-300'},'×')),
-                React.createElement(VideoPlayer,{
-                    src: normalizeVideoUrl(previewSource.url),
-                    sourceKind: previewSource.sourceKind || source2SourceKind(previewSource),
-                    subtitleUrl: normalizeSubtitleUrl(previewSource.subtitleUrl || ''),
-                    subtitleOffset: Number(previewSource.subtitleOffset) || 0,
-                    fitMobile: 'contain',
-                    fitDesktop: 'contain',
-                    qualities: [previewSource],
-                    onError: () => showToast('تعذر تشغيل هذا المصدر داخل المشغل.', 'error')
-                })))
-    );
-}
-
-
-async function refreshSingleTitleSources(t, setBusy) {
-    if (!t?.id) throw new Error('العمل غير معروف.');
-    setBusy?.(true);
-    try {
-        if (t.type === 'movie') {
-            await bulkRefreshCinemanaTitle(t);
-            await bulkRefreshSource2Title(t, () => {});
-        } else {
-            await bulkRefreshCinemanaTitle(t);
-            await bulkRefreshSource2Title(t, () => {});
-        }
-        return true;
-    } finally {
-        setBusy?.(false);
-    }
-}
-async function refreshSingleTitleSource2(t, setBusy) {
-    if (!t?.id) throw new Error('العمل غير معروف.');
-    setBusy?.(true);
-    try {
-        // Same exact Source 2 bulk job used by the global action,
-        // but scoped to this one title. For series/anime this processes
-        // all episodes using the fast episode resolver.
-        const snap = await db.ref(`titles/${t.id}`).once('value');
-        const fresh = sanitizeFirebaseValue(snap.val() || t);
-        if (!fresh || fresh.id === undefined) fresh.id = t.id;
-        const result = await bulkRefreshSource2Title(fresh, () => {});
-        return result;
-    } finally {
-        setBusy?.(false);
-    }
-}
-async function refreshSingleEpisodeSource2(t, seasonNumber, episodeNumber) {
-    if (!t?.id) throw new Error('العمل غير معروف.');
-    const season = Math.max(1, Number(seasonNumber) || 1);
-    const episode = Math.max(1, Number(episodeNumber) || 1);
-    const snap = await db.ref(`titles/${t.id}`).once('value');
-    const fresh = sanitizeFirebaseValue(snap.val() || t);
-    fresh.id = t.id;
-    const seasons = normalizeSeasonsValue(fresh.seasons).map(s => ({
-        ...s,
-        episodes: (s.episodes || []).map(e => ({ ...e }))
-    }));
-    const seasonObj = seasons.find(s => Number(s.number) === season);
-    const ep = seasonObj?.episodes?.find(e => Number(e.number) === episode);
-    if (!seasonObj || !ep) throw new Error(`لم أجد الموسم ${season} الحلقة ${episode}.`);
-    const tmdbId = String(ep.tmdbId || ep.source2TmdbId || fresh.tmdbId || fresh.source2TmdbId || fresh.source2?.tmdbId || '').replace(/\D/g, '');
-    let resolvedId = tmdbId;
-    if (!resolvedId) {
-        const best = await tmdbFindBestByTitle(fresh.name, fresh.type === 'movie' ? 'movie' : 'tv', fresh.year);
-        resolvedId = best?.id ? String(best.id) : '';
-    }
-    if (!resolvedId) throw new Error('لم أجد TMDB ID لهذا المسلسل.');
-    const r = await source2ResolveEpisodeFast({ tmdbId: resolvedId, season, episode, timeoutMs: SOURCE2_FAST_EPISODE_TIMEOUT, collectAll: true, expectedTitle: fresh.name });
-    const sources = normalizeVideoSources(r.sources).filter(source2IsEgyBestSource).filter(source2IsBrowserPlayable);
-    if (!sources.length) throw new Error(`لم تُجلب مصادر للحلقة S${season}E${episode}.`);
-    ep.source2TmdbId = r.tmdbId;
-    ep.source2Provider = 'egybest';
-    ep.source2Mode = 'live';
-    ep.source2LastCheckedAt = Date.now();
-    ep.source2LastError = '';
-    ep.source2Season = season;
-    ep.source2Episode = episode;
-    ep.source2ResolverVersion = SOURCE2_RESOLVER_VERSION;
-    ep.source2SourceCount = sources.length;
-    ep.source2Providers = Array.from(new Set(sources.map(x => x.provider).filter(Boolean)));
-    ep.source2 = source2StoredRecordFromResolved(r, season, episode, 'tv');
-    ep.source2Sources = sources;
-    const coverage = getSource2Coverage({ ...fresh, seasons });
-    const parentSourceCount = coverage.sources;
-    const parentProviders = Array.from(new Set(seasons.flatMap(ss => (ss.episodes || []).flatMap(e => e.source2Providers || []))));
-    await db.ref(`titles/${t.id}`).update(sanitizeFirebasePatch({
-        tmdbId: resolvedId,
-        source2TmdbId: resolvedId,
-        source2Provider: 'egybest',
-        source2Mode: 'live',
-        source2LastCheckedAt: Date.now(),
-        source2SourceCount: parentSourceCount,
-        source2Providers: parentProviders,
-        source2: source2InfoForPayload(resolvedId),
-        seasons,
-        source2Coverage: {
-            done: coverage.done,
-            total: coverage.total,
-            complete: coverage.complete,
-            sourceCount: parentSourceCount,
-            checkedAt: Date.now()
-        }
-    }));
-    return { ok: true, season, episode, sources, sourceCount: sources.length, coverage };
-}
-
-async function deleteSingleTitleSource2(t) {
-    if (!t?.id) throw new Error('العمل غير معروف.');
-    if (t.type === 'movie') {
-        await db.ref(`titles/${t.id}`).update(sanitizeFirebasePatch({
-            source2: null,
-            source2TmdbId: '',
-            source2Provider: '',
-            source2Mode: '',
-            source2LastCheckedAt: 0,
-            source2SourceCount: 0,
-            source2Providers: [],
-            source2Sources: [],
-            source2ExpiresAt: 0,
-            source2Coverage: null
-        }));
-    } else {
-        const seasons = normalizeSeasonsValue(t.seasons).map(s => ({
-            ...s,
-            episodes: (s.episodes || []).map(ep => ({
-                ...ep,
-                source2: null,
-                source2TmdbId: '',
-                source2Provider: '',
-                source2Mode: '',
-                source2LastCheckedAt: 0,
-                source2SourceCount: 0,
-                source2Providers: [],
-                source2Sources: [],
-                source2Season: Number(s.number) || 1,
-                source2Episode: Number(ep.number) || 1,
-                source2LastError: '',
-                source2ResolverVersion: 0
-            }))
-        }));
-        await db.ref(`titles/${t.id}`).update(sanitizeFirebasePatch({
-            source2: null,
-            source2TmdbId: '',
-            source2Provider: '',
-            source2Mode: '',
-            source2LastCheckedAt: 0,
-            source2SourceCount: 0,
-            source2Providers: [],
-            source2Coverage: { done: 0, total: seasons.reduce((n,s)=>n+(s.episodes||[]).length,0), complete: false, sourceCount: 0, checkedAt: Date.now() },
-            seasons
-        }));
-    }
-    return true;
-}
-function AdminWorkSourceActions({ title, currentUser, onRefreshView, onEdit }) {
-    const [busy, setBusy] = useState('');
-    const run = async (kind) => {
-        if (busy) return;
-        if (kind === 'delete') {
-            const ok = window.confirm(`حذف جميع روابط Source 2 البديلة من «${title?.name || 'هذا العمل'}»؟\nسيتم حذف روابط Source 2 المحفوظة فقط، ولن تُحذف روابط سينمانا أو البدائل اليدوية.`);
-            if (!ok) return;
-        }
-        setBusy(kind);
-        try {
-            if (kind === 'refresh-all') await refreshSingleTitleSources(title);
-            else if (kind === 'refresh-source2') await refreshSingleTitleSource2(title);
-            else if (kind === 'delete') await deleteSingleTitleSource2(title);
-            logAuditAction(currentUser, kind === 'delete' ? 'حذف روابط Source 2 لعمل واحد' : (kind === 'refresh-source2' ? 'تحديث بدائل Source 2 لعمل واحد' : 'تحديث روابط عمل واحد'), title.name || '');
-            showToast(kind === 'delete' ? 'تم حذف روابط Source 2 البديلة.' : 'تم تحديث المصادر بنجاح.');
-            onRefreshView?.();
-        } catch (e) {
-            showToast(e?.message || 'تعذر تنفيذ العملية.', 'error');
-        } finally {
-            setBusy('');
-        }
-    };
-    const isMovie = title?.type === 'movie';
-    return React.createElement('div',{className:'flex flex-wrap items-center gap-1.5 shrink-0'},
-        React.createElement('button',{type:'button',disabled:!!busy,onClick:()=>run('refresh-all'),title:isMovie?'تحديث رابط الفيلم':'تحديث روابط الحلقات',className:'px-2.5 py-1 rounded-lg bg-accent-red/10 border border-accent-red/25 text-accent-red text-[10px] font-black disabled:opacity-40'},
-            busy==='refresh-all' ? 'جارٍ...' : (isMovie ? 'تحديث رابط الفيلم' : 'تحديث روابط الحلقات')),
-        React.createElement('button',{type:'button',disabled:!!busy,onClick:()=>run('refresh-source2'),title:isMovie?'إعادة جلب البديل للفيلم':'إعادة جلب بدائل الحلقات',className:'px-2.5 py-1 rounded-lg bg-accent-cyan/10 border border-accent-cyan/25 text-accent-cyan text-[10px] font-black disabled:opacity-40'},
-            busy==='refresh-source2' ? 'جارٍ...' : 'تحديث البدائل'),
-        React.createElement('button',{type:'button',disabled:!!busy,onClick:()=>run('refresh-source2'),title:isMovie?'إضافة مصدر بديل تلقائي للفيلم':'إضافة مصادر بديلة تلقائيًا لكل حلقات العمل',className:'px-2.5 py-1 rounded-lg bg-accent-purple/10 border border-accent-purple/25 text-accent-purple text-[10px] font-black disabled:opacity-40'},
-            busy==='refresh-source2' ? 'جارٍ...' : 'إضافة مصدر بديل'),
-        React.createElement('button',{type:'button',disabled:!!busy,onClick:()=>run('delete'),title:'حذف روابط Source 2 البديلة',className:'px-2.5 py-1 rounded-lg bg-rose-500/10 border border-rose-500/25 text-rose-300 text-[10px] font-black disabled:opacity-40'},
-            'حذف البدائل'));
-}
-
 function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
     const [tab, setTab] = useState('content');
     const [contentType, setContentType] = useState('movie');
     const [editing, setEditing] = useState(null);
     const [deleteTarget, setDeleteTarget] = useState(null);
-    const [sourceLinksTitle, setSourceLinksTitle] = useState(null);
     const [query, setQuery] = useState('');
     const isFullAdmin = currentUser && currentUser.username === 'mavilovelife';
     const handleDelete = async (id) => {
@@ -9716,7 +8253,6 @@ function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
         React.createElement("h1", { className: "text-2xl md:text-3xl font-black mb-6 text-slate-100" }, "\u0644\u0648\u062D\u0629 \u062A\u062D\u0643\u0645  "),
         React.createElement(SlidingTabs, { containerClassName: "flex gap-1.5 mb-6 flex-wrap bg-glass-900/80 p-1.5 rounded-2xl border border-white/5", items: [
                 { key: 'content', label: 'المحتوى (رفع )' },
-                { key: 'sources', label: 'المصادر والتحديث' },
                 { key: 'complaints', label: 'الشكاوى والطلبات' },
                 ...(isFullAdmin ? [{ key: 'appeals', label: 'الطعون' }] : []),
                 ...(isFullAdmin ? [{ key: 'users', label: 'المستخدمون' }] : []),
@@ -9733,7 +8269,6 @@ function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
                             titles.filter(t => t.type === k).length,
                             ")")))
                 })), active: contentType, onChange: setContentType, trackClassName: "bg-accent-red shadow-[0_0_15px_rgba(255,51,75,0.4)]", getButtonClassName: (isActive) => `flex-1 px-4 py-2.5 rounded-xl text-sm font-bold ${isActive ? 'text-white' : 'text-slate-300 hover:text-white hover:bg-white/5'}` }),
-            React.createElement(AdminSourcesQuickActions, { currentUser, titles, contentType }),
             React.createElement("div", { className: "flex items-center gap-3 mb-6 flex-wrap" },
                 React.createElement("button", { onClick: () => setEditing('new'), className: "flex items-center gap-2 px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition" },
                     React.createElement(Icon, { name: "plus", className: "w-4 h-4" }),
@@ -9763,11 +8298,6 @@ function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
                             subProgress.done,
                             "/",
                             subProgress.total),
-                        React.createElement("span", { className: "text-[10px] px-2.5 py-1 rounded-full font-bold shrink-0 bg-accent-red/10 text-accent-red border border-accent-red/20", title: "عدد مصادر سينمانا المحفوظة" }, `سينمانا ${countCinemanaSources(t)}`),
-                        (() => { const cov = getSource2Coverage(t); return React.createElement("span", { className: `text-[10px] px-2.5 py-1 rounded-full font-bold shrink-0 border ${cov.complete ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25' : 'bg-accent-cyan/10 text-accent-cyan border-accent-cyan/20'}`, title: t.type === 'movie' ? 'مصادر Source 2 الحالية' : 'الحلقات التي حصلت على بديل Source 2' }, t.type === 'movie' ? `بدائل ${cov.sources}` : `بدائل ${cov.done}/${cov.total}`); })(),
-                        React.createElement("button", { type:'button', onClick:()=>setSourceLinksTitle(t), title:'عرض روابط البدائل', className:'px-2.5 py-1 rounded-lg bg-accent-purple/10 border border-accent-purple/20 text-accent-purple text-[10px] font-black shrink-0' }, 'روابط البدائل'),
-                        React.createElement(AdminWorkSourceActions, { title:t, currentUser, onRefreshView:()=>setSourceLinksTitle(null), onEdit:()=>setEditing(t) }),
-                        countAlternativeSources(t) > 0 && React.createElement("span", { className: "text-[9px] px-2 py-0.5 rounded-full font-bold shrink-0 bg-white/5 text-slate-400 border border-white/5", title: "ملفات/روابط بديلة يدوية مرفوعة من الإدارة" }, `يدوي ${countAlternativeSources(t)}`),
                         t.featured === true && React.createElement("span", { className: "text-[11px] px-3 py-1 rounded-full font-bold shrink-0 bg-amber-500/20 text-amber-400 border border-amber-500/30" }, "Hero"),
                         React.createElement("button", { onClick: () => toggleFeatured(t), title: t.featured === true ? 'إزالة من العرض الرئيسي (Hero)' : 'إظهار في العرض الرئيسي (Hero)', className: `w-9 h-9 rounded-xl glass-card border flex items-center justify-center transition shrink-0 ${t.featured === true ? 'border-amber-400 text-amber-400' : 'border-white/10 hover:border-accent-cyan text-slate-200'}` },
                             React.createElement(Icon, { name: "star", className: `w-4 h-4 ${t.featured === true ? 'fill-current' : ''}` })),
@@ -9782,8 +8312,7 @@ function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
         tab === 'appeals' && isFullAdmin && React.createElement(AdminAppeals, { currentUser: currentUser }),
         tab === 'users' && isFullAdmin && React.createElement(AdminUsers, { currentUser: currentUser }),
         tab === 'audit' && isFullAdmin && React.createElement(AdminAuditLog, null),
-        deleteTarget && (React.createElement(ConfirmDialog, { title: "\u062D\u0630\u0641 \u0647\u0630\u0627 \u0627\u0644\u0639\u0645\u0644\u061F", body: "\u0633\u064A\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u0639\u0645\u0644 \u0648\u062C\u0645\u064A\u0639 \u062A\u0639\u0644\u064A\u0642\u0627\u062A\u0647 \u0646\u0647\u0627\u0626\u064A\u064B\u0627 \u0648\u0644\u0627 \u064A\u0645\u0643\u0646 \u0627\u0633\u062A\u0631\u062C\u0627\u0639\u0647.", confirmLabel: "\u0646\u0639\u0645\u060C \u0627\u062D\u0630\u0641", cancelLabel: "\u0625\u0644\u063A\u0627\u0621", onCancel: () => setDeleteTarget(null), onConfirm: () => handleDelete(deleteTarget) })),
-        sourceLinksTitle && React.createElement(Source2LinksViewer, { title: sourceLinksTitle, onClose: () => setSourceLinksTitle(null) })));
+        deleteTarget && (React.createElement(ConfirmDialog, { title: "\u062D\u0630\u0641 \u0647\u0630\u0627 \u0627\u0644\u0639\u0645\u0644\u061F", body: "\u0633\u064A\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u0639\u0645\u0644 \u0648\u062C\u0645\u064A\u0639 \u062A\u0639\u0644\u064A\u0642\u0627\u062A\u0647 \u0646\u0647\u0627\u0626\u064A\u064B\u0627 \u0648\u0644\u0627 \u064A\u0645\u0643\u0646 \u0627\u0633\u062A\u0631\u062C\u0627\u0639\u0647.", confirmLabel: "\u0646\u0639\u0645\u060C \u0627\u062D\u0630\u0641", cancelLabel: "\u0625\u0644\u063A\u0627\u0621", onCancel: () => setDeleteTarget(null), onConfirm: () => handleDelete(deleteTarget) }))));
 }
 function isTitleWatched(watchedMap, title) {
     if (!watchedMap || !title)
@@ -10241,9 +8770,6 @@ function App() {
         // before the current Firebase snapshot arrives.
         const isAdmin = !!(currentUser && (currentUser.username === 'mavilovelife' || currentUser.isModerator));
         const ref = db.ref('titles');
-        const bootFallback = setTimeout(() => {
-            if (!cancelled) setBooted(true);
-        }, 9000);
 
         const cb = snap => {
             if (cancelled) return;
@@ -10274,7 +8800,6 @@ function App() {
 
         return () => {
             cancelled = true;
-            clearTimeout(bootFallback);
             ref.off('value', cb);
         };
     }, [currentUser && currentUser.id, currentUser && currentUser.username, currentUser && currentUser.isModerator]);
