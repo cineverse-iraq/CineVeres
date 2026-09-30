@@ -2052,7 +2052,7 @@ function source2DiagnosticText(data) {
 async function source2ResolveMovie({ tmdbId, expectedTitle = '' }) {
     const id = String(tmdbId || '').replace(/\D/g, '');
     if (!id) throw new Error('EgyBest يحتاج TMDB ID للفيلم.');
-    const data = await source2FetchJson(`/api/streams/egybest/movie/${encodeURIComponent(id)}`, 25000);
+    const data = await source2FetchJson(`/source2/resolve/movie?tmdb=${encodeURIComponent(id)}`, 60000);
     const sources = source2SourcesFromResponse(data, expectedTitle).filter(source => String(source.provider || '').toLowerCase() === 'egybest');
     if (!sources.length) throw new Error(source2DiagnosticText(data) || 'EgyBest لم يُرجع مصدرًا للفيلم.');
     return { ok:true, type:'movie', tmdbId:id, providers:['egybest'], count:sources.length, sources, url:sources[0].url, raw:data };
@@ -2074,8 +2074,8 @@ async function source2ResolveEpisodeFast({ tmdbId, season, episode, timeoutMs = 
 
     // Source 2 is intentionally a single provider now. The backend provider
     // returns the real available quality playlists from EgyBest.
-    const path = `/api/streams/egybest/series/${encodeURIComponent(id)}?season=${encodeURIComponent(se)}&episode=${encodeURIComponent(ep)}`;
-    const data = await source2FetchJson(path, Math.max(10000, Number(timeoutMs) || SOURCE2_FAST_EPISODE_TIMEOUT));
+    const path = `/source2/resolve/episode?tmdb=${encodeURIComponent(id)}&season=${encodeURIComponent(se)}&episode=${encodeURIComponent(ep)}`;
+    const data = await source2FetchJson(path, Math.max(10000, Number(timeoutMs) || 60000));
     let sources = source2SourcesFromResponse(data, expectedTitle)
         .filter(source => String(source.provider || '').toLowerCase() === 'egybest');
 
@@ -2160,7 +2160,7 @@ function Source2Helper({ kind, tmdbId, season, episode, defaultTitle = '', defau
     const [msg, setMsg] = useState('');
     const [result, setResult] = useState(null);
     const run = async () => {
-        if (!source2Configured()) { setMsg('ضع رابط TMDB-Embed-API العام في source2-config.js أولًا.'); return; }
+        if (!source2Configured()) { setMsg('ضع رابط بروكسي Source 2 العام في source2-config.js أولًا.'); return; }
         setLoading(true); setMsg('جاري مطابقة العمل ثم اختبار مصادر Source 2...'); setResult(null);
         try {
             let id = String(tmdbId || '').replace(/\D/g, '');
