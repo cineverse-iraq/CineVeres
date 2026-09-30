@@ -50,7 +50,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
-  <script src="./source2-config.js?v=20260929"></script>
+  <script src="./source2-config.js?v=20260930"></script>
 
   <style>
     html { scroll-behavior: smooth; }
@@ -346,7 +346,6 @@
 
   <div id="root"></div>
 
-  <script src="./source2-config.js"></script>
 <script>const { useState, useEffect, useRef, useLayoutEffect } = React;
 const firebaseConfig = {
     databaseURL: "https://mnste-36ca4-default-rtdb.europe-west1.firebasedatabase.app",
@@ -642,7 +641,6 @@ function normalizeVideoSources(value) {
         const provider = String((x && (x.provider || x.providerName || x.sourceName)) || '').trim();
         const sourceTitle = String((x && (x.sourceTitle || x.originalTitle || x.title || '')) || '').trim();
         const sourceKind = String((x && (x.sourceKind || x.kind || x.format || x.type || x.mimeType || '')) || '').trim().toLowerCase();
-        return url ? { label, resolution: label, url, subtitleUrl, source, sourceId, provider, sourceKind } : null;
         return url ? { label, resolution: label, url, subtitleUrl, source, sourceId, provider, sourceKind, sourceTitle } : null;
     })
         .filter(Boolean)
@@ -1272,7 +1270,7 @@ function isSource2Playback(meta, url) {
     const m = meta || {};
     return String(m.playbackProvider || '').toLowerCase() === 'source2'
         || String(m.source || '').toLowerCase() === 'source2'
-        || /tmdb-embed-api|source2/i.test(String(url || ''));
+        || /egybest|source2/i.test(String(url || ''));
 }
 const VIDAPI_EMBED_HOST = 'https://player.cinadam.xyz';
 let _hlsLoader = null;
@@ -1635,15 +1633,19 @@ const CINADAM_SOURCE2_CONFIG = (() => {
     const single = (typeof window !== 'undefined' && window.CINADAM_SOURCE2_URL) || cfg.apiBase || '';
     let stored = '';
     try { stored = localStorage.getItem('cinadam_source2_url') || ''; } catch (_) {}
-    const bases = [...configured, single, stored]
+    const isLocalHost = typeof location !== 'undefined' && /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0)$/i.test(location.hostname || '');
+    const localBackend = isLocalHost ? `http://${location.hostname}:8788` : '';
+    const sameOrigin = (typeof location !== 'undefined' && /^https?:$/i.test(location.protocol)) ? location.origin : '';
+    const bases = [localBackend, ...configured, single, stored, sameOrigin]
         .flatMap(v => Array.isArray(v) ? v : [v])
         .map(v => String(v || '').trim().replace(/\/+$/, ''))
         .filter(Boolean)
-        .filter(v => !/YOUR[-_]?SOURCE2|YOUR[-_]?API|REPLACE[-_]?|example\.com/i.test(v));
+        .filter(v => !/YOUR[-_]?SOURCE2|YOUR[-_]?API|REPLACE[-_]?|example\.com/i.test(v))
+        .filter(v => !/cineveres-source2\.onrender\.com/i.test(v));
     return {
         apiBases: Array.from(new Set(bases)),
         timeoutMs: 60000,
-        preferredProvider: String(cfg.preferredProvider || '').trim().toLowerCase()
+        preferredProvider: 'egybest'
     };
 })();
 const CINADAM_SOURCE2_APIS = CINADAM_SOURCE2_CONFIG.apiBases;
@@ -1652,7 +1654,7 @@ function source2Configured() {
 }
 async function source2FetchJson(path, timeoutMs = CINADAM_SOURCE2_CONFIG.timeoutMs) {
     if (!source2Configured())
-        throw new Error('Source 2 غير مضبوط. ضع رابط TMDB-Embed-API العام في source2-config.js.');
+        throw new Error('Source 2 غير مضبوط. شغّل CineProxy على المنفذ 8788 أو ضع رابط السيرفر العام في source2-config.js.');
     let lastError = null;
     for (const base of CINADAM_SOURCE2_APIS) {
         const controller = new AbortController();
@@ -1668,6 +1670,10 @@ async function source2FetchJson(path, timeoutMs = CINADAM_SOURCE2_CONFIG.timeout
             if (!res.ok) {
                 const detail = data?.message || data?.error || `HTTP ${res.status}`;
                 throw new Error(`Source 2 HTTP ${res.status}: ${detail}`);
+            }
+            if (data && data.ok === false) {
+                const detail = data?.message || data?.error || data?.detail || 'المصدر رفض الطلب';
+                throw new Error(`Source 2: ${detail}`);
             }
             try { Object.defineProperty(data, '__source2Base', { value: base, enumerable: false, configurable: true }); } catch (_) { data.__source2Base = base; }
             return data;
@@ -1801,7 +1807,7 @@ async function source2ExpandSourcesByQuality(sources) {
 // retain the three strongest providers. Verification happens against the public
 // Source 2/proxy URL so the browser checks the exact resource the player will use.
 const SOURCE2_TOP_SOURCE_LIMIT = 3;
-const SOURCE2_RESOLVER_VERSION = 10;
+const SOURCE2_RESOLVER_VERSION = 12;
 const SOURCE2_VERIFY_TIMEOUT = 30000;
 
 function source2ProviderKey(source) {
@@ -2014,7 +2020,7 @@ function source2SourcesFromResponse(data, expectedTitle = '') {
     const out = [];
     const seen = new Set();
     raw.forEach((item, index) => {
-        const url = source2AbsoluteUrl(item?.url || item?.link || item?.source || item?.streamUrl || '', base);
+        const url = source2AbsoluteUrl(item?.url || item?.streamUrl || item?.videoUrl || item?.src || item?.link || item?.source || item?.playbackUrl || item?.directUrl || '', base);
         if (!/^https?:\/\//i.test(url) || seen.has(url)) return;
         seen.add(url);
         const resolution = source2Resolution(item?.resolution || item?.quality?.resolution || item?.quality || item?.label);
@@ -2050,33 +2056,57 @@ function source2DiagnosticText(data) {
 }
 async function source2ResolveMovie({ tmdbId, expectedTitle = '' }) {
     const id = String(tmdbId || '').replace(/\D/g, '');
-    if (!id) throw new Error('FaselHD يحتاج TMDB ID للفيلم.');
-    const data = await source2FetchJson(`/api/streams/faselhd/movie/${encodeURIComponent(id)}`, 25000);
-    const sources = source2SourcesFromResponse(data, expectedTitle).filter(source => String(source.provider || '').toLowerCase() === 'faselhd');
-    if (!sources.length) throw new Error(source2DiagnosticText(data) || 'FaselHD لم يُرجع مصدرًا للفيلم.');
-    return { ok:true, type:'movie', tmdbId:id, providers:['faselhd'], count:sources.length, sources, url:sources[0].url, raw:data };
+    if (!id) throw new Error('Source 2 يحتاج TMDB ID للفيلم.');
+    let data;
+    let lastError = null;
+    const paths = [
+        `/source2/resolve/movie?tmdb=${encodeURIComponent(id)}`,
+        `/api/streams/egybest/movie/${encodeURIComponent(id)}`
+    ];
+    for (const path of paths) {
+        try {
+            data = await source2FetchJson(path, 60000);
+            break;
+        } catch (e) { lastError = e; }
+    }
+    if (!data) throw lastError || new Error('تعذر حل الفيلم من Source 2.');
+    const sources = source2SourcesFromResponse(data, expectedTitle)
+        .filter(source => /egybest/i.test(String(source.provider || '')) || String(source.provider || '').toLowerCase() === 'source2');
+    if (!sources.length) throw new Error(source2DiagnosticText(data) || 'EgyBest لم يُرجع مصدرًا صالحًا للفيلم.');
+    return { ok:true, type:'movie', tmdbId:id, providers:['egybest'], count:sources.length, sources, url:sources[0].url, expiresAt:data?.expiresAt ?? null, raw:data };
 }
 
 async function source2ResolveEpisode({ tmdbId, season, episode, expectedTitle = '' }) {
     return source2ResolveEpisodeFast({ tmdbId, season, episode, expectedTitle, collectAll:true });
 }
 
-const SOURCE2_FAST_EPISODE_PROVIDERS = ['faselhd'];
-const SOURCE2_FAST_EPISODE_TIMEOUT = 25000;
-const SOURCE2_AGGREGATE_EPISODE_TIMEOUT = 25000;
+const SOURCE2_FAST_EPISODE_PROVIDERS = ['egybest'];
+const SOURCE2_FAST_EPISODE_TIMEOUT = 60000;
+const SOURCE2_AGGREGATE_EPISODE_TIMEOUT = 60000;
 
 async function source2ResolveEpisodeFast({ tmdbId, season, episode, timeoutMs = SOURCE2_FAST_EPISODE_TIMEOUT, collectAll = true, expectedTitle = '' }) {
     const id = String(tmdbId || '').replace(/\D/g, '');
     const se = Math.max(1, Number(season) || 1);
     const ep = Math.max(1, Number(episode) || 1);
-    if (!id) throw new Error('FaselHD يحتاج TMDB ID للمسلسل.');
+    if (!id) throw new Error('Source 2 يحتاج TMDB ID للمسلسل.');
 
-    // Source 2 is intentionally a single provider now. The backend provider
-    // returns the real available quality playlists from FaselHD.
-    const path = `/api/streams/faselhd/series/${encodeURIComponent(id)}?season=${encodeURIComponent(se)}&episode=${encodeURIComponent(ep)}`;
-    const data = await source2FetchJson(path, Math.max(10000, Number(timeoutMs) || SOURCE2_FAST_EPISODE_TIMEOUT));
+    let data;
+    let lastError = null;
+    const paths = [
+        `/source2/resolve/episode?tmdb=${encodeURIComponent(id)}&season=${encodeURIComponent(se)}&episode=${encodeURIComponent(ep)}`,
+        `/api/streams/egybest/series/${encodeURIComponent(id)}?season=${encodeURIComponent(se)}&episode=${encodeURIComponent(ep)}`
+    ];
+    const limit = Math.max(10000, Number(timeoutMs) || SOURCE2_FAST_EPISODE_TIMEOUT);
+    for (const path of paths) {
+        try {
+            data = await source2FetchJson(path, limit);
+            break;
+        } catch (e) { lastError = e; }
+    }
+    if (!data) throw lastError || new Error(`تعذر حل الحلقة S${se}E${ep} من Source 2.`);
+
     let sources = source2SourcesFromResponse(data, expectedTitle)
-        .filter(source => String(source.provider || '').toLowerCase() === 'faselhd');
+        .filter(source => /egybest/i.test(String(source.provider || '')) || String(source.provider || '').toLowerCase() === 'source2');
 
     const dedupe = new Map();
     for (const source of sources) {
@@ -2085,14 +2115,14 @@ async function source2ResolveEpisodeFast({ tmdbId, season, episode, timeoutMs = 
         const q = source2Resolution(source.resolution) || source2Resolution(source.label);
         const current = dedupe.get(url);
         if (!current || q > (source2Resolution(current.resolution) || source2Resolution(current.label))) {
-            dedupe.set(url, { ...source, source:'source2', provider:'faselhd', sourceKind: source.sourceKind || 'hls' });
+            dedupe.set(url, { ...source, source:'source2', provider:'egybest', sourceKind: source.sourceKind || 'hls' });
         }
     }
     sources = Array.from(dedupe.values()).sort((a,b) =>
         (source2Resolution(b.resolution) || source2Resolution(b.label)) -
         (source2Resolution(a.resolution) || source2Resolution(a.label))
     );
-    if (!sources.length) throw new Error(source2DiagnosticText(data) || `FaselHD لم يُرجع مصدرًا للحلقة S${se}E${ep}.`);
+    if (!sources.length) throw new Error(source2DiagnosticText(data) || `EgyBest لم يُرجع مصدرًا للحلقة S${se}E${ep}.`);
 
     return {
         ok:true,
@@ -2100,11 +2130,12 @@ async function source2ResolveEpisodeFast({ tmdbId, season, episode, timeoutMs = 
         tmdbId:id,
         season:se,
         episode:ep,
-        providers:['faselhd'],
+        providers:['egybest'],
         count:sources.length,
         sources,
         url:sources[0].url,
-        raw:{ ...(data || {}), provider:'faselhd', fast:true, resolverVersion:10 }
+        expiresAt:data?.expiresAt ?? null,
+        raw:{ ...(data || {}), provider:'egybest', fast:true, resolverVersion:12 }
     };
 }
 
@@ -2113,7 +2144,7 @@ function source2StoredRecordFromResolved(resolved, season, episode, mediaType = 
     const tmdbId = String(resolved?.tmdbId || '').replace(/\D/g, '');
     return {
         enabled: !!tmdbId && sources.length > 0,
-        provider: 'faselhd', tmdbId, mode: 'live',
+        provider: 'egybest', tmdbId, mode: 'live',
         type: mediaType === 'movie' ? 'movie' : 'tv',
         season: Number(season) || 1, episode: Number(episode) || 1,
         url: sources[0]?.url || '', sources,
@@ -2151,7 +2182,7 @@ async function source2EnsureTmdbId(form, fallbackSourceId) {
 }
 function source2InfoForPayload(tmdbId) {
     const id = String(tmdbId || '').replace(/\D/g, '');
-    return { enabled: !!id, provider: 'faselhd', tmdbId: id, mode: 'live', urlsExpire: true };
+    return { enabled: !!id, provider: 'egybest', tmdbId: id, mode: 'live', urlsExpire: true };
 }
 
 function Source2Helper({ kind, tmdbId, season, episode, defaultTitle = '', defaultYear = '', onChange }) {
@@ -2159,7 +2190,7 @@ function Source2Helper({ kind, tmdbId, season, episode, defaultTitle = '', defau
     const [msg, setMsg] = useState('');
     const [result, setResult] = useState(null);
     const run = async () => {
-        if (!source2Configured()) { setMsg('ضع رابط TMDB-Embed-API العام في source2-config.js أولًا.'); return; }
+        if (!source2Configured()) { setMsg('شغّل CineProxy على المنفذ 8788 أو ضع رابط السيرفر العام في source2-config.js أولًا.'); return; }
         setLoading(true); setMsg('جاري مطابقة العمل ثم اختبار مصادر Source 2...'); setResult(null);
         try {
             let id = String(tmdbId || '').replace(/\D/g, '');
@@ -2171,7 +2202,7 @@ function Source2Helper({ kind, tmdbId, season, episode, defaultTitle = '', defau
             const r = kind === 'movie' ? await source2ResolveMovie({ tmdbId: id }) : await source2ResolveEpisodeFast({ tmdbId: id, season, episode, collectAll: true });
             const providers = Array.from(new Set((r.providers || []).map(v => String(v).trim()).filter(Boolean)));
             setResult(r);
-            onChange && onChange({ source2TmdbId: id, source2Provider: 'tmdb-embed-api', source2Mode: 'live', source2LastCheckedAt: Date.now(), source2SourceCount: r.count || r.sources.length, source2Providers: providers, source2Sources: normalizeVideoSources(r.sources).filter(source2IsBrowserPlayable), source2: source2StoredRecordFromResolved(r, season, episode, kind === 'movie' ? 'movie' : 'tv') });
+            onChange && onChange({ source2TmdbId: id, source2Provider: 'egybest', source2Mode: 'live', source2LastCheckedAt: Date.now(), source2SourceCount: r.count || r.sources.length, source2Providers: providers, source2Sources: normalizeVideoSources(r.sources).filter(source2IsBrowserPlayable), source2: source2StoredRecordFromResolved(r, season, episode, kind === 'movie' ? 'movie' : 'tv') });
             setMsg(`نجح الاختبار: ${r.count || r.sources.length} مصدر · ${providers.length} مزوّد · TMDB ${id}`);
         } catch (e) {
             setMsg(e.message || 'فشل اختبار Source 2.');
@@ -2180,7 +2211,7 @@ function Source2Helper({ kind, tmdbId, season, episode, defaultTitle = '', defau
     return React.createElement('div', { className: 'mt-3.5 glass-card rounded-2xl p-3.5 border border-accent-cyan/20' },
         React.createElement('div', { className: 'flex items-center justify-between gap-2 flex-wrap' },
             React.createElement('div', null,
-                React.createElement('p', { className: 'text-[11px] font-black text-accent-cyan' }, 'Source 2 — FaselHD'),
+                React.createElement('p', { className: 'text-[11px] font-black text-accent-cyan' }, 'Source 2 — EgyBest'),
                 React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, 'يُطابق TMDB تلقائيًا من اسم العمل والسنة؛ روابط التشغيل تُجلب وقت المشاهدة ولا تُحفظ كروابط دائمة.')),
             React.createElement('button', { type: 'button', onClick: run, disabled: loading, className: 'px-4 py-2 rounded-xl bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan text-xs font-black disabled:opacity-40' }, loading ? 'جاري الاختبار...' : 'اختبار Source 2')),
         msg && React.createElement('p', { className: `text-[10px] font-bold mt-2 ${result ? 'text-emerald-400' : 'text-slate-400'}` }, msg),
@@ -5843,7 +5874,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 }
 
                 const source2Warmup = (!url)
-                    ? source2ResolveMovie({ tmdbId: title.tmdbId || title.source2TmdbId, expectedTitle: title.name }).catch(() => null)
+                    ? source2ResolveForItem(title, 1, 1).catch(() => null)
                     : Promise.resolve(null);
 
                 if (!url) {
@@ -5876,7 +5907,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 setPlayingLabel(title.name);
                 scrollToPlayer();
                 ensureVidApiSubtitlePublic({ ...title, videoUrl: url }).catch(() => {});
-                // روابط FaselHD مؤقتة؛ لا نعيد جلبها في الخلفية بعد بدء التشغيل ولا نبدّل المصدر.
+                // روابط EgyBest مؤقتة؛ لا نعيد جلبها في الخلفية بعد بدء التشغيل ولا نبدّل المصدر.
                 // الجلب الجديد يحدث عند الضغط على تشغيل في الجلسة التالية.
             }
             else {
@@ -5921,7 +5952,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 sources = [...normalizeVideoSources(ep.videoSources), ...normalizeAlternativeSources(ep.alternativeSources)];
             }
             const source2Warmup = (!url)
-                ? source2ResolveEpisodeFast({ tmdbId: ep.tmdbId || ep.source2TmdbId || title.tmdbId || title.source2TmdbId, season: seasonNumber, episode: ep && ep.number, collectAll: true, expectedTitle: title.name }).catch(() => null)
+                ? source2ResolveForItem({ ...ep, name: title.name, type: title.type, tmdbId: ep.tmdbId || ep.source2TmdbId || title.tmdbId || title.source2TmdbId }, seasonNumber, ep && ep.number).catch(() => null)
                 : Promise.resolve(null);
 
             if (!url) {
@@ -6061,7 +6092,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         }
     };
     const handlePlaybackError = () => {
-        // The selected FaselHD source is sticky. Never switch sources after
+        // The selected Source 2 source is sticky. Never switch sources after
         // the browser has begun using it; a transient media error must not
         // silently move the viewer to another stream.
         setVideoError(true);
@@ -7698,10 +7729,10 @@ function VideoDisplaySettings({ value, onChange }) {
         showCropStudio && (React.createElement(CropStudioModal, { videoUrl: normalizeVideoUrl(v.videoUrl), initial: crop, onCancel: () => setShowCropStudio(false), onSave: (newCrop) => { set('crop', newCrop); setShowCropStudio(false); } }))));
 }
 function emptyForm(type) {
-    return { name: '', type: type || 'movie', tmdbId: '', imdbId: '', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', runtimeMinutes: 0, rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, source2TmdbId: '', source2Provider: 'tmdb-embed-api', source2Mode: 'live', source2LastCheckedAt: 0, source2SourceCount: 0, source2Providers: [], trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, alternativeSources: [], seasons: [] };
+    return { name: '', type: type || 'movie', tmdbId: '', imdbId: '', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', runtimeMinutes: 0, rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, source2TmdbId: '', source2Provider: 'egybest', source2Mode: 'live', source2LastCheckedAt: 0, source2SourceCount: 0, source2Providers: [], trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, alternativeSources: [], seasons: [] };
 }
 function emptyEpisode(num) {
-    return { number: num, title: '', tmdbId: '', runtimeMinutes: 0, videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, source2TmdbId: '', source2Provider: 'tmdb-embed-api', source2Mode: 'live', source2LastCheckedAt: 0, source2SourceCount: 0, source2Providers: [], imdb: '', tmdbRating: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, alternativeSources: [], finality: 'none' };
+    return { number: num, title: '', tmdbId: '', runtimeMinutes: 0, videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, source2TmdbId: '', source2Provider: 'egybest', source2Mode: 'live', source2LastCheckedAt: 0, source2SourceCount: 0, source2Providers: [], imdb: '', tmdbRating: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, alternativeSources: [], finality: 'none' };
 }
 function SubtitleHelper({ value, onChange, sourceId, title, type, season, episode, year, cinemanaId, offset = 0, onOffsetChange }) {
     const [loading, setLoading] = useState(false);
@@ -8281,7 +8312,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.tmdbId = source2TmdbId || String(form.tmdbId || '');
             payload.imdbId = String(form.imdbId || (/^tt\d+$/i.test(String(sourceId || '')) ? sourceId : ''));
             payload.source2 = source2InfoForPayload(payload.tmdbId);
-            payload.source2Provider = 'tmdb-embed-api';
+            payload.source2Provider = 'egybest';
             payload.source2TmdbId = String(payload.tmdbId || '');
             payload.source2Mode = 'live';
             payload.source2LastCheckedAt = Number(form.source2LastCheckedAt) || 0;
@@ -8330,7 +8361,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 poster: (s.poster || '').trim(),
                 episodeThumbnail: (s.episodeThumbnail || '').trim(),
                 episodes: (s.episodes || []).map(e => ({
-                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), alternativeSources: normalizeAlternativeSources(e.alternativeSources), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || ''), source2TmdbId: String(e.source2TmdbId || '').replace(/\D/g, ''), source2Provider: String(e.source2Provider || 'tmdb-embed-api'), source2Mode: String(e.source2Mode || (e.source2TmdbId ? 'live' : '')), source2LastCheckedAt: Number(e.source2LastCheckedAt) || 0, source2SourceCount: Number(e.source2SourceCount) || 0, source2Providers: normalizeGenresValue(e.source2Providers), source2Sources: normalizeVideoSources(e.source2Sources || e.source2?.sources || []).filter(source2IsBrowserPlayable), source2: e.source2 && typeof e.source2 === 'object' ? { ...e.source2, sources: normalizeVideoSources(e.source2.sources || e.source2Sources || []).filter(source2IsBrowserPlayable) } : e.source2, imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
+                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), alternativeSources: normalizeAlternativeSources(e.alternativeSources), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || ''), source2TmdbId: String(e.source2TmdbId || '').replace(/\D/g, ''), source2Provider: String(e.source2Provider || 'egybest'), source2Mode: String(e.source2Mode || (e.source2TmdbId ? 'live' : '')), source2LastCheckedAt: Number(e.source2LastCheckedAt) || 0, source2SourceCount: Number(e.source2SourceCount) || 0, source2Providers: normalizeGenresValue(e.source2Providers), source2Sources: normalizeVideoSources(e.source2Sources || e.source2?.sources || []).filter(source2IsBrowserPlayable), source2: e.source2 && typeof e.source2 === 'object' ? { ...e.source2, sources: normalizeVideoSources(e.source2.sources || e.source2Sources || []).filter(source2IsBrowserPlayable) } : e.source2, imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
                     trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, introStart: Number(e.introStart) || 0, introEnd: Number(e.introEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
                 }))
             }));
@@ -8338,7 +8369,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.tmdbId = source2TmdbId || String(form.tmdbId || '');
             payload.imdbId = String(form.imdbId || (/^tt\d+$/i.test(String(sourceId || '')) ? sourceId : ''));
             payload.source2 = source2InfoForPayload(payload.tmdbId);
-            payload.source2Provider = 'tmdb-embed-api';
+            payload.source2Provider = 'egybest';
             payload.source2TmdbId = String(payload.tmdbId || '');
             payload.source2Mode = 'live';
             payload.source2LastCheckedAt = Number(form.source2LastCheckedAt) || 0;
@@ -8349,7 +8380,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 episodes: (se.episodes || []).map(ep => ({
                     ...ep,
                     source2TmdbId: String(payload.tmdbId || ''),
-                    source2Provider: 'tmdb-embed-api',
+                    source2Provider: 'egybest',
                     source2Mode: 'live',
                     source2LastCheckedAt: Number(ep.source2LastCheckedAt) || 0,
                     source2SourceCount: Number(ep.source2SourceCount) || 0,
@@ -9009,7 +9040,7 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
             source2: source2StoredRecordFromResolved({ ...r, sources }, 1, 1, 'movie'),
             source2TmdbId: r.tmdbId,
             tmdbId: r.tmdbId,
-            source2Provider: 'tmdb-embed-api',
+            source2Provider: 'egybest',
             source2Mode: 'live',
             source2LastCheckedAt: Date.now(),
             source2SourceCount: sources.length,
@@ -9061,7 +9092,7 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
                 const sources = normalizeVideoSources(r.sources).filter(source2IsBrowserPlayable);
 
                 ep.source2TmdbId = r.tmdbId;
-                ep.source2Provider = 'tmdb-embed-api';
+                ep.source2Provider = 'egybest';
                 ep.source2Mode = 'live';
                 ep.source2LastCheckedAt = Date.now();
                 ep.source2Season = job.season;
@@ -9100,7 +9131,7 @@ async function bulkRefreshSource2Title(t, onPartProgress) {
             source2: source2InfoForPayload(tmdbId),
             tmdbId,
             source2TmdbId: tmdbId,
-            source2Provider: 'tmdb-embed-api',
+            source2Provider: 'egybest',
             source2Mode: 'live',
             source2LastCheckedAt: Date.now(),
             source2SourceCount: sourceCount,
@@ -9339,7 +9370,7 @@ function Source2LinksViewer({ title, onClose }) {
     const copy = async (url) => { try { await navigator.clipboard.writeText(String(url || '')); } catch (_) {} };
     const box = (source, key) => React.createElement('div',{key,className:'glass-card rounded-xl p-3 border border-white/10'},
         React.createElement('div',{className:'flex items-center justify-between gap-2 flex-wrap'},
-            React.createElement('b',{className:'text-xs text-white'},source.provider || 'FaselHD'),
+            React.createElement('b',{className:'text-xs text-white'},source.provider || 'EgyBest'),
             React.createElement('span',{className:'text-[10px] text-accent-cyan font-black'},String(source.label || source.resolution || 'Auto'))),
         React.createElement('div',{className:'mt-2 flex items-center gap-2'},
             React.createElement('input',{readOnly:true,value:source.url || '',dir:'ltr',className:'flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-lg px-2.5 py-2 text-[10px] text-slate-300'}),
@@ -9485,7 +9516,7 @@ async function refreshSingleEpisodeSource2(t, seasonNumber, episodeNumber) {
     const sources = normalizeVideoSources(r.sources).filter(source2IsBrowserPlayable);
     if (!sources.length) throw new Error(`لم تُجلب مصادر للحلقة S${season}E${episode}.`);
     ep.source2TmdbId = r.tmdbId;
-    ep.source2Provider = 'tmdb-embed-api';
+    ep.source2Provider = 'egybest';
     ep.source2Mode = 'live';
     ep.source2LastCheckedAt = Date.now();
     ep.source2LastError = '';
@@ -9502,7 +9533,7 @@ async function refreshSingleEpisodeSource2(t, seasonNumber, episodeNumber) {
     await db.ref(`titles/${t.id}`).update(sanitizeFirebasePatch({
         tmdbId: resolvedId,
         source2TmdbId: resolvedId,
-        source2Provider: 'tmdb-embed-api',
+        source2Provider: 'egybest',
         source2Mode: 'live',
         source2LastCheckedAt: Date.now(),
         source2SourceCount: parentSourceCount,
