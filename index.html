@@ -1302,6 +1302,8 @@ const CINEMANA_PROXY = (() => {
     if (configured && (isLocalPage || !/^https?:\/\/localhost(?::\d+)?$/i.test(configured))) return configured;
     // لوحة الإدارة على الكمبيوتر تستخدم Node المحلي، أما الموقع المنشور/الهاتف
     // فيستخدم البروكسي العام حتى لا يتحول localhost إلى هاتف المستخدم نفسه.
+    const isLanPage = /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(host) && location.protocol === 'http:';
+    if (isLanPage) return `http://${host}:8787`;
     return isLocalPage ? 'http://localhost:8787' : 'https://api.cinadam.xyz';
 })();
 const SUBTITLE_PUBLIC_BASE = (() => {
@@ -5029,14 +5031,25 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     };
     const resolveFreshCinemanaVideo = async (meta, kind, seasonNumber) => {
         const savedId = String((meta && meta.cinemanaId) || '').trim();
-        if (savedId) {
-            const sources = cinemanaVideoSources(await cinemanaVideos(savedId, kind === 'movie' ? 'movie' : 'tv'));
-            if (sources.length)
-                return { url: sources[0].url, sources, sourceId: savedId };
+        // الهاتف لا يصل لبروكسي سينمانا (localhost = الهاتف نفسه)، فإذا فشل تجديد الرابط
+        // نرجع للرابط المحفوظ في قاعدة البيانات بدل إظهار "تعذر" مباشرة.
+        const savedUrl = getSavedVideoUrl(meta);
+        const savedSources = normalizeVideoSources((meta && meta.videoSources) || []);
+        try {
+            if (savedId) {
+                const sources = cinemanaVideoSources(await cinemanaVideos(savedId, kind === 'movie' ? 'movie' : 'tv'));
+                if (sources.length)
+                    return { url: sources[0].url, sources, sourceId: savedId };
+            }
+            if (kind === 'movie')
+                return await recoverMovieVideo();
+            return await recoverEpisodeVideo(meta, seasonNumber);
         }
-        if (kind === 'movie')
-            return recoverMovieVideo();
-        return recoverEpisodeVideo(meta, seasonNumber);
+        catch (e) {
+            if (savedUrl)
+                return { url: savedUrl, sources: savedSources.length ? savedSources : [{ url: savedUrl }], sourceId: savedId };
+            throw e;
+        }
     };
     const ensureVidApiSubtitlePublic = async (meta) => {
         if (!meta || !isVidApiUrl(meta.videoUrl || '') || meta.subtitlePublicUrl || !meta.subtitleUrl) return '';
