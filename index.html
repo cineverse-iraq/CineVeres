@@ -49,7 +49,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
-  <script src="./cinemabox-engine.js"></script>
+  <script src="./cartoondub-engine.js"></script>
 
   <style>
     html { scroll-behavior: smooth; }
@@ -1198,7 +1198,7 @@ function isDirectVideo(url) {
     return /\.(mp4|webm|ogg|mov|m3u8)(?:[?#]|$)/i.test(s)
         || /(?:\/)(?:master|playlist|index)(?:\.m3u8)?(?:[?#]|$)/i.test(s)
         || /(?:m3u8|manifest|stream|video)(?:[/?#]|$)/i.test(s)
-        || /(?:cinemabox\/proxy)(?:[/?#]|$)/i.test(s);
+        || /(?:cartoondub\/proxy)(?:[/?#]|$)/i.test(s);
 }
 function isCinemanaPlayback(meta, url) {
     const m = meta || {};
@@ -5051,21 +5051,21 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             throw e;
         }
     };
-    const resolveCinemaBoxVideo = async (meta, kind, seasonNumber) => {
-        if (!window.CinemaBoxEngine)
-            throw new Error('Cinema Box adapter غير محمّل. تأكد من وجود cinemabox-engine.js بجانب index.html');
-        const m = { ...(meta || {}), name: meta && meta.name || title.name, title: meta && meta.title || title.name, year: meta && meta.year || title.year, tmdbId: meta && meta.tmdbId || title.tmdbId, imdbId: meta && meta.imdbId || title.imdbId };
+    const resolveCartoonDubVideo = async (meta, kind, seasonNumber) => {
+        if (!window.CartoonDubEngine)
+            throw new Error('CartoonDub adapter غير محمّل. تأكد من وجود cartoondub-engine.js بجانب index.html');
+        const m = { ...(meta || {}), name: (meta && meta.name) || title.name, title: (meta && meta.title) || title.name, year: (meta && meta.year) || title.year, tmdbId: (meta && meta.tmdbId) || title.tmdbId, imdbId: (meta && meta.imdbId) || title.imdbId, originalTitle: (meta && (meta.originalTitle || meta.original_name)) || title.originalTitle || title.original_name || '' };
         const result = kind === 'movie'
-            ? await window.CinemaBoxEngine.resolveMovie(m)
-            : await window.CinemaBoxEngine.resolveEpisode(m, seasonNumber, meta && meta.number);
+            ? await window.CartoonDubEngine.resolveMovie(m)
+            : await window.CartoonDubEngine.resolveEpisode(m, seasonNumber, meta && meta.number);
         const sources = normalizeVideoSources(result && result.sources || []);
         if (!sources.length)
-            throw new Error((result && result.error) || 'Cinema Box لم يرجّع أي رابط تشغيل');
+            throw new Error((result && result.error) || 'CartoonDub لم يرجّع أي رابط تشغيل');
         return {
             url: sources[0].url,
             sources,
-            sourceId: String((result && result.id) || '').trim(),
-            provider: 'cinemabox'
+            sourceId: String((result && (result.id || result.sectionId)) || '').trim(),
+            provider: 'cartoondub'
         };
     };
     const ensureVidApiSubtitlePublic = async (meta) => {
@@ -5098,11 +5098,11 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                         resolvedProvider = recovered.provider || 'cinemana';
                     }
                     catch (cinemanaErr) {
-                        const recovered = await resolveCinemaBoxVideo(title, 'movie');
+                        const recovered = await resolveCartoonDubVideo(title, 'movie');
                         if (requestId !== playRequestRef.current) return;
                         url = recovered.url;
                         sources = recovered.sources;
-                        resolvedProvider = recovered.provider || 'cinemabox';
+                        resolvedProvider = recovered.provider || 'cartoondub';
                     }
                 }
                 else {
@@ -5117,11 +5117,11 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                             resolvedProvider = 'cinemana';
                         }
                         catch (cinemanaErr) {
-                            const recovered = await resolveCinemaBoxVideo(title, 'movie');
+                            const recovered = await resolveCartoonDubVideo(title, 'movie');
                             if (requestId !== playRequestRef.current) return;
                             url = recovered.url;
                             sources = recovered.sources;
-                            resolvedProvider = recovered.provider || 'cinemabox';
+                            resolvedProvider = recovered.provider || 'cartoondub';
                         }
                     }
                 }
@@ -5174,11 +5174,11 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                     resolvedProvider = recovered.provider || 'cinemana';
                 }
                 catch (cinemanaErr) {
-                    const recovered = await resolveCinemaBoxVideo({ ...ep, name: title.name, title: title.name, year: title.year, tmdbId: title.tmdbId, imdbId: title.imdbId }, 'tv', seasonNumber);
+                    const recovered = await resolveCartoonDubVideo({ ...ep, name: title.name, title: title.name, year: title.year, tmdbId: title.tmdbId, imdbId: title.imdbId }, 'tv', seasonNumber);
                     if (requestId !== playRequestRef.current) return;
                     url = recovered.url;
                     sources = recovered.sources;
-                    resolvedProvider = recovered.provider || 'cinemabox';
+                    resolvedProvider = recovered.provider || 'cartoondub';
                 }
             }
             else {
@@ -5193,11 +5193,11 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                         resolvedProvider = 'cinemana';
                     }
                     catch (cinemanaErr) {
-                        const recovered = await resolveCinemaBoxVideo({ ...ep, name: title.name, title: title.name, year: title.year, tmdbId: title.tmdbId, imdbId: title.imdbId }, 'tv', seasonNumber);
+                        const recovered = await resolveCartoonDubVideo({ ...ep, name: title.name, title: title.name, year: title.year, tmdbId: title.tmdbId, imdbId: title.imdbId }, 'tv', seasonNumber);
                         if (requestId !== playRequestRef.current) return;
                         url = recovered.url;
                         sources = recovered.sources;
-                        resolvedProvider = recovered.provider || 'cinemabox';
+                        resolvedProvider = recovered.provider || 'cartoondub';
                     }
                 }
             }
@@ -5264,8 +5264,8 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         const meta = playingMeta || {};
         const provider = String(meta.playbackProvider || '').toLowerCase();
         const isCinemana = !!String(meta.cinemanaId || '').trim() || isCinemanaPlayback(meta, playingUrl);
-        const isCinemaBox = provider === 'cinemabox' || (window.CinemaBoxEngine && window.CinemaBoxEngine.isCinemaBoxUrl(playingUrl));
-        if (!isCinemana && !isCinemaBox) {
+        const isCartoonDub = provider === 'cartoondub' || (window.CartoonDubEngine && window.CartoonDubEngine.isCartoonDubUrl(playingUrl));
+        if (!isCinemana && !isCartoonDub) {
             setVideoError(true);
             return;
         }
@@ -5282,18 +5282,18 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                     recovered = await resolveFreshCinemanaVideo(meta, title.type === 'movie' ? 'movie' : 'tv', playingSeasonNumber);
                 }
                 catch (_) {
-                    recovered = await resolveCinemaBoxVideo(meta, title.type === 'movie' ? 'movie' : 'tv', playingSeasonNumber);
+                    recovered = await resolveCartoonDubVideo(meta, title.type === 'movie' ? 'movie' : 'tv', playingSeasonNumber);
                 }
             }
             else {
-                recovered = await resolveCinemaBoxVideo(meta, title.type === 'movie' ? 'movie' : 'tv', playingSeasonNumber);
+                recovered = await resolveCartoonDubVideo(meta, title.type === 'movie' ? 'movie' : 'tv', playingSeasonNumber);
             }
             if (!recovered || !recovered.url) throw new Error('لم يرجع أي محرك رابط تشغيل جديد.');
-            setPlayingMeta(prev => ({ ...prev, videoUrl: recovered.url, videoSources: recovered.sources, playbackProvider: recovered.provider || (isCinemana ? 'cinemana' : 'cinemabox') }));
+            setPlayingMeta(prev => ({ ...prev, videoUrl: recovered.url, videoSources: recovered.sources, playbackProvider: recovered.provider || (isCinemana ? 'cinemana' : 'cartoondub') }));
             setPlayingUrl(normalizeVideoUrl(recovered.url));
             setVideoError(false);
             setPlayerRetryCount(c => c + 1);
-            showToast(recovered.provider === 'cinemabox' ? 'تم التحويل إلى Cinema Box وإعادة المحاولة' : 'تم تجديد رابط سينمانا وإعادة المحاولة', 'success');
+            showToast(recovered.provider === 'cartoondub' ? 'تم التحويل إلى CartoonDub وإعادة المحاولة' : 'تم تجديد رابط سينمانا وإعادة المحاولة', 'success');
         }
         catch (e) {
             setVideoError(true);
