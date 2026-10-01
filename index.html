@@ -7229,7 +7229,7 @@ async function refreshSeasonImdbRatings(sourceId, seasonNumber, episodes, onProg
 
 function CartoonDubAdminForm({ initial, onDone, currentUser }) {
     const clone = (v) => JSON.parse(JSON.stringify(v));
-    const base = initial ? normalizeTitlePlaybackData(initial) : { ...emptyForm('series'), type: 'series', contentSection: 'cartoon', sourceProvider: 'cartoondub', playbackProvider: 'cartoondub', cartoonSourceLocked: true, cartoondubId: '', cartoondubSectionId: '', cartoondubTarget: '', tmdbId: '', imdbId: '' };
+    const base = initial ? normalizeTitlePlaybackData(initial) : { ...emptyForm('series'), type: 'series', contentSection: 'cartoon', sourceProvider: 'cartoondub', playbackProvider: 'cartoondub', cartoonSourceLocked: true, cartoondubId: '', cartoondubTitle: '', cartoondubSectionId: '', cartoondubTarget: '', tmdbId: '', imdbId: '' };
     const [form, setForm] = useState(() => ({
         ...base,
         contentSection: 'cartoon',
@@ -7237,6 +7237,7 @@ function CartoonDubAdminForm({ initial, onDone, currentUser }) {
         playbackProvider: 'cartoondub',
         cartoonSourceLocked: true,
         cartoondubId: String(base.cartoondubId || ''),
+        cartoondubTitle: String(base.cartoondubTitle || ''),
         cartoondubSectionId: String(base.cartoondubSectionId || ''),
         cartoondubTarget: String(base.cartoondubTarget || ''),
         tmdbId: String(base.tmdbId || ''),
@@ -7255,7 +7256,7 @@ function CartoonDubAdminForm({ initial, onDone, currentUser }) {
 
     const setField = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
-    const cartoonProxy = String(CINEMANA_PROXY || '').replace(/\/+$/, '');
+    const cartoonProxy = (window.CartoonDubEngine && typeof window.CartoonDubEngine.getProxyBase === 'function') ? window.CartoonDubEngine.getProxyBase() : String(CINEMANA_PROXY || '').replace(/\/+$/, '');
     const searchCartoonDub = async () => {
         const q = search.trim();
         if (!q) return;
@@ -7263,9 +7264,17 @@ function CartoonDubAdminForm({ initial, onDone, currentUser }) {
         setError('');
         setMessage('');
         try {
-            const res = await fetch(`${cartoonProxy}/cartoondub/search?q=${encodeURIComponent(q)}`, { headers: { Accept: 'application/json' } });
-            const data = await res.json().catch(() => null);
-            if (!res.ok || !data || data.ok === false) throw new Error((data && data.error) || `فشل بحث CartoonDub (رمز ${res.status})`);
+            const bases = [cartoonProxy, CINEMANA_PROXY, 'http://localhost:8787', 'https://api.cinadam.xyz'].map(v => String(v || '').trim().replace(/\/+$/, '')).filter((v,i,a)=>v && a.indexOf(v)===i);
+            let data = null, lastErr = null;
+            for (const baseUrl of bases) {
+                try {
+                    const res = await fetch(`${baseUrl}/cartoondub/search?q=${encodeURIComponent(q)}`, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+                    const candidate = await res.json().catch(() => null);
+                    if (res.ok && candidate && candidate.ok !== false) { data = candidate; break; }
+                    lastErr = new Error((candidate && candidate.error) || `HTTP ${res.status}`);
+                } catch (e) { lastErr = e; }
+            }
+            if (!data) throw (lastErr || new Error('تعذر الاتصال ببروكسي CartoonDub'));
             setResults(Array.isArray(data.items) ? data.items : []);
             setMessage(data.items && data.items.length ? `تم العثور على ${data.items.length} نتيجة من CartoonDub.` : 'ما لقيت نتائج بهذا الاسم. جرّب الاسم العربي كما يظهر في CartoonDub.');
         } catch (e) {
@@ -7278,6 +7287,7 @@ function CartoonDubAdminForm({ initial, onDone, currentUser }) {
         setForm(prev => ({
             ...prev,
             name: item.title || prev.name,
+            cartoondubTitle: item.title || prev.cartoondubTitle || prev.name,
             year: Number(item.year) || prev.year || new Date().getFullYear(),
             poster: item.poster || prev.poster || '',
             cartoondubId: String(item.id || ''),
@@ -7315,7 +7325,8 @@ function CartoonDubAdminForm({ initial, onDone, currentUser }) {
             setForm(prev => ({
                 ...prev,
                 type: media === 'movie' ? 'movie' : 'series',
-                name: data.title || data.name || prev.name,
+                name: prev.cartoondubTitle || prev.name || data.title || data.name,
+                tmdbDisplayName: data.title || data.name || prev.tmdbDisplayName || '',
                 year: Number(String(date).slice(0, 4)) || prev.year || new Date().getFullYear(),
                 poster: data.poster_path ? TMDB_IMG + 'w500' + data.poster_path : prev.poster,
                 backdrop: data.backdrop_path ? TMDB_IMG + 'original' + data.backdrop_path : prev.backdrop,
@@ -7382,7 +7393,7 @@ function CartoonDubAdminForm({ initial, onDone, currentUser }) {
         setMessage('');
         try {
             const r = await window.CartoonDubEngine.resolveMovie({
-                name: form.name, title: form.name, year: form.year, tmdbId: form.tmdbId || '', originalTitle: form.name, cartoondubId: form.cartoondubId || ''
+                name: form.name, title: form.name, year: form.year, tmdbId: form.tmdbId || '', originalTitle: form.cartoondubTitle || form.name, cartoondubId: form.cartoondubId || '', cartoondubSectionId: form.cartoondubSectionId || '', cartoondubTarget: form.cartoondubTarget || ''
             });
             const sources = (r.sources || []).map(s => ({ ...s, url: s.rawUrl || s.url, provider: 'cartoondub', type: 'mp4', quality: s.quality || s.resolution || '', resolution: Number(s.resolution) || 0 }));
             if (!sources.length) throw new Error('CartoonDub لم يرجّع رابط تشغيل.');
@@ -7402,13 +7413,13 @@ function CartoonDubAdminForm({ initial, onDone, currentUser }) {
         setMessage('');
         try {
             const r = await window.CartoonDubEngine.resolveEpisode({
-                name: form.name, title: form.name, year: form.year, tmdbId: form.tmdbId || '', originalTitle: form.name, cartoondubId: form.cartoondubId || ''
+                name: form.cartoondubTitle || form.name, title: form.cartoondubTitle || form.name, year: form.year, tmdbId: form.tmdbId || '', originalTitle: form.cartoondubTitle || form.name, cartoondubId: form.cartoondubId || '', cartoondubSectionId: form.cartoondubSectionId || '', cartoondubTarget: form.cartoondubTarget || ''
             }, season.number, ep.number);
             const sources = (r.sources || []).map(s => ({ ...s, url: s.rawUrl || s.url, provider: 'cartoondub', type: 'mp4', quality: s.quality || s.resolution || '', resolution: Number(s.resolution) || 0 }));
             if (!sources.length) throw new Error('CartoonDub لم يرجّع رابط تشغيل للحلقة.');
             setForm(prev => {
                 const seasons = clone(prev.seasons || []);
-                seasons[si].episodes[ei] = { ...seasons[si].episodes[ei], videoUrl: sources[0].url, videoSources: sources, playbackProvider: 'cartoondub', cartoondubId: String(r.id || prev.cartoondubId || '') };
+                seasons[si].episodes[ei] = { ...seasons[si].episodes[ei], videoUrl: sources[0].url, videoSources: sources, playbackProvider: 'cartoondub', cartoondubId: String(r.id || prev.cartoondubId || ''), cartoondubSectionId: String(r.sectionId || prev.cartoondubSectionId || ''), cartoondubTarget: String(r.target || prev.cartoondubTarget || '') };
                 return { ...prev, seasons };
             });
             setMessage(`تم جلب رابط S${String(season.number).padStart(2,'0')}E${String(ep.number).padStart(2,'0')} من CartoonDub.`);
@@ -7425,7 +7436,7 @@ function CartoonDubAdminForm({ initial, onDone, currentUser }) {
         if (!jobs.length) { setMessage('كل الحلقات لديها روابط محفوظة.'); return; }
         setBusy('bulk');
         setError('');
-        let done = 0;
+        let done = 0, linked = 0, failed = 0;
         try {
             for (let i = 0; i < jobs.length; i += 3) {
                 const part = jobs.slice(i, i + 3);
@@ -7433,17 +7444,18 @@ function CartoonDubAdminForm({ initial, onDone, currentUser }) {
                     const s = form.seasons[si], e = s.episodes[ei];
                     try {
                         const r = await window.CartoonDubEngine.resolveEpisode({
-                            name: form.name, title: form.name, year: form.year, tmdbId: form.tmdbId || '', originalTitle: form.name, cartoondubId: form.cartoondubId || ''
+                            name: form.cartoondubTitle || form.name, title: form.cartoondubTitle || form.name, year: form.year, tmdbId: form.tmdbId || '', originalTitle: form.cartoondubTitle || form.name, cartoondubId: form.cartoondubId || '', cartoondubSectionId: form.cartoondubSectionId || '', cartoondubTarget: form.cartoondubTarget || ''
                         }, s.number, e.number);
                         const sources = (r.sources || []).map(x => ({ ...x, url: x.rawUrl || x.url, provider:'cartoondub', type:'mp4', quality: x.quality || x.resolution || '', resolution:Number(x.resolution)||0 }));
-                        return { si, ei, sources, id: String(r.id || '') };
-                    } catch (_) { return { si, ei, sources: [], id: '' }; }
+                        return { si, ei, sources, id: String(r.id || ''), sectionId: String(r.sectionId || ''), target: String(r.target || '') };
+                    } catch (_) { failed++; return { si, ei, sources: [], id: '' }; }
                 }));
                 setForm(prev => {
                     const seasons = clone(prev.seasons || []);
                     resolved.forEach(r => {
                         if (r.sources.length) {
-                            seasons[r.si].episodes[r.ei] = { ...seasons[r.si].episodes[r.ei], videoUrl:r.sources[0].url, videoSources:r.sources, playbackProvider:'cartoondub', cartoondubId:r.id || prev.cartoondubId || '' };
+                            linked++;
+                            seasons[r.si].episodes[r.ei] = { ...seasons[r.si].episodes[r.ei], videoUrl:r.sources[0].url, videoSources:r.sources, playbackProvider:'cartoondub', cartoondubId:r.id || prev.cartoondubId || '', cartoondubSectionId:r.sectionId || prev.cartoondubSectionId || '', cartoondubTarget:r.target || prev.cartoondubTarget || '' };
                         }
                     });
                     return { ...prev, seasons };
@@ -7452,7 +7464,7 @@ function CartoonDubAdminForm({ initial, onDone, currentUser }) {
                 setMessage(`CartoonDub: تم فحص ${done}/${jobs.length} حلقة.`);
                 await new Promise(r => setTimeout(r, 80));
             }
-            setMessage('اكتمل جلب روابط CartoonDub للحلقات المطلوبة.');
+            setMessage(`اكتمل جلب روابط CartoonDub: نجح ${linked} من ${jobs.length}، وتعذر ${failed}.`);
         } finally { setBusy(''); }
     };
 
@@ -7488,6 +7500,7 @@ function CartoonDubAdminForm({ initial, onDone, currentUser }) {
             playbackProvider: 'cartoondub',
             cartoonSourceLocked: true,
             cartoondubId: String(form.cartoondubId || '').trim(),
+            cartoondubTitle: String(form.cartoondubTitle || form.name || '').trim(),
             cartoondubSectionId: String(form.cartoondubSectionId || '').trim(),
             cartoondubTarget: String(form.cartoondubTarget || '').trim(),
             tmdbId: String(form.tmdbId || '').trim(),
@@ -7525,6 +7538,8 @@ function CartoonDubAdminForm({ initial, onDone, currentUser }) {
                     playbackProvider:'cartoondub',
                     cinemanaId:'',
                     cartoondubId:String(e.cartoondubId || form.cartoondubId || '').trim(),
+                    cartoondubSectionId:String(e.cartoondubSectionId || form.cartoondubSectionId || '').trim(),
+                    cartoondubTarget:String(e.cartoondubTarget || form.cartoondubTarget || '').trim(),
                     subtitleUrl:normalizeSubtitleUrl(e.subtitleUrl||''),
                     subtitlePublicUrl:String(e.subtitlePublicUrl||'').trim(),
                     subtitleOffset:Number(e.subtitleOffset)||0,
@@ -7550,7 +7565,7 @@ function CartoonDubAdminForm({ initial, onDone, currentUser }) {
                     h("div",null,h("p",{className:"font-black text-white"},"الكارتون"),h("p",{className:"text-[10px] text-slate-400"},"المصدر مقفول: CartoonDub فقط"))),
                 h("span",{className:"text-[9px] font-black tracking-wider text-accent-cyan border border-accent-cyan/30 rounded-full px-2 py-1"},"SOURCE LOCK: CARTOONDUB")
             ),
-            h("p",{className:"text-[11px] text-slate-300 mt-3 leading-relaxed"},"هنا تبحث باسم الكارتون داخل CartoonDub. TMDB اختياري للمعلومات والصور والمواسم فقط، ولا يُستخدم كمصدر تشغيل.")
+            h("p",{className:"text-[11px] text-slate-300 mt-3 leading-relaxed"},"هنا تبحث باسم الكارتون داخل CartoonDub. TMDB اختياري للمعلومات والصور والمواسم فقط، ولا يُستخدم كمصدر تشغيل. جلب الروابط يمر عبر server.js ثم تُحفظ الروابط الفعلية للكارتون.")
         ),
         h("div",{className:"grid md:grid-cols-2 gap-4"},
             h("div",{className:"md:col-span-2"},
@@ -7581,7 +7596,7 @@ function CartoonDubAdminForm({ initial, onDone, currentUser }) {
                     h("div",null,h("p",{className:"text-xs font-black text-white"},"مصدر التشغيل — CartoonDub"),h("p",{className:"text-[10px] text-slate-500"},"الرابط يُجلب من CartoonDub ولا يُقبل مصدر آخر.")),
                     h("button",{type:"button",onClick:resolveMovie,disabled:busy==='movie',className:"px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 text-xs font-black disabled:opacity-40"},busy==='movie'?'جلب...':(form.videoUrl?'تحديث الرابط':'جلب الرابط'))
                 ),
-                form.videoUrl&&h("p",{className:"text-[10px] text-emerald-400 font-bold mt-2 break-all"},`تم حفظ رابط CartoonDub: ${form.videoUrl}`)
+                form.videoUrl&&h("div",{className:"mt-2 flex items-center gap-2 flex-wrap"},h("p",{className:"text-[10px] text-emerald-400 font-bold break-all"},`تم جلب رابط CartoonDub`),h("a",{href:form.videoUrl,target:"_blank",rel:"noopener noreferrer",className:"text-[10px] px-2 py-1 rounded-lg bg-accent-cyan/10 border border-accent-cyan/20 text-accent-cyan font-black"},"فتح الرابط"))
             ) : h("div",{className:"md:col-span-2 glass-card rounded-2xl p-4 border border-accent-cyan/20"},
                 h("div",{className:"flex items-center justify-between gap-2 flex-wrap"},
                     h("div",null,h("p",{className:"text-xs font-black text-white"},"المواسم والحلقات"),h("p",{className:"text-[10px] text-slate-500"},"TMDB للمعلومات فقط، وروابط الفيديو من CartoonDub فقط.")),
@@ -7604,6 +7619,7 @@ function CartoonDubAdminForm({ initial, onDone, currentUser }) {
                                 h("span",{className:"w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center text-[10px] font-black text-accent-cyan shrink-0"},e.number),
                                 h("input",{value:e.title||'',onChange:x=>updateEp(si,ei,'title',x.target.value),className:"flex-1 min-w-0 bg-transparent border border-white/10 rounded-lg px-2 py-1.5 text-[10px] text-white outline-none"}),
                                 h("span",{className:`text-[9px] shrink-0 ${e.videoUrl?'text-emerald-400':'text-slate-500'}`},e.videoUrl?'موجود':'بدون رابط'),
+                                e.videoUrl&&h("a",{href:e.videoUrl,target:"_blank",rel:"noopener noreferrer",onClick:ev=>ev.stopPropagation(),className:"text-[9px] px-2 py-1 rounded-lg bg-accent-cyan/10 border border-accent-cyan/20 text-accent-cyan font-black shrink-0"},"فتح"),
                                 h("button",{type:"button",onClick:()=>resolveEpisode(si,ei),disabled:((busy===`ep:${si}:${ei}`)||busy==='bulk'),className:"px-2.5 py-1.5 rounded-lg bg-accent-cyan/15 border border-accent-cyan/25 text-accent-cyan text-[10px] font-black disabled:opacity-40"},busy===`ep:${si}:${ei}`?'...':(e.videoUrl?'تحديث':'جلب'))
                             ))
                         )
