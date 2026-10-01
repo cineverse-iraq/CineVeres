@@ -1804,7 +1804,10 @@ async function findAndStoreSubtitle({ cinemanaId, sourceId, altSourceIds = [], t
         if (b && !proxyCandidates.includes(b)) proxyCandidates.push(b);
     };
     addProxyCandidate(CINEMANA_PROXY);
-    addProxyCandidate('http://localhost:8787');
+    const pageHost = String((typeof location !== 'undefined' && location.hostname) || '').toLowerCase();
+    if (pageHost === 'localhost' || pageHost === '127.0.0.1' || /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(pageHost)) {
+        addProxyCandidate(`http://${pageHost}:8787`);
+    }
 
     let lastError = null;
     // نعيد المحاولة مرتين عند أخطاء الشبكة أو ضغط المصادر.
@@ -7257,9 +7260,10 @@ function CartoonDubAdminForm({ initial, onDone, currentUser }) {
 
     // لوحة الكارتون تُدار محليًا على جهاز الإدارة. لا نعتمد على api.cinadam.xyz هنا.
     // الصفحة المنشورة يمكنها مخاطبة localhost:8787 لأن السيرفر المحلي مضبوط أصلًا على CORS (*).
-    const cartoonProxy = 'http://localhost:8787';
-    // اجعل محرك CartoonDub نفسه يستخدم نفس البروكسي المحلي أثناء عمليات الإدارة.
+    const cartoonProxy = String(CINEMANA_PROXY || '').trim().replace(/\/+$/, '');
+    // نفس عنوان بروكسي سينمانا: محليًا localhost:8787، وعلى الموقع عنوان API العام.
     try { window.CARTOONDUB_PROXY_URL = cartoonProxy; } catch (_) {}
+    if (!cartoonProxy) throw new Error('عنوان البروكسي غير مضبوط.');
     const searchCartoonDub = async () => {
         const q = search.trim();
         if (!q) return;
@@ -7387,14 +7391,28 @@ function CartoonDubAdminForm({ initial, onDone, currentUser }) {
         try {
             try { window.CARTOONDUB_PROXY_URL = cartoonProxy; } catch (_) {}
             const r = await window.CartoonDubEngine.resolveMovie({
-                name: form.name, title: form.name, year: form.year, tmdbId: form.tmdbId || '', originalTitle: form.name, cartoondubId: form.cartoondubId || ''
+                name: form.name, title: form.name, year: form.year, tmdbId: form.tmdbId || '', imdbId: form.imdbId || '', originalTitle: form.name, cartoondubId: form.cartoondubId || '', cartoondubSectionId: form.cartoondubSectionId || '', cartoondubTarget: form.cartoondubTarget || ''
             });
             const sources = (r.sources || []).map(s => ({ ...s, url: s.rawUrl || s.url, provider: 'cartoondub', type: 'mp4', quality: s.quality || s.resolution || '', resolution: Number(s.resolution) || 0 }));
             if (!sources.length) throw new Error('CartoonDub لم يرجّع رابط تشغيل.');
             setForm(prev => ({ ...prev, videoUrl: sources[0].url, videoSources: sources, playbackProvider: 'cartoondub', sourceProvider: 'cartoondub', contentSection: 'cartoon', cartoonSourceLocked: true }));
-            setMessage('تم جلب رابط الفيلم من CartoonDub.');
+            setMessage('تم جلب رابط الفيلم؛ جاري البحث عن الترجمة العربية...');
+            try {
+                const sub = await findAndStoreSubtitle({
+                    sourceId: form.imdbId || '', altSourceIds: [form.tmdbId || ''],
+                    title: form.name, year: form.year, type: 'movie',
+                    onProgress: setMessage
+                });
+                if (sub && sub.url) setForm(prev => ({ ...prev, subtitleUrl: sub.url }));
+                setMessage(sub && sub.url ? `تم جلب رابط الفيلم والترجمة العربية (${sub.cues || 0} سطر).` : 'تم جلب رابط الفيلم؛ لم تتوفر ترجمة مطابقة.');
+            } catch (_) {
+                setMessage('تم جلب رابط الفيلم بنجاح؛ لم تتوفر ترجمة عربية مطابقة حاليًا.');
+            }
         } catch (e) {
-            setError(e && e.message ? e.message : 'تعذر جلب رابط الفيلم من CartoonDub.');
+            const msg = e && e.message ? e.message : '';
+            setError(/failed to fetch|networkerror|load failed/i.test(msg)
+                ? `تعذر الوصول إلى بروكسي CartoonDub (${cartoonProxy}). إذا كانت الصفحة منشورة، يجب أن يكون هذا العنوان API عامًّا يعمل عبر HTTPS.`
+                : (msg || 'تعذر جلب رابط الفيلم من CartoonDub.'));
         } finally { setBusy(''); }
     };
 
@@ -7408,7 +7426,7 @@ function CartoonDubAdminForm({ initial, onDone, currentUser }) {
         try {
             try { window.CARTOONDUB_PROXY_URL = cartoonProxy; } catch (_) {}
             const r = await window.CartoonDubEngine.resolveEpisode({
-                name: form.name, title: form.name, year: form.year, tmdbId: form.tmdbId || '', originalTitle: form.name, cartoondubId: form.cartoondubId || ''
+                name: form.name, title: form.name, year: form.year, tmdbId: form.tmdbId || '', imdbId: form.imdbId || '', originalTitle: form.name, cartoondubId: form.cartoondubId || '', cartoondubSectionId: form.cartoondubSectionId || '', cartoondubTarget: form.cartoondubTarget || ''
             }, season.number, ep.number);
             const sources = (r.sources || []).map(s => ({ ...s, url: s.rawUrl || s.url, provider: 'cartoondub', type: 'mp4', quality: s.quality || s.resolution || '', resolution: Number(s.resolution) || 0 }));
             if (!sources.length) throw new Error('CartoonDub لم يرجّع رابط تشغيل للحلقة.');
@@ -7417,9 +7435,25 @@ function CartoonDubAdminForm({ initial, onDone, currentUser }) {
                 seasons[si].episodes[ei] = { ...seasons[si].episodes[ei], videoUrl: sources[0].url, videoSources: sources, playbackProvider: 'cartoondub', cartoondubId: String(r.id || prev.cartoondubId || '') };
                 return { ...prev, seasons };
             });
-            setMessage(`تم جلب رابط S${String(season.number).padStart(2,'0')}E${String(ep.number).padStart(2,'0')} من CartoonDub.`);
+            setMessage('تم جلب رابط الحلقة؛ جاري البحث عن الترجمة العربية...');
+            try {
+                const sub = await findAndStoreSubtitle({
+                    sourceId: form.imdbId || '', altSourceIds: [form.tmdbId || ''],
+                    title: form.name, year: form.year, type: 'series',
+                    season: season.number, episode: ep.number, onProgress: setMessage
+                });
+                if (sub && sub.url) updateEp(si, ei, 'subtitleUrl', sub.url);
+                setMessage(sub && sub.url
+                    ? `تم جلب رابط الحلقة والترجمة العربية (${sub.cues || 0} سطر).`
+                    : `تم جلب رابط الحلقة S${String(season.number).padStart(2,'0')}E${String(ep.number).padStart(2,'0')}؛ لا توجد ترجمة مطابقة.`);
+            } catch (_) {
+                setMessage(`تم جلب رابط الحلقة S${String(season.number).padStart(2,'0')}E${String(ep.number).padStart(2,'0')}؛ لم تتوفر ترجمة عربية مطابقة حاليًا.`);
+            }
         } catch (e) {
-            setError(e && e.message ? e.message : 'تعذر جلب رابط الحلقة من CartoonDub.');
+            const msg = e && e.message ? e.message : '';
+            setError(/failed to fetch|networkerror|load failed/i.test(msg)
+                ? `تعذر الوصول إلى بروكسي CartoonDub (${cartoonProxy}). إذا كانت الصفحة منشورة، يجب أن يكون هذا العنوان API عامًّا يعمل عبر HTTPS.`
+                : (msg || 'تعذر جلب رابط الحلقة من CartoonDub.'));
         } finally { setBusy(''); }
     };
 
@@ -7440,17 +7474,28 @@ function CartoonDubAdminForm({ initial, onDone, currentUser }) {
                     try {
                         try { window.CARTOONDUB_PROXY_URL = cartoonProxy; } catch (_) {}
                         const r = await window.CartoonDubEngine.resolveEpisode({
-                            name: form.name, title: form.name, year: form.year, tmdbId: form.tmdbId || '', originalTitle: form.name, cartoondubId: form.cartoondubId || ''
+                            name: form.name, title: form.name, year: form.year, tmdbId: form.tmdbId || '', imdbId: form.imdbId || '', originalTitle: form.name, cartoondubId: form.cartoondubId || '', cartoondubSectionId: form.cartoondubSectionId || '', cartoondubTarget: form.cartoondubTarget || ''
                         }, s.number, e.number);
                         const sources = (r.sources || []).map(x => ({ ...x, url: x.rawUrl || x.url, provider:'cartoondub', type:'mp4', quality: x.quality || x.resolution || '', resolution:Number(x.resolution)||0 }));
-                        return { si, ei, sources, id: String(r.id || '') };
+                        let subtitleUrl = '';
+                        if (sources.length) {
+                            try {
+                                const sub = await findAndStoreSubtitle({
+                                    sourceId: form.imdbId || '', altSourceIds: [form.tmdbId || ''],
+                                    title: form.name, year: form.year, type: 'series',
+                                    season: s.number, episode: e.number
+                                });
+                                subtitleUrl = String(sub && sub.url || '');
+                            } catch (_) {}
+                        }
+                        return { si, ei, sources, id: String(r.id || ''), subtitleUrl };
                     } catch (_) { return { si, ei, sources: [], id: '' }; }
                 }));
                 setForm(prev => {
                     const seasons = clone(prev.seasons || []);
                     resolved.forEach(r => {
                         if (r.sources.length) {
-                            seasons[r.si].episodes[r.ei] = { ...seasons[r.si].episodes[r.ei], videoUrl:r.sources[0].url, videoSources:r.sources, playbackProvider:'cartoondub', cartoondubId:r.id || prev.cartoondubId || '' };
+                            seasons[r.si].episodes[r.ei] = { ...seasons[r.si].episodes[r.ei], videoUrl:r.sources[0].url, videoSources:r.sources, playbackProvider:'cartoondub', cartoondubId:r.id || prev.cartoondubId || '', ...(r.subtitleUrl ? { subtitleUrl:r.subtitleUrl } : {}) };
                         }
                     });
                     return { ...prev, seasons };
