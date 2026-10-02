@@ -1623,6 +1623,70 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
                     }, className: "px-3 py-1.5 rounded-lg bg-accent-purple/15 border border-accent-purple/30 hover:bg-accent-purple/25 text-accent-purple text-[11px] font-bold transition" }, v.label)))),
             React.createElement("button", { type: "button", onClick: () => { setVideos(null); setPicked(null); }, className: "mt-2 text-[10px] text-slate-500 hover:text-slate-300 underline" }, "\u0631\u062C\u0648\u0639 \u0644\u0644\u0646\u062A\u0627\u0626\u062C")))));
 }
+const EXTRA_LINK_SOURCES = [
+    { id: 'cinemabox', label: 'Cinema Box' },
+    { id: 'cinemaplus', label: 'Cinema Plus' }
+];
+// مصادر إضافية لرابط التشغيل (بنفس آلية سينمانا): لكل مصدر زر استخراج وخانة لرابطه.
+function SourceLinksHelper({ kind, season, episode, defaultTitle, defaultYear, onGenerate, onGenerateQualities }) {
+    const [state, setState] = useState({});
+    const patch = (id, p) => setState(s => ({ ...s, [id]: { ...(s[id] || {}), ...p } }));
+    const run = async (src, forcedId) => {
+        const title = String(defaultTitle || '').trim();
+        if (!title && !forcedId) { patch(src.id, { error: 'اكتب اسم العمل أولًا' }); return; }
+        patch(src.id, { loading: true, error: '' });
+        try {
+            const usp = new URLSearchParams({
+                title, type: kind === 'movie' ? 'movie' : 'tv',
+                season: String(Number(season) || 1), episode: String(Number(episode) || 1)
+            });
+            if (defaultYear) usp.set('year', String(defaultYear));
+            if (forcedId) usp.set('id', String(forcedId));
+            const data = await cinemanaFetch(`/src/${src.id}/resolve?${usp.toString()}`);
+            const sources = cinemanaVideoSources((data.links || []).map(l => ({ url: l.url, label: l.label })));
+            patch(src.id, {
+                loading: false, data, sources,
+                link: sources[0] ? sources[0].url : '',
+                error: data.ok ? '' : (data.error || 'لم يُعثر على رابط')
+            });
+        } catch (e) {
+            patch(src.id, { loading: false, error: (e && e.message) || 'فشل الاستخراج' });
+        }
+    };
+    const useLink = (st) => {
+        if (!st.link) return;
+        const all = st.sources || [];
+        const cur = all.find(x => x.url === st.link) || { url: st.link, label: '' };
+        onGenerateQualities && onGenerateQualities(all);
+        onGenerate && onGenerate(st.link, cur, all);
+        patch(st.id, { used: true });
+    };
+    const copyLink = async (link) => { try { await navigator.clipboard.writeText(link); } catch (e) { } };
+    return (React.createElement("div", { className: "glass-card rounded-2xl p-3.5 border border-accent-cyan/20 mt-3.5" },
+        React.createElement("div", { className: "flex items-center justify-between mb-2" },
+            React.createElement("p", { className: "text-[11px] font-bold text-accent-cyan" }, "مصادر إضافية لرابط التشغيل"),
+            React.createElement("button", { type: "button", onClick: () => EXTRA_LINK_SOURCES.forEach(s => run(s)), className: "px-3 py-1 rounded-lg bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan text-[10px] font-bold hover:bg-accent-cyan/25 transition" }, "استخراج من الكل")),
+        kind !== 'movie' && React.createElement("p", { className: "text-[10px] text-slate-500 mb-1.5" }, "الموسم ", Number(season) || 1, " · الحلقة ", Number(episode) || 1),
+        EXTRA_LINK_SOURCES.map(src => {
+            const st = { ...(state[src.id] || {}), id: src.id };
+            const d = st.data || {};
+            const showCandidates = Array.isArray(d.candidates) && d.candidates.length > 0 && (!d.ok || d.candidates.length > 1);
+            return (React.createElement("div", { key: src.id, className: "mb-3 last:mb-0 pb-3 last:pb-0 border-b last:border-b-0 border-white/5" },
+                React.createElement("div", { className: "flex items-center gap-2 mb-1.5" },
+                    React.createElement("span", { className: "text-[11px] font-black text-white flex-1" }, src.label),
+                    d.picked && React.createElement("span", { className: "text-[10px] text-slate-400 truncate max-w-[50%]" }, d.picked.title, d.picked.year ? ` (${d.picked.year})` : ''),
+                    React.createElement("button", { type: "button", disabled: st.loading, onClick: () => run(src), className: "shrink-0 px-3 py-1.5 rounded-lg bg-accent-purple text-white text-[10px] font-bold hover:brightness-110 transition disabled:opacity-40" }, st.loading ? 'جاري...' : 'استخراج')),
+                st.error && React.createElement("p", { className: "text-[10px] font-bold text-rose-400 mb-1.5" }, st.error),
+                showCandidates && React.createElement("div", { className: "flex flex-wrap gap-1.5 mb-1.5" },
+                    d.candidates.map(c => React.createElement("button", { key: c.id, type: "button", onClick: () => run(src, c.id), className: `px-2 py-1 rounded-lg border text-[10px] font-bold transition ${d.picked && d.picked.id === c.id ? 'border-accent-purple text-accent-purple' : 'border-white/10 text-slate-300 hover:border-accent-purple/60'}` }, c.title, c.year ? ` (${c.year})` : ''))),
+                (st.sources || []).length > 1 && React.createElement("div", { className: "flex flex-wrap gap-1.5 mb-1.5" },
+                    st.sources.map((v, i) => React.createElement("button", { key: i, type: "button", onClick: () => patch(src.id, { link: v.url }), className: `px-2.5 py-1 rounded-lg border text-[10px] font-bold transition ${st.link === v.url ? 'border-accent-cyan text-accent-cyan bg-accent-cyan/10' : 'border-white/10 text-slate-300 hover:border-accent-cyan/60'}` }, v.label || ('#' + (i + 1))))),
+                React.createElement("div", { className: "flex items-center gap-1.5" },
+                    React.createElement("input", { value: st.link || '', readOnly: true, dir: "ltr", placeholder: "رابط " + src.label + " سيظهر هنا", onFocus: ev => ev.target.select(), className: "flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-[11px] text-white outline-none" }),
+                    React.createElement("button", { type: "button", disabled: !st.link, onClick: () => copyLink(st.link), className: "shrink-0 px-2.5 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-[10px] font-bold hover:bg-white/10 transition disabled:opacity-40" }, "نسخ"),
+                    React.createElement("button", { type: "button", disabled: !st.link, onClick: () => useLink(st), className: "shrink-0 px-2.5 py-2 rounded-xl bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan text-[10px] font-bold hover:bg-accent-cyan/25 transition disabled:opacity-40" }, st.used ? '✓ تم' : 'استخدم'))));
+        })));
+}
 async function tmdbFindBestByTitle(title, currentType, year) {
     const query = String(title || '').trim();
     if (!query)
@@ -6996,6 +7060,7 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
         React.createElement("div", { className: "mt-3.5" },
             React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u062D\u0644\u0642\u0629 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: e.videoUrl, onChange: v => set('videoUrl', v), folder: "episodes", accept: "video/*" })),
         React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb) }),
+        React.createElement(SourceLinksHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources) }),
         React.createElement("div", { className: "mt-3.5 flex items-center gap-2" },
             React.createElement("div", { className: "h-px flex-1 bg-white/10" }),
             React.createElement("span", { className: "text-[10px] font-black text-slate-500 px-1" }, "أو استخدم VidAPI"),
@@ -7478,6 +7543,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                     setBannerData(r.bannerData || null);
                     return r;
                   } }),
+            React.createElement(SourceLinksHelper, { kind: form.type === 'anime' ? 'anime' : 'movie', defaultTitle: form.name, defaultYear: form.year, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources) }),
             React.createElement("div", { className: "mt-3.5 flex items-center gap-2" },
                 React.createElement("div", { className: "h-px flex-1 bg-white/10" }),
                 React.createElement("span", { className: "text-[10px] font-black text-slate-500 px-1" }, "أو استخدم VidAPI"),
