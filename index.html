@@ -7258,12 +7258,40 @@ function CartoonDubAdminForm({ initial, onDone, currentUser }) {
 
     const setField = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
-    // لوحة الكارتون تُدار محليًا على جهاز الإدارة. لا نعتمد على api.cinadam.xyz هنا.
-    // الصفحة المنشورة يمكنها مخاطبة localhost:8787 لأن السيرفر المحلي مضبوط أصلًا على CORS (*).
-    const cartoonProxy = String(CINEMANA_PROXY || '').trim().replace(/\/+$/, '');
-    // نفس عنوان بروكسي سينمانا: محليًا localhost:8787، وعلى الموقع عنوان API العام.
+    // الكارتون يُدار من جهاز الإدارة فقط: جرّب Node المحلي أولًا.
+    // روابط الموقع العامة لا تتأثر لأن هذا العنوان يُستخدم داخل لوحة الكارتون فقط.
+    const cartoonProxyCandidates = (() => {
+        const out = [];
+        const add = (v) => {
+            const x = String(v || '').trim().replace(/\/+$/, '');
+            if (x && !out.includes(x)) out.push(x);
+        };
+        add('http://localhost:8787');
+        add('http://127.0.0.1:8787');
+        add(CINEMANA_PROXY);
+        return out;
+    })();
+    const cartoonProxy = cartoonProxyCandidates[0] || 'http://localhost:8787';
     try { window.CARTOONDUB_PROXY_URL = cartoonProxy; } catch (_) {}
-    if (!cartoonProxy) throw new Error('عنوان البروكسي غير مضبوط.');
+
+    const fetchCartoonDubJson = async (path, params = {}) => {
+        const usp = new URLSearchParams();
+        Object.entries(params).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && String(v).trim() !== '') usp.set(k, String(v));
+        });
+        let lastError = null;
+        for (const base of cartoonProxyCandidates) {
+            try {
+                const url = `${base}${path}${usp.toString() ? `?${usp}` : ''}`;
+                const res = await fetch(url, { headers: { Accept: 'application/json' } });
+                const data = await res.json().catch(() => null);
+                if (res.ok && data && data.ok !== false) return data;
+                lastError = new Error((data && data.error) || `CartoonDub HTTP ${res.status}`);
+            } catch (e) { lastError = e; }
+        }
+        throw lastError || new Error('تعذر الاتصال ببروكسي CartoonDub');
+    };
+
     const searchCartoonDub = async () => {
         const q = search.trim();
         if (!q) return;
@@ -7271,9 +7299,7 @@ function CartoonDubAdminForm({ initial, onDone, currentUser }) {
         setError('');
         setMessage('');
         try {
-            const res = await fetch(`${cartoonProxy}/cartoondub/search?q=${encodeURIComponent(q)}`, { headers: { Accept: 'application/json' } });
-            const data = await res.json().catch(() => null);
-            if (!res.ok || !data || data.ok === false) throw new Error((data && data.error) || `فشل بحث CartoonDub (رمز ${res.status})`);
+            const data = await fetchCartoonDubJson('/cartoondub/search', { q });
             setResults(Array.isArray(data.items) ? data.items : []);
             setMessage(data.items && data.items.length ? `تم العثور على ${data.items.length} نتيجة من CartoonDub.` : 'ما لقيت نتائج بهذا الاسم. جرّب الاسم العربي كما يظهر في CartoonDub.');
         } catch (e) {
