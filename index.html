@@ -49,166 +49,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
-  <!-- CartoonDub engine embedded to avoid a separate-file 404 blocking the boot screen. -->
-  <script>
-/*
- * CartoonDub web adapter
- * Source-derived from the CartoonDub CloudStream provider in cs-cinemana.
- * The browser talks only to the Cinemana proxy; the proxy talks to the
- * CartoonDub cards API and optionally proxies the final R2 MP4 for playback.
- */
-(function () {
-  'use strict';
-
-  const DEFAULT_PUBLIC_PROXY = 'https://api.cinadam.xyz';
-  const DEFAULT_LOCAL_PROXY = 'http://localhost:8787';
-
-  const getProxyCandidates = () => {
-    const out = [];
-    const add = (v) => {
-      const s = String(v || '').trim().replace(/\/$/, '');
-      if (s && !out.includes(s)) out.push(s);
-    };
-    const explicit = (typeof window !== 'undefined' && (
-      window.CARTOONDUB_PROXY_URL ||
-      window.CINEMANA_PROXY_URL ||
-      window.CINEMANA_PROXY
-    )) || '';
-    add(explicit);
-
-    try {
-      const host = String(location.hostname || '').toLowerCase();
-      const isLocal = host === 'localhost' || host === '127.0.0.1';
-      const isLan = /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(host);
-      if (isLocal || isLan) add(`http://${host}:8787`);
-      else if (!host) add(DEFAULT_LOCAL_PROXY);
-    } catch (_) {}
-
-    add(DEFAULT_PUBLIC_PROXY);
-    return out;
-  };
-
-  const getProxyBase = () => getProxyCandidates()[0] || DEFAULT_PUBLIC_PROXY;
-
-  const timeoutFetch = async (url, options = {}, timeoutMs = 25000) => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      return await fetch(url, { ...options, signal: controller.signal });
-    } finally {
-      clearTimeout(timer);
-    }
-  };
-
-  const proxyJson = async (path, params) => {
-    const usp = new URLSearchParams();
-    Object.entries(params || {}).forEach(([k, v]) => {
-      if (v !== undefined && v !== null && String(v).trim() !== '') usp.set(k, String(v));
-    });
-    let last = null;
-    for (const base of getProxyCandidates()) {
-      const url = `${base}${path}${usp.toString() ? `?${usp}` : ''}`;
-      try {
-        const r = await timeoutFetch(url, { headers: { Accept: 'application/json' } }, 30000);
-        let data = null;
-        try { data = await r.json(); } catch (_) {}
-        if (r.ok && data && data.ok !== false) return data;
-        last = new Error((data && data.error) || `CartoonDub proxy HTTP ${r.status}`);
-      } catch (e) { last = e; }
-    }
-    throw last || new Error('تعذر الاتصال ببروكسي CartoonDub');
-  };
-
-  const normalizeSource = (s) => {
-    if (!s || !s.url) return null;
-    const direct = String(s.url).trim();
-    if (!/^https?:\/\//i.test(direct)) return null;
-    return {
-      url: direct,
-      provider: 'cartoondub',
-      name: s.name || 'CartoonDub',
-      label: s.label || 'MP4',
-      quality: s.quality ?? s.resolution ?? '',
-      resolution: Number(s.resolution) || 0,
-      type: 'mp4',
-      subtitleUrl: s.subtitleUrl || '',
-    };
-  };
-
-  const viaProxy = (rawUrl) => {
-    const base = getProxyBase();
-    return `${base}/cartoondub/proxy?url=${encodeURIComponent(String(rawUrl || ''))}`;
-  };
-
-  async function resolveMovie(meta = {}) {
-    const data = await proxyJson('/cartoondub/resolve/movie', {
-      title: meta.name || meta.title || meta.originalTitle || '',
-      originalTitle: meta.originalTitle || meta.original_name || '',
-      year: meta.year || meta.releaseYear || '',
-      tmdb: meta.tmdbId || meta.tmdb || '',
-      cartoondubId: meta.cartoondubId || '',
-      sectionId: meta.cartoondubSectionId || meta.sectionId || '',
-      target: meta.cartoondubTarget || meta.target || '',
-    });
-    const sources = (data.sources || []).map(normalizeSource).filter(Boolean).map(s => ({
-      ...s,
-      rawUrl: s.url,
-      url: viaProxy(s.url),
-    }));
-    if (!sources.length) throw new Error(data.error || 'CartoonDub لم يرجّع رابط تشغيل');
-    return {
-      ...data,
-      sources,
-      url: sources[0].url,
-      provider: 'cartoondub',
-    };
-  }
-
-  async function resolveEpisode(meta = {}, seasonNumber = 1, episodeNumber = 1) {
-    const data = await proxyJson('/cartoondub/resolve/episode', {
-      title: meta.name || meta.title || meta.seriesTitle || meta.originalTitle || '',
-      originalTitle: meta.originalTitle || meta.original_name || '',
-      year: meta.year || '',
-      tmdb: meta.tmdbId || meta.tmdb || '',
-      season: Number(seasonNumber) || 1,
-      episode: Number(episodeNumber) || 1,
-      cartoondubId: meta.cartoondubId || '',
-      sectionId: meta.cartoondubSectionId || meta.sectionId || '',
-      target: meta.cartoondubTarget || meta.target || '',
-    });
-    const sources = (data.sources || []).map(normalizeSource).filter(Boolean).map(s => ({
-      ...s,
-      rawUrl: s.url,
-      url: viaProxy(s.url),
-    }));
-    if (!sources.length) throw new Error(data.error || 'CartoonDub لم يرجّع رابط تشغيل للحلقة');
-    return {
-      ...data,
-      sources,
-      url: sources[0].url,
-      provider: 'cartoondub',
-    };
-  }
-
-  async function health() {
-    return proxyJson('/cartoondub/health', {});
-  }
-
-  function isCartoonDubUrl(url) {
-    const s = String(url || '');
-    return /\/cartoondub\/proxy(?:[/?#]|$)/i.test(s) || /pub-b534f19ddae84293ae0e0fb360695fcf\.r2\.dev/i.test(s);
-  }
-
-  window.CartoonDubEngine = {
-    getProxyBase,
-    resolveMovie,
-    resolveEpisode,
-    health,
-    isCartoonDubUrl,
-    viaProxy,
-  };
-})();
-  </script>
 
   <style>
     html { scroll-behavior: smooth; }
@@ -1272,8 +1112,7 @@ async function persistSubtitleToFirebase(url, folder = 'subtitles') {
     return uploadFile(file, folder, null);
 }
 const TYPE_LABELS = { movie: 'فيلم', series: 'مسلسل', anime: 'أنمي' };
-const TYPE_PLURAL = { movie: 'الأفلام', series: 'المسلسلات', anime: 'الأنميات', cartoon: 'الكارتون' };
-const isCartoonTitle = (t) => !!t && String(t.contentSection || '').toLowerCase() === 'cartoon';
+const TYPE_PLURAL = { movie: 'الأفلام', series: 'المسلسلات', anime: 'الأنميات' };
 const COMPLAINT_TYPES = { add: 'طلب إضافة عمل', problem: 'مشكلة في التشغيل أو التحميل', suggestion: 'اقتراح عام' };
 const ORDINAL_ONES_F = ['', 'الأولى', 'الثانية', 'الثالثة', 'الرابعة', 'الخامسة', 'السادسة', 'السابعة', 'الثامنة', 'التاسعة'];
 const ORDINAL_TEENS_F = ['العاشرة', 'الحادية عشرة', 'الثانية عشرة', 'الثالثة عشرة', 'الرابعة عشرة', 'الخامسة عشرة', 'السادسة عشرة', 'السابعة عشرة', 'الثامنة عشرة', 'التاسعة عشرة'];
@@ -1357,8 +1196,7 @@ function isDirectVideo(url) {
     // لذلك نفحص الامتداد داخل الرابط أيضًا بدل الاعتماد على آخر حرف فقط.
     return /\.(mp4|webm|ogg|mov|m3u8)(?:[?#]|$)/i.test(s)
         || /(?:\/)(?:master|playlist|index)(?:\.m3u8)?(?:[?#]|$)/i.test(s)
-        || /(?:m3u8|manifest|stream|video)(?:[/?#]|$)/i.test(s)
-        || /(?:cartoondub\/proxy)(?:[/?#]|$)/i.test(s);
+        || /(?:m3u8|manifest|stream|video)(?:[/?#]|$)/i.test(s);
 }
 function isCinemanaPlayback(meta, url) {
     const m = meta || {};
@@ -1937,7 +1775,7 @@ async function subFindFile(file, meta) {
     const url = await subSave(meta, cuesToVttText(cues, 0), { source: 'manual', label: file.name, cues: cues.length });
     return { url, cues: cues.length };
 }
-async function findAndStoreSubtitle({ cinemanaId, sourceId, altSourceIds = [], title, year, season, episode, type, onProgress, force = false, cartoonOnly = false }) {
+async function findAndStoreSubtitle({ cinemanaId, sourceId, altSourceIds = [], title, year, season, episode, type, onProgress, force = false }) {
     const ids = [sourceId, ...(Array.isArray(altSourceIds) ? altSourceIds : [])].map(x => String(x || '').trim()).filter(Boolean);
     const imdb = ids.find(x => /^tt\d+$/i.test(x)) || '';
     const tmdb = ids.find(x => /^\d+$/.test(x)) || '';
@@ -1954,7 +1792,6 @@ async function findAndStoreSubtitle({ cinemanaId, sourceId, altSourceIds = [], t
     if (imdb) usp.set('imdb', imdb);
     if (tmdb) usp.set('tmdb', tmdb);
     if (force) usp.set('force', '1'); // إعادة محاولة يدوية: يتجاوز كاش الفشل القصير على السيرفر
-    if (cartoonOnly) usp.set('cartoonOnly', '1');
     if (!cinemanaId && !title && !imdb && !tmdb)
         throw new Error('لا يوجد عنوان أو معرّف للبحث عن الترجمة.');
 
@@ -1963,15 +1800,8 @@ async function findAndStoreSubtitle({ cinemanaId, sourceId, altSourceIds = [], t
         const b = String(base || '').trim().replace(/\/+$/, '');
         if (b && !proxyCandidates.includes(b)) proxyCandidates.push(b);
     };
-    try {
-        addProxyCandidate(window.CINEMANA_ADMIN_PROXY_URL || '');
-        addProxyCandidate(window.CARTOONDUB_PROXY_URL || '');
-    } catch (_) {}
     addProxyCandidate(CINEMANA_PROXY);
-    const pageHost = String((typeof location !== 'undefined' && location.hostname) || '').toLowerCase();
-    if (pageHost === 'localhost' || pageHost === '127.0.0.1' || /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(pageHost)) {
-        addProxyCandidate(`http://${pageHost}:8787`);
-    }
+    addProxyCandidate('http://localhost:8787');
 
     let lastError = null;
     // نعيد المحاولة مرتين عند أخطاء الشبكة أو ضغط المصادر.
@@ -1979,8 +1809,7 @@ async function findAndStoreSubtitle({ cinemanaId, sourceId, altSourceIds = [], t
         if (onProgress) onProgress(round === 1 ? 'جاري مطابقة الترجمة العربية من المصدر الأصلي ثم المصادر الاحتياطية...' : 'جاري إعادة المحاولة ومطابقة نسخة أخرى...');
         for (const base of proxyCandidates) {
             try {
-                const endpointPath = cartoonOnly ? '/cartoon/sub/resolve' : '/sub/resolve';
-                const res = await fetchWithTimeout(`${base}${endpointPath}?${usp.toString()}`, { headers: { Accept: 'application/json' } }, 60000);
+                const res = await fetchWithTimeout(`${base}/sub/resolve?${usp.toString()}`, { headers: { Accept: 'application/json' } }, 60000);
                 const data = await res.json().catch(() => ({}));
                 if (res.ok && data && data.ok) {
                     const sourceLabel = data.source === 'cinemana' ? 'سينمانا' : (data.source === 'opensubtitles' ? 'OpenSubtitles' : (data.source === 'subscene' ? 'Subscene' : 'SubDL'));
@@ -2002,7 +1831,6 @@ async function findAndStoreSubdlSubtitle(args) { return (await findAndStoreSubti
 async function prepareSubtitlesForPublish(payload, sourceId, onProgress, altSourceIds = []) {
     const out = JSON.parse(JSON.stringify(payload || {}));
     const type = out.type || 'movie';
-    const cartoonOnly = String(out.contentSection || '').toLowerCase() === 'cartoon';
     const sid = String(sourceId || out.sourceId || out.imdbId || out.imdb || out.tmdbId || (type !== 'movie' ? guessTvSourceId(out.seasons) : '') || '').trim();
     const ids = [sid, ...(Array.isArray(altSourceIds) ? altSourceIds : []), out.imdbId, out.tmdbId].filter(Boolean);
     let added = 0, skipped = 0, failed = 0;
@@ -2030,7 +1858,7 @@ async function prepareSubtitlesForPublish(payload, sourceId, onProgress, altSour
         while (jobs.length) {
             const job = jobs.shift();
             try {
-                const r = await findAndStoreSubtitle({ sourceId: sid, altSourceIds: ids, cartoonOnly, ...job.args });
+                const r = await findAndStoreSubtitle({ sourceId: sid, altSourceIds: ids, ...job.args });
                 job.target.subtitleUrl = r.url;
                 added++;
             }
@@ -3210,7 +3038,7 @@ function Header({ currentUser, view, setView, search, setSearch, onOpenAccount, 
                         "Cina",
                         React.createElement("span", { className: "text-accent-cyan" }, "dam"))),
                 React.createElement("nav", { className: "hidden md:block" },
-                    React.createElement(SlidingTabs, { containerClassName: "flex items-center gap-1.5 bg-glass-900/80 p-1 rounded-2xl border border-white/5", items: [['home', 'الرئيسية'], ['movie', 'أفلام'], ['series', 'مسلسلات'], ['anime', 'أنمي'], ['cartoon', 'الكارتون'], ['lists', 'قوائمي']].map(([k, l]) => ({ key: k, label: l })), active: view, onChange: setView, getButtonClassName: (isActive) => `px-4 py-2 rounded-xl text-sm font-semibold ${isActive ? 'text-white' : 'text-slate-300 hover:text-white hover:bg-white/5'}` }))),
+                    React.createElement(SlidingTabs, { containerClassName: "flex items-center gap-1.5 bg-glass-900/80 p-1 rounded-2xl border border-white/5", items: [['home', 'الرئيسية'], ['movie', 'أفلام'], ['series', 'مسلسلات'], ['anime', 'أنمي'], ['lists', 'قوائمي']].map(([k, l]) => ({ key: k, label: l })), active: view, onChange: setView, getButtonClassName: (isActive) => `px-4 py-2 rounded-xl text-sm font-semibold ${isActive ? 'text-white' : 'text-slate-300 hover:text-white hover:bg-white/5'}` }))),
             React.createElement("div", { className: "flex items-center gap-2 md:gap-3 shrink-0" },
                 React.createElement("div", { className: "relative hidden md:block md:w-72" },
                     React.createElement(Icon, { name: "search", className: "w-4 h-4 absolute top-1/2 -translate-y-1/2 right-3.5 text-slate-400" }),
@@ -3283,7 +3111,7 @@ function NotificationsBell({ currentUser, onOpenProfile, onOpenTitle }) {
                         React.createElement("p", { className: "text-[10px] text-slate-500 font-mono mt-0.5" }, fmtDateTime(n.date)))))))))));
 }
 function MobileBottomNav({ view, setView }) {
-    const items = [['home', 'الرئيسية', 'home'], ['movie', 'أفلام', 'film'], ['series', 'مسلسلات', 'tv'], ['anime', 'أنمي', 'sparkles'], ['cartoon', 'الكارتون', 'film'], ['lists', 'قوائمي', 'list']];
+    const items = [['home', 'الرئيسية', 'home'], ['movie', 'أفلام', 'film'], ['series', 'مسلسلات', 'tv'], ['anime', 'أنمي', 'sparkles'], ['lists', 'قوائمي', 'list']];
     const [hidden, setHidden] = useState(false);
     const lastY = useRef(0);
     const ticking = useRef(false);
@@ -5203,13 +5031,15 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     };
     const resolveFreshCinemanaVideo = async (meta, kind, seasonNumber) => {
         const savedId = String((meta && meta.cinemanaId) || '').trim();
+        // الهاتف لا يصل لبروكسي سينمانا (localhost = الهاتف نفسه)، فإذا فشل تجديد الرابط
+        // نرجع للرابط المحفوظ في قاعدة البيانات بدل إظهار "تعذر" مباشرة.
         const savedUrl = getSavedVideoUrl(meta);
         const savedSources = normalizeVideoSources((meta && meta.videoSources) || []);
         try {
             if (savedId) {
                 const sources = cinemanaVideoSources(await cinemanaVideos(savedId, kind === 'movie' ? 'movie' : 'tv'));
                 if (sources.length)
-                    return { url: sources[0].url, sources, sourceId: savedId, provider: 'cinemana' };
+                    return { url: sources[0].url, sources, sourceId: savedId };
             }
             if (kind === 'movie')
                 return await recoverMovieVideo();
@@ -5217,37 +5047,9 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         }
         catch (e) {
             if (savedUrl)
-                return { url: savedUrl, sources: savedSources.length ? savedSources : [{ url: savedUrl }], sourceId: savedId, provider: 'cinemana' };
+                return { url: savedUrl, sources: savedSources.length ? savedSources : [{ url: savedUrl }], sourceId: savedId };
             throw e;
         }
-    };
-    const resolveCartoonDubVideo = async (meta, kind, seasonNumber) => {
-        if (!window.CartoonDubEngine)
-            throw new Error('CartoonDub adapter غير محمّل. تأكد من وجود cartoondub-engine.js بجانب index.html');
-        const m = {
-            ...(meta || {}),
-            name: (meta && meta.name) || title.name,
-            title: (meta && meta.title) || title.name,
-            year: (meta && meta.year) || title.year,
-            tmdbId: (meta && meta.tmdbId) || title.tmdbId,
-            imdbId: (meta && meta.imdbId) || title.imdbId,
-            originalTitle: (meta && (meta.originalTitle || meta.original_name)) || title.originalTitle || title.original_name || '',
-            cartoondubId: (meta && meta.cartoondubId) || title.cartoondubId || '',
-            cartoondubSectionId: (meta && meta.cartoondubSectionId) || title.cartoondubSectionId || '',
-            cartoondubTarget: (meta && meta.cartoondubTarget) || title.cartoondubTarget || ''
-        };
-        const result = kind === 'movie'
-            ? await window.CartoonDubEngine.resolveMovie(m)
-            : await window.CartoonDubEngine.resolveEpisode(m, seasonNumber, meta && meta.number);
-        const sources = normalizeVideoSources(result && result.sources || []);
-        if (!sources.length)
-            throw new Error((result && result.error) || 'CartoonDub لم يرجّع أي رابط تشغيل');
-        return {
-            url: sources[0].url,
-            sources,
-            sourceId: String((result && (result.id || result.sectionId)) || '').trim(),
-            provider: 'cartoondub'
-        };
     };
     const ensureVidApiSubtitlePublic = async (meta) => {
         if (!meta || !isVidApiUrl(meta.videoUrl || '') || meta.subtitlePublicUrl || !meta.subtitleUrl) return '';
@@ -5259,64 +5061,34 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         scrollTitleModalToTop();
         const requestId = ++playRequestRef.current;
         cinemanaRefreshAttemptRef.current = '';
-        playbackRetryRef.current = '';
         setVideoError(false);
         const target = forceStart ? null : continueTarget;
         const movieResume = target && target.kind === 'movie' && target.progress ? Number(target.progress.position)||0 : 0;
         setResumeAt(movieResume);
         try {
             if (title.type === 'movie') {
-                if (isCartoonTitle(title)) {
-                    const recovered = await resolveCartoonDubVideo(title, 'movie');
-                    if (requestId !== playRequestRef.current) return;
-                    setPlayingUrl(recovered.url);
-                    setPlayingMeta({ ...title, videoUrl: recovered.url, videoSources: recovered.sources, playbackProvider: 'cartoondub', subtitleUrl: title.subtitleUrl || ((recovered.sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: title.subtitlePublicUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
-                    setPlayingLabel(title.name);
-                    return;
-                }
                 const cinemanaId = String(title.cinemanaId || '').trim();
                 let url = '';
                 let sources = [];
-                let resolvedProvider = cinemanaId ? 'cinemana' : (title.playbackProvider || '');
                 if (cinemanaId) {
-                    try {
-                        const recovered = await resolveFreshCinemanaVideo(title, 'movie');
-                        if (requestId !== playRequestRef.current) return;
-                        url = recovered.url;
-                        sources = recovered.sources;
-                        resolvedProvider = recovered.provider || 'cinemana';
-                    }
-                    catch (cinemanaErr) {
-                        const recovered = await resolveCartoonDubVideo(title, 'movie');
-                        if (requestId !== playRequestRef.current) return;
-                        url = recovered.url;
-                        sources = recovered.sources;
-                        resolvedProvider = recovered.provider || 'cartoondub';
-                    }
+                    const recovered = await resolveFreshCinemanaVideo(title, 'movie');
+                    if (requestId !== playRequestRef.current) return;
+                    url = recovered.url;
+                    sources = recovered.sources;
                 }
                 else {
                     url = getSavedVideoUrl(title);
                     sources = normalizeVideoSources(title.videoSources);
                     if (!url) {
-                        try {
-                            const recovered = await recoverMovieVideo();
-                            if (requestId !== playRequestRef.current) return;
-                            url = recovered.url;
-                            sources = recovered.sources;
-                            resolvedProvider = 'cinemana';
-                        }
-                        catch (cinemanaErr) {
-                            const recovered = await resolveCartoonDubVideo(title, 'movie');
-                            if (requestId !== playRequestRef.current) return;
-                            url = recovered.url;
-                            sources = recovered.sources;
-                            resolvedProvider = recovered.provider || 'cartoondub';
-                        }
+                        const recovered = await recoverMovieVideo();
+                        if (requestId !== playRequestRef.current) return;
+                        url = recovered.url;
+                        sources = recovered.sources;
                     }
                 }
                 if (requestId !== playRequestRef.current) return;
                 setPlayingUrl(url);
-                setPlayingMeta({ ...title, videoUrl: url, videoSources: sources, playbackProvider: resolvedProvider, subtitleUrl: title.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: title.subtitlePublicUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
+                setPlayingMeta({ ...title, videoUrl: url, videoSources: sources, playbackProvider: cinemanaId ? 'cinemana' : (title.playbackProvider || ''), subtitleUrl: title.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: title.subtitlePublicUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
                 setPlayingLabel(title.name);
                 ensureVidApiSubtitlePublic({ ...title, videoUrl: url }).catch(() => {});
             }
@@ -5350,57 +5122,29 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         const requestedResume = resumeOverride != null ? Number(resumeOverride)||0 : (savedProgress && !savedProgress.completed ? Number(savedProgress.position)||0 : 0);
         setResumeAt(requestedResume);
         try {
-            if (isCartoonTitle(title)) {
-                const recovered = await resolveCartoonDubVideo({ ...ep, name: title.name, title: title.name, year: title.year, tmdbId: title.tmdbId, imdbId: title.imdbId }, 'tv', seasonNumber);
-                if (requestId !== playRequestRef.current) return;
-                setPlayingUrl(recovered.url);
-                setPlayingMeta({ ...ep, name: title.name, title: title.name, videoUrl: recovered.url, videoSources: recovered.sources, playbackProvider: 'cartoondub', subtitleUrl: ep.subtitleUrl || ((recovered.sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: ep.subtitlePublicUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
-                setPlayingLabel(`${title.name} · ${ep.title || `الحلقة ${ep.number != null ? ep.number : ''}`}`);
-                return;
-            }
             const cinemanaId = String((ep && ep.cinemanaId) || '').trim();
             let url = '';
             let sources = [];
-            let resolvedProvider = cinemanaId ? 'cinemana' : (ep.playbackProvider || '');
             if (cinemanaId) {
-                try {
-                    const recovered = await resolveFreshCinemanaVideo(ep, 'tv', seasonNumber);
-                    if (requestId !== playRequestRef.current) return;
-                    url = recovered.url;
-                    sources = recovered.sources;
-                    resolvedProvider = recovered.provider || 'cinemana';
-                }
-                catch (cinemanaErr) {
-                    const recovered = await resolveCartoonDubVideo({ ...ep, name: title.name, title: title.name, year: title.year, tmdbId: title.tmdbId, imdbId: title.imdbId }, 'tv', seasonNumber);
-                    if (requestId !== playRequestRef.current) return;
-                    url = recovered.url;
-                    sources = recovered.sources;
-                    resolvedProvider = recovered.provider || 'cartoondub';
-                }
+                const recovered = await resolveFreshCinemanaVideo(ep, 'tv', seasonNumber);
+                if (requestId !== playRequestRef.current) return;
+                url = recovered.url;
+                sources = recovered.sources;
             }
             else {
                 url = getSavedVideoUrl(ep);
                 sources = normalizeVideoSources(ep.videoSources);
                 if (!url) {
-                    try {
-                        const recovered = await recoverEpisodeVideo(ep, seasonNumber);
-                        if (requestId !== playRequestRef.current) return;
-                        url = recovered.url;
-                        sources = recovered.sources;
-                        resolvedProvider = 'cinemana';
-                    }
-                    catch (cinemanaErr) {
-                        const recovered = await resolveCartoonDubVideo({ ...ep, name: title.name, title: title.name, year: title.year, tmdbId: title.tmdbId, imdbId: title.imdbId }, 'tv', seasonNumber);
-                        if (requestId !== playRequestRef.current) return;
-                        url = recovered.url;
-                        sources = recovered.sources;
-                        resolvedProvider = recovered.provider || 'cartoondub';
-                    }
+                    const recovered = await recoverEpisodeVideo(ep, seasonNumber);
+                    if (requestId !== playRequestRef.current) return;
+                    url = recovered.url;
+                    sources = recovered.sources;
                 }
             }
             if (requestId !== playRequestRef.current) return;
             setPlayingUrl(url);
-            setPlayingMeta({ ...ep, name: title.name, title: title.name, videoUrl: url, videoSources: sources, playbackProvider: resolvedProvider, subtitleUrl: ep.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: ep.subtitlePublicUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
+            setPlayingMeta({ ...ep, videoUrl: url, videoSources: sources, playbackProvider: cinemanaId ? 'cinemana' : (ep.playbackProvider || ''), subtitleUrl: ep.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: ep.subtitlePublicUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
+            setPlayingSeasonNumber(seasonNumber != null ? seasonNumber : null);
             setPlayingLabel(`${title.name} · ${ep.title || `الحلقة ${ep.number != null ? ep.number : ''}`}`);
                 ensureVidApiSubtitlePublic({ ...ep, videoUrl: url }).catch(() => {});
         }
@@ -5456,45 +5200,37 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const activeSubtitleUrl = (playingMeta && playingMeta.subtitleUrl) || (playingQualities[0] && playingQualities[0].subtitleUrl) || (title.type === 'movie' ? title.subtitleUrl : '');
     const activeSubtitleOffset = Number((playingMeta && playingMeta.subtitleOffset) ?? (title.type === 'movie' ? title.subtitleOffset : 0)) || 0;
     const activeSubtitlePublicUrl = (playingMeta && playingMeta.subtitlePublicUrl) || (title.type === 'movie' ? title.subtitlePublicUrl : '');
-    const playbackRetryRef = useRef('');
-    const handlePlaybackError = async () => {
+    const handleCinemanaPlaybackError = async () => {
         const meta = playingMeta || {};
-        const provider = String(meta.playbackProvider || '').toLowerCase();
-        const isCinemana = !!String(meta.cinemanaId || '').trim() || isCinemanaPlayback(meta, playingUrl);
-        const isCartoonDub = provider === 'cartoondub' || (window.CartoonDubEngine && window.CartoonDubEngine.isCartoonDubUrl(playingUrl));
-        if (!isCinemana && !isCartoonDub) {
+        const cinemanaId = String(meta.cinemanaId || '').trim();
+        const isCinemana = !!cinemanaId || isCinemanaPlayback(meta, playingUrl);
+        if (!isCinemana) {
             setVideoError(true);
             return;
         }
-        const attemptKey = [title.id, provider, String(meta.cinemanaId || ''), playingSeasonNumber || 0, meta.number || 0, playingUrl || ''].join('|');
-        if (playbackRetryRef.current === attemptKey) {
+        const attemptKey = [title.id, cinemanaId, playingSeasonNumber || 0, meta.number || 0, playingUrl || ''].join('|');
+        if (cinemanaRefreshAttemptRef.current === attemptKey || cinemanaRefreshingRef.current) {
             setVideoError(true);
             return;
         }
-        playbackRetryRef.current = attemptKey;
+        cinemanaRefreshAttemptRef.current = attemptKey;
+        cinemanaRefreshingRef.current = true;
         try {
-            let recovered = null;
-            if (isCinemana) {
-                try {
-                    recovered = await resolveFreshCinemanaVideo(meta, title.type === 'movie' ? 'movie' : 'tv', playingSeasonNumber);
-                }
-                catch (_) {
-                    recovered = await resolveCartoonDubVideo(meta, title.type === 'movie' ? 'movie' : 'tv', playingSeasonNumber);
-                }
-            }
-            else {
-                recovered = await resolveCartoonDubVideo(meta, title.type === 'movie' ? 'movie' : 'tv', playingSeasonNumber);
-            }
-            if (!recovered || !recovered.url) throw new Error('لم يرجع أي محرك رابط تشغيل جديد.');
-            setPlayingMeta(prev => ({ ...prev, videoUrl: recovered.url, videoSources: recovered.sources, playbackProvider: recovered.provider || (isCinemana ? 'cinemana' : 'cartoondub') }));
+            const kind = title.type === 'movie' ? 'movie' : 'tv';
+            const recovered = await resolveFreshCinemanaVideo(meta, kind, playingSeasonNumber);
+            if (!recovered || !recovered.url) throw new Error('سينمانا لم تُرجع رابط تشغيل جديد.');
+            setPlayingMeta(prev => ({ ...prev, videoUrl: recovered.url, videoSources: recovered.sources, playbackProvider: 'cinemana', cinemanaId: recovered.sourceId || prev.cinemanaId }));
             setPlayingUrl(normalizeVideoUrl(recovered.url));
             setVideoError(false);
             setPlayerRetryCount(c => c + 1);
-            showToast(recovered.provider === 'cartoondub' ? 'تم التحويل إلى CartoonDub وإعادة المحاولة' : 'تم تجديد رابط سينمانا وإعادة المحاولة', 'success');
+            showToast('تم تجديد رابط سينمانا وإعادة المحاولة', 'success');
         }
         catch (e) {
             setVideoError(true);
-            showToast(e && e.message ? e.message : 'تعذّر تجديد/تبديل مصدر التشغيل', 'error');
+            showToast(e && e.message ? e.message : 'تعذّر تجديد رابط سينمانا', 'error');
+        }
+        finally {
+            cinemanaRefreshingRef.current = false;
         }
     };
     const handleQualityChange = (url, at, quality) => {
@@ -5628,7 +5364,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         React.createElement("div", { ref: titleModalScrollRef, onClick: e => e.stopPropagation(), className: `${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl` },
             React.createElement("div", { className: "relative" },
                 playingUrl ? (React.createElement("div", { className: "relative" },
-                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: 'cinadam-player-' + title.id + '-' + playerRetryCount, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: handlePlaybackError, onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : Number(playingMeta.introStart) || 0, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : Number(playingMeta.introEnd) || 0, recapStart: skipDbSegments.recap ? Number(skipDbSegments.recap.start_ms) / 1000 : Number(playingMeta.recapStart) || 0, recapEnd: skipDbSegments.recap ? Number(skipDbSegments.recap.end_ms) / 1000 : Number(playingMeta.recapEnd) || 0, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : Number(playingMeta.outroStart) || 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : Number(playingMeta.outroEnd) || 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onOutroStart: handleEpisodeComplete, onPreviousEpisode: playPreviousEpisode, onNextEpisode: playNextEpisode, hasPreviousEpisode: !!getPreviousEpisodeInfo(), hasNextEpisode: !!getNextEpisodeInfo(), previousEpisodeLabel: (() => { const p = getPreviousEpisodeInfo(); return p ? `الحلقة السابقة · ${p.title || `الحلقة ${p.number}`}` : 'الحلقة السابقة'; })(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete, onProgressSave: onSaveWatchProgress ? (r => onSaveWatchProgress(title.id, title.type === 'movie' ? { kind: 'movie', ...r, titleName: title.name, poster: title.poster } : { kind: 'episode', season: playingSeasonNumber, episode: playingMeta && playingMeta.number, ...r, titleName: title.name, poster: title.poster, label: playingLabel })) : null })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
+                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: 'cinadam-player-' + title.id + '-' + playerRetryCount, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: handleCinemanaPlaybackError, onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : Number(playingMeta.introStart) || 0, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : Number(playingMeta.introEnd) || 0, recapStart: skipDbSegments.recap ? Number(skipDbSegments.recap.start_ms) / 1000 : Number(playingMeta.recapStart) || 0, recapEnd: skipDbSegments.recap ? Number(skipDbSegments.recap.end_ms) / 1000 : Number(playingMeta.recapEnd) || 0, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : Number(playingMeta.outroStart) || 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : Number(playingMeta.outroEnd) || 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onOutroStart: handleEpisodeComplete, onPreviousEpisode: playPreviousEpisode, onNextEpisode: playNextEpisode, hasPreviousEpisode: !!getPreviousEpisodeInfo(), hasNextEpisode: !!getNextEpisodeInfo(), previousEpisodeLabel: (() => { const p = getPreviousEpisodeInfo(); return p ? `الحلقة السابقة · ${p.title || `الحلقة ${p.number}`}` : 'الحلقة السابقة'; })(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete, onProgressSave: onSaveWatchProgress ? (r => onSaveWatchProgress(title.id, title.type === 'movie' ? { kind: 'movie', ...r, titleName: title.name, poster: title.poster } : { kind: 'episode', season: playingSeasonNumber, episode: playingMeta && playingMeta.number, ...r, titleName: title.name, poster: title.poster, label: playingLabel })) : null })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
                     videoError && (React.createElement("div", { className: "absolute inset-0 bg-black/90 flex flex-col items-center justify-center gap-3 p-6 text-center" },
                         React.createElement("p", { className: "text-sm text-slate-200 font-bold" }, "\u062A\u0639\u0630\u0651\u0631 \u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u0639\u0644\u0649 \u0647\u0630\u0627 \u0627\u0644\u062C\u0647\u0627\u0632."),
                         isIOS && (React.createElement("p", { className: "text-xs text-slate-400 max-w-xs leading-relaxed" }, "\u063A\u0627\u0644\u0628\u064B\u0627 \u0627\u0644\u0633\u0628\u0628 \u0623\u0646 \u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u063A\u064A\u0631 \u0645\u0631\u0641\u0648\u0639 \u0628\u0635\u064A\u063A\u0629 \u064A\u062F\u0639\u0645\u0647\u0627 \u0627\u0644\u0622\u064A\u0641\u0648\u0646 \u0645\u0628\u0627\u0634\u0631\u0629. \u0627\u0644\u0623\u0639\u0645\u0627\u0644 \u0627\u0644\u062A\u064A \u062A\u064F\u0631\u0641\u0639 \u0645\u0646 \u0644\u0648\u062D\u0629 \u0627\u0644\u062A\u062D\u0643\u0645 \u0639\u0628\u0631 \u0632\u0631 \"\u0631\u0641\u0639 \u0645\u0646 \u0627\u0644\u062C\u0647\u0627\u0632\" \u062A\u0639\u0645\u0644 \u0628\u0634\u0643\u0644 \u0635\u062D\u064A\u062D \u0639\u0644\u0649 \u0643\u0644 \u0627\u0644\u0623\u062C\u0647\u0632\u0629.")),
@@ -7139,7 +6875,7 @@ function emptyForm(type) {
 function emptyEpisode(num) {
     return { number: num, title: '', runtimeMinutes: 0, videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, imdb: '', tmdbRating: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
 }
-function SubtitleHelper({ value, onChange, sourceId, title, type, season, episode, year, cinemanaId, offset = 0, onOffsetChange, cartoonOnly = false }) {
+function SubtitleHelper({ value, onChange, sourceId, title, type, season, episode, year, cinemanaId, offset = 0, onOffsetChange }) {
     const [loading, setLoading] = useState(false);
     const [msg, setMsg] = useState('');
     const [warn, setWarn] = useState('');
@@ -7155,9 +6891,9 @@ function SubtitleHelper({ value, onChange, sourceId, title, type, season, episod
     const get = async () => {
         setLoading(true);
         setWarn('');
-        setMsg(cartoonOnly ? 'جاري البحث في SubDL ثم OpenSubtitles...' : 'جاري البحث الذكي (سينمانا ثم SubDL)...');
+        setMsg('جاري البحث الذكي (سينمانا ثم SubDL)...');
         try {
-            const r = await findAndStoreSubtitle({ cinemanaId, sourceId, title, year, type, season, episode, onProgress: setMsg, force: true, cartoonOnly });
+            const r = await findAndStoreSubtitle({ cinemanaId, sourceId, title, year, type, season, episode, onProgress: setMsg, force: true });
             onChange(r.url);
             setMsg(`تم الحفظ — المصدر: ${r.sourceLabel} · ${r.cues} سطر`);
             showCoverage(r);
@@ -7406,989 +7142,6 @@ async function refreshSeasonImdbRatings(sourceId, seasonNumber, episodes, onProg
     }
     return updated;
 }
-
-
-function cartoonAdminProxyCandidates() {
-    const out = [];
-    const add = v => {
-        const s = String(v || '').trim().replace(/\/+$/, '');
-        if (s && !out.includes(s)) out.push(s);
-    };
-    try {
-        add(window.CINEMANA_ADMIN_PROXY_URL || '');
-        add(window.CARTOONDUB_PROXY_URL || '');
-    } catch (_) {}
-    // لوحة الإدارة تعمل محليًا على نفس الجهاز الذي يشغّل server.js.
-    add('http://127.0.0.1:8787');
-    add('http://localhost:8787');
-    add(CINEMANA_PROXY);
-    return out;
-}
-
-async function cartoonAdminFetchJson(pathname, params = {}, timeoutMs = 30000) {
-    const qs = new URLSearchParams();
-    Object.entries(params || {}).forEach(([k, v]) => {
-        if (v !== undefined && v !== null && String(v).trim() !== '') qs.set(k, String(v));
-    });
-    let lastError = null;
-    for (const base of cartoonAdminProxyCandidates()) {
-        try {
-            const r = await fetchWithTimeout(`${base}${pathname}${qs.toString() ? `?${qs}` : ''}`, {
-                headers: { Accept: 'application/json' }
-            }, timeoutMs);
-            const data = await r.json().catch(() => null);
-            if (r.ok && data && data.ok !== false) return data;
-            lastError = new Error((data && data.error) || `CartoonDub HTTP ${r.status}`);
-        } catch (e) {
-            lastError = e;
-        }
-    }
-    throw lastError || new Error('تعذر الاتصال ببروكسي CartoonDub.');
-}
-
-async function cartoonAdminResolveEpisode(meta, season, episode) {
-    try {
-        window.CARTOONDUB_PROXY_URL = cartoonAdminProxyCandidates()[0] || CINEMANA_PROXY;
-        window.CINEMANA_ADMIN_PROXY_URL = cartoonAdminProxyCandidates()[0] || CINEMANA_PROXY;
-    } catch (_) {}
-    return window.CartoonDubEngine.resolveEpisode(meta, season, episode);
-}
-
-async function cartoonAdminResolveMovie(meta) {
-    try {
-        window.CARTOONDUB_PROXY_URL = cartoonAdminProxyCandidates()[0] || CINEMANA_PROXY;
-        window.CINEMANA_ADMIN_PROXY_URL = cartoonAdminProxyCandidates()[0] || CINEMANA_PROXY;
-    } catch (_) {}
-    return window.CartoonDubEngine.resolveMovie(meta);
-}
-
-function CartoonDubSearchImportPanel({ onPick }) {
-    const [query, setQuery] = useState('');
-    const [items, setItems] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
-    const [picked, setPicked] = useState('');
-
-    const runSearch = async () => {
-        const q = query.trim();
-        if (!q) return;
-        setLoading(true);
-        setError('');
-        try {
-            const data = await cartoonAdminFetchJson('/cartoondub/search', { q }, 30000);
-            const rows = Array.isArray(data.items) ? data.items : [];
-            setItems(rows);
-            if (!rows.length) setError('ما لقيت نتيجة بـ CartoonDub. جرّب الاسم الإنكليزي أو العربي.');
-        } catch (e) {
-            setError(e && e.message ? e.message : 'تعذر البحث في CartoonDub.');
-            setItems([]);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return React.createElement("div", { className: "glass-card rounded-2xl p-4 border border-accent-cyan/25 mb-5" },
-        React.createElement("div", { className: "flex items-center justify-between gap-2 flex-wrap mb-2.5" },
-            React.createElement("div", null,
-                React.createElement("p", { className: "text-[12px] font-black text-accent-cyan flex items-center gap-1.5" },
-                    React.createElement(Icon, { name: "sparkles", className: "w-4 h-4" }),
-                    "بحث الكارتون + تعبئة تلقائية"),
-                React.createElement("p", { className: "text-[10px] text-slate-500 mt-1" },
-                    "اضغط على النتيجة مرة واحدة: تُجلب بيانات TMDB وTMDB/IMDb للتقييمات والبنرات، ثم تُربط حلقات CartoonDub تلقائيًا.")),
-            React.createElement("span", { className: "text-[9px] font-black tracking-wide text-accent-cyan border border-accent-cyan/30 rounded-full px-2 py-1" }, "CARTOONDUB → TMDB"))
-        ,
-        React.createElement("div", { className: "flex gap-2" },
-            React.createElement("input", {
-                value: query,
-                onChange: e => setQuery(e.target.value),
-                onKeyDown: e => e.key === 'Enter' && !loading && runSearch(),
-                placeholder: "مثال: وقت المغامرة / Adventure Time / غامبول",
-                className: "flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white outline-none focus:border-accent-cyan"
-            }),
-            React.createElement("button", {
-                type: "button",
-                onClick: runSearch,
-                disabled: loading || !query.trim(),
-                className: "shrink-0 px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 text-xs font-black disabled:opacity-40"
-            }, loading ? 'بحث...' : 'بحث')),
-        error && React.createElement("p", { className: "text-[11px] text-rose-400 font-bold mt-2" }, error),
-        loading && React.createElement("p", { className: "text-[11px] text-accent-cyan font-bold mt-2" }, "جاري جلب النتائج..."),
-        items.length > 0 && React.createElement("div", { className: "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 mt-3 max-h-[420px] overflow-y-auto pr-1" },
-            items.map(item => React.createElement("button", {
-                key: `${item.sectionId || ''}:${item.id}`,
-                type: "button",
-                onClick: () => { setPicked(String(item.id)); onPick(item); },
-                className: `text-right rounded-xl overflow-hidden border transition ${picked === String(item.id) ? 'border-accent-cyan shadow-[0_0_16px_rgba(0,240,255,0.18)]' : 'border-white/10 hover:border-accent-cyan/40'} bg-glass-900`
-            },
-                React.createElement("div", { className: "aspect-[2/3] bg-glass-950 overflow-hidden" },
-                    item.poster && React.createElement("img", { src: item.poster, alt: "", loading: "lazy", className: "w-full h-full object-cover" }),
-                    !item.poster && React.createElement("div", { className: "w-full h-full flex items-center justify-center text-slate-600" },
-                        React.createElement(Icon, { name: item.target ? "tv" : "film", className: "w-6 h-6" })),
-                React.createElement("div", { className: "p-2" },
-                    React.createElement("p", { className: "text-[10px] font-black text-white truncate" }, item.title || 'بدون اسم'),
-                    React.createElement("p", { className: "text-[9px] text-slate-500 flex items-center gap-1 flex-wrap" },
-                        item.year || '',
-                        " · ",
-                        item.target ? 'مسلسل' : 'فيلم'),
-                    item.target && React.createElement("p", { className: "text-[8px] text-accent-cyan mt-1 font-bold" }, "قسم/مواسم موجودة")))
-            ))
-        )
-    );
-}
-
-function CartoonDubEpisodeEditor({ episode, seasonNumber, sourceId, tmdbId, imdbId, seriesName, year, onChange, onBack, onDelete, onResolve, resolving }) {
-    const e = episode || emptyEpisode(1);
-    const eRef = useRef(e);
-    const [tmdbLoading, setTmdbLoading] = useState(false);
-    const [tmdbMsg, setTmdbMsg] = useState('');
-    useEffect(() => { eRef.current = e; }, [e]);
-    const set = (k, val) => onChange({ ...eRef.current, [k]: val });
-
-    const loadTmdbRating = async () => {
-        setTmdbLoading(true);
-        setTmdbMsg('جاري جلب تقييم TMDB...');
-        try {
-            const rating = await fetchTmdbEpisodeRating(tmdbId || sourceId, seasonNumber, e.number);
-            setTmdbMsg(rating ? `تم جلب تقييم TMDB: ${rating}/10` : 'TMDB ما عنده تقييم لهذه الحلقة حاليًا.');
-            if (rating) onChange({ ...eRef.current, tmdbRating: rating });
-        } catch (err) {
-            setTmdbMsg(err && err.message ? err.message : 'تعذر جلب تقييم TMDB.');
-        } finally {
-            setTmdbLoading(false);
-        }
-    };
-
-    return React.createElement("div", null,
-        React.createElement("div", { className: "flex items-center gap-2.5 mb-4" },
-            React.createElement("button", { type: "button", onClick: onBack, title: "الرجوع لقائمة الحلقات", className: "w-9 h-9 shrink-0 rounded-xl glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-accent-cyan" },
-                React.createElement(Icon, { name: "chevronRight", className: "w-4 h-4" })),
-            React.createElement("div", { className: "min-w-0" },
-                React.createElement("p", { className: "text-[11px] text-slate-400 font-bold" }, "الموسم ", seasonNumber, " · تعديل حلقة"),
-                React.createElement("h5", { className: "font-black text-white text-base truncate" }, React.createElement(BidiText, null, e.title || `الحلقة ${e.number}`))),
-            React.createElement("button", { type: "button", onClick: onDelete, title: "حذف الحلقة", className: "mr-auto w-9 h-9 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400" },
-                React.createElement(Icon, { name: "trash-2", className: "w-4 h-4" }))
-        ),
-        React.createElement("div", { className: "grid sm:grid-cols-2 gap-3.5" },
-            React.createElement("div", null,
-                React.createElement("label", { className: "text-xs font-bold text-slate-300 mb-1.5 block" }, "رقم الحلقة"),
-                React.createElement("input", { type: "number", value: e.number, onChange: ev => set('number', Number(ev.target.value) || 1), className: "w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-accent-cyan" })),
-            React.createElement("div", null,
-                React.createElement("label", { className: "text-xs font-bold text-slate-300 mb-1.5 block" }, "عنوان الحلقة"),
-                React.createElement("input", { dir: "auto", value: e.title, onChange: ev => set('title', ev.target.value), className: "w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-accent-cyan" }))
-        ),
-        React.createElement("div", { className: "mt-3.5" },
-            React.createElement("label", { className: "text-xs font-bold text-slate-300 mb-1.5 block" }, "حالة الحلقة"),
-            React.createElement("select", { value: e.finality || 'none', onChange: ev => set('finality', ev.target.value), className: "w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-accent-cyan" },
-                React.createElement("option", { value: "none" }, "عادية"),
-                React.createElement("option", { value: "season" }, "آخر حلقة بالموسم"),
-                React.createElement("option", { value: "series" }, "آخر حلقة (نهاية العمل)")),
-            React.createElement("p", { className: "text-[11px] text-slate-500 mt-1.5" }, "سيظهر للمستخدم حسب الحالة المختارة."))
-        ,
-        React.createElement("div", { className: "mt-3.5 p-3 rounded-2xl bg-accent-cyan/5 border border-accent-cyan/15" },
-            React.createElement("div", { className: "flex items-center justify-between gap-2 flex-wrap" },
-                React.createElement("div", null,
-                    React.createElement("p", { className: "text-xs font-black text-white" }, "مصدر التشغيل — CartoonDub فقط"),
-                    React.createElement("p", { className: "text-[10px] text-slate-500" }, e.videoUrl ? "تم حفظ الرابط المباشر، وسيعمل بدون server.js وقت المشاهدة." : "لم يُجلب رابط هذه الحلقة بعد.")),
-                React.createElement("button", { type: "button", onClick: onResolve, disabled: resolving, className: "px-3 py-2 rounded-xl bg-accent-cyan text-glass-950 text-[10px] font-black disabled:opacity-40" }, resolving ? 'جاري...' : (e.videoUrl ? 'تحديث رابط CartoonDub' : 'جلب رابط CartoonDub'))),
-            e.videoUrl && React.createElement("p", { className: "text-[10px] text-emerald-400 font-bold mt-2 break-all" }, e.videoUrl),
-        ),
-        React.createElement(SubtitleHelper, {
-            cinemanaId: '',
-            value: e.subtitleUrl || '',
-            onChange: v => set('subtitleUrl', v),
-            sourceId: sourceId,
-            title: seriesName,
-            year: year,
-            type: "series",
-            season: seasonNumber,
-            episode: e.number,
-            cartoonOnly: true,
-            folder: "subtitles",
-            offset: e.subtitleOffset || 0,
-            onOffsetChange: v => set('subtitleOffset', v)
-        }),
-        React.createElement("div", { className: "grid sm:grid-cols-3 gap-3.5 mt-3.5" },
-            React.createElement("div", null,
-                React.createElement("div", { className: "flex items-center justify-between gap-2 mb-1.5" },
-                    React.createElement("label", { className: "text-xs font-bold text-slate-300" }, "تقييم TMDB"),
-                    React.createElement("button", { type: "button", onClick: loadTmdbRating, disabled: tmdbLoading, className: "text-[10px] font-black text-accent-cyan hover:underline disabled:opacity-50" }, tmdbLoading ? 'جاري...' : 'جلب من TMDB')),
-                React.createElement("input", { type: "number", min: "0", max: "10", step: "0.1", value: e.tmdbRating || '', onChange: ev => set('tmdbRating', ev.target.value), placeholder: "8.2", className: "w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-accent-cyan" })),
-            React.createElement("div", null,
-                React.createElement("label", { className: "text-xs font-bold text-slate-300 mb-1.5 block" }, "تقييم IMDb"),
-                React.createElement("input", { value: e.imdb || '', onChange: ev => set('imdb', ev.target.value), placeholder: "8.4", className: "w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-accent-cyan" })),
-            React.createElement("div", null,
-                React.createElement("label", { className: "text-xs font-bold text-slate-300 mb-1.5 block" }, "Rotten Tomatoes"),
-                React.createElement("input", { value: e.rt || '', onChange: ev => set('rt', ev.target.value), placeholder: "92", className: "w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-accent-cyan" })),
-            tmdbMsg && React.createElement("p", { className: "sm:col-span-3 text-[10px] font-bold text-slate-400" }, tmdbMsg)),
-        React.createElement(VideoDisplaySettings, { value: e, onChange: patch => onChange({ ...e, ...patch }) })
-    );
-}
-
-
-function CartoonDubAdminForm({ initial, onDone, currentUser }) {
-    const clone = v => JSON.parse(JSON.stringify(v));
-    const base = initial ? normalizeTitlePlaybackData(initial) : {
-        ...emptyForm('series'),
-        type: 'series',
-        contentSection: 'cartoon',
-        sourceProvider: 'cartoondub',
-        playbackProvider: 'cartoondub',
-        cartoonSourceLocked: true,
-        cartoondubId: '',
-        cartoondubSectionId: '',
-        cartoondubTarget: '',
-        tmdbId: '',
-        imdbId: '',
-        tmdbRating: ''
-    };
-
-    const [form, setForm] = useState(() => ({
-        ...emptyForm('series'),
-        ...base,
-        contentSection: 'cartoon',
-        sourceProvider: 'cartoondub',
-        playbackProvider: 'cartoondub',
-        cartoonSourceLocked: true,
-        cartoondubId: String(base.cartoondubId || ''),
-        cartoondubSectionId: String(base.cartoondubSectionId || ''),
-        cartoondubTarget: String(base.cartoondubTarget || ''),
-        tmdbId: String(base.tmdbId || ''),
-        imdbId: String(base.imdbId || ''),
-        tmdbRating: String(base.tmdbRating || ''),
-        genresText: Array.isArray(base.genres) ? base.genres.join(', ') : String(base.genresText || ''),
-        seasons: Array.isArray(base.seasons) ? clone(base.seasons) : []
-    }));
-    const [sourceId, setSourceId] = useState(String(base.sourceId || base.imdbId || base.tmdbId || ''));
-    const [subtitleSourceIds, setSubtitleSourceIds] = useState([base.imdbId, base.tmdbId].filter(Boolean));
-    const [tmdbInput, setTmdbInput] = useState(String(base.tmdbId || ''));
-    const [tmdbInputBusy, setTmdbInputBusy] = useState(false);
-    const [bannerData, setBannerData] = useState(null);
-    const [bannerLoading, setBannerLoading] = useState(false);
-    const [bannerError, setBannerError] = useState('');
-    const [showAllBanners, setShowAllBanners] = useState(false);
-    const [showSeasonBannerOptions, setShowSeasonBannerOptions] = useState(true);
-    const [bannerSource, setBannerSource] = useState('tmdb');
-    const [seasonStills, setSeasonStills] = useState({});
-    const [activeSeasonIdx, setActiveSeasonIdx] = useState(0);
-    const [editingEpisodeIdx, setEditingEpisodeIdx] = useState(null);
-    const [busy, setBusy] = useState('');
-    const [message, setMessage] = useState('');
-    const [error, setError] = useState('');
-
-    const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
-    const updateEpisode = (si, ei, key, val) => setForm(prev => ({
-        ...prev,
-        seasons: prev.seasons.map((s, i) => i !== si ? s : {
-            ...s,
-            episodes: (s.episodes || []).map((e, j) => j !== ei ? e : { ...e, [key]: val })
-        })
-    }));
-    const replaceEpisode = (si, ei, newEp) => setForm(prev => ({
-        ...prev,
-        seasons: prev.seasons.map((s, i) => i !== si ? s : {
-            ...s,
-            episodes: (s.episodes || []).map((e, j) => j !== ei ? e : newEp)
-        })
-    }));
-    const updateSeasonField = (si, key, val) => setForm(prev => ({
-        ...prev,
-        seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, [key]: val })
-    }));
-    const updateSeasonNumber = (si, val) => updateSeasonField(si, 'number', val);
-
-    const addSeason = () => setForm(prev => {
-        const seasons = [...(prev.seasons || []), {
-            number: (prev.seasons || []).length + 1,
-            year: '',
-            poster: '',
-            episodeThumbnail: '',
-            episodes: []
-        }];
-        setActiveSeasonIdx(seasons.length - 1);
-        setEditingEpisodeIdx(null);
-        return { ...prev, seasons };
-    });
-    const removeSeason = si => setForm(prev => {
-        const seasons = prev.seasons.filter((_, i) => i !== si);
-        setActiveSeasonIdx(i => Math.max(0, Math.min(i, seasons.length - 1)));
-        setEditingEpisodeIdx(null);
-        return { ...prev, seasons };
-    });
-    const duplicateSeason = si => setForm(prev => {
-        const copy = clone(prev.seasons[si]);
-        copy.number = prev.seasons.length + 1;
-        return { ...prev, seasons: [...prev.seasons, copy] };
-    });
-    const moveSeason = (si, dir) => setForm(prev => {
-        const arr = [...prev.seasons];
-        const ni = si + dir;
-        if (ni < 0 || ni >= arr.length) return prev;
-        [arr[si], arr[ni]] = [arr[ni], arr[si]];
-        return { ...prev, seasons: arr };
-    });
-    const addEpisode = si => setForm(prev => {
-        const seasons = clone(prev.seasons || []);
-        seasons[si].episodes = [...(seasons[si].episodes || []), { ...emptyEpisode((seasons[si].episodes || []).length + 1), playbackProvider: 'cartoondub' }];
-        return { ...prev, seasons };
-    });
-    const removeEpisode = (si, ei) => setForm(prev => ({
-        ...prev,
-        seasons: prev.seasons.map((s, i) => i !== si ? s : { ...s, episodes: s.episodes.filter((_, j) => j !== ei) })
-    }));
-    const duplicateEpisode = (si, ei) => setForm(prev => ({
-        ...prev,
-        seasons: prev.seasons.map((s, i) => {
-            if (i !== si) return s;
-            const copy = clone(s.episodes[ei]);
-            copy.number = s.episodes.length + 1;
-            copy.title = copy.title ? `${copy.title} (نسخة)` : '';
-            return { ...s, episodes: [...s.episodes, copy] };
-        })
-    }));
-    const moveEpisode = (si, ei, dir) => setForm(prev => ({
-        ...prev,
-        seasons: prev.seasons.map((s, i) => {
-            if (i !== si) return s;
-            const arr = [...s.episodes];
-            const ni = ei + dir;
-            if (ni < 0 || ni >= arr.length) return s;
-            [arr[ei], arr[ni]] = [arr[ni], arr[ei]];
-            return { ...s, episodes: arr };
-        })
-    }));
-
-    const fetchBanners = async () => {
-        const src = form.tmdbId || sourceId;
-        if (!src) {
-            setBannerError('معرف TMDB/IMDb غير موجود بعد.');
-            return;
-        }
-        setBannerLoading(true);
-        setBannerError('');
-        try {
-            const d = await loadTvBannerData(src);
-            setBannerData(d || null);
-        } catch (e) {
-            setBannerError(e && e.message ? e.message : 'تعذر جلب البنرات.');
-        } finally {
-            setBannerLoading(false);
-        }
-    };
-
-    const stillsSeasonNumber = form.seasons[activeSeasonIdx] ? form.seasons[activeSeasonIdx].number : null;
-    useEffect(() => {
-        if (bannerSource !== 'stills' || !form.tmdbId || stillsSeasonNumber == null) return;
-        const key = String(stillsSeasonNumber);
-        if (seasonStills[key]) return;
-        let cancelled = false;
-        tmdbFetch(`tv/${form.tmdbId}/season/${key}`, { language: 'en-US' })
-            .then(sd => {
-                if (!cancelled) setSeasonStills(prev => ({
-                    ...prev,
-                    [key]: (sd.episodes || []).filter(ep => ep.still_path).map(ep => TMDB_IMG + 'w780' + ep.still_path)
-                }));
-            })
-            .catch(() => {
-                if (!cancelled) setSeasonStills(prev => ({ ...prev, [key]: [] }));
-            });
-        return () => { cancelled = true; };
-    }, [bannerSource, form.tmdbId, stillsSeasonNumber]);
-
-    const bannerOptionsFor = seasonNumber => {
-        if (!bannerData) return [];
-        const seen = new Set();
-        const out = [];
-        const addOpt = (url, kind) => {
-            if (url && !seen.has(url)) { seen.add(url); out.push({ url, kind }); }
-        };
-        if (bannerSource === 'fanart') {
-            (((bannerData.seasons || {})[String(seasonNumber)] || [])).forEach(u => addOpt(u, 'season'));
-            (bannerData.tv || []).forEach(u => addOpt(u, 'tv'));
-        } else if (bannerSource === 'stills') {
-            (seasonStills[String(seasonNumber)] || []).forEach(u => addOpt(u, 'still'));
-        } else {
-            (bannerData.tmdb || []).forEach(u => addOpt(u, 'tmdb'));
-        }
-        return out;
-    };
-
-    const importByTmdbId = async () => {
-        const raw = String(tmdbInput || '').trim();
-        if (!/^\d+$/.test(raw)) {
-            setError('أدخل معرف TMDB رقمي فقط، مثل 15260.');
-            return;
-        }
-        setTmdbInputBusy(true);
-        setError('');
-        setMessage('جاري جلب بيانات TMDB بالمعرف المحدد...');
-        try {
-            const result = await importFromTmdb(raw, 'series', {
-                withEpisodes: true,
-                onProgress: msg => setMessage(msg)
-            });
-            if (result.media !== 'tv') throw new Error(`المعرف ${raw} ليس لمسلسل TV في TMDB.`);
-            applyImportResult(result, null);
-            setTmdbInput(String(result.tmdbId || raw));
-            setMessage(`تم جلب TMDB ${result.tmdbId || raw}: ${(result.patch && result.patch.name) || 'العمل'} — ${((result.patch && result.patch.seasons) || []).length} موسم. اختر الآن النتيجة المطابقة من CartoonDub.`);
-        } catch (e) {
-            setError(e && e.message ? e.message : 'تعذر جلب العمل من TMDB.');
-        } finally {
-            setTmdbInputBusy(false);
-        }
-    };
-
-    const applyImportResult = (result, item) => {
-        const patch = { ...(result.patch || {}) };
-        const tmdbId = String(result.tmdbId || '');
-        const imdbId = String(result.imdbId || '');
-        patch.tmdbId = tmdbId;
-        patch.imdbId = imdbId;
-        patch.sourceId = imdbId || tmdbId;
-        patch.sourceProvider = 'cartoondub';
-        patch.playbackProvider = 'cartoondub';
-        patch.contentSection = 'cartoon';
-        patch.cartoonSourceLocked = true;
-        patch.cartoondubId = String(item && item.id || '');
-        patch.cartoondubSectionId = String(item && item.sectionId || '');
-        patch.cartoondubTarget = String(item && item.target || '');
-        patch.tmdbRating = patch.tmdbRating || '';
-        patch.seasons = Array.isArray(patch.seasons) ? patch.seasons.map(s => ({
-            ...s,
-            episodes: (s.episodes || []).map(e => ({
-                ...e,
-                playbackProvider: 'cartoondub',
-                videoUrl: '',
-                videoSources: []
-            }))
-        })) : [];
-        setForm(prev => ({ ...prev, ...patch }));
-        setSourceId(imdbId || tmdbId);
-        setSubtitleSourceIds([imdbId, tmdbId].filter(Boolean));
-        setBannerData(result.bannerData || null);
-        setActiveSeasonIdx(0);
-        setEditingEpisodeIdx(null);
-        return patch;
-    };
-
-    const resolveMovie = async (meta = form) => {
-        setBusy('movie');
-        setError('');
-        try {
-            const r = await cartoonAdminResolveMovie({
-                name: meta.name,
-                title: meta.name,
-                year: meta.year,
-                tmdbId: meta.tmdbId || '',
-                imdbId: meta.imdbId || '',
-                originalTitle: meta.name,
-                cartoondubId: meta.cartoondubId || '',
-                cartoondubSectionId: meta.cartoondubSectionId || '',
-                cartoondubTarget: meta.cartoondubTarget || ''
-            });
-            const sources = (r.sources || []).map(s => ({
-                ...s,
-                url: s.rawUrl || s.url,
-                provider: 'cartoondub',
-                type: 'mp4',
-                quality: s.quality || s.resolution || '',
-                resolution: Number(s.resolution) || 0
-            }));
-            if (!sources.length) throw new Error('CartoonDub لم يرجّع رابط الفيلم.');
-            setForm(prev => ({
-                ...prev,
-                videoUrl: sources[0].url,
-                videoSources: sources,
-                playbackProvider: 'cartoondub',
-                sourceProvider: 'cartoondub'
-            }));
-            setMessage('تم جلب رابط الفيلم. جاري مطابقة الترجمة العربية...');
-            try {
-                const sub = await findAndStoreSubtitle({ cartoonOnly: true,
-                    sourceId: sourceId,
-                    altSourceIds: [form.tmdbId, form.imdbId].filter(Boolean),
-                    title: form.name,
-                    year: form.year,
-                    type: 'movie',
-                    onProgress: setMessage,
-                    force: true
-                });
-                if (sub && sub.url) setForm(prev => ({ ...prev, subtitleUrl: sub.url }));
-            } catch (_) {}
-            setMessage('تم تجهيز الفيلم من CartoonDub + TMDB.');
-        } catch (e) {
-            setError(e && e.message ? e.message : 'تعذر جلب رابط الفيلم من CartoonDub.');
-        } finally {
-            setBusy('');
-        }
-    };
-
-    const resolveEpisode = async (si, ei, options = {}) => {
-        const season = form.seasons[si];
-        const ep = season && season.episodes && season.episodes[ei];
-        if (!season || !ep) return null;
-        const key = `ep:${si}:${ei}`;
-        setBusy(key);
-        setError('');
-        try {
-            const r = await cartoonAdminResolveEpisode({
-                name: form.name,
-                title: form.name,
-                year: form.year,
-                tmdbId: form.tmdbId || '',
-                imdbId: form.imdbId || '',
-                originalTitle: form.name,
-                cartoondubId: form.cartoondubId || '',
-                cartoondubSectionId: form.cartoondubSectionId || '',
-                cartoondubTarget: form.cartoondubTarget || ''
-            }, season.number, ep.number);
-            const sources = (r.sources || []).map(s => ({
-                ...s,
-                url: s.rawUrl || s.url,
-                provider: 'cartoondub',
-                type: 'mp4',
-                quality: s.quality || s.resolution || '',
-                resolution: Number(s.resolution) || 0
-            }));
-            if (!sources.length) throw new Error(`لم يتم العثور على رابط S${String(season.number).padStart(2,'0')}E${String(ep.number).padStart(2,'0')}`);
-            updateEpisode(si, ei, 'videoUrl', sources[0].url);
-            updateEpisode(si, ei, 'videoSources', sources);
-            updateEpisode(si, ei, 'playbackProvider', 'cartoondub');
-            updateEpisode(si, ei, 'cartoondubId', String(r.id || form.cartoondubId || ''));
-            updateEpisode(si, ei, 'cartoondubSectionId', String(r.sectionId || form.cartoondubSectionId || ''));
-            updateEpisode(si, ei, 'cartoondubTarget', String(r.target || form.cartoondubTarget || ''));
-            if (!options.skipSubtitle) {
-                try {
-                    const sub = await findAndStoreSubtitle({ cartoonOnly: true,
-                        sourceId: form.imdbId || form.tmdbId || sourceId,
-                        altSourceIds: [form.tmdbId, form.imdbId].filter(Boolean),
-                        title: form.name,
-                        year: form.year,
-                        type: 'series',
-                        season: season.number,
-                        episode: ep.number,
-                        onProgress: msg => { if (!options.silent) setMessage(`S${String(season.number).padStart(2,'0')}E${String(ep.number).padStart(2,'0')}: ${msg}`); },
-                        force: true
-                    });
-                    if (sub && sub.url) updateEpisode(si, ei, 'subtitleUrl', sub.url);
-                } catch (_) {}
-            }
-            if (!options.silent) setMessage(`تم تجهيز S${String(season.number).padStart(2,'0')}E${String(ep.number).padStart(2,'0')}.`);
-            return { ok: true, id: String(r.id || ''), sources };
-        } catch (e) {
-            if (!options.silent) setError(e && e.message ? e.message : 'تعذر جلب رابط الحلقة.');
-            return { ok: false, error: e && e.message ? e.message : 'خطأ' };
-        } finally {
-            setBusy('');
-        }
-    };
-
-    const resolveAll = async () => {
-        const jobs = [];
-        (form.seasons || []).forEach((s, si) => (s.episodes || []).forEach((e, ei) => {
-            if (!e.videoUrl) jobs.push([si, ei]);
-        }));
-        if (!jobs.length) {
-            setMessage('كل الحلقات عندها روابط محفوظة.');
-            return;
-        }
-        setBusy('bulk');
-        setError('');
-        let done = 0, ok = 0;
-        try {
-            for (let i = 0; i < jobs.length; i += 3) {
-                const part = jobs.slice(i, i + 3);
-                const results = await Promise.all(part.map(([si, ei]) => resolveEpisode(si, ei, { silent: true })));
-                ok += results.filter(x => x && x.ok).length;
-                done += part.length;
-                setMessage(`CartoonDub: تم تجهيز ${done}/${jobs.length} حلقة (${ok} روابط).`);
-            }
-            setMessage(`اكتمل تجهيز الروابط: ${ok}/${jobs.length} حلقة.`);
-        } finally {
-            setBusy('');
-        }
-    };
-
-    const handlePick = async item => {
-        setBusy('import');
-        setError('');
-        setMessage('');
-        try {
-            const inferredType = item && item.target ? 'series' : 'movie';
-            let result;
-            if (inferredType === 'series' && /^\d+$/.test(String(form.tmdbId || '').trim())) {
-                result = await importFromTmdb(String(form.tmdbId).trim(), 'series', {
-                    withEpisodes: true,
-                    onProgress: msg => setMessage(msg)
-                });
-            } else {
-                result = await importFromTmdbTitle(item.title, inferredType, item.year, {
-                    withEpisodes: inferredType !== 'movie',
-                    onProgress: msg => setMessage(msg)
-                });
-                // بعض نتائج CartoonDub قد تكون مضبوطة كمسلسل بينما عنوان TMDB الأول رجّع فيلمًا، أو بالعكس.
-                if (inferredType === 'series' && result.media !== 'tv') {
-                    result = await importFromTmdbTitle(item.title, 'series', item.year, {
-                        withEpisodes: true,
-                        onProgress: msg => setMessage(msg)
-                    });
-                }
-            }
-            applyImportResult(result, item);
-            if (result.media === 'movie') {
-                setMessage('تم جلب كل معلومات TMDB. جاري جلب رابط CartoonDub...');
-                await resolveMovie({ ...form, ...(result.patch || {}), ...{
-                    tmdbId: result.tmdbId || '',
-                    imdbId: result.imdbId || '',
-                    cartoondubId: String(item.id || ''),
-                    cartoondubSectionId: String(item.sectionId || ''),
-                    cartoondubTarget: String(item.target || '')
-                }});
-            } else {
-                const seasons = Array.isArray(result.patch.seasons) ? result.patch.seasons : [];
-                if (!seasons.length) throw new Error('TMDB ما رجّع مواسم لهذا المسلسل.');
-                setMessage(`TMDB: تم جلب ${seasons.length} موسم. جاري ربط حلقات CartoonDub...`);
-                // استخدم بيانات الاستيراد محليًا بدل انتظار تحديث React state.
-                const meta = {
-                    name: result.patch.name,
-                    year: result.patch.year,
-                    tmdbId: result.tmdbId || '',
-                    imdbId: result.imdbId || '',
-                    cartoondubId: String(item.id || ''),
-                    cartoondubSectionId: String(item.sectionId || ''),
-                    cartoondubTarget: String(item.target || '')
-                };
-                // resolveEpisode يعتمد على state form، لذلك نمرّر نفس meta بإصدار مستقل.
-                let done = 0, linked = 0;
-                const patchedSeasons = clone(seasons);
-                const episodeJobs = [];
-                patchedSeasons.forEach((s, si) => (s.episodes || []).forEach((e, ei) => episodeJobs.push({ si, ei, s, e })));
-                for (let i = 0; i < episodeJobs.length; i += 3) {
-                    const chunk = episodeJobs.slice(i, i + 3);
-                    const resChunk = await Promise.all(chunk.map(async job => {
-                        try {
-                            const r = await cartoonAdminResolveEpisode(meta, job.s.number, job.e.number);
-                            const sources = (r.sources || []).map(s => ({ ...s, url: s.rawUrl || s.url, provider: 'cartoondub', type: 'mp4', quality: s.quality || s.resolution || '', resolution: Number(s.resolution) || 0 }));
-                            if (!sources.length) return { ...job, ok: false };
-                            job.e.videoUrl = sources[0].url;
-                            job.e.videoSources = sources;
-                            job.e.playbackProvider = 'cartoondub';
-                            job.e.cartoondubId = String(r.id || item.id || '');
-                            job.e.cartoondubSectionId = String(r.sectionId || item.sectionId || '');
-                            job.e.cartoondubTarget = String(r.target || item.target || '');
-                            // Subtitle search here is deliberately serial within the 3-item chunk through the shared server queues.
-                            try {
-                                const sub = await findAndStoreSubtitle({ cartoonOnly: true,
-                                    sourceId: result.imdbId || result.tmdbId || '',
-                                    altSourceIds: [result.tmdbId, result.imdbId].filter(Boolean),
-                                    title: meta.name,
-                                    year: meta.year,
-                                    type: 'series',
-                                    season: job.s.number,
-                                    episode: job.e.number,
-                                    onProgress: msg => setMessage(`S${String(job.s.number).padStart(2,'0')}E${String(job.e.number).padStart(2,'0')}: ${msg}`),
-                                    force: true
-                                });
-                                if (sub && sub.url) job.e.subtitleUrl = sub.url;
-                            } catch (_) {}
-                            return { ...job, ok: true };
-                        } catch (_) {
-                            return { ...job, ok: false };
-                        }
-                    }));
-                    linked += resChunk.filter(x => x.ok).length;
-                    done += chunk.length;
-                    setMessage(`CartoonDub: تم تجهيز ${done}/${episodeJobs.length} حلقة (${linked} روابط).`);
-                    setForm(prev => ({ ...prev, seasons: clone(patchedSeasons) }));
-                }
-                setForm(prev => ({ ...prev, seasons: clone(patchedSeasons) }));
-                setMessage(`تم تجهيز المسلسل: ${linked}/${episodeJobs.length} حلقة بروابط CartoonDub.`);
-            }
-        } catch (e) {
-            setError(e && e.message ? e.message : 'تعذر إكمال الاستيراد التلقائي.');
-        } finally {
-            setBusy('');
-        }
-    };
-
-    const save = async (publish = false) => {
-        setBusy(publish ? 'save-publish' : 'save');
-        setError('');
-        try {
-            const seasons = Array.isArray(form.seasons) ? form.seasons : [];
-            if (!String(form.name || '').trim()) throw new Error('اسم الكارتون مطلوب.');
-            if (form.type !== 'movie' && !seasons.length) throw new Error('لم يتم جلب المواسم والحلقات بعد.');
-            if (form.type === 'movie' && !String(form.videoUrl || '').trim()) throw new Error('اجلب رابط الفيلم من CartoonDub أولًا.');
-            const linked = form.type === 'movie'
-                ? (form.videoUrl ? 1 : 0)
-                : seasons.reduce((n, s) => n + (s.episodes || []).filter(e => String(e.videoUrl || '').trim()).length, 0);
-            if (form.type !== 'movie' && !linked) throw new Error('ماكو أي حلقة مرتبطة بـ CartoonDub بعد.');
-            let payload = {
-                name: String(form.name || '').trim(),
-                type: form.type === 'movie' ? 'movie' : 'series',
-                contentSection: 'cartoon',
-                sourceProvider: 'cartoondub',
-                playbackProvider: 'cartoondub',
-                cartoonSourceLocked: true,
-                sourceId: String(sourceId || form.imdbId || form.tmdbId || '').trim(),
-                tmdbId: String(form.tmdbId || '').trim(),
-                imdbId: String(form.imdbId || '').trim(),
-                cartoondubId: String(form.cartoondubId || '').trim(),
-                cartoondubSectionId: String(form.cartoondubSectionId || '').trim(),
-                cartoondubTarget: String(form.cartoondubTarget || '').trim(),
-                year: Number(form.year) || null,
-                genres: String(form.genresText || '').split(',').map(s => s.trim()).filter(Boolean),
-                poster: String(form.poster || '').trim(),
-                backdrop: String(form.backdrop || '').trim(),
-                description: String(form.description || '').trim(),
-                director: String(form.director || '').trim(),
-                writer: String(form.writer || '').trim(),
-                imdbRating: String(form.imdbRating || '').trim(),
-                tmdbRating: String(form.tmdbRating || '').trim(),
-                rtRating: String(form.rtRating || '').trim(),
-                runtimeMinutes: Number(form.runtimeMinutes) || 0,
-                featured: form.featured === true,
-                status: publish || form.status === 'published' ? 'published' : 'draft',
-                createdAt: initial ? (initial.createdAt || Date.now()) : Date.now(),
-                updatedAt: Date.now(),
-                publishedAt: publish || form.status === 'published' ? Date.now() : (initial && initial.publishedAt || 0),
-                likes: initial ? (initial.likes || 0) : 0,
-                views: initial ? (initial.views || 0) : 0,
-                subtitleUrl: normalizeSubtitleUrl(form.subtitleUrl || ''),
-                subtitlePublicUrl: String(form.subtitlePublicUrl || '').trim(),
-                subtitleOffset: Number(form.subtitleOffset) || 0,
-                trimStart: Number(form.trimStart) || 0,
-                trimEnd: Number(form.trimEnd) || 0,
-                introStart: Number(form.introStart) || 0,
-                introEnd: Number(form.introEnd) || 0,
-                fitMobile: form.fitMobile || 'contain',
-                fitDesktop: form.fitDesktop || 'contain',
-                crop: form.crop || {}
-            };
-
-            if (payload.type === 'movie') {
-                payload.videoUrl = String(form.videoUrl || '').trim();
-                payload.videoSources = normalizeVideoSources(form.videoSources).map(s => ({ ...s, url: s.url }));
-                payload.seasons = [];
-            } else {
-                payload.videoUrl = '';
-                payload.videoSources = [];
-                payload.seasons = seasons.map(s => ({
-                    number: Number(s.number) || 1,
-                    year: Number(s.year) || null,
-                    poster: String(s.poster || '').trim(),
-                    episodeThumbnail: String(s.episodeThumbnail || '').trim(),
-                    episodes: (s.episodes || []).map(e => ({
-                        ...emptyEpisode(Number(e.number) || 1),
-                        number: Number(e.number) || 1,
-                        title: String(e.title || '').trim(),
-                        runtimeMinutes: Number(e.runtimeMinutes) || 0,
-                        airDate: String(e.airDate || '').trim(),
-                        videoUrl: String(e.videoUrl || '').trim(),
-                        videoSources: normalizeVideoSources(e.videoSources).map(x => ({ ...x, url: x.url })),
-                        playbackProvider: 'cartoondub',
-                        cinemanaId: '',
-                        cartoondubId: String(e.cartoondubId || form.cartoondubId || '').trim(),
-                        cartoondubSectionId: String(e.cartoondubSectionId || form.cartoondubSectionId || '').trim(),
-                        cartoondubTarget: String(e.cartoondubTarget || form.cartoondubTarget || '').trim(),
-                        subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''),
-                        subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(),
-                        subtitleOffset: Number(e.subtitleOffset) || 0,
-                        imdb: String(e.imdb || '').trim(),
-                        tmdbRating: String(e.tmdbRating || '').trim(),
-                        rt: String(e.rt || '').trim(),
-                        trimStart: Number(e.trimStart) || 0,
-                        trimEnd: Number(e.trimEnd) || 0,
-                        introStart: Number(e.introStart) || 0,
-                        introEnd: Number(e.introEnd) || 0,
-                        fitMobile: e.fitMobile || 'contain',
-                        fitDesktop: e.fitDesktop || 'contain',
-                        crop: e.crop || {},
-                        finality: e.finality || 'none'
-                    }))
-                }));
-            }
-
-            if (payload.status === 'published') {
-                try {
-                    const prepared = await prepareSubtitlesForPublish(payload, payload.sourceId, msg => setMessage(msg), [payload.imdbId, payload.tmdbId].filter(Boolean));
-                    payload = prepared.payload;
-                    if (prepared.failed) setMessage(`تم النشر مع ${prepared.failed} حلقة تحتاج ترجمة لاحقًا.`);
-                } catch (_) {}
-            }
-
-            if (initial && initial.id) {
-                await db.ref(`titles/${initial.id}`).set(payload);
-            } else {
-                const ref = await db.ref('titles').push(payload);
-                if (!ref || !ref.key) throw new Error('Firebase لم يرجّع معرفًا للحفظ.');
-            }
-            logAuditAction(currentUser, initial && initial.id ? 'تعديل كارتون' : (payload.status === 'published' ? 'إضافة ونشر كارتون' : 'إضافة كارتون'), payload.name);
-            showToast(payload.status === 'published' ? 'تم حفظ ونشر الكارتون بنجاح' : 'تم حفظ الكارتون بنجاح');
-            onDone();
-        } catch (e) {
-            setError(e && e.message ? e.message : 'حدث خطأ أثناء حفظ الكارتون.');
-            showToast(e && e.message ? e.message : 'فشل حفظ الكارتون', 'error');
-        } finally {
-            setBusy('');
-        }
-    };
-
-    const activeSeason = form.seasons[activeSeasonIdx];
-    const inputCls = "w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition shadow-inner";
-    const labelCls = "text-xs font-bold text-slate-300 mb-1.5 block";
-
-    const moviePanel = form.type === 'movie' ? React.createElement("div", { className: "mt-5" },
-        React.createElement("div", { className: "glass-card rounded-2xl p-4 border border-accent-cyan/20" },
-            React.createElement("div", { className: "flex items-center justify-between gap-2 flex-wrap mb-2" },
-                React.createElement("div", null,
-                    React.createElement("p", { className: "text-xs font-black text-white" }, "مصدر التشغيل — CartoonDub فقط"),
-                    React.createElement("p", { className: "text-[10px] text-slate-500" }, form.videoUrl ? "الرابط محفوظ ومباشر." : "لم يُجلب رابط الفيلم بعد.")),
-                React.createElement("button", { type: "button", onClick: () => resolveMovie(), disabled: !!busy, className: "px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 text-xs font-black disabled:opacity-40" }, busy === 'movie' ? 'جاري...' : (form.videoUrl ? 'تحديث الرابط' : 'جلب الرابط'))
-            ),
-            form.videoUrl && React.createElement("p", { className: "text-[10px] text-emerald-400 break-all font-bold mb-3" }, form.videoUrl),
-            React.createElement(SubtitleHelper, {
-                cinemanaId: '', value: form.subtitleUrl || '', onChange: v => set('subtitleUrl', v),
-                sourceId: sourceId || form.tmdbId || form.imdbId, title: form.name, year: form.year, type: "movie",
-                offset: form.subtitleOffset || 0, onOffsetChange: v => set('subtitleOffset', v)
-            }),
-            React.createElement(VideoDisplaySettings, { value: form, onChange: patch => setForm(prev => ({ ...prev, ...patch })) })
-        )
-    ) : null;
-
-    const seriesPanel = form.type !== 'movie' ? React.createElement("div", { className: "mt-6 border-t border-white/10 pt-5" },
-        React.createElement("div", { className: "flex items-center justify-between mb-4 gap-2 flex-wrap" },
-            React.createElement("h4", { className: "font-black text-white text-base" }, "المواسم والحلقات"),
-            React.createElement("div", { className: "flex gap-2 flex-wrap" },
-                React.createElement("button", { type: "button", onClick: resolveAll, disabled: !form.seasons.length || !!busy, className: "flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 font-black disabled:opacity-40" }, busy === 'bulk' ? 'جاري جلب الروابط...' : 'جلب كل روابط CartoonDub'),
-                React.createElement("button", { type: "button", onClick: addSeason, disabled: !!busy, className: "flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl glass-card border border-white/10 text-slate-200 font-bold disabled:opacity-40" }, React.createElement(Icon, { name: "plus", className: "w-4 h-4 text-accent-cyan" }), "إضافة موسم")
-            )
-        ),
-        !form.seasons.length ? React.createElement("p", { className: "text-xs text-slate-500" }, "اختَر كارتون من البحث أعلاه حتى تُجلب المواسم والحلقات تلقائيًا.") :
-        React.createElement("div", null,
-            React.createElement(SlidingTabs, {
-                containerClassName: "flex gap-1.5 flex-wrap mb-5 bg-glass-900/80 p-1.5 rounded-2xl border border-white/5",
-                items: form.seasons.map((s, si) => ({
-                    key: String(si),
-                    render: () => React.createElement(React.Fragment, null,
-                        React.createElement(Icon, { name: "tv", className: "w-3.5 h-3.5" }), "الموسم ", s.number || si + 1,
-                        React.createElement("span", { className: "opacity-70" }, "(", (s.episodes || []).length, ")")
-                    )
-                })),
-                active: String(activeSeasonIdx),
-                onChange: k => { setActiveSeasonIdx(Number(k)); setEditingEpisodeIdx(null); },
-                trackClassName: "bg-accent-cyan shadow-[0_0_15px_rgba(0,240,255,0.4)]",
-                getButtonClassName: isActive => `flex items-center gap-1.5 text-xs px-4 py-2.5 rounded-xl font-bold ${isActive ? 'text-glass-950' : 'text-slate-300 hover:text-white hover:bg-white/5'}`
-            }),
-            activeSeason ? (editingEpisodeIdx === null ? React.createElement("div", { className: "glass-card rounded-2xl p-4 border border-white/10" },
-                React.createElement("div", { className: "flex items-start gap-4 mb-5 flex-wrap" },
-                    React.createElement("div", { className: "w-20 shrink-0" },
-                        React.createElement("div", { className: "aspect-[2/3] rounded-xl overflow-hidden bg-glass-950 border border-white/10 flex items-center justify-center" },
-                            activeSeason.poster ? React.createElement("img", { src: activeSeason.poster, className: "w-full h-full object-cover" }) : React.createElement(Icon, { name: "tv", className: "w-6 h-6 text-slate-600" })
-                        )
-                    ),
-                    React.createElement("div", { className: "flex-1 min-w-[220px] space-y-2.5" },
-                        React.createElement("div", { className: "flex items-center gap-2 flex-wrap" },
-                            React.createElement("span", { className: "text-xs font-bold text-slate-300" }, "رقم الموسم"),
-                            React.createElement("input", { type: "number", value: activeSeason.number, onChange: e => updateSeasonNumber(activeSeasonIdx, e.target.value), className: "w-16 bg-glass-950 border border-white/10 rounded-xl px-2 py-1.5 text-xs font-bold text-white text-center" }),
-                            React.createElement("span", { className: "text-xs font-bold text-slate-300 mr-1" }, "السنة"),
-                            React.createElement("input", { type: "number", value: activeSeason.year || '', onChange: e => updateSeasonField(activeSeasonIdx, 'year', e.target.value), className: "w-24 bg-glass-950 border border-white/10 rounded-xl px-2 py-1.5 text-xs font-bold text-white text-center" }),
-                            React.createElement("button", { type: "button", onClick: () => moveSeason(activeSeasonIdx, -1), disabled: activeSeasonIdx === 0, className: "w-8 h-8 rounded-lg glass-card border border-white/10 text-slate-300 disabled:opacity-30" }, React.createElement(Icon, { name: "arrowUp", className: "w-3.5 h-3.5" })),
-                            React.createElement("button", { type: "button", onClick: () => moveSeason(activeSeasonIdx, 1), disabled: activeSeasonIdx === form.seasons.length - 1, className: "w-8 h-8 rounded-lg glass-card border border-white/10 text-slate-300 disabled:opacity-30" }, React.createElement(Icon, { name: "arrowDown", className: "w-3.5 h-3.5" })),
-                            React.createElement("button", { type: "button", onClick: () => duplicateSeason(activeSeasonIdx), className: "w-8 h-8 rounded-lg glass-card border border-white/10 text-accent-cyan" }, React.createElement(Icon, { name: "copy", className: "w-3.5 h-3.5" })),
-                            React.createElement("button", { type: "button", onClick: () => removeSeason(activeSeasonIdx), className: "w-8 h-8 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400" }, React.createElement(Icon, { name: "trash-2", className: "w-3.5 h-3.5" }))
-                        ),
-                        React.createElement(FileUploadField, { compact: true, label: "بوستر الموسم", value: activeSeason.poster || '', onChange: v => updateSeasonField(activeSeasonIdx, 'poster', v), folder: "season-posters", accept: "image/*" }),
-                        React.createElement(FileUploadField, { compact: true, label: "صورة الحلقات لهذا الموسم", value: activeSeason.episodeThumbnail || '', onChange: v => updateSeasonField(activeSeasonIdx, 'episodeThumbnail', v), folder: "season-episode-thumbs", accept: "image/*" }),
-                        React.createElement("div", { className: "rounded-xl border border-white/10 p-3" },
-                            React.createElement("div", { className: "flex items-center justify-between gap-2 mb-2" },
-                                React.createElement("p", { className: "text-[11px] font-black text-slate-200" }, "بنرات الموسم"),
-                                React.createElement("button", { type: "button", onClick: fetchBanners, disabled: bannerLoading, className: "text-[10px] font-black text-accent-cyan hover:underline disabled:opacity-40" }, bannerLoading ? 'جاري...' : 'تحديث')
-                            ),
-                            React.createElement("div", { className: "flex gap-1.5 mb-2 flex-wrap" }, [['tmdb','TMDB'],['stills','لقطات الموسم'],['fanart','Fanart.tv']].map(([k,l]) => React.createElement("button", { type: "button", key: k, onClick: () => { setBannerSource(k); setShowAllBanners(false); }, className: `text-[10px] px-2.5 py-1.5 rounded-lg font-bold border ${bannerSource === k ? 'bg-accent-cyan text-glass-950 border-accent-cyan' : 'glass-card border-white/10 text-slate-300'}` }, l))),
-                            bannerError && React.createElement("p", { className: "text-rose-400 text-[10px] font-bold mb-2" }, bannerError),
-                            React.createElement("div", { className: "grid grid-cols-2 sm:grid-cols-4 gap-2" }, bannerOptionsFor(activeSeason.number).slice(0, showAllBanners ? 50 : 8).map(o => React.createElement("button", { type: "button", key: o.url, onClick: () => updateSeasonField(activeSeasonIdx, 'episodeThumbnail', o.url), className: `relative aspect-video rounded-lg overflow-hidden border-2 ${activeSeason.episodeThumbnail === o.url ? 'border-accent-cyan' : 'border-white/10'}` }, React.createElement("img", { src: o.url, alt: "", loading: "lazy", className: "w-full h-full object-cover" }), o.kind === 'season' && React.createElement("span", { className: "absolute bottom-1 right-1 text-[9px] px-1.5 py-0.5 rounded bg-black/70 text-white font-bold" }, "لهذا الموسم")))),
-                            bannerOptionsFor(activeSeason.number).length > 8 && React.createElement("button", { type: "button", onClick: () => setShowAllBanners(v => !v), className: "mt-2 text-[10px] font-bold text-accent-cyan hover:underline" }, showAllBanners ? 'عرض أقل' : `عرض الكل (${bannerOptionsFor(activeSeason.number).length})`)
-                        )
-                    )
-                ),
-                React.createElement("div", { className: "mt-4" },
-                    React.createElement("div", { className: "flex items-center justify-between mb-3 gap-2 flex-wrap" },
-                        React.createElement("p", { className: "text-[11px] font-black text-slate-300" }, "الحلقات"),
-                        React.createElement("button", { type: "button", onClick: () => { addEpisode(activeSeasonIdx); setEditingEpisodeIdx(activeSeason.episodes.length); }, className: "text-[11px] px-3 py-1.5 rounded-lg glass-card border border-white/10 text-slate-200" }, "+ حلقة")
-                    ),
-                    React.createElement("div", { className: "space-y-2" }, (activeSeason.episodes || []).map((e, ei) => React.createElement("div", { key: ei, className: "flex items-center gap-3 glass-panel rounded-xl p-2.5 border border-white/5 hover:border-white/10" },
-                        activeSeason.episodeThumbnail ? React.createElement("div", { className: "w-14 h-9 shrink-0 rounded-lg overflow-hidden bg-glass-950" }, React.createElement("img", { src: activeSeason.episodeThumbnail, className: "w-full h-full object-cover" })) : React.createElement("span", { className: "w-8 h-8 shrink-0 rounded-lg bg-glass-700 flex items-center justify-center text-xs font-black text-accent-cyan" }, e.number),
-                        React.createElement("div", { className: "flex-1 min-w-0" }, React.createElement("p", { className: "text-sm font-bold text-slate-100 truncate" }, React.createElement(BidiText, null, e.title || `الحلقة ${e.number}`)), React.createElement("p", { className: "text-[11px] text-slate-500 flex items-center gap-2 flex-wrap" }, e.videoUrl ? 'يوجد رابط CartoonDub' : 'بدون رابط', e.tmdbRating && React.createElement("span", { className: "text-amber-400 font-black" }, `★ ${e.tmdbRating}`), e.imdb && React.createElement("span", { className: "text-slate-300 font-black" }, `IMDb ${e.imdb}`), e.subtitleUrl && React.createElement("span", { className: "text-emerald-400 font-black" }, "· ترجمة عربية"))),
-                        React.createElement("button", { type: "button", onClick: () => resolveEpisode(activeSeasonIdx, ei), disabled: !!busy, className: "w-8 h-8 rounded-lg bg-accent-cyan/10 border border-accent-cyan/25 text-accent-cyan flex items-center justify-center text-[10px] font-black disabled:opacity-40" }, busy === `ep:${activeSeasonIdx}:${ei}` ? '…' : 'جلب'),
-                        React.createElement("button", { type: "button", onClick: () => moveEpisode(activeSeasonIdx, ei, -1), disabled: ei === 0, className: "w-8 h-8 rounded-lg glass-card border border-white/10 text-slate-300 disabled:opacity-30" }, React.createElement(Icon, { name: "arrowUp", className: "w-3.5 h-3.5" })),
-                        React.createElement("button", { type: "button", onClick: () => moveEpisode(activeSeasonIdx, ei, 1), disabled: ei === activeSeason.episodes.length - 1, className: "w-8 h-8 rounded-lg glass-card border border-white/10 text-slate-300 disabled:opacity-30" }, React.createElement(Icon, { name: "arrowDown", className: "w-3.5 h-3.5" })),
-                        React.createElement("button", { type: "button", onClick: () => duplicateEpisode(activeSeasonIdx, ei), className: "w-8 h-8 rounded-lg glass-card border border-white/10 text-accent-cyan" }, React.createElement(Icon, { name: "copy", className: "w-3.5 h-3.5" })),
-                        React.createElement("button", { type: "button", onClick: () => setEditingEpisodeIdx(ei), className: "w-8 h-8 rounded-lg bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan" }, React.createElement(Icon, { name: "pencil", className: "w-3.5 h-3.5" })),
-                        React.createElement("button", { type: "button", onClick: () => removeEpisode(activeSeasonIdx, ei), className: "w-8 h-8 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400" }, React.createElement(Icon, { name: "trash-2", className: "w-3.5 h-3.5" }))
-                    ))),
-                    React.createElement("button", { type: "button", onClick: () => { addEpisode(activeSeasonIdx); setEditingEpisodeIdx(activeSeason.episodes.length); }, className: "mt-3 flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl glass-card border border-white/10 text-slate-200 font-bold" }, React.createElement(Icon, { name: "plus", className: "w-3.5 h-3.5 text-accent-cyan" }), "إضافة حلقة جديدة")
-                )
-            ) : React.createElement(CartoonDubEpisodeEditor, {
-                episode: activeSeason.episodes[editingEpisodeIdx], seasonNumber: activeSeason.number,
-                sourceId: form.imdbId || form.tmdbId || sourceId, tmdbId: form.tmdbId || '', imdbId: form.imdbId || '',
-                seriesName: form.name, year: form.year,
-                onChange: ep => replaceEpisode(activeSeasonIdx, editingEpisodeIdx, ep),
-                onBack: () => setEditingEpisodeIdx(null),
-                onDelete: () => { removeEpisode(activeSeasonIdx, editingEpisodeIdx); setEditingEpisodeIdx(null); },
-                onResolve: () => resolveEpisode(activeSeasonIdx, editingEpisodeIdx),
-                resolving: busy === `ep:${activeSeasonIdx}:${editingEpisodeIdx}`
-            }) ) : null
-        )
-    ) : null;
-
-    const tmdbIdPanel = React.createElement("div", { className: "mb-5 rounded-2xl p-4 bg-accent-cyan/5 border border-accent-cyan/20" },
-        React.createElement("div", { className: "flex items-center justify-between gap-3 flex-wrap mb-3" },
-            React.createElement("div", null,
-                React.createElement("p", { className: "text-sm font-black text-white" }, "استيراد الكارتون من TMDB بالمعرف"),
-                React.createElement("p", { className: "text-[10px] text-slate-500 mt-1" }, "أدخل TMDB ID مثل 15260 لجلب الاسم، البوستر، الوصف، السنة، المخرج، المواسم والحلقات بدقة.")),
-            React.createElement("span", { className: "text-[9px] font-black text-accent-cyan border border-accent-cyan/30 rounded-full px-2 py-1" }, "TMDB ID")),
-        React.createElement("div", { className: "flex gap-2" },
-            React.createElement("input", { type: "number", min: "1", inputMode: "numeric", value: tmdbInput, onChange: e => setTmdbInput(e.target.value.replace(/\D/g, '')), onKeyDown: e => { if (e.key === 'Enter' && !tmdbInputBusy) importByTmdbId(); }, placeholder: "15260", className: "flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-accent-cyan", dir: "ltr" }),
-            React.createElement("button", { type: "button", onClick: importByTmdbId, disabled: tmdbInputBusy || !/^\d+$/.test(String(tmdbInput || '').trim()), className: "shrink-0 px-5 py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-xs font-black disabled:opacity-40" }, tmdbInputBusy ? 'جاري جلب TMDB...' : 'جلب من TMDB')),
-        form.tmdbId && React.createElement("p", { className: "text-[10px] text-emerald-400 font-bold mt-2" }, `TMDB مرتبط: ${form.tmdbId} — اختر نتيجة CartoonDub المطابقة أدناه ثم ستبقى بيانات TMDB كما هي.`));
-
-    return React.createElement("div", { className: "glass-panel rounded-3xl p-5 md:p-7 border border-white/10 shadow-2xl" },
-        tmdbIdPanel,
-        React.createElement(CartoonDubSearchImportPanel, { onPick: handlePick }),
-        React.createElement("div", { className: "grid md:grid-cols-2 gap-5" },
-            React.createElement("div", null, React.createElement("label", { className: labelCls }, "اسم العمل *"), React.createElement("input", { value: form.name, onChange: e => set('name', e.target.value), className: inputCls })),
-            React.createElement("div", null, React.createElement("label", { className: labelCls }, "النوع"), React.createElement("select", { value: form.type, onChange: e => set('type', e.target.value), className: inputCls }, React.createElement("option", { value: "movie", className: "bg-glass-950" }, "فيلم كرتون"), React.createElement("option", { value: "series", className: "bg-glass-950" }, "مسلسل كرتون"))),
-            React.createElement("div", null, React.createElement("label", { className: labelCls }, "TMDB ID"), React.createElement("input", { value: form.tmdbId || '', readOnly: true, className: `${inputCls} bg-glass-950 text-accent-cyan font-black` })),
-            React.createElement("div", null, React.createElement("label", { className: labelCls }, "IMDb ID"), React.createElement("input", { value: form.imdbId || '', readOnly: true, className: `${inputCls} bg-glass-950 text-accent-cyan font-black` })),
-            React.createElement("div", null, React.createElement("label", { className: labelCls }, "سنة الإصدار"), React.createElement("input", { type: "number", value: form.year || '', onChange: e => set('year', e.target.value), className: inputCls })),
-            React.createElement("div", null, React.createElement("label", { className: labelCls }, "التصنيفات"), React.createElement("input", { value: form.genresText || '', onChange: e => set('genresText', e.target.value), className: inputCls })),
-            React.createElement("div", null, React.createElement(FileUploadField, { label: "صورة البوستر", value: form.poster || '', onChange: v => set('poster', v), folder: "posters", accept: "image/*" })),
-            React.createElement("div", null, React.createElement(FileUploadField, { label: "صورة الخلفية", value: form.backdrop || '', onChange: v => set('backdrop', v), folder: "backdrops", accept: "image/*" })),
-            React.createElement("div", null, React.createElement("label", { className: labelCls }, "المخرج"), React.createElement("input", { value: form.director || '', onChange: e => set('director', e.target.value), className: inputCls })),
-            React.createElement("div", null, React.createElement("label", { className: labelCls }, "الكاتب"), React.createElement("input", { value: form.writer || '', onChange: e => set('writer', e.target.value), className: inputCls })),
-            React.createElement("div", null, React.createElement("label", { className: labelCls }, "تقييم IMDb"), React.createElement("input", { value: form.imdbRating || '', onChange: e => set('imdbRating', e.target.value), className: inputCls })),
-            React.createElement("div", null, React.createElement("label", { className: labelCls }, "تقييم TMDB"), React.createElement("input", { value: form.tmdbRating || '', onChange: e => set('tmdbRating', e.target.value), className: inputCls })),
-            React.createElement("div", null, React.createElement("label", { className: labelCls }, "تقييم Rotten Tomatoes"), React.createElement("input", { value: form.rtRating || '', onChange: e => set('rtRating', e.target.value), className: inputCls })),
-            React.createElement("div", { className: "md:col-span-2 mt-1" }, React.createElement("label", { className: labelCls }, "الوصف العربي"), React.createElement("textarea", { value: form.description || '', onChange: e => set('description', e.target.value), rows: 4, className: inputCls }))
-        ),
-        moviePanel,
-        seriesPanel,
-        React.createElement("div", { className: "flex items-center gap-6 mt-6 flex-wrap" },
-            React.createElement("label", { className: "flex items-center gap-2.5 text-sm font-bold text-slate-200 cursor-pointer" }, React.createElement("input", { type: "checkbox", checked: form.featured === true, onChange: e => set('featured', e.target.checked), className: "w-4 h-4 rounded accent-accent-cyan" }), "إظهار في العرض الرئيسي (Hero)"),
-            React.createElement("label", { className: "flex items-center gap-2.5 text-sm font-bold text-slate-200 cursor-pointer" }, React.createElement("input", { type: "checkbox", checked: form.status === 'published', onChange: e => set('status', e.target.checked ? 'published' : 'draft'), className: "w-4 h-4 rounded accent-accent-cyan" }), "نشر العمل للزوار مباشرة")
-        ),
-        form.featured && form.status !== 'published' && React.createElement("p", { className: "text-amber-400 text-xs font-bold mt-3" }, "تنبيه: العمل لن يظهر في العرض الرئيسي إلا إذا كان منشورًا أيضًا."),
-        message && React.createElement("p", { className: "text-accent-cyan text-xs font-bold mt-4 bg-accent-cyan/5 p-3 rounded-xl border border-accent-cyan/15" }, message),
-        error && React.createElement("p", { className: "text-rose-400 text-xs font-bold mt-4 bg-rose-500/10 p-3 rounded-xl border border-rose-500/20" }, error),
-        React.createElement("div", { className: "flex gap-3 mt-6 flex-wrap" },
-            React.createElement("button", { type: "button", onClick: () => save(false), disabled: !!busy, className: "px-6 py-3 rounded-2xl glass-card border border-white/10 text-sm font-bold text-slate-200 disabled:opacity-40" }, busy === 'save' ? 'جاري الحفظ...' : 'حفظ كمسودة'),
-            React.createElement("button", { type: "button", onClick: () => save(true), disabled: !!busy, className: "px-7 py-3 rounded-2xl bg-accent-cyan text-glass-950 font-black text-sm disabled:opacity-40" }, busy === 'save-publish' ? 'جاري الحفظ والنشر...' : 'حفظ ونشر الكارتون'),
-            React.createElement("button", { type: "button", onClick: onDone, className: "px-6 py-3 rounded-2xl bg-white/5 border border-white/10 text-sm font-bold text-slate-300" }, "إلغاء")
-        )
-    );
-
-}
-
 function AdminContentForm({ initial, defaultType, onDone }) {
     const [form, setForm] = useState(() => {
         if (!initial)
@@ -9248,52 +8001,17 @@ function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
         logAuditAction(currentUser, t.featured === true ? 'إزالة عمل من العرض الرئيسي' : 'إضافة عمل للعرض الرئيسي', t.name);
         showToast(t.featured === true ? 'تمت إزالة العمل من العرض الرئيسي' : 'تمت إضافة العمل للعرض الرئيسي');
     };
-    const regularTitles = titles.filter(t => !isCartoonTitle(t));
-    const cartoonTitles = titles.filter(isCartoonTitle);
-    const filteredTitles = regularTitles.filter(t => t.type === contentType && (!query.trim() || (t.name || '').toLowerCase().includes(query.trim().toLowerCase())));
-    const filteredCartoonTitles = cartoonTitles.filter(t => !query.trim() || (t.name || '').toLowerCase().includes(query.trim().toLowerCase()));
+    const filteredTitles = titles.filter(t => t.type === contentType && (!query.trim() || (t.name || '').toLowerCase().includes(query.trim().toLowerCase())));
     return (React.createElement("div", null,
         React.createElement("h1", { className: "text-2xl md:text-3xl font-black mb-6 text-slate-100" }, "\u0644\u0648\u062D\u0629 \u062A\u062D\u0643\u0645  "),
         React.createElement(SlidingTabs, { containerClassName: "flex gap-1.5 mb-6 flex-wrap bg-glass-900/80 p-1.5 rounded-2xl border border-white/5", items: [
-                { key: 'content', label: 'المحتوى (رفع)' },
-                { key: 'cartoon', label: `الكارتون (${cartoonTitles.length})` },
+                { key: 'content', label: 'المحتوى (رفع )' },
                 { key: 'complaints', label: 'الشكاوى والطلبات' },
                 ...(isFullAdmin ? [{ key: 'appeals', label: 'الطعون' }] : []),
                 ...(isFullAdmin ? [{ key: 'users', label: 'المستخدمون' }] : []),
                 ...(isFullAdmin ? [{ key: 'audit', label: 'سجل النشاط' }] : []),
-            ], active: tab, onChange: (k) => { setTab(k); if (k === 'content' || k === 'cartoon')
+            ], active: tab, onChange: (k) => { setTab(k); if (k === 'content')
                 setEditing(null); }, trackClassName: "bg-accent-cyan shadow-[0_0_15px_rgba(0,240,255,0.4)]", getButtonClassName: (isActive) => `px-5 py-2.5 rounded-xl text-sm font-bold ${isActive ? 'text-glass-950' : 'text-slate-300 hover:text-white hover:bg-white/5'}` }),
-        tab === 'cartoon' && (editing ? (React.createElement(CartoonDubAdminForm, { initial: editing === 'new' ? null : editing, currentUser: currentUser, onDone: () => setEditing(null) })) : (React.createElement("div", null,
-            React.createElement("div", { className: "glass-card rounded-2xl p-4 mb-5 border border-accent-cyan/20" },
-                React.createElement("div", { className: "flex items-center justify-between gap-3 flex-wrap" },
-                    React.createElement("div", null,
-                        React.createElement("p", { className: "text-sm font-black text-white" }, "قسم الكارتون"),
-                        React.createElement("p", { className: "text-[10px] text-slate-500 mt-1" }, "كل الأعمال هنا مربوطة بـ CartoonDub فقط. TMDB للمعلومات فقط.")),
-                    React.createElement("button", { onClick: () => setEditing('new'), className: "flex items-center gap-2 px-5 py-2.5 rounded-xl bg-accent-cyan text-glass-950 font-black text-xs" },
-                        React.createElement(Icon, { name: "plus", className: "w-4 h-4" }), "إضافة كارتون"))),
-            React.createElement("div", { className: "relative mb-4" },
-                React.createElement(Icon, { name: "search", className: "w-4 h-4 absolute top-1/2 -translate-y-1/2 right-3 text-slate-400" }),
-                React.createElement("input", { value: query, onChange: e => setQuery(e.target.value), placeholder: "بحث داخل الكارتون...", className: "w-full bg-glass-900 border border-white/10 rounded-2xl py-2.5 pr-9 pl-4 text-sm text-slate-100 outline-none focus:border-accent-cyan" })),
-            React.createElement("div", { className: "space-y-3" },
-                filteredCartoonTitles.length === 0 && React.createElement("p", { className: "text-sm text-slate-500 font-medium" }, "لا توجد أعمال كارتون مضافة بعد."),
-                filteredCartoonTitles.map(t => {
-                    const epCount = t.type === 'movie' ? 0 : (t.seasons || []).reduce((n, s) => n + (s.episodes || []).length, 0);
-                    const linked = t.type === 'movie' ? !!t.videoUrl : (t.seasons || []).reduce((n, s) => n + (s.episodes || []).filter(e => e.videoUrl).length, 0);
-                    return React.createElement("div", { key: t.id, className: "glass-card rounded-2xl p-4 border border-white/10 flex items-center gap-4 flex-wrap" },
-                        React.createElement("div", { className: "w-12 h-16 rounded-xl bg-glass-900 overflow-hidden shrink-0 border border-white/5" }, t.poster && React.createElement("img", { src: t.poster, className: "w-full h-full object-cover" })),
-                        React.createElement("div", { className: "flex-1 min-w-[160px]" },
-                            React.createElement("p", { className: "font-bold text-white text-base truncate" }, React.createElement("bdi", null, t.name)),
-                            React.createElement("p", { className: "text-xs text-slate-500 mt-1" }, t.type === 'movie' ? 'فيلم كرتون' : `مسلسل كرتون · ${epCount} حلقة`),
-                            React.createElement("p", { className: "text-[10px] text-accent-cyan mt-1 font-black" }, `CartoonDub · روابط ${linked}`)),
-                        React.createElement("span", { className: `text-[10px] px-2.5 py-1 rounded-full font-bold ${t.status === 'published' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-white/5 text-slate-400'}` }, t.status === 'published' ? 'منشور' : 'مسودة'),
-                        React.createElement("button", { onClick: () => toggleFeatured(t), title: "Hero", className: "w-9 h-9 rounded-xl glass-card border border-white/10 flex items-center justify-center text-slate-200" }, React.createElement(Icon, { name: "star", className: "w-4 h-4" })),
-                        React.createElement("button", { onClick: async () => { const next = t.status === 'published' ? 'draft' : 'published'; await db.ref(`titles/${t.id}/status`).set(next); logAuditAction(currentUser, next === 'published' ? 'نشر كارتون' : 'تحويل كارتون لمسودة', t.name); showToast(next === 'published' ? 'تم نشر الكارتون' : 'تم تحويل الكارتون لمسودة'); }, title: "تبديل حالة النشر", className: "w-9 h-9 rounded-xl glass-card border border-white/10 flex items-center justify-center text-slate-200" }, React.createElement(Icon, { name: "eye", className: "w-4 h-4" })),
-                        React.createElement("button", { onClick: () => setEditing(t), title: "تعديل", className: "w-9 h-9 rounded-xl glass-card border border-white/10 flex items-center justify-center text-slate-200" }, React.createElement(Icon, { name: "pencil", className: "w-4 h-4" })),
-                        React.createElement("button", { onClick: () => setDeleteTarget(t.id), title: "حذف", className: "w-9 h-9 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400" }, React.createElement(Icon, { name: "trash-2", className: "w-4 h-4" }))
-                    );
-                })
-            )
-        ))),
         tab === 'content' && (editing ? (React.createElement(AdminContentForm, { initial: editing === 'new' ? null : editing, defaultType: contentType, onDone: () => setEditing(null) })) : (React.createElement("div", null,
             React.createElement(SlidingTabs, { containerClassName: "flex gap-1.5 mb-5 bg-glass-900/80 p-1.5 rounded-2xl border border-white/5", items: [['movie', 'أفلام'], ['series', 'مسلسلات'], ['anime', 'أنمي']].map(([k, l]) => ({
                     key: k, render: () => (React.createElement(React.Fragment, null,
@@ -9301,7 +8019,7 @@ function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
                         " ",
                         React.createElement("span", { className: "opacity-70 text-xs" },
                             "(",
-                            regularTitles.filter(t => t.type === k).length,
+                            titles.filter(t => t.type === k).length,
                             ")")))
                 })), active: contentType, onChange: setContentType, trackClassName: "bg-accent-red shadow-[0_0_15px_rgba(255,51,75,0.4)]", getButtonClassName: (isActive) => `flex-1 px-4 py-2.5 rounded-xl text-sm font-bold ${isActive ? 'text-white' : 'text-slate-300 hover:text-white hover:bg-white/5'}` }),
             React.createElement("div", { className: "flex items-center gap-3 mb-6 flex-wrap" },
@@ -9780,7 +8498,7 @@ function App() {
         });
     }, []);
     const setView = (v) => {
-        const allowedViews = new Set(['home','movie','series','anime','cartoon','lists','requests','settings','profile','admin']);
+        const allowedViews = new Set(['home','movie','series','anime','lists','requests','settings','profile','admin']);
         if (!allowedViews.has(v)) v = 'home';
         if (v === 'admin') {
             if (!currentUser || !(currentUser.username === 'mavilovelife' || currentUser.isModerator)) {
@@ -9901,7 +8619,7 @@ function App() {
         React.createElement(Header, { currentUser: currentUser, view: view, setView: setView, search: search, setSearch: setSearch, onOpenAccount: () => setAccountSheet(true), onOpenProfile: openProfile, onOpenTitleFromNotif: (id) => { const t = titles.find(x => x.id === id && x.status === 'published'); if (t)
                 setActiveTitle(t); } }),
         React.createElement("main", { className: "flex-1 max-w-7xl w-full mx-auto px-4 py-6 md:py-8" },
-            React.createElement("div", { key: searching ? 'search' : view, className: "page-fade-in" }, searching ? (React.createElement(TypeGrid, { title: `نتائج البحث عن "${search}"`, items: mainList, onOpen: setActiveTitle, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0646\u062A\u0627\u0626\u062C \u0645\u0637\u0627\u0628\u0642\u0629.", watchedMap: watched })) : view === 'home' ? (React.createElement(HomeView, { items: published, onOpen: openTitleFromContinue, watchedMap: watched, watchProgress: watchProgress })) : (view === 'movie' || view === 'series' || view === 'anime') ? (React.createElement(TypeGrid, { title: TYPE_PLURAL[view], items: published.filter(t => t.type === view && !isCartoonTitle(t)), onOpen: setActiveTitle, showGenreFilter: true, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u0628\u0639\u062F.", watchedMap: watched })) : view === 'cartoon' ? (React.createElement(TypeGrid, { title: 'الكارتون', items: published.filter(isCartoonTitle), onOpen: setActiveTitle, showGenreFilter: true, emptyText: "\u0644\u0627 \u062a\u0648\u062c\u062f \u0623\u0639\u0645\u0627\u0644 \u0643\u0627\u0631\u062a\u0648\u0646 \u0641\u064a \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u0628\u0639\u062f.", watchedMap: watched })) : view === 'lists' ? (React.createElement(ListsView, { currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal })) : view === 'requests' ? (React.createElement(RequestsView, { currentUser: currentUser, onOpenAuth: setAuthModal })) : view === 'settings' ? (React.createElement(SettingsView, { currentUser: currentUser, onUpdateName: handleUpdateName, onUpdateAvatar: handleUpdateAvatar, onOpenAuth: setAuthModal })) : view === 'profile' ? (React.createElement(ProfileView, { username: profileTarget, currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal, onOpenProfile: openProfile })) : view === 'admin' ? (React.createElement(AdminPanel, { currentUser: currentUser, titles: titles, onOpenAuth: setAuthModal, moderators: moderators })) : null)),
+            React.createElement("div", { key: searching ? 'search' : view, className: "page-fade-in" }, searching ? (React.createElement(TypeGrid, { title: `نتائج البحث عن "${search}"`, items: mainList, onOpen: setActiveTitle, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0646\u062A\u0627\u0626\u062C \u0645\u0637\u0627\u0628\u0642\u0629.", watchedMap: watched })) : view === 'home' ? (React.createElement(HomeView, { items: published, onOpen: openTitleFromContinue, watchedMap: watched, watchProgress: watchProgress })) : (view === 'movie' || view === 'series' || view === 'anime') ? (React.createElement(TypeGrid, { title: TYPE_PLURAL[view], items: published.filter(t => t.type === view), onOpen: setActiveTitle, showGenreFilter: true, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u0628\u0639\u062F.", watchedMap: watched })) : view === 'lists' ? (React.createElement(ListsView, { currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal })) : view === 'requests' ? (React.createElement(RequestsView, { currentUser: currentUser, onOpenAuth: setAuthModal })) : view === 'settings' ? (React.createElement(SettingsView, { currentUser: currentUser, onUpdateName: handleUpdateName, onUpdateAvatar: handleUpdateAvatar, onOpenAuth: setAuthModal })) : view === 'profile' ? (React.createElement(ProfileView, { username: profileTarget, currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal, onOpenProfile: openProfile })) : view === 'admin' ? (React.createElement(AdminPanel, { currentUser: currentUser, titles: titles, onOpenAuth: setAuthModal, moderators: moderators })) : null)),
         React.createElement(MobileBottomNav, { view: view, setView: setView }),
         React.createElement(ToastHost, null),
         activeTitle && (React.createElement(TitleModal, { title: activeTitle, allTitles: published, currentUser: currentUser, liked: likedIds.includes(activeTitle.id), getRole: getRole, onLike: () => toggleLike(activeTitle), onClose: () => { setActiveTitle(null); if (new URLSearchParams(location.search).get('t'))
