@@ -49,7 +49,166 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
-  <script src="./cartoondub-engine.js"></script>
+  <!-- CartoonDub engine embedded to avoid a separate-file 404 blocking the boot screen. -->
+  <script>
+/*
+ * CartoonDub web adapter
+ * Source-derived from the CartoonDub CloudStream provider in cs-cinemana.
+ * The browser talks only to the Cinemana proxy; the proxy talks to the
+ * CartoonDub cards API and optionally proxies the final R2 MP4 for playback.
+ */
+(function () {
+  'use strict';
+
+  const DEFAULT_PUBLIC_PROXY = 'https://api.cinadam.xyz';
+  const DEFAULT_LOCAL_PROXY = 'http://localhost:8787';
+
+  const getProxyCandidates = () => {
+    const out = [];
+    const add = (v) => {
+      const s = String(v || '').trim().replace(/\/$/, '');
+      if (s && !out.includes(s)) out.push(s);
+    };
+    const explicit = (typeof window !== 'undefined' && (
+      window.CARTOONDUB_PROXY_URL ||
+      window.CINEMANA_PROXY_URL ||
+      window.CINEMANA_PROXY
+    )) || '';
+    add(explicit);
+
+    try {
+      const host = String(location.hostname || '').toLowerCase();
+      const isLocal = host === 'localhost' || host === '127.0.0.1';
+      const isLan = /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(host);
+      if (isLocal || isLan) add(`http://${host}:8787`);
+      else if (!host) add(DEFAULT_LOCAL_PROXY);
+    } catch (_) {}
+
+    add(DEFAULT_PUBLIC_PROXY);
+    return out;
+  };
+
+  const getProxyBase = () => getProxyCandidates()[0] || DEFAULT_PUBLIC_PROXY;
+
+  const timeoutFetch = async (url, options = {}, timeoutMs = 25000) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  const proxyJson = async (path, params) => {
+    const usp = new URLSearchParams();
+    Object.entries(params || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && String(v).trim() !== '') usp.set(k, String(v));
+    });
+    let last = null;
+    for (const base of getProxyCandidates()) {
+      const url = `${base}${path}${usp.toString() ? `?${usp}` : ''}`;
+      try {
+        const r = await timeoutFetch(url, { headers: { Accept: 'application/json' } }, 30000);
+        let data = null;
+        try { data = await r.json(); } catch (_) {}
+        if (r.ok && data && data.ok !== false) return data;
+        last = new Error((data && data.error) || `CartoonDub proxy HTTP ${r.status}`);
+      } catch (e) { last = e; }
+    }
+    throw last || new Error('تعذر الاتصال ببروكسي CartoonDub');
+  };
+
+  const normalizeSource = (s) => {
+    if (!s || !s.url) return null;
+    const direct = String(s.url).trim();
+    if (!/^https?:\/\//i.test(direct)) return null;
+    return {
+      url: direct,
+      provider: 'cartoondub',
+      name: s.name || 'CartoonDub',
+      label: s.label || 'MP4',
+      quality: s.quality ?? s.resolution ?? '',
+      resolution: Number(s.resolution) || 0,
+      type: 'mp4',
+      subtitleUrl: s.subtitleUrl || '',
+    };
+  };
+
+  const viaProxy = (rawUrl) => {
+    const base = getProxyBase();
+    return `${base}/cartoondub/proxy?url=${encodeURIComponent(String(rawUrl || ''))}`;
+  };
+
+  async function resolveMovie(meta = {}) {
+    const data = await proxyJson('/cartoondub/resolve/movie', {
+      title: meta.name || meta.title || meta.originalTitle || '',
+      originalTitle: meta.originalTitle || meta.original_name || '',
+      year: meta.year || meta.releaseYear || '',
+      tmdb: meta.tmdbId || meta.tmdb || '',
+      cartoondubId: meta.cartoondubId || '',
+      sectionId: meta.cartoondubSectionId || meta.sectionId || '',
+      target: meta.cartoondubTarget || meta.target || '',
+    });
+    const sources = (data.sources || []).map(normalizeSource).filter(Boolean).map(s => ({
+      ...s,
+      rawUrl: s.url,
+      url: viaProxy(s.url),
+    }));
+    if (!sources.length) throw new Error(data.error || 'CartoonDub لم يرجّع رابط تشغيل');
+    return {
+      ...data,
+      sources,
+      url: sources[0].url,
+      provider: 'cartoondub',
+    };
+  }
+
+  async function resolveEpisode(meta = {}, seasonNumber = 1, episodeNumber = 1) {
+    const data = await proxyJson('/cartoondub/resolve/episode', {
+      title: meta.name || meta.title || meta.seriesTitle || meta.originalTitle || '',
+      originalTitle: meta.originalTitle || meta.original_name || '',
+      year: meta.year || '',
+      tmdb: meta.tmdbId || meta.tmdb || '',
+      season: Number(seasonNumber) || 1,
+      episode: Number(episodeNumber) || 1,
+      cartoondubId: meta.cartoondubId || '',
+      sectionId: meta.cartoondubSectionId || meta.sectionId || '',
+      target: meta.cartoondubTarget || meta.target || '',
+    });
+    const sources = (data.sources || []).map(normalizeSource).filter(Boolean).map(s => ({
+      ...s,
+      rawUrl: s.url,
+      url: viaProxy(s.url),
+    }));
+    if (!sources.length) throw new Error(data.error || 'CartoonDub لم يرجّع رابط تشغيل للحلقة');
+    return {
+      ...data,
+      sources,
+      url: sources[0].url,
+      provider: 'cartoondub',
+    };
+  }
+
+  async function health() {
+    return proxyJson('/cartoondub/health', {});
+  }
+
+  function isCartoonDubUrl(url) {
+    const s = String(url || '');
+    return /\/cartoondub\/proxy(?:[/?#]|$)/i.test(s) || /pub-b534f19ddae84293ae0e0fb360695fcf\.r2\.dev/i.test(s);
+  }
+
+  window.CartoonDubEngine = {
+    getProxyBase,
+    resolveMovie,
+    resolveEpisode,
+    health,
+    isCartoonDubUrl,
+    viaProxy,
+  };
+})();
+  </script>
 
   <style>
     html { scroll-behavior: smooth; }
@@ -8724,3 +8883,1059 @@ function AdminComplaints({ currentUser }) {
         const text = (replyDrafts[c.id] || '').trim();
         if (!text)
             return;
+        setSavingReplyId(c.id);
+        try {
+            await db.ref(`complaints/${c.id}`).update({ reply: text, replyDate: Date.now(), replyBy: (currentUser && currentUser.name) || 'الإدارة', status: 'resolved' });
+            setReplyDrafts(prev => ({ ...prev, [c.id]: '' }));
+        }
+        finally {
+            setSavingReplyId(null);
+        }
+    };
+    if (!list.length)
+        return React.createElement("p", { className: "text-sm text-slate-500 font-medium" }, "\u0644\u0627 \u062A\u0648\u062C\u062F \u0634\u0643\u0627\u0648\u0649 \u0623\u0648 \u0637\u0644\u0628\u0627\u062A \u062D\u0627\u0644\u064A\u064B\u0627.");
+    return (React.createElement("div", { className: "space-y-3" },
+        list.map(c => (React.createElement("div", { key: c.id, className: "glass-card rounded-2xl p-4 border border-white/10" },
+            React.createElement("div", { className: "flex items-start justify-between gap-4" },
+                React.createElement("div", { className: "min-w-0" },
+                    React.createElement("p", { className: "text-xs text-accent-cyan font-bold mb-1.5" },
+                        COMPLAINT_TYPES[c.type] || c.type,
+                        c.titleName ? ` · ${c.titleName}` : ''),
+                    React.createElement("p", { className: "text-sm text-slate-200 leading-relaxed" }, c.message),
+                    React.createElement("p", { className: "text-[10px] text-slate-500 font-mono mt-2" },
+                        "\u0645\u0646 ",
+                        c.name,
+                        " (@",
+                        c.username,
+                        ") \u00B7 ",
+                        fmtDateTime(c.date))),
+                React.createElement("span", { className: `text-[11px] px-3 py-1 rounded-full font-bold shrink-0 ${c.status === 'resolved' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}` }, c.status === 'resolved' ? 'تم الحل' : 'قيد المراجعة')),
+            c.reply && (React.createElement("div", { className: "mt-3 pt-3 border-t border-white/10" },
+                React.createElement("p", { className: "text-[11px] font-bold text-emerald-400 mb-1" }, "\u0631\u062F\u0643 \u0627\u0644\u0633\u0627\u0628\u0642:"),
+                React.createElement("p", { className: "text-sm text-slate-300" }, c.reply))),
+            React.createElement("div", { className: "flex gap-2 mt-3" },
+                React.createElement("input", { value: replyDrafts[c.id] || '', onChange: e => setReplyDrafts(prev => ({ ...prev, [c.id]: e.target.value })), placeholder: c.reply ? 'تعديل الرد...' : 'اكتب ردًا يظهر للمستخدم...', className: "flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan" }),
+                React.createElement("button", { onClick: () => sendReply(c), disabled: savingReplyId === c.id, className: "shrink-0 px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 text-xs font-bold hover:brightness-110 transition disabled:opacity-50" }, savingReplyId === c.id ? '...' : 'إرسال الرد')),
+            React.createElement("div", { className: "flex gap-2.5 mt-3" },
+                React.createElement("button", { onClick: () => toggleStatus(c), className: "flex items-center gap-1.5 px-4 py-2 rounded-xl glass-card border border-white/10 hover:border-accent-cyan text-xs font-bold text-slate-200 transition" },
+                    React.createElement(Icon, { name: "check", className: "w-3.5 h-3.5 text-emerald-400" }),
+                    c.status === 'resolved' ? 'إعادة فتح' : 'تحديد كمحلول'),
+                React.createElement("button", { onClick: () => setDeleteTarget(c.id), className: "flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 text-xs font-bold transition" },
+                    React.createElement(Icon, { name: "trash-2", className: "w-3.5 h-3.5" }),
+                    "\u062D\u0630\u0641"))))),
+        deleteTarget && (React.createElement(ConfirmDialog, { title: "\u062D\u0630\u0641 \u0647\u0630\u0627 \u0627\u0644\u0637\u0644\u0628\u061F", body: "\u0644\u0627 \u064A\u0645\u0643\u0646 \u0627\u0644\u062A\u0631\u0627\u062C\u0639 \u0639\u0646 \u0647\u0630\u0627 \u0627\u0644\u0625\u062C\u0631\u0627\u0621.", confirmLabel: "\u0646\u0639\u0645\u060C \u0627\u062D\u0630\u0641", cancelLabel: "\u0625\u0644\u063A\u0627\u0621", onCancel: () => setDeleteTarget(null), onConfirm: () => remove(deleteTarget) }))));
+}
+function AdminAppeals({ currentUser }) {
+    const [list, setList] = useState([]);
+    const [busyId, setBusyId] = useState(null);
+    useEffect(() => {
+        const ref = db.ref('appeals');
+        const cb = snap => {
+            const data = snap.val();
+            const arr = data ? Object.keys(data).map(k => ({ id: k, ...data[k] })) : [];
+            arr.sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0));
+            setList(arr);
+        };
+        ref.on('value', cb);
+        return () => ref.off('value', cb);
+    }, []);
+    const decide = async (appeal, approve) => {
+        setBusyId(appeal.id);
+        try {
+            if (approve) {
+                const snap = await db.ref('users').orderByChild('username').equalTo(appeal.username).once('value');
+                const data = snap.val() || {};
+                const key = Object.keys(data)[0];
+                if (key) {
+                    if (appeal.type === 'deleted')
+                        await db.ref(`users/${key}`).update({ deleted: false, deletedAt: null });
+                    else
+                        await db.ref(`users/${key}`).update({ banned: false, banReason: null, banUntil: null });
+                }
+            }
+            await db.ref(`appeals/${appeal.id}`).update({ status: approve ? 'approved' : 'rejected', respondedAt: Date.now() });
+            logAuditAction(currentUser, approve ? 'الموافقة على طعن' : 'رفض طعن', `@${appeal.username}`);
+        }
+        finally {
+            setBusyId(null);
+        }
+    };
+    if (!list.length)
+        return React.createElement("p", { className: "text-sm text-slate-500 font-medium" }, "\u0644\u0627 \u062A\u0648\u062C\u062F \u0637\u0639\u0648\u0646 \u062D\u0627\u0644\u064A\u064B\u0627.");
+    return (React.createElement("div", { className: "space-y-3" }, list.map(a => (React.createElement("div", { key: a.id, className: "glass-card rounded-2xl p-4 border border-white/10" },
+        React.createElement("div", { className: "flex items-start justify-between gap-4" },
+            React.createElement("div", { className: "min-w-0" },
+                React.createElement("p", { className: "text-xs text-accent-cyan font-bold mb-1.5" },
+                    "\u0637\u0639\u0646 \u0639\u0644\u0649 \u062D\u0633\u0627\u0628 @",
+                    a.username,
+                    " \u00B7 ",
+                    a.type === 'deleted' ? 'حساب محذوف' : 'حساب محظور'),
+                React.createElement("p", { className: "text-sm text-slate-200 leading-relaxed" }, a.reason),
+                React.createElement("p", { className: "text-[10px] text-slate-500 font-mono mt-2" },
+                    "\u0642\u064F\u062F\u0651\u0645 \u0628\u062A\u0627\u0631\u064A\u062E ",
+                    fmtDateTime(a.submittedAt),
+                    a.respondedAt ? ` · تم الرد بتاريخ ${fmtDateTime(a.respondedAt)}` : '')),
+            React.createElement("span", { className: `text-[11px] px-3 py-1 rounded-full font-bold shrink-0 ${a.status === 'approved' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : a.status === 'rejected' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}` }, a.status === 'approved' ? 'تمت الموافقة' : a.status === 'rejected' ? 'مرفوض' : 'قيد المراجعة')),
+        a.status === 'pending' && (React.createElement("div", { className: "flex gap-2.5 mt-3" },
+            React.createElement("button", { onClick: () => decide(a, true), disabled: busyId === a.id, className: "flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold transition disabled:opacity-50" },
+                React.createElement(Icon, { name: "check", className: "w-3.5 h-3.5" }),
+                "\u0642\u0628\u0648\u0644 \u0627\u0644\u0637\u0639\u0646 \u0648\u0627\u0633\u062A\u0639\u0627\u062F\u0629 \u0627\u0644\u062D\u0633\u0627\u0628"),
+            React.createElement("button", { onClick: () => decide(a, false), disabled: busyId === a.id, className: "flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 text-xs font-bold transition disabled:opacity-50" },
+                React.createElement(Icon, { name: "x", className: "w-3.5 h-3.5" }),
+                "\u0631\u0641\u0636 \u0627\u0644\u0637\u0639\u0646"))))))));
+}
+function BanDialog({ user, onCancel, onConfirm }) {
+    const [reason, setReason] = useState('');
+    const [kind, setKind] = useState('permanent');
+    const [days, setDays] = useState(7);
+    const [error, setError] = useState('');
+    const [closing, requestClose] = useClosable(onCancel, 240);
+    const [closingConfirm, setClosingConfirm] = useState(false);
+    const confirm = () => {
+        if (!reason.trim()) {
+            setError('كتابة سبب الحظر إلزامية.');
+            return;
+        }
+        const until = kind === 'temporary' ? Date.now() + (Number(days) || 1) * 86400000 : null;
+        setClosingConfirm(true);
+        setTimeout(() => onConfirm(reason.trim(), until), 240);
+    };
+    const isClosing = closing || closingConfirm;
+    return (React.createElement("div", { className: `${isClosing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4`, onClick: requestClose },
+        React.createElement("div", { onClick: e => e.stopPropagation(), className: `${isClosing ? 'modal-panel-out' : 'modal-panel'} glass-panel border border-white/10 rounded-3xl max-w-sm w-full p-6 shadow-2xl` },
+            React.createElement("h3", { className: "font-black text-lg text-white mb-1" },
+                "\u062D\u0638\u0631 @",
+                user.username),
+            React.createElement("p", { className: "text-xs text-slate-400 mb-4" }, "\u0643\u062A\u0627\u0628\u0629 \u0627\u0644\u0633\u0628\u0628 \u0625\u0644\u0632\u0627\u0645\u064A\u0629 \u0648\u064A\u0638\u0647\u0631 \u0644\u0644\u0645\u0633\u062A\u062E\u062F\u0645 \u0639\u0646\u062F \u0645\u062D\u0627\u0648\u0644\u0629 \u0627\u0644\u062F\u062E\u0648\u0644."),
+            React.createElement("textarea", { value: reason, onChange: e => setReason(e.target.value), rows: 3, placeholder: "\u0633\u0628\u0628 \u0627\u0644\u062D\u0638\u0631 (\u0625\u0644\u0632\u0627\u0645\u064A)...", className: "w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition shadow-inner mb-3" }),
+            React.createElement("div", { className: "flex gap-2.5 mb-3" },
+                React.createElement("button", { onClick: () => setKind('permanent'), className: `flex-1 py-2.5 rounded-xl text-xs font-bold transition ${kind === 'permanent' ? 'bg-rose-500 text-white' : 'glass-card border border-white/10 text-slate-300'}` }, "\u062F\u0627\u0626\u0645"),
+                React.createElement("button", { onClick: () => setKind('temporary'), className: `flex-1 py-2.5 rounded-xl text-xs font-bold transition ${kind === 'temporary' ? 'bg-rose-500 text-white' : 'glass-card border border-white/10 text-slate-300'}` }, "\u0645\u0624\u0642\u062A")),
+            kind === 'temporary' && (React.createElement("div", { className: "flex items-center gap-2.5 mb-3" },
+                React.createElement("input", { type: "number", min: "1", value: days, onChange: e => setDays(e.target.value), className: "w-20 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-white text-center" }),
+                React.createElement("span", { className: "text-xs text-slate-400 font-bold" }, "\u064A\u0648\u0645 \u0645\u0646 \u0627\u0644\u0622\u0646"))),
+            error && React.createElement("p", { className: "text-rose-400 text-xs font-bold mb-3 bg-rose-500/10 p-2.5 rounded-xl border border-rose-500/20" }, error),
+            React.createElement("div", { className: "flex gap-3" },
+                React.createElement("button", { onClick: requestClose, className: "flex-1 py-2.5 rounded-xl glass-card border border-white/10 text-sm font-bold text-slate-300 hover:bg-white/5 transition" }, "\u0625\u0644\u063A\u0627\u0621"),
+                React.createElement("button", { onClick: confirm, className: "flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-sm font-bold text-white transition" }, "\u062A\u0623\u0643\u064A\u062F \u0627\u0644\u062D\u0638\u0631")))));
+}
+function AppealModal({ username, type, message, outcomeOnly, initialStage, onClose }) {
+    const [closing, requestClose] = useClosable(onClose, 260);
+    const [stage, setStage] = useState(initialStage || 'notice');
+    const [reason, setReason] = useState('');
+    const [submitting, setSubmitting] = useState(false);
+    const [error, setError] = useState('');
+    const send = async () => {
+        if (!reason.trim()) {
+            setError('الرجاء كتابة سبب توضيحي للطعن.');
+            return;
+        }
+        setSubmitting(true);
+        setError('');
+        try {
+            const res = await submitAppeal(username, type, reason.trim());
+            setStage(res.alreadyPending ? 'pending' : 'submitted');
+        }
+        catch (e) {
+            setError('حدث خطأ، حاول مرة أخرى.');
+        }
+        setSubmitting(false);
+    };
+    return (React.createElement("div", { className: `${closing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4`, onClick: stage === 'form' ? undefined : requestClose },
+        React.createElement("div", { onClick: e => e.stopPropagation(), className: `${closing ? 'modal-panel-out' : 'modal-panel'} glass-panel border border-white/10 rounded-3xl max-w-sm w-full p-6 shadow-2xl` },
+            stage === 'notice' && (React.createElement(React.Fragment, null,
+                React.createElement("h3", { className: "font-black text-lg text-white mb-2" }, "\u0625\u0634\u0639\u0627\u0631 \u0628\u062E\u0635\u0648\u0635 \u062D\u0633\u0627\u0628\u0643"),
+                React.createElement("p", { className: "text-sm text-slate-300 leading-relaxed mb-5" }, message),
+                outcomeOnly ? (React.createElement("button", { onClick: requestClose, className: "w-full py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-sm font-bold hover:brightness-110 transition" }, "\u062D\u0633\u0646\u064B\u0627")) : (React.createElement("div", { className: "flex gap-3" },
+                    React.createElement("button", { onClick: () => setStage('form'), className: "flex-1 py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-sm font-bold hover:brightness-110 transition" }, "\u062A\u0642\u062F\u064A\u0645 \u0637\u0639\u0646"),
+                    React.createElement("button", { onClick: requestClose, className: "flex-1 py-2.5 rounded-xl glass-card border border-white/10 text-sm font-bold text-slate-300 hover:bg-white/5 transition" }, "\u0625\u063A\u0644\u0627\u0642"))))),
+            stage === 'form' && (React.createElement(React.Fragment, null,
+                React.createElement("h3", { className: "font-black text-lg text-white mb-2" }, "\u062A\u0642\u062F\u064A\u0645 \u0637\u0639\u0646"),
+                React.createElement("p", { className: "text-xs text-slate-400 mb-3" }, "\u0627\u0643\u062A\u0628 \u0633\u0628\u0628\u064B\u0627 \u062A\u0648\u0636\u064A\u062D\u064A\u064B\u0627 \u064A\u0648\u0636\u062D \u0644\u0645\u0627\u0630\u0627 \u062A\u0639\u062A\u0642\u062F \u0623\u0646 \u0647\u0630\u0627 \u0627\u0644\u0625\u062C\u0631\u0627\u0621 \u063A\u064A\u0631 \u0635\u062D\u064A\u062D. \u0633\u064A\u062A\u0645 \u0627\u0644\u0631\u062F \u0639\u0644\u0649 \u0637\u0639\u0646\u0643 \u062E\u0644\u0627\u0644 \u064A\u0648\u0645\u064A\u0646 \u0643\u062D\u062F \u0623\u0642\u0635\u0649."),
+                React.createElement("textarea", { value: reason, onChange: e => setReason(e.target.value), rows: 4, placeholder: "\u0633\u0628\u0628 \u0627\u0644\u0637\u0639\u0646...", className: "w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition shadow-inner mb-3" }),
+                error && React.createElement("p", { className: "text-rose-400 text-xs font-bold mb-3 bg-rose-500/10 p-2.5 rounded-xl border border-rose-500/20" }, error),
+                React.createElement("div", { className: "flex gap-3" },
+                    React.createElement("button", { onClick: send, disabled: submitting, className: "flex-1 py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-sm font-bold hover:brightness-110 transition disabled:opacity-50" }, submitting ? '...' : 'إرسال الطعن'),
+                    React.createElement("button", { onClick: requestClose, className: "flex-1 py-2.5 rounded-xl glass-card border border-white/10 text-sm font-bold text-slate-300 hover:bg-white/5 transition" }, "\u0625\u0644\u063A\u0627\u0621")))),
+            stage === 'submitted' && (React.createElement(React.Fragment, null,
+                React.createElement("h3", { className: "font-black text-lg text-white mb-2" }, "\u062A\u0645 \u0625\u0631\u0633\u0627\u0644 \u0637\u0639\u0646\u0643"),
+                React.createElement("p", { className: "text-sm text-slate-300 leading-relaxed mb-5" }, "\u0633\u064A\u062A\u0645 \u0645\u0631\u0627\u062C\u0639\u0629 \u0637\u0639\u0646\u0643 \u0648\u0627\u0644\u0631\u062F \u0639\u0644\u064A\u0647 \u062E\u0644\u0627\u0644 \u064A\u0648\u0645\u064A\u0646 \u0643\u062D\u062F \u0623\u0642\u0635\u0649."),
+                React.createElement("button", { onClick: requestClose, className: "w-full py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-sm font-bold hover:brightness-110 transition" }, "\u062D\u0633\u0646\u064B\u0627"))),
+            stage === 'pending' && (React.createElement(React.Fragment, null,
+                React.createElement("h3", { className: "font-black text-lg text-white mb-2" }, "\u0644\u062F\u064A\u0643 \u0637\u0639\u0646 \u0642\u064A\u062F \u0627\u0644\u0645\u0631\u0627\u062C\u0639\u0629"),
+                React.createElement("p", { className: "text-sm text-slate-300 leading-relaxed mb-5" }, "\u0637\u0639\u0646\u0643 \u0627\u0644\u0633\u0627\u0628\u0642 \u0644\u0627 \u064A\u0632\u0627\u0644 \u0642\u064A\u062F \u0627\u0644\u0645\u0631\u0627\u062C\u0639\u0629 \u0645\u0646 \u0642\u0650\u0628\u0644 \u0627\u0644\u0625\u062F\u0627\u0631\u0629\u060C \u0648\u0633\u064A\u062A\u0645 \u0627\u0644\u0631\u062F \u0639\u0644\u064A\u0647 \u062E\u0644\u0627\u0644 \u064A\u0648\u0645\u064A\u0646 \u0643\u062D\u062F \u0623\u0642\u0635\u0649."),
+                React.createElement("button", { onClick: requestClose, className: "w-full py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-sm font-bold hover:brightness-110 transition" }, "\u062D\u0633\u0646\u064B\u0627"))))));
+}
+function AdminUsers({ currentUser }) {
+    const [list, setList] = useState([]);
+    const [query, setQuery] = useState('');
+    const [deleteTarget, setDeleteTarget] = useState(null);
+    const [banTarget, setBanTarget] = useState(null);
+    const [busyId, setBusyId] = useState(null);
+    useEffect(() => {
+        const ref = db.ref('users');
+        const cb = snap => {
+            const data = snap.val();
+            const arr = data ? Object.keys(data).map(k => ({ id: k, ...data[k] })) : [];
+            arr.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+            setList(arr);
+        };
+        ref.on('value', cb);
+        return () => ref.off('value', cb);
+    }, []);
+    const toggleModerator = async (u) => {
+        setBusyId(u.id);
+        const next = !u.isModerator;
+        try {
+            await db.ref(`users/${u.id}/isModerator`).set(next);
+            await db.ref(`moderators/${sanitizeKey(u.username)}`).set(next ? true : null);
+            logAuditAction(currentUser, next ? 'منح شارة إشراف' : 'إزالة شارة إشراف', `@${u.username}`);
+        }
+        finally {
+            setBusyId(null);
+        }
+    };
+    const confirmBan = async (reason, until) => {
+        const u = banTarget;
+        setBusyId(u.id);
+        try {
+            await db.ref(`users/${u.id}`).update({ banned: true, banReason: reason, banUntil: until });
+            logAuditAction(currentUser, 'حظر مستخدم', `@${u.username} — ${reason}${until ? ' (مؤقت إلى ' + fmtDateTime(until) + ')' : ' (دائم)'}`);
+        }
+        finally {
+            setBusyId(null);
+            setBanTarget(null);
+        }
+    };
+    const unban = async (u) => {
+        setBusyId(u.id);
+        try {
+            await db.ref(`users/${u.id}`).update({ banned: false, banReason: null, banUntil: null });
+            logAuditAction(currentUser, 'إلغاء حظر مستخدم', `@${u.username}`);
+        }
+        finally {
+            setBusyId(null);
+        }
+    };
+    const removeUser = async (u) => {
+        await db.ref(`users/${u.id}`).update({ deleted: true, deletedAt: Date.now() });
+        if (u.isModerator)
+            await db.ref(`moderators/${sanitizeKey(u.username)}`).remove();
+        logAuditAction(currentUser, 'حذف حساب مستخدم', `@${u.username}`);
+        setDeleteTarget(null);
+    };
+    const restoreUser = async (u) => {
+        setBusyId(u.id);
+        try {
+            await db.ref(`users/${u.id}`).update({ deleted: false, deletedAt: null });
+            logAuditAction(currentUser, 'استعادة حساب مستخدم', `@${u.username}`);
+        }
+        finally {
+            setBusyId(null);
+        }
+    };
+    const filtered = query.trim()
+        ? list.filter(u => (u.username || '').toLowerCase().includes(query.trim().toLowerCase()) || (u.name || '').toLowerCase().includes(query.trim().toLowerCase()))
+        : list;
+    return (React.createElement("div", null,
+        React.createElement("input", { value: query, onChange: e => setQuery(e.target.value), placeholder: "\u0628\u062D\u062B \u0628\u0627\u0644\u0627\u0633\u0645 \u0623\u0648 \u0627\u0633\u0645 \u0627\u0644\u0645\u0633\u062A\u062E\u062F\u0645...", className: "w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-slate-100 outline-none focus:border-accent-cyan transition shadow-inner mb-5" }),
+        filtered.length === 0 ? (React.createElement("p", { className: "text-sm text-slate-500 font-medium" }, "\u0644\u0627 \u064A\u0648\u062C\u062F \u0645\u0633\u062A\u062E\u062F\u0645\u0648\u0646 \u0645\u0637\u0627\u0628\u0642\u0648\u0646.")) : (React.createElement("div", { className: "space-y-3" }, filtered.map(u => (React.createElement("div", { key: u.id, className: "glass-card rounded-2xl p-4 border border-white/10 flex items-center gap-3.5 flex-wrap" },
+            React.createElement("div", { className: "w-10 h-10 rounded-xl bg-gradient-to-tr from-accent-cyan to-blue-600 flex items-center justify-center font-black text-glass-950 shrink-0 overflow-hidden" }, u.avatar ? React.createElement("img", { src: u.avatar, alt: "", className: "w-full h-full object-cover" }) : (u.name || '?').charAt(0)),
+            React.createElement("div", { className: "min-w-[140px] flex-1" },
+                React.createElement("p", { className: "font-bold text-white text-sm truncate flex items-center gap-1.5" },
+                    u.name,
+                    u.username === 'mavilovelife' && React.createElement("span", { className: "text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold" }, "\u0645\u062F\u064A\u0631 \u0627\u0644\u0646\u0638\u0627\u0645"),
+                    u.isModerator && React.createElement("span", { className: "text-[10px] px-2 py-0.5 rounded-full bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/30 font-bold" }, "\u0645\u0634\u0631\u0641 \u0627\u0644\u0646\u0638\u0627\u0645"),
+                    u.banned && React.createElement("span", { className: "text-[10px] px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 font-bold" },
+                        "\u0645\u062D\u0638\u0648\u0631",
+                        u.banUntil ? ' مؤقتًا' : ''),
+                    u.deleted && React.createElement("span", { className: "text-[10px] px-2 py-0.5 rounded-full bg-slate-500/20 text-slate-300 border border-slate-500/30 font-bold" }, "\u0645\u062D\u0630\u0648\u0641")),
+                React.createElement("p", { className: "text-xs text-slate-400" },
+                    "@",
+                    u.username),
+                u.banned && u.banReason && React.createElement("p", { className: "text-[11px] text-rose-300 mt-1" },
+                    "\u0627\u0644\u0633\u0628\u0628: ",
+                    u.banReason,
+                    u.banUntil ? ` · إلى ${fmtDateTime(u.banUntil)}` : '')),
+            u.username !== 'mavilovelife' && (React.createElement(React.Fragment, null,
+                React.createElement("button", { onClick: () => toggleModerator(u), disabled: busyId === u.id, className: `text-xs px-4 py-2 rounded-xl font-bold transition disabled:opacity-50 ${u.isModerator ? 'bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/30' : 'glass-card border border-white/10 hover:border-accent-cyan text-slate-200'}` }, u.isModerator ? 'إزالة شارة الإشراف' : 'منح شارة مشرف النظام'),
+                React.createElement("button", { onClick: () => u.banned ? unban(u) : setBanTarget(u), disabled: busyId === u.id, className: `text-xs px-4 py-2 rounded-xl font-bold transition disabled:opacity-50 ${u.banned ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20'}` }, u.banned ? 'إلغاء الحظر' : 'حظر الحساب'),
+                u.deleted ? (React.createElement("button", { onClick: () => restoreUser(u), disabled: busyId === u.id, className: "text-xs px-4 py-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold transition disabled:opacity-50" }, "\u0627\u0633\u062A\u0639\u0627\u062F\u0629 \u0627\u0644\u062D\u0633\u0627\u0628")) : (React.createElement("button", { onClick: () => setDeleteTarget(u), title: "\u062D\u0630\u0641 \u0627\u0644\u062D\u0633\u0627\u0628", className: "w-9 h-9 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 flex items-center justify-center text-rose-400 transition shrink-0" },
+                    React.createElement(Icon, { name: "trash-2", className: "w-4 h-4" })))))))))),
+        deleteTarget && (React.createElement(ConfirmDialog, { title: "\u062D\u0630\u0641 \u0647\u0630\u0627 \u0627\u0644\u062D\u0633\u0627\u0628\u061F", body: `سيتم حذف حساب @${deleteTarget.username} نهائيًا ولا يمكن التراجع عن هذا الإجراء. سيظهر له إشعار بالحذف إذا حاول الدخول لاحقًا.`, confirmLabel: "\u0646\u0639\u0645\u060C \u0627\u062D\u0630\u0641", cancelLabel: "\u0625\u0644\u063A\u0627\u0621", onCancel: () => setDeleteTarget(null), onConfirm: () => removeUser(deleteTarget) })),
+        banTarget && React.createElement(BanDialog, { user: banTarget, onCancel: () => setBanTarget(null), onConfirm: confirmBan })));
+}
+function logAuditAction(currentUser, action, details) {
+    if (!currentUser)
+        return;
+    db.ref('auditLog').push({ by: currentUser.name, byUsername: currentUser.username, action, details: details || '', date: Date.now() });
+}
+function AdminAuditLog() {
+    const [list, setList] = useState([]);
+    useEffect(() => {
+        const ref = db.ref('auditLog').limitToLast(200);
+        const cb = snap => {
+            const data = snap.val();
+            const arr = data ? Object.keys(data).map(k => ({ id: k, ...data[k] })) : [];
+            arr.sort((a, b) => (b.date || 0) - (a.date || 0));
+            setList(arr);
+        };
+        ref.on('value', cb);
+        return () => ref.off('value', cb);
+    }, []);
+    if (!list.length)
+        return React.createElement("p", { className: "text-sm text-slate-500 font-medium" }, "\u0644\u0627 \u064A\u0648\u062C\u062F \u0646\u0634\u0627\u0637 \u0645\u0633\u062C\u0651\u0644 \u0628\u0639\u062F.");
+    return (React.createElement("div", { className: "space-y-2.5" }, list.map(l => (React.createElement("div", { key: l.id, className: "glass-card rounded-2xl p-3.5 border border-white/10 flex items-start gap-3" },
+        React.createElement("div", { className: "w-8 h-8 rounded-xl bg-glass-700 flex items-center justify-center text-accent-cyan shrink-0" },
+            React.createElement(Icon, { name: "shield", className: "w-4 h-4" })),
+        React.createElement("div", { className: "min-w-0 flex-1" },
+            React.createElement("p", { className: "text-sm text-slate-200" },
+                React.createElement("span", { className: "font-bold text-accent-cyan" }, l.by),
+                " \u2014 ",
+                l.action),
+            l.details && React.createElement("p", { className: "text-xs text-slate-400 mt-0.5" }, l.details),
+            React.createElement("p", { className: "text-[10px] text-slate-500 font-mono mt-1" }, fmtDateTime(l.date))))))));
+}
+function getSubtitleProgress(title) {
+    if (!title)
+        return { done: 0, total: 0 };
+    if (title.type === 'movie')
+        return { done: normalizeSubtitleUrl(title.subtitleUrl || '') ? 1 : 0, total: 1 };
+    const episodes = (title.seasons || []).flatMap(se => Array.isArray(se.episodes) ? se.episodes : []);
+    return { done: episodes.filter(ep => normalizeSubtitleUrl(ep.subtitleUrl || '')).length, total: episodes.length };
+}
+function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
+    const [tab, setTab] = useState('content');
+    const [contentType, setContentType] = useState('movie');
+    const [editing, setEditing] = useState(null);
+    const [deleteTarget, setDeleteTarget] = useState(null);
+    const [query, setQuery] = useState('');
+    const isFullAdmin = currentUser && currentUser.username === 'mavilovelife';
+    const handleDelete = async (id) => {
+        const t = titles.find(x => x.id === id);
+        await db.ref(`titles/${id}`).remove();
+        await db.ref(`comments/${id}`).remove();
+        await db.ref(`ratings/${id}`).remove();
+        logAuditAction(currentUser, 'حذف عمل', t ? t.name : id);
+        showToast('تم حذف العمل بنجاح');
+        setDeleteTarget(null);
+    };
+    const togglePublish = async (t) => {
+        const willPublish = t.status !== 'published';
+        if (!willPublish) {
+            await db.ref(`titles/${t.id}/status`).set('draft');
+            logAuditAction(currentUser, 'تحويل عمل لمسودة', t.name);
+            showToast('تم تحويل العمل لمسودة');
+            return;
+        }
+        showToast('جاري تجهيز الترجمة العربية قبل النشر...');
+        try {
+            const snap = await db.ref(`titles/${t.id}`).once('value');
+            const current = snap.val() || t;
+            const prepared = await prepareSubtitlesForPublish(current, current.sourceId || current.imdbId || current.imdb || current.tmdbId || '', null, [current.imdbId, current.tmdbId].filter(Boolean));
+            await db.ref(`titles/${t.id}`).set({ ...prepared.payload, status: 'published' });
+            logAuditAction(currentUser, 'نشر عمل', current.name || t.name);
+            showToast(prepared.failed ? `تم النشر، لكن تعذر تجهيز ${prepared.failed} ترجمة.` : 'تم تجهيز الترجمة ونشر العمل بنجاح');
+        }
+        catch (e) {
+            showToast('تم النشر بدون تجهيز الترجمة بسبب خطأ مؤقت', 'error');
+            await db.ref(`titles/${t.id}/status`).set('published');
+            logAuditAction(currentUser, 'نشر عمل', t.name);
+        }
+    };
+    const toggleFeatured = (t) => {
+        db.ref(`titles/${t.id}/featured`).set(t.featured !== true);
+        logAuditAction(currentUser, t.featured === true ? 'إزالة عمل من العرض الرئيسي' : 'إضافة عمل للعرض الرئيسي', t.name);
+        showToast(t.featured === true ? 'تمت إزالة العمل من العرض الرئيسي' : 'تمت إضافة العمل للعرض الرئيسي');
+    };
+    const regularTitles = titles.filter(t => !isCartoonTitle(t));
+    const cartoonTitles = titles.filter(isCartoonTitle);
+    const filteredTitles = regularTitles.filter(t => t.type === contentType && (!query.trim() || (t.name || '').toLowerCase().includes(query.trim().toLowerCase())));
+    const filteredCartoonTitles = cartoonTitles.filter(t => !query.trim() || (t.name || '').toLowerCase().includes(query.trim().toLowerCase()));
+    return (React.createElement("div", null,
+        React.createElement("h1", { className: "text-2xl md:text-3xl font-black mb-6 text-slate-100" }, "\u0644\u0648\u062D\u0629 \u062A\u062D\u0643\u0645  "),
+        React.createElement(SlidingTabs, { containerClassName: "flex gap-1.5 mb-6 flex-wrap bg-glass-900/80 p-1.5 rounded-2xl border border-white/5", items: [
+                { key: 'content', label: 'المحتوى (رفع)' },
+                { key: 'cartoon', label: `الكارتون (${cartoonTitles.length})` },
+                { key: 'complaints', label: 'الشكاوى والطلبات' },
+                ...(isFullAdmin ? [{ key: 'appeals', label: 'الطعون' }] : []),
+                ...(isFullAdmin ? [{ key: 'users', label: 'المستخدمون' }] : []),
+                ...(isFullAdmin ? [{ key: 'audit', label: 'سجل النشاط' }] : []),
+            ], active: tab, onChange: (k) => { setTab(k); if (k === 'content' || k === 'cartoon')
+                setEditing(null); }, trackClassName: "bg-accent-cyan shadow-[0_0_15px_rgba(0,240,255,0.4)]", getButtonClassName: (isActive) => `px-5 py-2.5 rounded-xl text-sm font-bold ${isActive ? 'text-glass-950' : 'text-slate-300 hover:text-white hover:bg-white/5'}` }),
+        tab === 'cartoon' && (editing ? (React.createElement(CartoonDubAdminForm, { initial: editing === 'new' ? null : editing, currentUser: currentUser, onDone: () => setEditing(null) })) : (React.createElement("div", null,
+            React.createElement("div", { className: "glass-card rounded-2xl p-4 mb-5 border border-accent-cyan/20" },
+                React.createElement("div", { className: "flex items-center justify-between gap-3 flex-wrap" },
+                    React.createElement("div", null,
+                        React.createElement("p", { className: "text-sm font-black text-white" }, "قسم الكارتون"),
+                        React.createElement("p", { className: "text-[10px] text-slate-500 mt-1" }, "كل الأعمال هنا مربوطة بـ CartoonDub فقط. TMDB للمعلومات فقط.")),
+                    React.createElement("button", { onClick: () => setEditing('new'), className: "flex items-center gap-2 px-5 py-2.5 rounded-xl bg-accent-cyan text-glass-950 font-black text-xs" },
+                        React.createElement(Icon, { name: "plus", className: "w-4 h-4" }), "إضافة كارتون"))),
+            React.createElement("div", { className: "relative mb-4" },
+                React.createElement(Icon, { name: "search", className: "w-4 h-4 absolute top-1/2 -translate-y-1/2 right-3 text-slate-400" }),
+                React.createElement("input", { value: query, onChange: e => setQuery(e.target.value), placeholder: "بحث داخل الكارتون...", className: "w-full bg-glass-900 border border-white/10 rounded-2xl py-2.5 pr-9 pl-4 text-sm text-slate-100 outline-none focus:border-accent-cyan" })),
+            React.createElement("div", { className: "space-y-3" },
+                filteredCartoonTitles.length === 0 && React.createElement("p", { className: "text-sm text-slate-500 font-medium" }, "لا توجد أعمال كارتون مضافة بعد."),
+                filteredCartoonTitles.map(t => {
+                    const epCount = t.type === 'movie' ? 0 : (t.seasons || []).reduce((n, s) => n + (s.episodes || []).length, 0);
+                    const linked = t.type === 'movie' ? !!t.videoUrl : (t.seasons || []).reduce((n, s) => n + (s.episodes || []).filter(e => e.videoUrl).length, 0);
+                    return React.createElement("div", { key: t.id, className: "glass-card rounded-2xl p-4 border border-white/10 flex items-center gap-4 flex-wrap" },
+                        React.createElement("div", { className: "w-12 h-16 rounded-xl bg-glass-900 overflow-hidden shrink-0 border border-white/5" }, t.poster && React.createElement("img", { src: t.poster, className: "w-full h-full object-cover" })),
+                        React.createElement("div", { className: "flex-1 min-w-[160px]" },
+                            React.createElement("p", { className: "font-bold text-white text-base truncate" }, React.createElement("bdi", null, t.name)),
+                            React.createElement("p", { className: "text-xs text-slate-500 mt-1" }, t.type === 'movie' ? 'فيلم كرتون' : `مسلسل كرتون · ${epCount} حلقة`),
+                            React.createElement("p", { className: "text-[10px] text-accent-cyan mt-1 font-black" }, `CartoonDub · روابط ${linked}`)),
+                        React.createElement("span", { className: `text-[10px] px-2.5 py-1 rounded-full font-bold ${t.status === 'published' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-white/5 text-slate-400'}` }, t.status === 'published' ? 'منشور' : 'مسودة'),
+                        React.createElement("button", { onClick: () => toggleFeatured(t), title: "Hero", className: "w-9 h-9 rounded-xl glass-card border border-white/10 flex items-center justify-center text-slate-200" }, React.createElement(Icon, { name: "star", className: "w-4 h-4" })),
+                        React.createElement("button", { onClick: async () => { const next = t.status === 'published' ? 'draft' : 'published'; await db.ref(`titles/${t.id}/status`).set(next); logAuditAction(currentUser, next === 'published' ? 'نشر كارتون' : 'تحويل كارتون لمسودة', t.name); showToast(next === 'published' ? 'تم نشر الكارتون' : 'تم تحويل الكارتون لمسودة'); }, title: "تبديل حالة النشر", className: "w-9 h-9 rounded-xl glass-card border border-white/10 flex items-center justify-center text-slate-200" }, React.createElement(Icon, { name: "eye", className: "w-4 h-4" })),
+                        React.createElement("button", { onClick: () => setEditing(t), title: "تعديل", className: "w-9 h-9 rounded-xl glass-card border border-white/10 flex items-center justify-center text-slate-200" }, React.createElement(Icon, { name: "pencil", className: "w-4 h-4" })),
+                        React.createElement("button", { onClick: () => setDeleteTarget(t.id), title: "حذف", className: "w-9 h-9 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400" }, React.createElement(Icon, { name: "trash-2", className: "w-4 h-4" }))
+                    );
+                })
+            )
+        ))),
+        tab === 'content' && (editing ? (React.createElement(AdminContentForm, { initial: editing === 'new' ? null : editing, defaultType: contentType, onDone: () => setEditing(null) })) : (React.createElement("div", null,
+            React.createElement(SlidingTabs, { containerClassName: "flex gap-1.5 mb-5 bg-glass-900/80 p-1.5 rounded-2xl border border-white/5", items: [['movie', 'أفلام'], ['series', 'مسلسلات'], ['anime', 'أنمي']].map(([k, l]) => ({
+                    key: k, render: () => (React.createElement(React.Fragment, null,
+                        l,
+                        " ",
+                        React.createElement("span", { className: "opacity-70 text-xs" },
+                            "(",
+                            regularTitles.filter(t => t.type === k).length,
+                            ")")))
+                })), active: contentType, onChange: setContentType, trackClassName: "bg-accent-red shadow-[0_0_15px_rgba(255,51,75,0.4)]", getButtonClassName: (isActive) => `flex-1 px-4 py-2.5 rounded-xl text-sm font-bold ${isActive ? 'text-white' : 'text-slate-300 hover:text-white hover:bg-white/5'}` }),
+            React.createElement("div", { className: "flex items-center gap-3 mb-6 flex-wrap" },
+                React.createElement("button", { onClick: () => setEditing('new'), className: "flex items-center gap-2 px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover font-bold text-sm text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition" },
+                    React.createElement(Icon, { name: "plus", className: "w-4 h-4" }),
+                    "\u0631\u0641\u0639 ",
+                    TYPE_LABELS[contentType],
+                    " \u062C\u062F\u064A\u062F"),
+                React.createElement("div", { className: "relative flex-1 min-w-[180px]" },
+                    React.createElement(Icon, { name: "search", className: "w-4 h-4 absolute top-1/2 -translate-y-1/2 right-3.5 text-slate-400" }),
+                    React.createElement("input", { value: query, onChange: e => setQuery(e.target.value), placeholder: "\u0628\u062D\u062B \u0636\u0645\u0646 \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645...", className: "w-full bg-glass-900 border border-white/10 rounded-2xl py-2.5 pr-10 pl-4 text-sm text-slate-100 outline-none focus:border-accent-cyan transition shadow-inner" }))),
+            React.createElement("div", { className: "space-y-3" },
+                filteredTitles.length === 0 && React.createElement("p", { className: "text-sm text-slate-500 font-medium" }, "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0645\u0637\u0627\u0628\u0642\u0629 \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645."),
+                filteredTitles.map(t => {
+                    const subProgress = getSubtitleProgress(t);
+                    return (React.createElement("div", { key: t.id, className: "glass-card rounded-2xl p-4 border border-white/10 flex items-center gap-4 flex-wrap" },
+                        React.createElement("div", { className: "w-12 h-16 rounded-xl bg-glass-900 overflow-hidden shrink-0 border border-white/5 shadow-md" }, t.poster && React.createElement("img", { src: t.poster, className: "w-full h-full object-cover" })),
+                        React.createElement("div", { className: "flex-1 min-w-[140px]" },
+                            React.createElement("p", { className: "font-bold text-white text-base truncate mb-1" },
+                                React.createElement("bdi", null, t.name)),
+                            React.createElement("p", { className: "text-xs text-slate-400 font-medium" },
+                                TYPE_LABELS[t.type],
+                                " \u00B7 ",
+                                t.year || '',
+                                t.type !== 'movie' ? ` · ${(t.seasons || []).length} موسم` : '')),
+                        React.createElement("span", { className: `text-[11px] px-3 py-1 rounded-full font-bold shrink-0 ${t.status === 'published' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-glass-800 text-slate-400 border border-white/5'}` }, t.status === 'published' ? 'منشور' : 'مسودة'),
+                        React.createElement("span", { title: "\u0639\u062F\u062F \u0627\u0644\u062D\u0644\u0642\u0627\u062A \u0627\u0644\u062A\u064A \u0644\u062F\u064A\u0647\u0627 \u062A\u0631\u062C\u0645\u0629 \u0645\u0646 \u0625\u062C\u0645\u0627\u0644\u064A \u0627\u0644\u062D\u0644\u0642\u0627\u062A", className: `text-[10px] px-2.5 py-1 rounded-full font-bold shrink-0 border ${subProgress.total > 0 && subProgress.done === subProgress.total ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-white/5 text-slate-400 border-white/5'}` },
+                            "\u062A\u0631\u062C\u0645\u0629 ",
+                            subProgress.done,
+                            "/",
+                            subProgress.total),
+                        t.featured === true && React.createElement("span", { className: "text-[11px] px-3 py-1 rounded-full font-bold shrink-0 bg-amber-500/20 text-amber-400 border border-amber-500/30" }, "Hero"),
+                        React.createElement("button", { onClick: () => toggleFeatured(t), title: t.featured === true ? 'إزالة من العرض الرئيسي (Hero)' : 'إظهار في العرض الرئيسي (Hero)', className: `w-9 h-9 rounded-xl glass-card border flex items-center justify-center transition shrink-0 ${t.featured === true ? 'border-amber-400 text-amber-400' : 'border-white/10 hover:border-accent-cyan text-slate-200'}` },
+                            React.createElement(Icon, { name: "star", className: `w-4 h-4 ${t.featured === true ? 'fill-current' : ''}` })),
+                        React.createElement("button", { onClick: () => togglePublish(t), title: "\u062A\u0628\u062F\u064A\u0644 \u062D\u0627\u0644\u0629 \u0627\u0644\u0646\u0634\u0631", className: "w-9 h-9 rounded-xl glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-200 transition shrink-0" },
+                            React.createElement(Icon, { name: "eye", className: "w-4 h-4" })),
+                        React.createElement("button", { onClick: () => setEditing(t), title: "\u062A\u0639\u062F\u064A\u0644", className: "w-9 h-9 rounded-xl glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-slate-200 transition shrink-0" },
+                            React.createElement(Icon, { name: "pencil", className: "w-4 h-4" })),
+                        React.createElement("button", { onClick: () => setDeleteTarget(t.id), title: "\u062D\u0630\u0641", className: "w-9 h-9 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 flex items-center justify-center text-rose-400 transition shrink-0" },
+                            React.createElement(Icon, { name: "trash-2", className: "w-4 h-4" }))));
+                }))))),
+        tab === 'complaints' && React.createElement(AdminComplaints, { currentUser: currentUser }),
+        tab === 'appeals' && isFullAdmin && React.createElement(AdminAppeals, { currentUser: currentUser }),
+        tab === 'users' && isFullAdmin && React.createElement(AdminUsers, { currentUser: currentUser }),
+        tab === 'audit' && isFullAdmin && React.createElement(AdminAuditLog, null),
+        deleteTarget && (React.createElement(ConfirmDialog, { title: "\u062D\u0630\u0641 \u0647\u0630\u0627 \u0627\u0644\u0639\u0645\u0644\u061F", body: "\u0633\u064A\u062A\u0645 \u062D\u0630\u0641 \u0627\u0644\u0639\u0645\u0644 \u0648\u062C\u0645\u064A\u0639 \u062A\u0639\u0644\u064A\u0642\u0627\u062A\u0647 \u0646\u0647\u0627\u0626\u064A\u064B\u0627 \u0648\u0644\u0627 \u064A\u0645\u0643\u0646 \u0627\u0633\u062A\u0631\u062C\u0627\u0639\u0647.", confirmLabel: "\u0646\u0639\u0645\u060C \u0627\u062D\u0630\u0641", cancelLabel: "\u0625\u0644\u063A\u0627\u0621", onCancel: () => setDeleteTarget(null), onConfirm: () => handleDelete(deleteTarget) }))));
+}
+function isTitleWatched(watchedMap, title) {
+    if (!watchedMap || !title)
+        return false;
+    const entry = watchedMap[title.id];
+    if (!entry)
+        return false;
+    if (title.type === 'movie')
+        return !!entry.movie;
+    const seasons = title.seasons || [];
+    const totalEpisodes = seasons.reduce((s, se) => s + ((se.episodes || []).length), 0);
+    if (!totalEpisodes)
+        return false;
+    const doneCount = seasons.reduce((s, se) => s + (se.episodes || []).filter(ep => entry.episodes && entry.episodes[`s${se.number}e${ep.number}`]).length, 0);
+    return doneCount >= totalEpisodes;
+}
+
+// ==== WATCH PROGRESS ENGINE START ====
+const WATCH_PROGRESS_SCHEMA = 2;
+const WATCH_PROGRESS_SAVE_INTERVAL = 1000;
+const WATCH_PROGRESS_MIN_SAVE_SECONDS = 0.5;
+const WATCH_PROGRESS_MIN_RESUME_SECONDS = 1;
+const WATCH_PROGRESS_COMPLETE_RATIO = 0.96;
+const WATCH_PROGRESS_CACHE_PREFIX = 'cinadam_watch_progress_v2_';
+
+function watchProgressRootKey(titleId) {
+    return sanitizeKey(String(titleId || '') || 'unknown');
+}
+function watchProgressEpisodeKey(season, episode) {
+    return `s${Number(season) || 1}e${Number(episode) || 1}`;
+}
+function normalizeProgressRecord(v) {
+    if (!v || typeof v !== 'object') return null;
+    const position = Math.max(0, Number(v.position) || 0);
+    const duration = Math.max(0, Number(v.duration) || 0);
+    const percent = duration > 0 ? Math.max(0, Math.min(100, Number(v.percent) || ((position / duration) * 100))) : 0;
+    return {
+        schema: WATCH_PROGRESS_SCHEMA,
+        titleId: String(v.titleId || ''),
+        kind: v.kind === 'movie' ? 'movie' : 'episode',
+        season: v.season == null ? null : Number(v.season),
+        episode: v.episode == null ? null : Number(v.episode),
+        position,
+        duration,
+        percent,
+        completed: v.completed === true,
+        updatedAt: Number(v.updatedAt) || 0,
+        titleName: String(v.titleName || ''),
+        poster: String(v.poster || ''),
+        label: String(v.label || '')
+    };
+}
+function normalizeWatchProgressTree(raw) {
+    const out = {};
+    if (!raw || typeof raw !== 'object') return out;
+    Object.keys(raw).forEach(titleKey => {
+        const src = raw[titleKey];
+        if (!src || typeof src !== 'object') return;
+        const entry = {};
+        if (src.movie) {
+            const movie = normalizeProgressRecord(src.movie);
+            if (movie) entry.movie = movie;
+        }
+        if (src.episodes && typeof src.episodes === 'object') {
+            entry.episodes = {};
+            Object.keys(src.episodes).forEach(epKey => {
+                const ep = normalizeProgressRecord(src.episodes[epKey]);
+                if (ep) entry.episodes[epKey] = ep;
+            });
+        }
+        if (src.last) {
+            const last = normalizeProgressRecord(src.last);
+            if (last) entry.last = last;
+        }
+        if (Object.keys(entry).length) out[titleKey] = entry;
+    });
+    return out;
+}
+function loadWatchProgressCache(userId) {
+    if (!userId) return {};
+    try {
+        const raw = localStorage.getItem(WATCH_PROGRESS_CACHE_PREFIX + sanitizeKey(userId));
+        return raw ? normalizeWatchProgressTree(JSON.parse(raw)) : {};
+    } catch (e) { return {}; }
+}
+function saveWatchProgressCache(tree, userId) {
+    if (!userId) return;
+    try {
+        const raw = JSON.stringify(normalizeWatchProgressTree(tree));
+        if (raw.length <= 1500000)
+            localStorage.setItem(WATCH_PROGRESS_CACHE_PREFIX + sanitizeKey(userId), raw);
+    } catch (e) {}
+}
+function getTitleWatchEntry(tree, titleId) {
+    return (tree && tree[watchProgressRootKey(titleId)]) || null;
+}
+function getEpisodeWatchProgress(tree, titleId, season, episode) {
+    const entry = getTitleWatchEntry(tree, titleId);
+    return entry && entry.episodes ? (entry.episodes[watchProgressEpisodeKey(season, episode)] || null) : null;
+}
+function getMovieWatchProgress(tree, titleId) {
+    const entry = getTitleWatchEntry(tree, titleId);
+    return entry ? (entry.movie || null) : null;
+}
+function getTitleContinueProgress(title, tree, watchedMap) {
+    if (!title) return null;
+    const entry = getTitleWatchEntry(tree, title.id);
+    if (title.type === 'movie') {
+        const p = entry && entry.movie;
+        return p && !p.completed && p.position >= WATCH_PROGRESS_MIN_RESUME_SECONDS ? { kind: 'movie', progress: p } : null;
+    }
+    const episodeKey = (season, episode) => `s${Number(season) || 0}e${Number(episode) || 0}`;
+
+    // خريطة كل حلقات المسلسل الفعلية مرتبة عبر كل المواسم (مصدر الحقيقة الوحيد لعدد الحلقات).
+    const seasons = (title.seasons || []).slice().sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0));
+    const flat = [];
+    seasons.forEach(se => (se.episodes||[]).slice().sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0)).forEach(ep => flat.push({ ...ep, seasonNumber: se.number, key: episodeKey(se.number, ep.number) })));
+    if (!flat.length) return null;
+
+    const eps = entry && entry.episodes ? Object.values(entry.episodes).filter(Boolean) : [];
+    const progressByKey = {};
+    eps.forEach(p => { progressByKey[episodeKey(p.season, p.episode)] = p; });
+    const watchedEntry = watchedMap && watchedMap[title.id];
+    const watchedKeys = watchedEntry && watchedEntry.episodes ? watchedEntry.episodes : {};
+
+    // حلقة "مكتملة" = إما progress.completed (فايربيس) أو علامة الصح المحلية (watched) — أيهما تحقق.
+    const isDone = (key) => !!(progressByKey[key] && progressByKey[key].completed) || !!watchedKeys[key];
+
+    const resumable = eps.filter(p => {
+        if (p.completed || p.position < WATCH_PROGRESS_MIN_RESUME_SECONDS) return false;
+        return !watchedKeys[episodeKey(p.season, p.episode)];
+    }).sort((a,b) => (b.updatedAt||0) - (a.updatedAt||0));
+    if (resumable.length) return { kind: 'episode', progress: resumable[0] };
+
+    const doneFlat = flat.filter(ep => isDone(ep.key));
+    if (!doneFlat.length) return null;
+
+    // اربط علامة الصح مع أكمل المشاهدة: آخر حلقة مكتملة تصبح نقطة الانتقال للحلقة التالية.
+    const latest = doneFlat.map(ep => ({ ep, order: flat.indexOf(ep), progress: progressByKey[ep.key] || null }))
+        .sort((a,b) => (Number((b.progress&&b.progress.updatedAt)||0) - Number((a.progress&&a.progress.updatedAt)||0)) || (b.order - a.order))[0];
+    const latestProgress = latest.progress || { kind: 'episode', season: latest.ep.seasonNumber, episode: latest.ep.number, completed: true, position: 0, duration: 0, percent: 100, updatedAt: 0, titleId: title.id, titleName: title.name, poster: title.poster };
+
+    const allEpisodesCompleted = flat.every(ep => isDone(ep.key));
+    if (allEpisodesCompleted) return { kind: 'series-complete', progress: latestProgress };
+    return { kind: 'episode-complete', progress: latestProgress };
+}
+function buildWatchProgressCardItems(titles, tree, watchedMap) {
+    const arr = [];
+    for (const title of (titles || [])) {
+        const c = getTitleContinueProgress(title, tree, watchedMap);
+        if (!c) continue;
+        if (c.kind === 'movie') {
+            arr.push({ title, progress: c.progress, label: title.name, subLabel: `متابعة من ${formatWatchTime(c.progress.position)}`, updatedAt: c.progress.updatedAt || 0 });
+        } else if (c.kind === 'episode') {
+            arr.push({ title, progress: c.progress, label: title.name, subLabel: Number(c.progress.position) > 0 ? `متابعة من الحلقة ${c.progress.episode} · الموسم ${c.progress.season} · ${formatWatchTime(c.progress.position)}` : `متابعة من الحلقة ${c.progress.episode} · الموسم ${c.progress.season}`, updatedAt: c.progress.updatedAt || 0 });
+        } else if (c.kind === 'episode-complete') {
+            const seasons = (title.seasons || []).slice().sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0));
+            const flat = [];
+            seasons.forEach(se => (se.episodes||[]).slice().sort((a,b)=>(Number(a.number)||0)-(Number(b.number)||0)).forEach(ep => flat.push({ ...ep, seasonNumber: se.number })));
+            const idx = flat.findIndex(ep => Number(ep.seasonNumber)===Number(c.progress.season) && Number(ep.number)===Number(c.progress.episode));
+            let next = idx >= 0 ? flat[idx + 1] : null;
+            const watchedEntry = watchedMap && watchedMap[title.id];
+            const watchedKeys = watchedEntry && watchedEntry.episodes ? watchedEntry.episodes : {};
+            while (next) {
+                const key = `s${Number(next.seasonNumber)}e${Number(next.number)}`;
+                const p = getEpisodeWatchProgress(tree, title.id, next.seasonNumber, next.number);
+                if (!(p && p.completed) && !watchedKeys[key]) break;
+                const nidx = flat.findIndex(ep => Number(ep.seasonNumber)===Number(next.seasonNumber) && Number(ep.number)===Number(next.number));
+                next = nidx >= 0 ? flat[nidx + 1] : null;
+            }
+            if (next) {
+                arr.push({ title, progress: null, label: title.name, subLabel: `متابعة الحلقة ${next.number} · الموسم ${next.seasonNumber}`, updatedAt: c.progress.updatedAt || 0, nextEpisode: next, completed: false });
+            } else {
+                arr.push({ title, progress: null, label: title.name, subLabel: 'تمت المشاهدة بالكامل', updatedAt: c.progress.updatedAt || 0, completed: true });
+            }
+        } else if (c.kind === 'series-complete') {
+            arr.push({ title, progress: null, label: title.name, subLabel: 'تمت المشاهدة بالكامل', updatedAt: c.progress.updatedAt || 0, completed: true });
+        }
+    }
+    return arr.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+}
+function formatWatchTime(sec) {
+    const s = Math.max(0, Math.floor(Number(sec) || 0));
+    const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), ss = s%60;
+    return h > 0 ? `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}` : `${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
+}
+function mergeWatchProgressTrees(base, incoming) {
+    const out = normalizeWatchProgressTree(base);
+    const src = normalizeWatchProgressTree(incoming);
+    Object.keys(src).forEach(tk => {
+        const b = out[tk] || {};
+        const s = src[tk] || {};
+        const newer = (a,b) => {
+            if (!a) return b;
+            if (!b) return a;
+            if (b.completed && !a.completed) return b;
+            if (a.completed && !b.completed) return a;
+            return (Number(a.updatedAt)||0) >= (Number(b.updatedAt)||0) ? a : b;
+        };
+        if (s.movie) b.movie = newer(s.movie, b.movie);
+        if (s.episodes) {
+            b.episodes = { ...(b.episodes||{}) };
+            Object.keys(s.episodes).forEach(k => b.episodes[k] = newer(s.episodes[k], b.episodes[k]));
+        }
+        if (s.last) b.last = newer(s.last, b.last);
+        out[tk] = b;
+    });
+    return out;
+}
+// ==== WATCH PROGRESS ENGINE END ====
+function loadWatched(username) {
+    if (!username)
+        return {};
+    try {
+        return JSON.parse(localStorage.getItem('cv_watched_' + username) || '{}');
+    }
+    catch (e) {
+        return {};
+    }
+}
+function saveWatchedToStorage(data, username) {
+    if (!username)
+        return;
+    try {
+        localStorage.setItem('cv_watched_' + username, JSON.stringify(data));
+    }
+    catch (e) { }
+}
+function App() {
+    const [titles, setTitles] = useState([]);
+    const [currentUser, setCurrentUser] = useState(() => { try {
+        return JSON.parse(localStorage.getItem('cv_user') || 'null');
+    }
+    catch (e) {
+        return null;
+    } });
+    const [view, setViewRaw] = useState('home');
+    const [search, setSearch] = useState('');
+    const [activeTitle, setActiveTitle] = useState(null);
+    const [authModal, setAuthModal] = useState(null);
+    const [accountSheet, setAccountSheet] = useState(false);
+    const [likedIds, setLikedIds] = useState(() => { try {
+        const v = JSON.parse(localStorage.getItem('cv_likes') || '[]');
+        return Array.isArray(v) ? v : [];
+    }
+    catch (e) {
+        return [];
+    } });
+    const [moderators, setModerators] = useState({});
+    const [profileTarget, setProfileTarget] = useState(null);
+    const [watched, setWatched] = useState(() => loadWatched(currentUser && currentUser.username));
+    const [watchProgress, setWatchProgress] = useState(() => loadWatchProgressCache(currentUser && currentUser.id));
+    const [watchProgressReady, setWatchProgressReady] = useState(false);
+    useEffect(() => { setWatched(loadWatched(currentUser && currentUser.username)); }, [currentUser && currentUser.username]);
+    useEffect(() => {
+        const uid = currentUser && currentUser.id;
+        if (!uid) {
+            setWatchProgress({});
+            setWatchProgressReady(false);
+            return;
+        }
+        const ref = db.ref(`users/${uid}/watchProgress`);
+        let cancelled = false;
+        const cb = snap => {
+            if (cancelled) return;
+            const remote = normalizeWatchProgressTree(snap.val() || {});
+            setWatchProgress(prev => {
+                const merged = mergeWatchProgressTrees(prev, remote);
+                saveWatchProgressCache(merged, uid);
+                return merged;
+            });
+            setWatchProgressReady(true);
+        };
+        ref.on('value', cb);
+        return () => { cancelled = true; ref.off('value', cb); };
+    }, [currentUser && currentUser.id]);
+    const saveWatchProgress = (titleId, payload) => {
+        const uid = currentUser && currentUser.id;
+        if (!uid || !titleId || !payload) return Promise.resolve();
+        const now = Number(payload.updatedAt) || Date.now();
+        const kind = payload.kind === 'movie' ? 'movie' : 'episode';
+        const safeTitleKey = watchProgressRootKey(titleId);
+        const epKey = kind === 'episode' ? watchProgressEpisodeKey(payload.season, payload.episode) : null;
+        const record = normalizeProgressRecord({ ...payload, schema: WATCH_PROGRESS_SCHEMA, titleId: String(titleId), kind, updatedAt: now });
+        if (!record) return Promise.resolve();
+        setWatchProgress(prev => {
+            const next = normalizeWatchProgressTree(prev);
+            const entry = { ...(next[safeTitleKey] || {}) };
+            if (kind === 'movie') entry.movie = mergeWatchProgressTrees({ x: { movie: entry.movie } }, { x: { movie: record } }).x.movie;
+            else {
+                const existingEp = entry.episodes && entry.episodes[epKey];
+                if (!(existingEp && existingEp.completed && !record.completed)) {
+                    entry.episodes = mergeWatchProgressTrees({ x: { episodes: { [epKey]: existingEp } } }, { x: { episodes: { [epKey]: record } } }).x.episodes;
+                }
+            }
+            entry.last = record;
+            next[safeTitleKey] = entry;
+            saveWatchProgressCache(next, uid);
+            return next;
+        });
+        const base = db.ref(`users/${uid}/watchProgress/${safeTitleKey}`);
+        const path = kind === 'movie' ? base.child('movie') : base.child(`episodes/${epKey}`);
+        return path.transaction(current => {
+            const existing = normalizeProgressRecord(current);
+            if (existing && existing.completed && !record.completed) return;
+            if (existing && (existing.updatedAt || 0) > now) return;
+            return record;
+        }).then(() => base.child('last').transaction(current => {
+            const existing = normalizeProgressRecord(current);
+            if (existing && (existing.updatedAt || 0) > now) return;
+            return record;
+        })).catch(() => {});
+    };
+
+    const openTitleFromContinue = (title, nextTarget = null) => {
+        if (!title) return;
+        if (nextTarget && nextTarget.season != null && nextTarget.episode != null) {
+            setActiveTitle({ ...title, __continueTarget: { season: Number(nextTarget.season), episode: Number(nextTarget.episode) } });
+        } else {
+            setActiveTitle(title);
+        }
+    };
+    const openProfile = (uname) => { setProfileTarget(uname || null); setActiveTitle(null); setAccountSheet(false); setViewRaw('profile'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+    const markEpisodeWatched = (titleId, seasonNumber, episodeNumber) => {
+        if (!currentUser || seasonNumber == null || episodeNumber == null)
+            return;
+        setWatched(prev => {
+            const key = `s${seasonNumber}e${episodeNumber}`;
+            const entry = { ...(prev[titleId] || {}) };
+            entry.episodes = { ...(entry.episodes || {}), [key]: true };
+            const next = { ...prev, [titleId]: entry };
+            saveWatchedToStorage(next, currentUser && currentUser.username);
+            return next;
+        });
+        const uid = currentUser && currentUser.id;
+        if (uid) {
+            const safeTitleKey = watchProgressRootKey(titleId);
+            const epKey = watchProgressEpisodeKey(seasonNumber, episodeNumber);
+            const now = Date.now();
+            setWatchProgress(prev => {
+                const tree = normalizeWatchProgressTree(prev);
+                const entry = { ...(tree[safeTitleKey] || {}) };
+                entry.episodes = { ...(entry.episodes || {}) };
+                entry.episodes[epKey] = normalizeProgressRecord({ titleId: String(titleId), kind: 'episode', season: seasonNumber, episode: episodeNumber, position: 0, duration: 0, percent: 100, completed: true, updatedAt: now });
+                entry.last = entry.episodes[epKey];
+                tree[safeTitleKey] = entry;
+                saveWatchProgressCache(tree, uid);
+                return tree;
+            });
+        }
+    };
+    const markMovieWatched = (titleId) => {
+        if (!currentUser)
+            return;
+        setWatched(prev => {
+            const entry = { ...(prev[titleId] || {}), movie: true };
+            const next = { ...prev, [titleId]: entry };
+            saveWatchedToStorage(next, currentUser && currentUser.username);
+            return next;
+        });
+    };
+    const isEpisodeWatched = (titleId, seasonNumber, episodeNumber) => {
+        if (seasonNumber == null || episodeNumber == null)
+            return false;
+        const entry = watched[titleId];
+        if (!entry || !entry.episodes)
+            return false;
+        return !!entry.episodes[`s${seasonNumber}e${episodeNumber}`];
+    };
+    useEffect(() => {
+        const ref = db.ref('moderators');
+        const cb = snap => setModerators(snap.val() || {});
+        ref.on('value', cb);
+        return () => ref.off('value', cb);
+    }, []);
+    const getRole = (username) => {
+        if (!username)
+            return null;
+        if (username === 'mavilovelife')
+            return 'admin';
+        return moderators[sanitizeKey(username)] ? 'moderator' : null;
+    };
+    const [accountNotice, setAccountNotice] = useState(null);
+    useEffect(() => {
+        if (!currentUser)
+            return;
+        const ref = db.ref(`users/${currentUser.id}`);
+        const cb = snap => {
+            const u = snap.val();
+            if (!u || u.deleted) {
+                setCurrentUser(null);
+                localStorage.removeItem('cv_user');
+                localStorage.setItem('cv_watch_username', currentUser.username);
+                setAccountNotice({ username: currentUser.username, type: 'deleted', message: 'عذرًا، تم حذف حسابك من قِبل الإدارة.' });
+                return;
+            }
+            if (u.banned) {
+                if (u.banUntil && u.banUntil <= Date.now()) {
+                    db.ref(`users/${currentUser.id}`).update({ banned: false, banReason: null, banUntil: null });
+                }
+                else {
+                    const untilTxt = u.banUntil ? ` إلى غاية ${fmtDateTime(u.banUntil)}` : '';
+                    setCurrentUser(null);
+                    localStorage.removeItem('cv_user');
+                    localStorage.setItem('cv_watch_username', currentUser.username);
+                    setAccountNotice({ username: currentUser.username, type: 'banned', message: `حسابك محظور من قِبل الإدارة${untilTxt}.${u.banReason ? ' السبب: ' + u.banReason : ''}` });
+                    return;
+                }
+            }
+            if (u.isModerator !== currentUser.isModerator) {
+                const updated = { ...currentUser, isModerator: u.isModerator };
+                setCurrentUser(updated);
+                localStorage.setItem('cv_user', JSON.stringify(updated));
+            }
+        };
+        ref.on('value', cb);
+        return () => ref.off('value', cb);
+    }, [currentUser && currentUser.id]);
+    useEffect(() => {
+        if (currentUser)
+            return;
+        const watchUsername = localStorage.getItem('cv_watch_username');
+        if (!watchUsername)
+            return;
+        checkAppealNotice(watchUsername).then(res => {
+            if (res) {
+                setAccountNotice({ username: watchUsername, type: null, message: res.message, outcomeOnly: true });
+                localStorage.removeItem('cv_watch_username');
+            }
+        });
+    }, []);
+    const setView = (v) => {
+        const allowedViews = new Set(['home','movie','series','anime','cartoon','lists','requests','settings','profile','admin']);
+        if (!allowedViews.has(v)) v = 'home';
+        if (v === 'admin') {
+            if (!currentUser || !(currentUser.username === 'mavilovelife' || currentUser.isModerator)) {
+                setAuthModal('login');
+                return;
+            }
+            setViewRaw('admin');
+            setSearch('');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            return;
+        }
+        setViewRaw(v);
+        setSearch('');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+    const [booted, setBooted] = useState(false);
+    useEffect(() => {
+        let cancelled = false;
+        // Catalog startup intentionally uses the same direct Firebase realtime
+        // path as the older working version. No localStorage catalog and no
+        // separate REST request are used here, so an old catalog cannot flash
+        // before the current Firebase snapshot arrives.
+        const isAdmin = !!(currentUser && (currentUser.username === 'mavilovelife' || currentUser.isModerator));
+        const ref = db.ref('titles');
+
+        const cb = snap => {
+            if (cancelled) return;
+            const data = snap.val();
+            const list = data && typeof data === 'object'
+                ? Object.keys(data)
+                    .map(k => normalizeTitlePlaybackData({ id: k, ...data[k] }))
+                    .filter(Boolean)
+                    .filter(t => isAdmin || t.status === 'published')
+                : [];
+
+            list.sort((a, b) =>
+                ((b.publishedAt || b.createdAt || b.updatedAt || 0) -
+                 (a.publishedAt || a.createdAt || a.updatedAt || 0))
+            );
+
+            setTitles(list);
+            if (!isAdmin && list.length) writeTitleCache(list);
+            setActiveTitle(prev => {
+                if (!prev) return prev;
+                const updated = list.find(x => x.id === prev.id);
+                return updated || prev;
+            });
+            setBooted(true);
+        };
+
+        ref.on('value', cb);
+
+        return () => {
+            cancelled = true;
+            ref.off('value', cb);
+        };
+    }, [currentUser && currentUser.id, currentUser && currentUser.username, currentUser && currentUser.isModerator]);
+    useEffect(() => {
+        if (!booted)
+            return;
+        const loader = document.getElementById('bootLoader');
+        if (loader) {
+            loader.classList.add('fading');
+            setTimeout(() => loader.remove(), 350);
+        }
+    }, [booted]);
+    useEffect(() => {
+        if (!booted || !titles.length)
+            return;
+        const t = new URLSearchParams(location.search).get('t');
+        if (t) {
+            const found = titles.find(x => x.id === t && x.status === 'published');
+            if (found)
+                setActiveTitle(found);
+        }
+        const u = new URLSearchParams(location.search).get('u');
+        if (u)
+            openProfile(u);
+    }, [booted, titles]);
+    const published = titles.filter(t => t.status === 'published');
+    const toggleLike = (title) => {
+        const isLiked = likedIds.includes(title.id);
+        const next = isLiked ? likedIds.filter(x => x !== title.id) : [...likedIds, title.id];
+        setLikedIds(next);
+        localStorage.setItem('cv_likes', JSON.stringify(next));
+        db.ref(`titles/${title.id}/likes`).transaction(v => Math.max(0, (v || 0) + (isLiked ? -1 : 1)));
+    };
+    const handleLogout = () => { setCurrentUser(null); localStorage.removeItem('cv_user'); setAccountSheet(false); setView('home'); };
+    const handleUpdateAvatar = async (dataUrl) => {
+        if (!currentUser)
+            return;
+        await db.ref(`users/${currentUser.id}/avatar`).set(dataUrl);
+        const updated = { ...currentUser, avatar: dataUrl };
+        setCurrentUser(updated);
+        localStorage.setItem('cv_user', JSON.stringify(updated));
+    };
+    const handleUpdateName = async (newName) => {
+        if (!currentUser)
+            return;
+        await db.ref(`users/${currentUser.id}/name`).set(newName);
+        const updated = { ...currentUser, name: newName };
+        setCurrentUser(updated);
+        localStorage.setItem('cv_user', JSON.stringify(updated));
+    };
+    const handleAuthSuccess = (user) => {
+        const u = { id: user.id, name: user.name, username: user.username, avatar: user.avatar || '' };
+        setCurrentUser(u);
+        localStorage.setItem('cv_user', JSON.stringify(u));
+        setAuthModal(null);
+    };
+    const searching = search.trim().length > 0;
+    let mainList = published;
+    if (searching) {
+        const q = search.trim().toLowerCase();
+        mainList = published.filter(t => t.name && t.name.toLowerCase().includes(q));
+    }
+    return (React.createElement("div", { className: "min-h-screen flex flex-col mobile-safe-bottom md:pb-0" },
+        React.createElement(Header, { currentUser: currentUser, view: view, setView: setView, search: search, setSearch: setSearch, onOpenAccount: () => setAccountSheet(true), onOpenProfile: openProfile, onOpenTitleFromNotif: (id) => { const t = titles.find(x => x.id === id && x.status === 'published'); if (t)
+                setActiveTitle(t); } }),
+        React.createElement("main", { className: "flex-1 max-w-7xl w-full mx-auto px-4 py-6 md:py-8" },
+            React.createElement("div", { key: searching ? 'search' : view, className: "page-fade-in" }, searching ? (React.createElement(TypeGrid, { title: `نتائج البحث عن "${search}"`, items: mainList, onOpen: setActiveTitle, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0646\u062A\u0627\u0626\u062C \u0645\u0637\u0627\u0628\u0642\u0629.", watchedMap: watched })) : view === 'home' ? (React.createElement(HomeView, { items: published, onOpen: openTitleFromContinue, watchedMap: watched, watchProgress: watchProgress })) : (view === 'movie' || view === 'series' || view === 'anime') ? (React.createElement(TypeGrid, { title: TYPE_PLURAL[view], items: published.filter(t => t.type === view && !isCartoonTitle(t)), onOpen: setActiveTitle, showGenreFilter: true, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u0628\u0639\u062F.", watchedMap: watched })) : view === 'cartoon' ? (React.createElement(TypeGrid, { title: 'الكارتون', items: published.filter(isCartoonTitle), onOpen: setActiveTitle, showGenreFilter: true, emptyText: "\u0644\u0627 \u062a\u0648\u062c\u062f \u0623\u0639\u0645\u0627\u0644 \u0643\u0627\u0631\u062a\u0648\u0646 \u0641\u064a \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u0628\u0639\u062f.", watchedMap: watched })) : view === 'lists' ? (React.createElement(ListsView, { currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal })) : view === 'requests' ? (React.createElement(RequestsView, { currentUser: currentUser, onOpenAuth: setAuthModal })) : view === 'settings' ? (React.createElement(SettingsView, { currentUser: currentUser, onUpdateName: handleUpdateName, onUpdateAvatar: handleUpdateAvatar, onOpenAuth: setAuthModal })) : view === 'profile' ? (React.createElement(ProfileView, { username: profileTarget, currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal, onOpenProfile: openProfile })) : view === 'admin' ? (React.createElement(AdminPanel, { currentUser: currentUser, titles: titles, onOpenAuth: setAuthModal, moderators: moderators })) : null)),
+        React.createElement(MobileBottomNav, { view: view, setView: setView }),
+        React.createElement(ToastHost, null),
+        activeTitle && (React.createElement(TitleModal, { title: activeTitle, allTitles: published, currentUser: currentUser, liked: likedIds.includes(activeTitle.id), getRole: getRole, onLike: () => toggleLike(activeTitle), onClose: () => { setActiveTitle(null); if (new URLSearchParams(location.search).get('t'))
+                history.replaceState(null, '', location.pathname); }, onOpenAuth: setAuthModal, onOpenProfile: openProfile, onOpen: setActiveTitle, watched: watched, onMarkEpisodeWatched: markEpisodeWatched, onMarkMovieWatched: markMovieWatched, isEpisodeWatched: isEpisodeWatched, watchProgress: watchProgress, onSaveWatchProgress: saveWatchProgress })),
+        authModal && React.createElement(AuthModal, { tab: authModal, onClose: () => setAuthModal(null), onSuccess: handleAuthSuccess }),
+        accountSheet && (React.createElement(AccountSheet, { currentUser: currentUser, onClose: () => setAccountSheet(false), onLogin: () => { setAccountSheet(false); setAuthModal('login'); }, onRegister: () => { setAccountSheet(false); setAuthModal('register'); }, onLogout: handleLogout, onNavigate: (v) => { if (v === 'profile')
+                setProfileTarget(null); setView(v); setAccountSheet(false); } })),
+        accountNotice && (React.createElement(AppealModal, { username: accountNotice.username, type: accountNotice.type, message: accountNotice.message, outcomeOnly: accountNotice.outcomeOnly, onClose: () => setAccountNotice(null) }))));
+}
+class AppErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { failed: false, message: '' };
+    }
+    static getDerivedStateFromError(error) {
+        return { failed: true, message: error && error.message ? String(error.message).slice(0, 180) : '' };
+    }
+    componentDidCatch(error) {
+        try { console.error('[Cinadam] UI error', error); } catch (_) {}
+    }
+    render() {
+        if (!this.state.failed) return this.props.children;
+        return React.createElement('div', { className: 'min-h-screen bg-glass-950 text-white flex items-center justify-center p-6' },
+            React.createElement('div', { className: 'glass-panel max-w-md w-full rounded-3xl p-7 text-center border border-white/10' },
+                React.createElement('div', { className: 'w-14 h-14 mx-auto mb-4 rounded-2xl bg-accent-red/15 border border-accent-red/30 flex items-center justify-center text-accent-red font-black' }, '!'),
+                React.createElement('h1', { className: 'text-xl font-black mb-2' }, 'تعذر عرض هذا القسم مؤقتًا'),
+                React.createElement('p', { className: 'text-sm text-slate-400 leading-relaxed mb-5' }, 'حدث خطأ في بيانات العرض أو في واجهة هذا القسم. أعد المحاولة لإعادة بناء الواجهة بدون فقدان بيانات حسابك.'),
+                React.createElement('button', { type: 'button', onClick: () => location.reload(), className: 'w-full py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover text-white font-bold' }, 'إعادة المحاولة')
+            )
+        );
+    }
+}
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(AppErrorBoundary, null, React.createElement(App, null)));
+  </script>
+</body>
+</html>
