@@ -1623,73 +1623,6 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
                     }, className: "px-3 py-1.5 rounded-lg bg-accent-purple/15 border border-accent-purple/30 hover:bg-accent-purple/25 text-accent-purple text-[11px] font-bold transition" }, v.label)))),
             React.createElement("button", { type: "button", onClick: () => { setVideos(null); setPicked(null); }, className: "mt-2 text-[10px] text-slate-500 hover:text-slate-300 underline" }, "\u0631\u062C\u0648\u0639 \u0644\u0644\u0646\u062A\u0627\u0626\u062C")))));
 }
-const EXTRA_LINK_SOURCES = [
-    { id: 'cinemaplus', label: 'Cinema Plus' }
-];
-// مصادر إضافية لرابط التشغيل (بنفس آلية سينمانا): لكل مصدر زر استخراج وخانة لرابطه.
-function SourceLinksHelper({ kind, season, episode, defaultTitle, defaultYear, onGenerate, onGenerateQualities }) {
-    const [state, setState] = useState({});
-    const patch = (id, p) => setState(s => ({ ...s, [id]: { ...(s[id] || {}), ...p } }));
-    const run = async (src, forcedId) => {
-        const title = String(defaultTitle || '').trim();
-        if (!title && !forcedId) { patch(src.id, { error: 'اكتب اسم العمل أولًا' }); return; }
-        patch(src.id, { loading: true, error: '' });
-        try {
-            const usp = new URLSearchParams({
-                title, type: kind === 'tv' ? 'tv' : 'movie',
-                season: String(Number(season) || 1), episode: String(Number(episode) || 1)
-            });
-            if (defaultYear) usp.set('year', String(defaultYear));
-            if (forcedId) usp.set('id', String(forcedId));
-            const data = await cinemanaFetch(`/src/${src.id}/resolve?${usp.toString()}`);
-            const probeByUrl = {};
-            (data.links || []).forEach(l => { if (l.probe) probeByUrl[l.url] = l.probe; });
-            const sources = cinemanaVideoSources((data.links || []).map(l => ({ url: l.url, label: l.label })));
-            const best = sources.find(x => !probeByUrl[x.url] || probeByUrl[x.url].ok) || sources[0];
-            patch(src.id, {
-                loading: false, data, sources, probeByUrl,
-                link: best ? best.url : '',
-                error: data.ok ? '' : (data.error || 'لم يُعثر على رابط')
-            });
-        } catch (e) {
-            patch(src.id, { loading: false, error: (e && e.message) || 'فشل الاستخراج' });
-        }
-    };
-    const useLink = (st) => {
-        if (!st.link) return;
-        const all = st.sources || [];
-        const cur = all.find(x => x.url === st.link) || { url: st.link, label: '' };
-        onGenerateQualities && onGenerateQualities(all);
-        onGenerate && onGenerate(st.link, cur, all);
-        patch(st.id, { used: true });
-    };
-    const copyLink = async (link) => { try { await navigator.clipboard.writeText(link); } catch (e) { } };
-    return (React.createElement("div", { className: "glass-card rounded-2xl p-3.5 border border-accent-cyan/20 mt-3.5" },
-        React.createElement("div", { className: "flex items-center justify-between mb-2" },
-            React.createElement("p", { className: "text-[11px] font-bold text-accent-cyan" }, "مصادر إضافية لرابط التشغيل"),
-            React.createElement("button", { type: "button", onClick: () => EXTRA_LINK_SOURCES.forEach(s => run(s)), className: "px-3 py-1 rounded-lg bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan text-[10px] font-bold hover:bg-accent-cyan/25 transition" }, "استخراج من الكل")),
-        kind !== 'movie' && React.createElement("p", { className: "text-[10px] text-slate-500 mb-1.5" }, "الموسم ", Number(season) || 1, " · الحلقة ", Number(episode) || 1),
-        EXTRA_LINK_SOURCES.map(src => {
-            const st = { ...(state[src.id] || {}), id: src.id };
-            const d = st.data || {};
-            const showCandidates = Array.isArray(d.candidates) && d.candidates.length > 0 && (!d.ok || d.candidates.length > 1);
-            return (React.createElement("div", { key: src.id, className: "mb-3 last:mb-0 pb-3 last:pb-0 border-b last:border-b-0 border-white/5" },
-                React.createElement("div", { className: "flex items-center gap-2 mb-1.5" },
-                    React.createElement("span", { className: "text-[11px] font-black text-white flex-1" }, src.label),
-                    d.picked && React.createElement("span", { className: "text-[10px] text-slate-400 truncate max-w-[50%]" }, d.picked.title, d.picked.year ? ` (${d.picked.year})` : ''),
-                    React.createElement("button", { type: "button", disabled: st.loading, onClick: () => run(src), className: "shrink-0 px-3 py-1.5 rounded-lg bg-accent-purple text-white text-[10px] font-bold hover:brightness-110 transition disabled:opacity-40" }, st.loading ? 'جاري...' : 'استخراج')),
-                st.error && React.createElement("p", { className: "text-[10px] font-bold text-rose-400 mb-1.5" }, st.error),
-                showCandidates && React.createElement("div", { className: "flex flex-wrap gap-1.5 mb-1.5" },
-                    d.candidates.map(c => React.createElement("button", { key: c.id, type: "button", onClick: () => run(src, c.id), className: `px-2 py-1 rounded-lg border text-[10px] font-bold transition ${d.picked && d.picked.id === c.id ? 'border-accent-purple text-accent-purple' : 'border-white/10 text-slate-300 hover:border-accent-purple/60'}` }, c.title, c.year ? ` (${c.year})` : ''))),
-                (st.sources || []).length > 1 && React.createElement("div", { className: "flex flex-wrap gap-1.5 mb-1.5" },
-                    st.sources.map((v, i) => React.createElement("button", { key: i, type: "button", onClick: () => patch(src.id, { link: v.url }), className: `px-2.5 py-1 rounded-lg border text-[10px] font-bold transition ${st.link === v.url ? 'border-accent-cyan text-accent-cyan bg-accent-cyan/10' : 'border-white/10 text-slate-300 hover:border-accent-cyan/60'}` }, v.label || ('#' + (i + 1))))),
-                (() => { const pr = st.link && st.probeByUrl && st.probeByUrl[st.link]; if (!pr) return null; return pr.ok ? React.createElement("p", { className: "text-[10px] font-bold text-emerald-400 mb-1.5" }, "✓ الرابط يستجيب (" + pr.status + ")") : React.createElement("p", { dir: "ltr", className: "text-[10px] font-bold text-amber-400 mb-1.5 break-all text-right" }, "⚠ الرابط لا يعمل: " + (pr.status || 'تعذر الاتصال') + (pr.note ? ' — ' + pr.note : '')); })(),
-                React.createElement("div", { className: "flex items-center gap-1.5" },
-                    React.createElement("input", { value: st.link || '', readOnly: true, dir: "ltr", placeholder: "رابط " + src.label + " سيظهر هنا", onFocus: ev => ev.target.select(), className: "flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-[11px] text-white outline-none" }),
-                    React.createElement("button", { type: "button", disabled: !st.link, onClick: () => copyLink(st.link), className: "shrink-0 px-2.5 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-[10px] font-bold hover:bg-white/10 transition disabled:opacity-40" }, "نسخ"),
-                    React.createElement("button", { type: "button", disabled: !st.link, onClick: () => useLink(st), className: "shrink-0 px-2.5 py-2 rounded-xl bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan text-[10px] font-bold hover:bg-accent-cyan/25 transition disabled:opacity-40" }, st.used ? '✓ تم' : 'استخدم'))));
-        })));
-}
 async function tmdbFindBestByTitle(title, currentType, year) {
     const query = String(title || '').trim();
     if (!query)
@@ -7063,7 +6996,6 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
         React.createElement("div", { className: "mt-3.5" },
             React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u062D\u0644\u0642\u0629 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: e.videoUrl, onChange: v => set('videoUrl', v), folder: "episodes", accept: "video/*" })),
         React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb) }),
-        React.createElement(SourceLinksHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources) }),
         React.createElement("div", { className: "mt-3.5 flex items-center gap-2" },
             React.createElement("div", { className: "h-px flex-1 bg-white/10" }),
             React.createElement("span", { className: "text-[10px] font-black text-slate-500 px-1" }, "أو استخدم VidAPI"),
@@ -7546,7 +7478,6 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                     setBannerData(r.bannerData || null);
                     return r;
                   } }),
-            React.createElement(SourceLinksHelper, { kind: form.type === 'anime' ? 'anime' : 'movie', defaultTitle: form.name, defaultYear: form.year, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources) }),
             React.createElement("div", { className: "mt-3.5 flex items-center gap-2" },
                 React.createElement("div", { className: "h-px flex-1 bg-white/10" }),
                 React.createElement("span", { className: "text-[10px] font-black text-slate-500 px-1" }, "أو استخدم VidAPI"),
@@ -8026,6 +7957,90 @@ function getSubtitleProgress(title) {
     const episodes = (title.seasons || []).flatMap(se => Array.isArray(se.episodes) ? se.episodes : []);
     return { done: episodes.filter(ep => normalizeSubtitleUrl(ep.subtitleUrl || '')).length, total: episodes.length };
 }
+
+const ALTERNATIVE_SOURCE_CATALOG = [{"id": "anime3rb", "name": "Anime3rb", "base": "https://anime3rb.com", "search": "https://anime3rb.com/?s={query}", "note": "أنمي؛ يدعم الموقع صفحات بحث/فيديو، وقد يحتاج حل Cloudflare."}, {"id": "anime-phoenix", "name": "Anime Phoenix", "base": "https://anime-phoenix.com", "search": "https://anime-phoenix.com/search/?q={query}", "note": "أنمي؛ استخراج بعض الحلقات يعتمد على AJAX."}, {"id": "animewitcher", "name": "Animewitcher", "base": "https://animewitcher.com", "search": "https://animewitcher.com", "note": "يعتمد على Firebase وواجهات بيانات؛ يحتاج تهيئة إضافية لبعض النتائج."}, {"id": "cartoondub", "name": "CartoonDub", "base": "https://pub-b534f19ddae84293ae0e0fb360695fcf.r2.dev", "search": "https://pub-b534f19ddae84293ae0e0fb360695fcf.r2.dev", "note": "مستودع فيديو مباشر؛ البحث والفهرسة في الكود يعتمدون TMDB وواجهة e-droid."}, {"id": "cinema-plus", "name": "CinemaPlus", "base": "https://html.e-droid.net/srv/get_html.php?ida=3796813&ids=", "search": "https://config.e-droid.net/srv/config.php?v=211&vname=3.0&idapp=3796813&idusu=0&cod_g=&gp=0&am=0&idl=en&pa_env=1&pa=GB&pn=cinema.plus&fus=010100000000&aid=7db3574f7ef4288a", "note": "يعتمد على إعدادات e-droid وTMDB؛ رابط الصفحة وحده لا يكفي لاستخراج كل الحلقات."}, {"id": "egydead", "name": "Egydead", "base": "https://tv10.egydead.live", "search": "https://tv10.egydead.live/?s={query}", "note": "أفلام ومسلسلات؛ قد تتغير النطاقات أو تتطلب بعض الخوادم خطوات استخراج إضافية."}, {"id": "krmzy", "name": "Krmzy", "base": "https://krmzi.org", "search": "https://krmzi.org/?s={query}", "note": "مسلسلات؛ صفحات الخوادم قد تحيل إلى مستخرجات خارجية."}, {"id": "topcinema", "name": "TopCinema", "base": "https://web8.topcinema.cam", "search": "https://web8.topcinema.cam/search/?query={query}&type=all", "note": "أفلام ومسلسلات؛ صفحة المشاهدة قد تحتوي خوادم متعددة."}];
+function AlternativeSourceExtractor() {
+    const [query, setQuery] = useState('');
+    const [kind, setKind] = useState('series');
+    const [selected, setSelected] = useState('egydead');
+    const [customPage, setCustomPage] = useState('');
+    const [results, setResults] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [message, setMessage] = useState('');
+    const [outputBySource, setOutputBySource] = useState(() => {
+        try { return JSON.parse(localStorage.getItem('cinadam_alt_source_outputs') || '{}'); } catch (_) { return {}; }
+    });
+    const active = ALTERNATIVE_SOURCE_CATALOG.find(x => x.id === selected) || ALTERNATIVE_SOURCE_CATALOG[0];
+    const searchUrl = (source) => {
+        const q = encodeURIComponent(query.trim());
+        return source.search.includes('{query}') ? source.search.replace('{query}', q) : source.search;
+    };
+    const saveOutput = (id, value) => {
+        const next = { ...outputBySource, [id]: value };
+        setOutputBySource(next);
+        try { localStorage.setItem('cinadam_alt_source_outputs', JSON.stringify(next)); } catch (_) {}
+    };
+    const extract = async () => {
+        const pageUrl = (customPage.trim() || searchUrl(active)).trim();
+        if (!/^https?:\/\//i.test(pageUrl)) { setMessage('أدخل رابط صفحة صحيح يبدأ بـ https://'); return; }
+        setLoading(true); setMessage('جاري فحص الصفحة واستخراج الروابط الظاهرة...');
+        setResults([]);
+        try {
+            const bases = [...new Set([String(CINEMANA_PROXY || '').replace(/\/+$/, ''), 'http://localhost:8787'].filter(Boolean))];
+            let data = null, lastError = null;
+            for (const base of bases) {
+                try {
+                    const response = await fetch(`${base}/sources/extract?provider=${encodeURIComponent(active.id)}&url=${encodeURIComponent(pageUrl)}`, { cache: 'no-store' });
+                    const payload = await response.json();
+                    if (!response.ok || !payload.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+                    data = payload; break;
+                } catch (e) { lastError = e; }
+            }
+            if (!data) throw lastError || new Error('تعذر الاتصال بالبروكسي');
+            const found = Array.isArray(data.links) ? data.links : [];
+            setResults(found);
+            if (found.length) {
+                saveOutput(active.id, found[0].url);
+                setMessage(`تم العثور على ${found.length} رابط محتمل. راجعها قبل اعتمادها؛ قد تكون بعض الروابط صفحات وسيطة وليست فيديو مباشرًا.`);
+            } else setMessage('لم يظهر رابط فيديو مباشر في الصفحة. هذا المصدر يحتاج مستخرجًا خاصًا أو واجهة API إضافية.');
+        } catch (e) {
+            setMessage((e && e.message) || 'تعذّر استخراج الروابط. تأكد من تشغيل البروكسي.');
+        } finally { setLoading(false); }
+    };
+    return React.createElement('div', { className: 'space-y-5' },
+        React.createElement('div', { className: 'glass-card rounded-2xl border border-white/10 p-4 md:p-5' },
+            React.createElement('h2', { className: 'text-lg font-black mb-2' }, 'استخراج من المصادر البديلة'),
+            React.createElement('p', { className: 'text-xs leading-6 text-slate-400 mb-4' }, 'هذه المحركات مستخرجة من ملفات المشروع المرفوع. بعض المشاريع تحتوي كود Android/Kotlin وليس API جاهزًا للويب؛ أداة الفحص أدناه تستخرج الروابط الظاهرة في صفحة المصدر، ولا تتجاوز تسجيل الدخول أو الحماية ولا تضمن حل كل مشغّل.'),
+            React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-2 gap-3' },
+                React.createElement('label', { className: 'block text-xs font-bold text-slate-300' }, 'المصدر',
+                    React.createElement('select', { value: selected, onChange: e => { setSelected(e.target.value); setCustomPage(''); setResults([]); setMessage(''); }, className: 'mt-2 w-full bg-glass-900 border border-white/10 rounded-xl p-3 text-sm text-white' },
+                        ALTERNATIVE_SOURCE_CATALOG.map(s => React.createElement('option', { key: s.id, value: s.id }, s.name)))),
+                React.createElement('label', { className: 'block text-xs font-bold text-slate-300' }, 'نوع العمل',
+                    React.createElement('select', { value: kind, onChange: e => setKind(e.target.value), className: 'mt-2 w-full bg-glass-900 border border-white/10 rounded-xl p-3 text-sm text-white' },
+                        React.createElement('option', { value: 'movie' }, 'فيلم'), React.createElement('option', { value: 'series' }, 'مسلسل'), React.createElement('option', { value: 'anime' }, 'أنمي'), React.createElement('option', { value: 'cartoon' }, 'كارتون مدبلج'))),
+                React.createElement('label', { className: 'block text-xs font-bold text-slate-300 md:col-span-2' }, 'اسم العمل أو رابط صفحة المصدر',
+                    React.createElement('input', { value: customPage || query, onChange: e => { const v = e.target.value; if (/^https?:\/\//i.test(v)) setCustomPage(v); else { setCustomPage(''); setQuery(v); } }, placeholder: 'اكتب اسم العمل أو الصق رابط صفحة العمل/الحلقة', className: 'mt-2 w-full bg-glass-900 border border-white/10 rounded-xl p-3 text-sm text-white' })),
+                React.createElement('div', { className: 'md:col-span-2 rounded-xl bg-black/20 p-3 text-xs leading-6 text-slate-400' },
+                    React.createElement('div', null, 'عنوان المصدر: ', React.createElement('a', { href: active.base, target: '_blank', rel: 'noreferrer', className: 'text-accent-cyan break-all underline' }, active.base)),
+                    React.createElement('div', null, active.note))),
+            React.createElement('button', { type: 'button', disabled: loading, onClick: extract, className: 'mt-4 w-full md:w-auto px-5 py-3 rounded-xl bg-accent-cyan text-glass-950 font-black text-sm disabled:opacity-50' }, loading ? 'جاري الاستخراج...' : 'فحص الصفحة واستخراج الروابط'),
+            message && React.createElement('p', { className: 'mt-3 text-xs leading-6 text-slate-300' }, message)),
+        React.createElement('div', { className: 'glass-card rounded-2xl border border-white/10 p-4' },
+            React.createElement('h3', { className: 'font-black mb-3' }, 'الرابط الناتج لكل مصدر'),
+            React.createElement('p', { className: 'text-xs text-slate-400 mb-3' }, 'يُحفظ الرابط محليًا في هذا المتصفح لكل مصدر. لا يُنشر تلقائيًا ضمن العمل ولا يغيّر مصدر سينمانا الأساسي.'),
+            ALTERNATIVE_SOURCE_CATALOG.map(s => React.createElement('div', { key: s.id, className: 'grid grid-cols-1 md:grid-cols-[150px_1fr_auto] gap-2 items-center border-b border-white/5 py-3' },
+                React.createElement('div', { className: 'text-sm font-bold' }, s.name),
+                React.createElement('input', { value: outputBySource[s.id] || '', onChange: e => saveOutput(s.id, e.target.value), placeholder: 'الرابط الذي استخرجه هذا المصدر...', className: 'w-full min-w-0 bg-glass-900 border border-white/10 rounded-xl p-2.5 text-xs text-white', dir: 'ltr' }),
+                React.createElement('button', { type: 'button', onClick: () => { const v = outputBySource[s.id] || ''; if (v) { navigator.clipboard && navigator.clipboard.writeText(v); setMessage(`تم طلب نسخ رابط ${s.name}.`); } }, className: 'px-3 py-2 rounded-lg border border-white/10 text-xs font-bold hover:border-accent-cyan' }, 'نسخ')))),
+        results.length > 0 && React.createElement('div', { className: 'glass-card rounded-2xl border border-white/10 p-4' },
+            React.createElement('h3', { className: 'font-black mb-3' }, `الروابط المحتملة (${results.length})`),
+            results.map((r, i) => React.createElement('div', { key: `${r.url}-${i}`, className: 'border-b border-white/5 py-3' },
+                React.createElement('div', { className: 'text-xs text-slate-400 mb-1' }, r.kind || 'رابط مستخرج'),
+                React.createElement('a', { href: r.url, target: '_blank', rel: 'noreferrer', className: 'block text-xs text-accent-cyan break-all underline', dir: 'ltr' }, r.url),
+                React.createElement('button', { type: 'button', onClick: () => saveOutput(active.id, r.url), className: 'mt-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs font-bold' }, 'اعتماد هذا الرابط'))))
+    );
+}
+
 function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
     const [tab, setTab] = useState('content');
     const [contentType, setContentType] = useState('movie');
@@ -8075,6 +8090,7 @@ function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
         React.createElement("h1", { className: "text-2xl md:text-3xl font-black mb-6 text-slate-100" }, "\u0644\u0648\u062D\u0629 \u062A\u062D\u0643\u0645  "),
         React.createElement(SlidingTabs, { containerClassName: "flex gap-1.5 mb-6 flex-wrap bg-glass-900/80 p-1.5 rounded-2xl border border-white/5", items: [
                 { key: 'content', label: 'المحتوى (رفع )' },
+                ...(isFullAdmin ? [{ key: 'altSources', label: 'استخراج المصادر البديلة' }] : []),
                 { key: 'complaints', label: 'الشكاوى والطلبات' },
                 ...(isFullAdmin ? [{ key: 'appeals', label: 'الطعون' }] : []),
                 ...(isFullAdmin ? [{ key: 'users', label: 'المستخدمون' }] : []),
@@ -8130,6 +8146,7 @@ function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
                         React.createElement("button", { onClick: () => setDeleteTarget(t.id), title: "\u062D\u0630\u0641", className: "w-9 h-9 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 flex items-center justify-center text-rose-400 transition shrink-0" },
                             React.createElement(Icon, { name: "trash-2", className: "w-4 h-4" }))));
                 }))))),
+        tab === 'altSources' && isFullAdmin && React.createElement(AlternativeSourceExtractor, null),
         tab === 'complaints' && React.createElement(AdminComplaints, { currentUser: currentUser }),
         tab === 'appeals' && isFullAdmin && React.createElement(AdminAppeals, { currentUser: currentUser }),
         tab === 'users' && isFullAdmin && React.createElement(AdminUsers, { currentUser: currentUser }),
