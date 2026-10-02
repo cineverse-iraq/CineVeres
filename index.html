@@ -1314,13 +1314,15 @@ async function cinemanaFetch(path) {
         const b = String(base || '').trim().replace(/\/+$/, '');
         if (b && !candidates.includes(b)) candidates.push(b);
     };
-    addCandidate(CINEMANA_PROXY);
+    // لوحة الإدارة: جرّب Node المحلي أولًا، ثم البروكسي العام كاحتياط.
+    // هذا يمنع تعطل البحث/الرفع عندما يكون api.cinadam.xyz متوقفًا.
     addCandidate('http://localhost:8787');
+    addCandidate(CINEMANA_PROXY);
 
     let lastError = null;
     for (const base of candidates) {
         try {
-            const res = await fetchWithTimeout(`${base}${path}`, { cache: 'no-store', headers: { 'Accept': 'application/json', 'Cache-Control': 'no-cache' } }, 10000);
+            const res = await fetchWithTimeout(`${base}${path}`, { cache: 'no-store', headers: { 'Accept': 'application/json', 'Cache-Control': 'no-cache' } }, 30000);
             if (!res.ok) {
                 lastError = new Error('HTTP ' + res.status);
                 continue;
@@ -7175,7 +7177,7 @@ async function resolveCartoonLinks(form,setProgress) {
             title:out.name,originalTitle:out.originalTitle,year:out.year,tmdb:out.tmdbId,
             cartoondubId:out.cartoondubId,sectionId:out.cartoondubSectionId,target:out.cartoondubTarget,
             season:s.number,episode:e.number
-        },15000);
+        },60000);
         const srcs=normalizeVideoSources(r.sources||[]);
         if(srcs.length){e.videoSources=srcs;e.videoUrl=srcs[0].url;e.playbackProvider='cartoondub';e.cartoondubId=String(r.id||'');}
         out.cartoondubTarget=String(r.target||out.cartoondubTarget||'');
@@ -7193,7 +7195,7 @@ async function resolveCartoonLinks(form,setProgress) {
                     title:out.name,originalTitle:out.originalTitle,year:out.year,tmdb:out.tmdbId,
                     cartoondubId:out.cartoondubId,sectionId:out.cartoondubSectionId,target:out.cartoondubTarget,
                     season:s.number,episode:e.number
-                },15000);
+                },60000);
                 const srcs=normalizeVideoSources(r.sources||[]);
                 if(srcs.length){e.videoSources=srcs;e.videoUrl=srcs[0].url;e.playbackProvider='cartoondub';e.cartoondubId=String(r.id||'');}
                 if(r.target&&!out.cartoondubTarget)out.cartoondubTarget=String(r.target);
