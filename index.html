@@ -677,7 +677,7 @@ function normalizeTitlePlaybackData(title) {
     const clean = { ...title };
     clean.id = String(clean.id || '').trim();
     clean.name = String(clean.name || 'بدون اسم').trim();
-    clean.type = ['movie', 'series', 'anime'].includes(clean.type) ? clean.type : 'movie';
+    clean.type = ['movie', 'series', 'anime', 'cartoon'].includes(clean.type) ? clean.type : 'movie';
     clean.status = clean.status === 'published' ? 'published' : (clean.status || 'draft');
     clean.year = Number(clean.year) || 0;
     clean.createdAt = Number(clean.createdAt) || 0;
@@ -1111,8 +1111,8 @@ async function persistSubtitleToFirebase(url, folder = 'subtitles') {
     const file = new File([vtt], `subtitle_${Date.now()}.vtt`, { type: 'text/vtt' });
     return uploadFile(file, folder, null);
 }
-const TYPE_LABELS = { movie: 'فيلم', series: 'مسلسل', anime: 'أنمي' };
-const TYPE_PLURAL = { movie: 'الأفلام', series: 'المسلسلات', anime: 'الأنميات' };
+const TYPE_LABELS = { movie: 'فيلم', series: 'مسلسل', anime: 'أنمي', cartoon: 'كرتون' };
+const TYPE_PLURAL = { movie: 'الأفلام', series: 'المسلسلات', anime: 'الأنميات', cartoon: 'الكراتين المدبلجة' };
 const COMPLAINT_TYPES = { add: 'طلب إضافة عمل', problem: 'مشكلة في التشغيل أو التحميل', suggestion: 'اقتراح عام' };
 const ORDINAL_ONES_F = ['', 'الأولى', 'الثانية', 'الثالثة', 'الرابعة', 'الخامسة', 'السادسة', 'السابعة', 'الثامنة', 'التاسعة'];
 const ORDINAL_TEENS_F = ['العاشرة', 'الحادية عشرة', 'الثانية عشرة', 'الثالثة عشرة', 'الرابعة عشرة', 'الخامسة عشرة', 'السادسة عشرة', 'السابعة عشرة', 'الثامنة عشرة', 'التاسعة عشرة'];
@@ -2936,6 +2936,7 @@ function HomeView({ items, onOpen, watchedMap, watchProgress }) {
         React.createElement(Row, { label: "\u0623\u0641\u0644\u0627\u0645", items: items.filter(t => t.type === 'movie').slice(0, rowLimit), onOpen: onOpen, watchedMap: watchedMap }),
         React.createElement(Row, { label: "\u0645\u0633\u0644\u0633\u0644\u0627\u062A", items: items.filter(t => t.type === 'series').slice(0, rowLimit), onOpen: onOpen, watchedMap: watchedMap }),
         React.createElement(Row, { label: "\u0623\u0646\u0645\u064A", items: items.filter(t => t.type === 'anime').slice(0, rowLimit), onOpen: onOpen, watchedMap: watchedMap }),
+        React.createElement(Row, { label: "\u0643\u0631\u062A\u0648\u0646 \u0645\u062F\u0628\u0644\u062C", items: items.filter(t => t.type === 'cartoon').slice(0, rowLimit), onOpen: onOpen, watchedMap: watchedMap }),
         topGenres.map(g => (React.createElement(Row, { key: g, label: `تصنيف: ${g}`, items: items.filter(t => normalizeGenresValue(t.genres).includes(g)).slice(0, rowLimit), onOpen: onOpen, watchedMap: watchedMap })))));
 }
 const SORT_OPTIONS = [
@@ -3038,7 +3039,7 @@ function Header({ currentUser, view, setView, search, setSearch, onOpenAccount, 
                         "Cina",
                         React.createElement("span", { className: "text-accent-cyan" }, "dam"))),
                 React.createElement("nav", { className: "hidden md:block" },
-                    React.createElement(SlidingTabs, { containerClassName: "flex items-center gap-1.5 bg-glass-900/80 p-1 rounded-2xl border border-white/5", items: [['home', 'الرئيسية'], ['movie', 'أفلام'], ['series', 'مسلسلات'], ['anime', 'أنمي'], ['lists', 'قوائمي']].map(([k, l]) => ({ key: k, label: l })), active: view, onChange: setView, getButtonClassName: (isActive) => `px-4 py-2 rounded-xl text-sm font-semibold ${isActive ? 'text-white' : 'text-slate-300 hover:text-white hover:bg-white/5'}` }))),
+                    React.createElement(SlidingTabs, { containerClassName: "flex items-center gap-1.5 bg-glass-900/80 p-1 rounded-2xl border border-white/5", items: [['home', 'الرئيسية'], ['movie', 'أفلام'], ['series', 'مسلسلات'], ['anime', 'أنمي'], ['cartoon', 'كرتون'], ['lists', 'قوائمي']].map(([k, l]) => ({ key: k, label: l })), active: view, onChange: setView, getButtonClassName: (isActive) => `px-4 py-2 rounded-xl text-sm font-semibold ${isActive ? 'text-white' : 'text-slate-300 hover:text-white hover:bg-white/5'}` }))),
             React.createElement("div", { className: "flex items-center gap-2 md:gap-3 shrink-0" },
                 React.createElement("div", { className: "relative hidden md:block md:w-72" },
                     React.createElement(Icon, { name: "search", className: "w-4 h-4 absolute top-1/2 -translate-y-1/2 right-3.5 text-slate-400" }),
@@ -3111,7 +3112,7 @@ function NotificationsBell({ currentUser, onOpenProfile, onOpenTitle }) {
                         React.createElement("p", { className: "text-[10px] text-slate-500 font-mono mt-0.5" }, fmtDateTime(n.date)))))))))));
 }
 function MobileBottomNav({ view, setView }) {
-    const items = [['home', 'الرئيسية', 'home'], ['movie', 'أفلام', 'film'], ['series', 'مسلسلات', 'tv'], ['anime', 'أنمي', 'sparkles'], ['lists', 'قوائمي', 'list']];
+    const items = [['home', 'الرئيسية', 'home'], ['movie', 'أفلام', 'film'], ['series', 'مسلسلات', 'tv'], ['anime', 'أنمي', 'sparkles'], ['cartoon', 'كرتون', 'clapperboard'], ['lists', 'قوائمي', 'list']];
     const [hidden, setHidden] = useState(false);
     const lastY = useRef(0);
     const ticking = useRef(false);
@@ -6945,7 +6946,50 @@ function SubtitleHelper({ value, onChange, sourceId, title, type, season, episod
         warn && React.createElement("p", { className: "text-[10px] font-bold text-amber-400 mt-1" }, warn),
         React.createElement("p", { className: "text-[10px] text-slate-500 mt-1.5" }, "\u064A\u0628\u062D\u062B \u0623\u0648\u0644\u064B\u0627 \u0641\u064A \u062A\u0631\u062C\u0645\u0629 \u0633\u064A\u0646\u0645\u0627\u0646\u0627 \u0646\u0641\u0633\u0647\u0627 (\u0646\u0641\u0633 \u0646\u0633\u062E\u0629 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 = \u0623\u062F\u0642 \u062A\u0648\u0642\u064A\u062A) \u062B\u0645 SubDL. \u062A\u064F\u062D\u0641\u0638 \u0641\u064A Firebase \u0648\u0644\u0627 \u062A\u0633\u062A\u0647\u0644\u0643 \u0623\u064A \u0645\u0633\u0627\u062D\u0629 \u0645\u0646 \u062C\u0647\u0627\u0632\u0643.")));
 }
-function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sourceId, seriesName }) {
+function CartoonDubHelper({ value, onGenerate }) {
+    const [url, setUrl] = useState(value || '');
+    const [loading, setLoading] = useState(false);
+    const [msg, setMsg] = useState('');
+    useEffect(() => { setUrl(value || ''); }, [value]);
+    const resolve = async () => {
+        const raw = String(url || '').trim();
+        if (!raw) {
+            setMsg('الصق رابط صفحة الحلقة من CartoonDub أولًا.');
+            return;
+        }
+        setLoading(true);
+        setMsg('جاري تجهيز رابط CartoonDub...');
+        try {
+            if (/^https?:\/\/(?:www\.)?(?:old\.)?stardima\.com\/embed\.php\?vid=/i.test(raw)) {
+                onGenerate && onGenerate(raw);
+                setMsg('تم اعتماد رابط مشغل CartoonDub.');
+                return;
+            }
+            const data = await cinemanaFetch(`/cartoondub/resolve?url=${encodeURIComponent(raw)}`);
+            if (!data || !data.ok || !data.embedUrl)
+                throw new Error((data && data.error) || 'لم أجد مشغل CartoonDub داخل الرابط.');
+            onGenerate && onGenerate(data.embedUrl);
+            setUrl(data.embedUrl);
+            setMsg(data.title ? `تم الربط: ${data.title}` : 'تم تحويل الرابط إلى مشغل CartoonDub.');
+        } catch (e) {
+            setMsg(e && e.message ? e.message : 'تعذر تجهيز رابط CartoonDub.');
+        } finally {
+            setLoading(false);
+        }
+    };
+    return React.createElement("div", { className: "glass-card rounded-2xl p-3.5 border border-accent-cyan/20 mt-3.5" },
+        React.createElement("p", { className: "text-[11px] font-black text-accent-cyan mb-2.5 flex items-center gap-1.5" },
+            React.createElement(Icon, { name: "clapperboard", className: "w-3.5 h-3.5" }),
+            "مصدر CartoonDub — كرتون مدبلج"),
+        React.createElement("div", { className: "flex items-center gap-2" },
+            React.createElement("input", { value: url, onChange: e => setUrl(e.target.value), placeholder: "الصق رابط صفحة الحلقة من CartoonDub", className: "flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white outline-none focus:border-accent-cyan" }),
+            React.createElement("button", { type: "button", onClick: resolve, disabled: loading, className: "shrink-0 px-3.5 py-2.5 rounded-xl bg-accent-cyan text-glass-950 text-xs font-black hover:brightness-110 disabled:opacity-50 transition" },
+                loading ? "..." : "استيراد")),
+        React.createElement("p", { className: "text-[10px] text-slate-500 mt-2 leading-relaxed" },
+            "تقدر أيضًا ترفع ملف MP4 من الجهاز بنفس زر الرفع أعلاه؛ عند استخدام CartoonDub نحفظ رابط المشغل مباشرة داخل الحلقة."),
+        msg && React.createElement("p", { className: "text-[11px] font-bold mt-2 text-slate-300" }, msg));
+}
+function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sourceId, seriesName, isCartoon = false }) {
     const e = episode;
     const eRef = useRef(e);
     const [tmdbRatingLoading, setTmdbRatingLoading] = useState(false);
@@ -6994,8 +7038,8 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
                 episodeAutoLabel(e),
                 "\u00BB")),
         React.createElement("div", { className: "mt-3.5" },
-            React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u062D\u0644\u0642\u0629 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: e.videoUrl, onChange: v => set('videoUrl', v), folder: "episodes", accept: "video/*" })),
-        React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb) }),
+            React.createElement(FileUploadField, { label: isCartoon ? "\u0645\u0644\u0641 \u0627\u0644\u062D\u0644\u0642\u0629 \u0627\u0644\u0643\u0631\u062A\u0648\u0646 (MP4 \u0623\u0648 \u0631\u0627\u0628\u0637)" : "\u0645\u0644\u0641 \u0627\u0644\u062D\u0644\u0642\u0629 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: e.videoUrl, onChange: v => { set('videoUrl', v); if (v) set('playbackProvider', 'uploaded'); }, folder: "episodes", accept: "video/*" })),
+        isCartoon ? React.createElement(CartoonDubHelper, { value: e.videoUrl || '', onGenerate: (url) => { set('videoUrl', url); set('playbackProvider', 'cartoondub'); } }) : React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb) }),
         React.createElement("div", { className: "mt-3.5 flex items-center gap-2" },
             React.createElement("div", { className: "h-px flex-1 bg-white/10" }),
             React.createElement("span", { className: "text-[10px] font-black text-slate-500 px-1" }, "أو استخدم VidAPI"),
@@ -7387,7 +7431,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 poster: (s.poster || '').trim(),
                 episodeThumbnail: (s.episodeThumbnail || '').trim(),
                 episodes: (s.episodes || []).map(e => ({
-                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || '').trim(), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
+                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : (form.type === 'cartoon' && e.videoUrl ? 'uploaded' : ''))), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || '').trim(), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
                     trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, introStart: Number(e.introStart) || 0, introEnd: Number(e.introEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
                 }))
             }));
@@ -7430,7 +7474,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
     const labelCls = "text-xs font-bold text-slate-300 mb-1.5 block";
     const activeSeason = form.seasons[activeSeasonIdx];
     return (React.createElement("div", { className: "glass-panel rounded-3xl p-5 md:p-7 border border-white/10 shadow-2xl" },
-        React.createElement(TmdbImportPanel, { type: form.type, onApply: applyTmdb }),
+        form.type !== 'cartoon' && React.createElement(TmdbImportPanel, { type: form.type, onApply: applyTmdb }),
         React.createElement("div", { className: "grid md:grid-cols-2 gap-5" },
             React.createElement("div", null,
                 React.createElement("label", { className: labelCls }, "\u0627\u0633\u0645 \u0627\u0644\u0639\u0645\u0644 *"),
@@ -7440,7 +7484,8 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 React.createElement("select", { value: form.type, onChange: e => set('type', e.target.value), className: inputCls },
                     React.createElement("option", { value: "movie", className: "bg-glass-950" }, "\u0641\u064A\u0644\u0645"),
                     React.createElement("option", { value: "series", className: "bg-glass-950" }, "\u0645\u0633\u0644\u0633\u0644"),
-                    React.createElement("option", { value: "anime", className: "bg-glass-950" }, "\u0623\u0646\u0645\u064A"))),
+                    React.createElement("option", { value: "anime", className: "bg-glass-950" }, "\u0623\u0646\u0645\u064A"),
+                    React.createElement("option", { value: "cartoon", className: "bg-glass-950" }, "\u0643\u0631\u062A\u0648\u0646 \u0645\u062F\u0628\u0644\u062C"))),
             React.createElement("div", null,
                 React.createElement("label", { className: labelCls }, "\u0633\u0646\u0629 \u0627\u0644\u0625\u0635\u062F\u0627\u0631"),
                 React.createElement("input", { type: "number", value: form.year, onChange: e => set('year', e.target.value), className: inputCls })),
@@ -7486,7 +7531,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             React.createElement(SubtitleHelper, { cinemanaId: form.cinemanaId, value: form.subtitleUrl || '', onChange: v => set('subtitleUrl', v), sourceId: sourceId, title: form.name, year: form.year, type: "movie", folder: "subtitles", offset: form.subtitleOffset || 0, onOffsetChange: v => set('subtitleOffset', v) }),
             React.createElement(VideoDisplaySettings, { value: form, onChange: patch => setForm(prev => ({ ...prev, ...patch })) }))) : (React.createElement(React.Fragment, null,
             React.createElement("div", null,
-                React.createElement(CinemanaSeriesImportPanel, { type: form.type === 'anime' ? 'anime' : 'tv', defaultTitle: form.name, defaultYear: form.year, onImport: async (item, onProgress) => {
+                form.type !== 'cartoon' && React.createElement(CinemanaSeriesImportPanel, { type: form.type === 'anime' ? 'anime' : 'tv', defaultTitle: form.name, defaultYear: form.year, onImport: async (item, onProgress) => {
                         const r = sourceId
                           ? await importFromTmdb(sourceId, form.type, { withEpisodes: true, onProgress })
                           : await importFromTmdbTitle(cinemanaTitle(item), form.type, cinemanaYear(item) || form.year, { withEpisodes: true, onProgress });
@@ -7502,7 +7547,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                     } })),
             React.createElement("div", { className: "mt-6 border-t border-white/10 pt-5" },
                 React.createElement("div", { className: "flex items-center justify-between mb-4" },
-                    React.createElement("h4", { className: "font-black text-white text-base" }, "\u0627\u0644\u0645\u0648\u0627\u0633\u0645 \u0648\u0627\u0644\u062D\u0644\u0642\u0627\u062A"),
+                    React.createElement("h4", { className: "font-black text-white text-base" }, form.type === 'cartoon' ? "\u0645\u0648\u0627\u0633\u0645 \u0627\u0644\u0643\u0631\u062a\u0648\u0646 \u0648\u062d\u0644\u0642\u0627ت\u0647" : "\u0627\u0644\u0645\u0648اسم \u0648\u0627\u0644\u062d\u0644\u0642\u0627ت"),
                     React.createElement("button", { onClick: addSeason, className: "flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 font-bold hover:brightness-110 transition shadow-sm" },
                         React.createElement(Icon, { name: "plus", className: "w-4 h-4" }),
                         "\u0625\u0636\u0627\u0641\u0629 \u0645\u0648\u0633\u0645")),
@@ -7600,7 +7645,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                             activeSeason.episodes.length === 0 && React.createElement("p", { className: "text-xs text-slate-500 font-medium py-2" }, "\u0644\u0627 \u062A\u0648\u062C\u062F \u062D\u0644\u0642\u0627\u062A \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0645\u0648\u0633\u0645 \u0628\u0639\u062F.")),
                         React.createElement("button", { onClick: () => { addEpisode(activeSeasonIdx); setEditingEpisodeIdx(activeSeason.episodes.length); }, className: "mt-3 flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl glass-card border border-white/10 hover:border-accent-cyan text-slate-200 font-bold transition" },
                             React.createElement(Icon, { name: "plus", className: "w-3.5 h-3.5 text-accent-cyan" }),
-                            "\u0625\u0636\u0627\u0641\u0629 \u062D\u0644\u0642\u0629 \u062C\u062F\u064A\u062F\u0629"))) : (React.createElement(EpisodeEditor, { episode: activeSeason.episodes[editingEpisodeIdx], seasonNumber: activeSeason.number, sourceId: sourceId, seriesName: form.name, onChange: (newEp) => replaceEpisode(activeSeasonIdx, editingEpisodeIdx, newEp), onBack: () => setEditingEpisodeIdx(null), onDelete: () => { removeEpisode(activeSeasonIdx, editingEpisodeIdx); setEditingEpisodeIdx(null); } }))))))))),
+                            "\u0625\u0636\u0627\u0641\u0629 \u062D\u0644\u0642\u0629 \u062C\u062F\u064A\u062F\u0629"))) : (React.createElement(EpisodeEditor, { episode: activeSeason.episodes[editingEpisodeIdx], seasonNumber: activeSeason.number, sourceId: sourceId, seriesName: form.name, isCartoon: form.type === 'cartoon', onChange: (newEp) => replaceEpisode(activeSeasonIdx, editingEpisodeIdx, newEp), onBack: () => setEditingEpisodeIdx(null), onDelete: () => { removeEpisode(activeSeasonIdx, editingEpisodeIdx); setEditingEpisodeIdx(null); } }))))))))),
         React.createElement("div", { className: "flex items-center gap-6 mt-6 flex-wrap" },
             React.createElement("label", { className: "flex items-center gap-2.5 text-sm font-bold text-slate-200 cursor-pointer" },
                 React.createElement("input", { type: "checkbox", checked: form.featured, onChange: e => set('featured', e.target.checked), className: "w-4 h-4 rounded accent-accent-cyan" }),
@@ -8013,7 +8058,7 @@ function AdminPanel({ currentUser, titles, onOpenAuth, moderators }) {
             ], active: tab, onChange: (k) => { setTab(k); if (k === 'content')
                 setEditing(null); }, trackClassName: "bg-accent-cyan shadow-[0_0_15px_rgba(0,240,255,0.4)]", getButtonClassName: (isActive) => `px-5 py-2.5 rounded-xl text-sm font-bold ${isActive ? 'text-glass-950' : 'text-slate-300 hover:text-white hover:bg-white/5'}` }),
         tab === 'content' && (editing ? (React.createElement(AdminContentForm, { initial: editing === 'new' ? null : editing, defaultType: contentType, onDone: () => setEditing(null) })) : (React.createElement("div", null,
-            React.createElement(SlidingTabs, { containerClassName: "flex gap-1.5 mb-5 bg-glass-900/80 p-1.5 rounded-2xl border border-white/5", items: [['movie', 'أفلام'], ['series', 'مسلسلات'], ['anime', 'أنمي']].map(([k, l]) => ({
+            React.createElement(SlidingTabs, { containerClassName: "flex gap-1.5 mb-5 bg-glass-900/80 p-1.5 rounded-2xl border border-white/5", items: [['movie', 'أفلام'], ['series', 'مسلسلات'], ['anime', 'أنمي'], ['cartoon', 'كرتون']].map(([k, l]) => ({
                     key: k, render: () => (React.createElement(React.Fragment, null,
                         l,
                         " ",
@@ -8619,7 +8664,7 @@ function App() {
         React.createElement(Header, { currentUser: currentUser, view: view, setView: setView, search: search, setSearch: setSearch, onOpenAccount: () => setAccountSheet(true), onOpenProfile: openProfile, onOpenTitleFromNotif: (id) => { const t = titles.find(x => x.id === id && x.status === 'published'); if (t)
                 setActiveTitle(t); } }),
         React.createElement("main", { className: "flex-1 max-w-7xl w-full mx-auto px-4 py-6 md:py-8" },
-            React.createElement("div", { key: searching ? 'search' : view, className: "page-fade-in" }, searching ? (React.createElement(TypeGrid, { title: `نتائج البحث عن "${search}"`, items: mainList, onOpen: setActiveTitle, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0646\u062A\u0627\u0626\u062C \u0645\u0637\u0627\u0628\u0642\u0629.", watchedMap: watched })) : view === 'home' ? (React.createElement(HomeView, { items: published, onOpen: openTitleFromContinue, watchedMap: watched, watchProgress: watchProgress })) : (view === 'movie' || view === 'series' || view === 'anime') ? (React.createElement(TypeGrid, { title: TYPE_PLURAL[view], items: published.filter(t => t.type === view), onOpen: setActiveTitle, showGenreFilter: true, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u0628\u0639\u062F.", watchedMap: watched })) : view === 'lists' ? (React.createElement(ListsView, { currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal })) : view === 'requests' ? (React.createElement(RequestsView, { currentUser: currentUser, onOpenAuth: setAuthModal })) : view === 'settings' ? (React.createElement(SettingsView, { currentUser: currentUser, onUpdateName: handleUpdateName, onUpdateAvatar: handleUpdateAvatar, onOpenAuth: setAuthModal })) : view === 'profile' ? (React.createElement(ProfileView, { username: profileTarget, currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal, onOpenProfile: openProfile })) : view === 'admin' ? (React.createElement(AdminPanel, { currentUser: currentUser, titles: titles, onOpenAuth: setAuthModal, moderators: moderators })) : null)),
+            React.createElement("div", { key: searching ? 'search' : view, className: "page-fade-in" }, searching ? (React.createElement(TypeGrid, { title: `نتائج البحث عن "${search}"`, items: mainList, onOpen: setActiveTitle, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0646\u062A\u0627\u0626\u062C \u0645\u0637\u0627\u0628\u0642\u0629.", watchedMap: watched })) : view === 'home' ? (React.createElement(HomeView, { items: published, onOpen: openTitleFromContinue, watchedMap: watched, watchProgress: watchProgress })) : (view === 'movie' || view === 'series' || view === 'anime' || view === 'cartoon') ? (React.createElement(TypeGrid, { title: TYPE_PLURAL[view], items: published.filter(t => t.type === view), onOpen: setActiveTitle, showGenreFilter: true, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u0628\u0639\u062F.", watchedMap: watched })) : view === 'lists' ? (React.createElement(ListsView, { currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal })) : view === 'requests' ? (React.createElement(RequestsView, { currentUser: currentUser, onOpenAuth: setAuthModal })) : view === 'settings' ? (React.createElement(SettingsView, { currentUser: currentUser, onUpdateName: handleUpdateName, onUpdateAvatar: handleUpdateAvatar, onOpenAuth: setAuthModal })) : view === 'profile' ? (React.createElement(ProfileView, { username: profileTarget, currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal, onOpenProfile: openProfile })) : view === 'admin' ? (React.createElement(AdminPanel, { currentUser: currentUser, titles: titles, onOpenAuth: setAuthModal, moderators: moderators })) : null)),
         React.createElement(MobileBottomNav, { view: view, setView: setView }),
         React.createElement(ToastHost, null),
         activeTitle && (React.createElement(TitleModal, { title: activeTitle, allTitles: published, currentUser: currentUser, liked: likedIds.includes(activeTitle.id), getRole: getRole, onLike: () => toggleLike(activeTitle), onClose: () => { setActiveTitle(null); if (new URLSearchParams(location.search).get('t'))
