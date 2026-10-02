@@ -7204,6 +7204,8 @@ async function resolveCartoonLinks(form,setProgress) {
         done+=chunk.length;
         setProgress(`روابط CartoonDub: ${done}/${jobs.length}`);
     }
+    const foundCount=out.seasons.reduce((n,s)=>n+(s.episodes||[]).filter(e=>String(e.videoUrl||'').trim()).length,0);
+    if(!foundCount && jobs.length) throw new Error('CartoonDub لم يرجّع أي روابط للحلقات. تأكد من تشغيل server.js المحلي ثم اضغط إعادة جلب الروابط.');
     return out;
 }
 async function resolveCartoonSubtitles(form,setProgress){
@@ -7277,9 +7279,18 @@ function CartoonDubAdminForm({initial,onDone,currentUser}){
             const linked=await resolveCartoonLinks(imported,setProgress);
             setForm(linked);setLinksBusy(false);
             const hasLinks=type==='movie'?!!linked.videoUrl:linked.seasons.some(s=>(s.episodes||[]).some(e=>e.videoUrl));
+            if(hasLinks){
+                setSubsBusy(true);
+                setStage('الترجمة');
+                try{
+                    const withSubs=await resolveCartoonSubtitles(linked,setProgress);
+                    setForm(withSubs);
+                }catch(_){ }
+                finally{ setSubsBusy(false); }
+            }
             setStage('جاهز');
             setProgress(hasLinks
-                ? 'اكتمل جلب TMDB + Fanart + روابط CartoonDub. اضغط «جلب كل الترجمات» عند الحاجة، ثم احفظ.'
+                ? 'اكتمل جلب TMDB + Fanart + روابط CartoonDub، وتمت محاولة جلب الترجمات العربية من SubDL/OpenSubtitles.'
                 : 'اكتملت معلومات TMDB لكن لم يتم العثور على رابط CartoonDub بعد. اضغط «جلب كل الروابط» للمحاولة مجددًا.');
         }catch(e){setError(e.message||'حدث خطأ أثناء استيراد الكارتون.');}
         finally{setImporting(false);setLinksBusy(false);setSubsBusy(false);}
