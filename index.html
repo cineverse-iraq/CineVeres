@@ -1624,7 +1624,6 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
             React.createElement("button", { type: "button", onClick: () => { setVideos(null); setPicked(null); }, className: "mt-2 text-[10px] text-slate-500 hover:text-slate-300 underline" }, "\u0631\u062C\u0648\u0639 \u0644\u0644\u0646\u062A\u0627\u0626\u062C")))));
 }
 const EXTRA_LINK_SOURCES = [
-    { id: 'cinemabox', label: 'Cinema Box' },
     { id: 'cinemaplus', label: 'Cinema Plus' }
 ];
 // مصادر إضافية لرابط التشغيل (بنفس آلية سينمانا): لكل مصدر زر استخراج وخانة لرابطه.
@@ -1637,16 +1636,19 @@ function SourceLinksHelper({ kind, season, episode, defaultTitle, defaultYear, o
         patch(src.id, { loading: true, error: '' });
         try {
             const usp = new URLSearchParams({
-                title, type: kind === 'movie' ? 'movie' : 'tv',
+                title, type: kind === 'tv' ? 'tv' : 'movie',
                 season: String(Number(season) || 1), episode: String(Number(episode) || 1)
             });
             if (defaultYear) usp.set('year', String(defaultYear));
             if (forcedId) usp.set('id', String(forcedId));
             const data = await cinemanaFetch(`/src/${src.id}/resolve?${usp.toString()}`);
+            const probeByUrl = {};
+            (data.links || []).forEach(l => { if (l.probe) probeByUrl[l.url] = l.probe; });
             const sources = cinemanaVideoSources((data.links || []).map(l => ({ url: l.url, label: l.label })));
+            const best = sources.find(x => !probeByUrl[x.url] || probeByUrl[x.url].ok) || sources[0];
             patch(src.id, {
-                loading: false, data, sources,
-                link: sources[0] ? sources[0].url : '',
+                loading: false, data, sources, probeByUrl,
+                link: best ? best.url : '',
                 error: data.ok ? '' : (data.error || 'لم يُعثر على رابط')
             });
         } catch (e) {
@@ -1681,6 +1683,7 @@ function SourceLinksHelper({ kind, season, episode, defaultTitle, defaultYear, o
                     d.candidates.map(c => React.createElement("button", { key: c.id, type: "button", onClick: () => run(src, c.id), className: `px-2 py-1 rounded-lg border text-[10px] font-bold transition ${d.picked && d.picked.id === c.id ? 'border-accent-purple text-accent-purple' : 'border-white/10 text-slate-300 hover:border-accent-purple/60'}` }, c.title, c.year ? ` (${c.year})` : ''))),
                 (st.sources || []).length > 1 && React.createElement("div", { className: "flex flex-wrap gap-1.5 mb-1.5" },
                     st.sources.map((v, i) => React.createElement("button", { key: i, type: "button", onClick: () => patch(src.id, { link: v.url }), className: `px-2.5 py-1 rounded-lg border text-[10px] font-bold transition ${st.link === v.url ? 'border-accent-cyan text-accent-cyan bg-accent-cyan/10' : 'border-white/10 text-slate-300 hover:border-accent-cyan/60'}` }, v.label || ('#' + (i + 1))))),
+                (() => { const pr = st.link && st.probeByUrl && st.probeByUrl[st.link]; if (!pr) return null; return pr.ok ? React.createElement("p", { className: "text-[10px] font-bold text-emerald-400 mb-1.5" }, "✓ الرابط يستجيب (" + pr.status + ")") : React.createElement("p", { dir: "ltr", className: "text-[10px] font-bold text-amber-400 mb-1.5 break-all text-right" }, "⚠ الرابط لا يعمل: " + (pr.status || 'تعذر الاتصال') + (pr.note ? ' — ' + pr.note : '')); })(),
                 React.createElement("div", { className: "flex items-center gap-1.5" },
                     React.createElement("input", { value: st.link || '', readOnly: true, dir: "ltr", placeholder: "رابط " + src.label + " سيظهر هنا", onFocus: ev => ev.target.select(), className: "flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-[11px] text-white outline-none" }),
                     React.createElement("button", { type: "button", disabled: !st.link, onClick: () => copyLink(st.link), className: "shrink-0 px-2.5 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-[10px] font-bold hover:bg-white/10 transition disabled:opacity-40" }, "نسخ"),
