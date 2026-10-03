@@ -685,6 +685,7 @@ function normalizeTitlePlaybackData(title) {
     clean.genres = normalizeGenresValue(clean.genres);
     clean.videoUrl = normalizeVideoUrl(clean.videoUrl || '');
     clean.videoSources = normalizeVideoSources(clean.videoSources);
+    clean.sourceLinks = normalizeSourceLinks(clean.sourceLinks);
     clean.subtitleUrl = normalizeSubtitleUrl(clean.subtitleUrl || clean.subtitleURL || '');
     clean.subtitleOffset = Number(clean.subtitleOffset) || 0;
     clean.seasons = normalizeSeasonsValue(clean.seasons).map(season => ({
@@ -695,6 +696,7 @@ function normalizeTitlePlaybackData(title) {
             runtimeMinutes: Number(ep.runtimeMinutes ?? ep.runtime) || 0,
             videoUrl: normalizeVideoUrl(ep.videoUrl || ''),
             videoSources: normalizeVideoSources(ep.videoSources),
+            sourceLinks: normalizeSourceLinks(ep.sourceLinks),
             subtitleUrl: normalizeSubtitleUrl(ep.subtitleUrl || ep.subtitleURL || ''),
             subtitleOffset: Number(ep.subtitleOffset) || 0,
             number: Number(ep.number) || 1
@@ -1368,6 +1370,134 @@ function cinemanaEpisodeSeason(ep) {
 function cinemanaEpisodeNumber(ep) {
     return Number(ep && (ep.episodeNummer ?? ep.episode ?? ep.episodeNumber ?? ep.number)) || 0;
 }
+/* ───────────── External source admin helpers ───────────── */
+const EXTRA_SOURCE_META = [
+  { id:'cinemaplus', name:'CinemaPlus', types:['movie','series','anime'] },
+  { id:'egydead', name:'EgyDead', types:['movie','series'] },
+  { id:'krmzy', name:'Krmzy', types:['series'] },
+  { id:'cartoondub', name:'CartoonDub', types:['movie','series','anime'] },
+];
+function normalizeSourceLinks(value) {
+  const arr = Array.isArray(value) ? value : (value && typeof value === 'object' ? Object.values(value) : []);
+  return arr.map(x => x && typeof x === 'object' ? {
+    provider: String(x.provider || x.source || '').trim(),
+    label: String(x.label || x.quality || '').trim(),
+    url: normalizeVideoUrl(x.url || x.videoUrl || ''),
+    sourcePageUrl: String(x.sourcePageUrl || x.pageUrl || '').trim(),
+  } : null).filter(x => x && x.provider && x.url).filter((x,i,a) => a.findIndex(y => y.provider === x.provider && y.url === x.url) === i);
+}
+async function sourceEngineFetch(pathname, params = {}) {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k,v]) => { if (v !== undefined && v !== null && String(v) !== '') qs.set(k,String(v)); });
+  const bases = [];
+  const add = b => { const x=String(b||'').replace(/\/+$/,''); if(x&&!bases.includes(x))bases.push(x); };
+  add(CINEMANA_PROXY); add('http://localhost:8787');
+  let last = null;
+  for (const base of bases) {
+    try {
+      const r = await fetch(`${base}${pathname}${qs.toString()?'?'+qs:''}`, {cache:'no-store',headers:{Accept:'application/json','Cache-Control':'no-cache'}});
+      const data = await r.json().catch(()=>({}));
+      if (r.ok) return data;
+      last = new Error(data.error || `HTTP ${r.status}`);
+    } catch(e){ last=e; }
+  }
+  throw last || new Error('تعذر الاتصال بمحرك المصادر الإضافية.');
+}
+async function extractExternalSourceOne({source,type,title,year,tmdb,season,episode,existingLinks=[]}) {
+  const catalog = await sourceEngineFetch('/sources/catalog', {source,type,title,year,tmdb});
+  if (!catalog || !catalog.ok) throw new Error((catalog && catalog.reason) || 'المصدر لم يجد تطابقًا قابلًا للاستخراج');
+  let resolved = null;
+  if (type === 'movie') {
+    const direct = catalog.videoCandidates && catalog.videoCandidates[0];
+    if (direct && direct.url) {
+      const r = await sourceEngineFetch('/sources/resolve', {source,type,tmdb,title,year,direct:direct.url,sourcePageUrl:direct.sourcePageUrl||catalog.match?.url,label:direct.label||''});
+      resolved = r && r.resolved;
+    } else {
+      const r = await sourceEngineFetch('/sources/resolve', {source,type,tmdb,title,year,sourceId:catalog.match && (catalog.match.id || catalog.match.url),sourcePageUrl:catalog.match && catalog.match.url});
+      resolved = r && r.resolved;
+    }
+  } else {
+    const row = (catalog.episodes || []).find(x => Number(x.season) === Number(season) && Number(x.episode) === Number(episode));
+    if (!row) throw new Error(`المصدر لم يجد الموسم ${season} الحلقة ${episode}`);
+    const r = await sourceEngineFetch('/sources/resolve', {source,type,tmdb,title,year,season,episode,sourceId:row.sourceId,sourcePageUrl:row.sourcePageUrl,url:row.url||''});
+    resolved = r && r.resolved;
+  }
+  if (!resolved || !resolved.url) throw new Error('تمت المطابقة لكن لم ينجح اختبار الفيديو النهائي');
+  return {
+    provider: source,
+    label: resolved.label || source,
+    url: resolved.url,
+    sourcePageUrl: resolved.sourcePageUrl || '',
+  };
+}
+function SourceLinksPanel({ type, title, year, tmdbId, season, episode, value, onChange, onSetPrimary }) {
+  const [busy,setBusy]=useState({});
+  const [msg,setMsg]=useState({});
+  const links=normalizeSourceLinks(value);
+  const applicable=EXTRA_SOURCE_META.filter(s=>s.types.includes(type));
+  const run=async source=>{
+    setBusy(p=>({...p,[source.id]:true})); setMsg(p=>({...p,[source.id]:''}));
+    try{
+      const x=await extractExternalSourceOne({source:source.id,type:title && type==='anime' ? 'series' : type,title,year,tmdb:String(tmdbId||''),season,episode,existingLinks:links});
+      const next=normalizeSourceLinks([...links.filter(l=>l.provider!==x.provider),x]);
+      onChange(next); onSetPrimary && onSetPrimary(x.url, [{label:x.label,resolution:x.label,url:x.url,subtitleUrl:''}], x.provider);
+      setMsg(p=>({...p,[source.id]:'✓ رابط فيديو حقيقي اختُبر ونجح'}));
+    }catch(e){setMsg(p=>({...p,[source.id]:e?.message||'لا يوجد رابط صالح'}));}
+    finally{setBusy(p=>({...p,[source.id]:false}));}
+  };
+  return React.createElement('div',{className:'mt-3.5 glass-card rounded-2xl p-3.5 border border-accent-purple/20'},
+    React.createElement('div',{className:'flex items-center justify-between gap-2 flex-wrap mb-2.5'},
+      React.createElement('p',{className:'text-[11px] font-black text-accent-purple'},'المصادر الإضافية — رابط الفيديو المباشر فقط'),
+      React.createElement('span',{className:'text-[9px] text-slate-500'},'المصدر لا يظهر هنا إلا بعد نجاح اختبار الفيديو')),
+    applicable.map(s=>{
+      const row=links.find(l=>l.provider===s.id);
+      return React.createElement('div',{key:s.id,className:'rounded-xl border border-white/10 bg-glass-900/50 p-2.5 mb-2 last:mb-0'},
+        React.createElement('div',{className:'flex items-center gap-2 mb-2 flex-wrap'},
+          React.createElement('span',{className:'text-[11px] font-black text-white'},s.name),
+          row && React.createElement('span',{className:'text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300'},'جاهز'),
+          React.createElement('button',{type:'button',onClick:()=>run(s),disabled:!!busy[s.id],className:'mr-auto px-2.5 py-1.5 rounded-lg bg-accent-purple/15 border border-accent-purple/30 text-accent-purple text-[10px] font-black disabled:opacity-40'},busy[s.id]?'جاري الاختبار...':row?'إعادة الاستخراج':'استخراج')),
+        React.createElement('input',{value:row?.url||'',readOnly:true,placeholder:'سيظهر هنا رابط الفيديو المباشر بعد نجاح الاختبار',dir:'ltr',className:'w-full bg-glass-950 border border-white/10 rounded-lg px-2.5 py-2 text-[10px] text-slate-200 outline-none'}),
+        row?.sourcePageUrl && React.createElement('p',{className:'text-[9px] text-slate-500 mt-1 truncate',dir:'ltr'},row.sourcePageUrl),
+        msg[s.id] && React.createElement('p',{className:`text-[9px] font-bold mt-1 ${msg[s.id].startsWith('✓')?'text-emerald-400':'text-amber-400'}`},msg[s.id]));
+    }));
+}
+function SourceBulkSeriesPanel({ type, title, year, tmdbId, seasons, onChange }) {
+  const [source,setSource]=useState(type==='anime'?'cinemaplus':'egydead');
+  const [loading,setLoading]=useState(false); const [msg,setMsg]=useState('');
+  const applicable=EXTRA_SOURCE_META.filter(s=>s.types.includes(type));
+  const extractAll=async()=>{
+    if(!title||!tmdbId){setMsg('أولًا عبّي بيانات العمل من TMDB.');return;}
+    setLoading(true);setMsg('جاري استخراج الحلقات وفحص الروابط الفعلية...');
+    try{
+      const catalog=await sourceEngineFetch('/sources/catalog',{source,type:type==='anime'?'series':type,title,year,tmdb:String(tmdbId)});
+      if(!catalog.ok) throw new Error(catalog.reason||'لا توجد مطابقة');
+      const map=new Map((catalog.episodes||[]).filter(x=>x.episode!=null).map(x=>[`${x.season}x${x.episode}`,x]));
+      let done=0,total=(seasons||[]).reduce((n,s)=>n+(s.episodes||[]).length,0);
+      const out=(seasons||[]).map(s=>({...s,episodes:(s.episodes||[]).map(e=>({...e}))}));
+      for(const s of out){
+        for(const e of s.episodes||[]){
+          const row=map.get(`${Number(s.number)}x${Number(e.number)}`); if(!row)continue;
+          try{
+            const r=await sourceEngineFetch('/sources/resolve',{source,type:type==='anime'?'series':type,title,year,tmdb:String(tmdbId),season:s.number,episode:e.number,sourceId:row.sourceId,sourcePageUrl:row.sourcePageUrl,url:row.url||''});
+            if(r.ok&&r.resolved?.url){
+              e.videoUrl=r.resolved.url; e.videoSources=[{label:r.resolved.label||source,resolution:r.resolved.label||source,url:r.resolved.url,subtitleUrl:''}]; e.playbackProvider=source; e.sourceLinks=normalizeSourceLinks([...(e.sourceLinks||[]),{provider:source,label:r.resolved.label||source,url:r.resolved.url,sourcePageUrl:r.resolved.sourcePageUrl||''}]);
+            }
+          }catch(_){ }
+          done++; if(done%3===0||done===total)setMsg(`تم فحص ${done}/${total} حلقة — الروابط الناجحة تُحفظ فقط.`);
+        }
+      }
+      onChange(out); setMsg(`اكتمل المصدر ${source}: تم حفظ الروابط الفعلية التي نجح اختبارها.`);
+    }catch(e){setMsg(e?.message||'فشل استخراج المصدر');}
+    finally{setLoading(false);}
+  };
+  return React.createElement('div',{className:'glass-card rounded-2xl p-4 border border-emerald-500/15 mb-5'},
+    React.createElement('div',{className:'flex items-center gap-2 flex-wrap mb-2.5'},React.createElement('span',{className:'text-[12px] font-black text-emerald-300'},'استخراج حلقات من مصدر إضافي'),React.createElement('span',{className:'text-[9px] text-slate-500'},'TMDB للمعلومات + المصدر المحدد للتشغيل')),
+    React.createElement('div',{className:'flex items-center gap-2'},
+      React.createElement('select',{value:source,onChange:e=>setSource(e.target.value),className:'flex-1 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none'},applicable.map(s=>React.createElement('option',{key:s.id,value:s.id},s.name))),
+      React.createElement('button',{type:'button',onClick:extractAll,disabled:loading||!title,className:'px-4 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-black disabled:opacity-40'},loading?'جاري...':'استخراج الكل')),
+    msg&&React.createElement('p',{className:'text-[10px] text-slate-400 mt-2 font-bold'},msg));
+}
+
 function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGenerate, onGenerateQualities, onGenerateSubtitle, onPickedNb, onImportTmdb }) {
     const [query, setQuery] = useState(defaultTitle || '');
     useEffect(() => { if (defaultTitle)
@@ -1524,340 +1654,6 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
                     }, className: "px-3 py-1.5 rounded-lg bg-accent-purple/15 border border-accent-purple/30 hover:bg-accent-purple/25 text-accent-purple text-[11px] font-bold transition" }, v.label)))),
             React.createElement("button", { type: "button", onClick: () => { setVideos(null); setPicked(null); }, className: "mt-2 text-[10px] text-slate-500 hover:text-slate-300 underline" }, "\u0631\u062C\u0648\u0639 \u0644\u0644\u0646\u062A\u0627\u0626\u062C")))));
 }
-/* ═══════════════════════════════════════════════════════════════════
-   مصادر إضافية للتشغيل: Cinema Box · Cima Cloud · MeowTV
-   نفس آلية سينمانا: اسم العمل → بحث → اختيار → روابط الجودات، لكن لكل مصدر خانة برابطه الخاص.
-   كل رابط يظهر هنا اجتاز فحصًا فعليًا على السيرفر (يرد + m3u8 صالح + أول مقطع يتحمّل).
-   ═══════════════════════════════════════════════════════════════════ */
-const EXTRA_SOURCES = [
-    { id: 'cinemabox', name: 'Cinema Box', cls: 'text-amber-300 border-amber-400/30 bg-amber-400/10' },
-    { id: 'cimacloud', name: 'Cima Cloud', cls: 'text-sky-300 border-sky-400/30 bg-sky-400/10' },
-    { id: 'meowtv', name: 'MeowTV', cls: 'text-pink-300 border-pink-400/30 bg-pink-400/10' },
-];
-async function srcApi(path) {
-    const candidates = [];
-    const add = b => { b = String(b || '').trim().replace(/\/+$/, ''); if (b && !candidates.includes(b)) candidates.push(b); };
-    add(CINEMANA_PROXY);
-    add('http://localhost:8787');
-    for (const base of candidates) {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 120000);
-        try {
-            const res = await fetch(base + path, { cache: 'no-store', headers: { Accept: 'application/json' }, signal: ctrl.signal });
-            const text = await res.text();
-            let data = null;
-            try { data = text ? JSON.parse(text) : null; } catch (_) { data = null; }
-            if (!data || typeof data !== 'object') continue;
-            if (data.error === 'Unknown route') continue; // سيرفر قديم بلا مسارات /src
-            return data;
-        }
-        catch (e) { /* جرّب المرشّح التالي */ }
-        finally { clearTimeout(timer); }
-    }
-    throw new Error('تعذر الاتصال بالسيرفر — شغّل server.js المحدّث (النسخة التي تحتوي مسارات /src)');
-}
-// القاعدة العامة التي تُحفظ بها روابط البروكسي: يجب أن تكون عنوانًا يصل إليه المشاهد، لا localhost
-function srcPublicBase() {
-    for (const c of [SUBTITLE_PUBLIC_BASE, CINEMANA_PROXY]) {
-        const b = String(c || '').trim().replace(/\/+$/, '');
-        if (b && !/^https?:\/\/(?:localhost|127\.|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/i.test(b)) return b;
-    }
-    return '';
-}
-// يحوّل روابط السيرفر إلى روابط جاهزة للتشغيل/الحفظ. الرابط الذي يحتاج بروكسي ولا يوجد عنوان عام له يُستبعد مع تنبيه.
-function srcPlayableLinks(links) {
-    const base = srcPublicBase();
-    const out = [];
-    let skipped = 0;
-    (links || []).forEach(l => {
-        const url = l.needsProxy ? (base && l.playPath ? base + l.playPath : '') : l.url;
-        if (!url) { skipped++; return; }
-        out.push({ label: l.label, url, type: l.type, proxied: !!l.needsProxy, original: l.url });
-    });
-    return { links: out, skipped };
-}
-function srcToVideoSources(links) {
-    return links.map(l => ({ label: l.label, resolution: l.label, url: l.url, subtitleUrl: '' }));
-}
-async function srcResolveTmdbId(sourceId, kind) {
-    const s = String(sourceId || '').trim();
-    if (/^\d+$/.test(s)) return s;
-    if (/^tt\d+$/i.test(s)) {
-        try {
-            const f = await tmdbFetch(`find/${s}`, { external_source: 'imdb_id' });
-            const hit = (kind === 'movie' ? (f.movie_results || [])[0] : (f.tv_results || [])[0]) || (f.movie_results || [])[0] || (f.tv_results || [])[0];
-            return hit ? String(hit.id) : '';
-        }
-        catch (e) { return ''; }
-    }
-    return '';
-}
-function srcCopy(text, done) {
-    try {
-        if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(done, () => { }); return; }
-    }
-    catch (e) { }
-    try {
-        const ta = document.createElement('textarea');
-        ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); done && done();
-    }
-    catch (e) { }
-}
-
-function ExtraSourceRow({ src, kind, season, episode, query, year, sourceId, health, runToken, onUse }) {
-    const h = React.createElement;
-    const [state, setState] = useState('idle'); // idle | busy | pick | done | error
-    const [step, setStep] = useState('');
-    const [results, setResults] = useState(null);
-    const [picked, setPicked] = useState(null);
-    const [links, setLinks] = useState(null);
-    const [skipped, setSkipped] = useState(0);
-    const [msg, setMsg] = useState('');
-    const [copied, setCopied] = useState('');
-    const [adopted, setAdopted] = useState(false);
-    const kindKey = kind === 'movie' ? 'movie' : 'tv';
-    const hk = health && health[kindKey];
-    const blocked = !!(hk && hk.ok === false);
-    const S = Number(season) || 1, E = Number(episode) || 1;
-
-    const fetchLinks = async (item) => {
-        setPicked(item); setLinks(null); setMsg(''); setAdopted(false); setState('busy');
-        try {
-            let id = item.id, k = 'movie';
-            if (item.kind !== 'movie') {
-                k = 'episode';
-                if (src.id === 'meowtv') id = `${item.id}:${S}:${E}`;
-                else {
-                    setStep('جاري جلب الحلقات...');
-                    const eps = await srcApi(`/src/${src.id}/episodes?id=${encodeURIComponent(item.id)}`);
-                    if (!eps.ok) throw new Error(eps.error || 'تعذر جلب الحلقات');
-                    const m = (eps.episodes || []).find(e => Number(e.season) === S && Number(e.episode) === E);
-                    if (!m) throw new Error(`لم يُعثر على الموسم ${S} الحلقة ${E} عند ${src.name}`);
-                    id = m.id;
-                }
-            }
-            setStep('جاري استخراج الروابط وفحصها فعليًا...');
-            const r = await srcApi(`/src/${src.id}/links?id=${encodeURIComponent(id)}&kind=${k}`);
-            if (!r.ok) throw new Error(r.error || 'لا توجد روابط تعمل');
-            const play = srcPlayableLinks(r.links);
-            if (!play.links.length) throw new Error('الروابط تحتاج بروكسي عام ولم يُضبط عنوان عام — اضبط window.CINEMANA_PROXY_URL أو subtitle_public_base_url');
-            setSkipped(play.skipped);
-            setLinks(play.links);
-            setState('done');
-        }
-        catch (e) { setMsg(e && e.message ? e.message : 'فشل الاستخراج'); setState('error'); }
-        setStep('');
-    };
-    const run = async () => {
-        if (!String(query || '').trim()) return;
-        setResults(null); setPicked(null); setLinks(null); setMsg(''); setAdopted(false); setState('busy');
-        try {
-            setStep('جاري البحث...');
-            const usp = new URLSearchParams({ q: String(query).trim(), kind });
-            if (year) usp.set('year', String(year));
-            if (src.id === 'meowtv') { const tm = await srcResolveTmdbId(sourceId, kind); if (tm) usp.set('tmdb', tm); }
-            const r = await srcApi(`/src/${src.id}/search?${usp}`);
-            if (!r.ok) throw new Error(r.error || 'فشل البحث');
-            const list = r.results || [];
-            setResults(list);
-            if (!list.length) { setMsg('لا نتائج لهذا الاسم'); setState('error'); setStep(''); return; }
-            const auto = (list[0].best || list.length === 1) ? list[0] : null;
-            if (auto) await fetchLinks(auto);
-            else { setState('pick'); setStep(''); }
-        }
-        catch (e) { setMsg(e && e.message ? e.message : 'فشل البحث'); setState('error'); setStep(''); }
-    };
-    const lastToken = useRef(0);
-    useEffect(() => {
-        if (runToken && runToken !== lastToken.current) {
-            lastToken.current = runToken;
-            if (!blocked) run();
-        }
-        // eslint-disable-next-line
-    }, [runToken]);
-
-    const adopt = (list, firstIdx) => {
-        const ordered = firstIdx > 0 ? [list[firstIdx], ...list.filter((_, i) => i !== firstIdx)] : list;
-        onUse({ videoUrl: ordered[0].url, videoSources: srcToVideoSources(ordered), cinemanaId: '', playbackProvider: src.id });
-        setAdopted(true);
-    };
-    const statusChip = hk
-        ? (hk.ok ? h('span', { className: 'text-[9px] font-black text-emerald-400', title: (hk.qualities || []).join(' · ') }, '✓ يعمل')
-            : h('span', { className: 'text-[9px] font-black text-rose-400', title: hk.error || '' }, '✗ لا يعمل'))
-        : h('span', { className: 'text-[9px] font-bold text-slate-500' }, 'لم يُفحص');
-
-    return h('div', { className: 'rounded-xl border border-white/10 bg-glass-900/60 p-2.5 mb-2' },
-        h('div', { className: 'flex items-center gap-2' },
-            h('span', { className: `px-2.5 py-1 rounded-lg border text-[11px] font-black ${src.cls}` }, src.name),
-            statusChip,
-            h('button', { type: 'button', onClick: run, disabled: state === 'busy' || blocked || !String(query || '').trim(), title: blocked ? (hk.error || 'المصدر لا يعمل حاليًا') : '', className: 'mr-auto px-3.5 py-1.5 rounded-lg bg-accent-cyan/90 text-glass-950 text-[11px] font-black hover:brightness-110 transition disabled:opacity-40' }, state === 'busy' ? 'جاري...' : 'استخراج')),
-        step && h('p', { className: 'text-[10px] font-bold text-accent-cyan mt-1.5' }, step),
-        blocked && h('p', { className: 'text-[10px] text-rose-300/90 mt-1.5' }, 'فشل الفحص الذاتي لهذا المصدر: ' + (hk.error || 'غير معروف')),
-        state === 'error' && msg && h('p', { className: 'text-[11px] font-bold text-rose-400 mt-1.5' }, msg),
-        state === 'pick' && results && h('div', { className: 'grid grid-cols-3 sm:grid-cols-5 gap-2 max-h-52 overflow-y-auto mt-2' },
-            results.map(r => h('button', { key: r.id, type: 'button', onClick: () => fetchLinks(r), className: 'text-right rounded-xl overflow-hidden border border-white/10 hover:border-accent-cyan/60 transition' },
-                r.poster && h('img', { src: r.poster, alt: '', className: 'w-full h-24 object-cover' }),
-                h('div', { className: 'p-1.5' },
-                    h('p', { className: 'text-[10px] font-bold text-white truncate' }, h(BidiText, null, r.title || '')),
-                    h('p', { className: 'text-[9px] text-slate-400' }, [r.year || '', r.kind === 'movie' ? 'فيلم' : 'مسلسل'].filter(Boolean).join(' · ')))))),
-        state === 'done' && links && h('div', { className: 'mt-2' },
-            picked && h('p', { className: 'text-[10px] text-slate-400 mb-1.5' }, 'العمل: ', h(BidiText, null, picked.title || ''), picked.year ? ` (${picked.year})` : ''),
-            links.map((l, i) => h('div', { key: l.url, className: 'flex items-center gap-1.5 mb-1.5' },
-                h('span', { className: `shrink-0 min-w-[44px] text-center px-2 py-1 rounded-md border text-[10px] font-black ${src.cls}` }, l.label),
-                h('input', { readOnly: true, dir: 'ltr', value: l.url, onFocus: ev => ev.target.select(), title: l.proxied ? 'رابط مغلّف عبر بروكسي الموقع (الأصل: ' + l.original + ')' : l.original, className: 'flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-lg px-2 py-1.5 text-[10px] text-slate-200 outline-none' }),
-                l.proxied && h('span', { className: 'shrink-0 text-[9px] font-bold text-amber-300', title: 'يحتاج ترويسات/CORS خاصة فمرّ عبر البروكسي الموقَّع' }, 'بروكسي'),
-                h('button', { type: 'button', onClick: () => srcCopy(l.url, () => { setCopied(l.url); setTimeout(() => setCopied(''), 1800); }), className: 'shrink-0 px-2 py-1 rounded-md bg-white/5 border border-white/10 text-[10px] font-bold text-slate-300 hover:bg-white/10' }, copied === l.url ? '✓' : 'نسخ'),
-                h('button', { type: 'button', onClick: () => adopt(links, i), title: 'اعتمد كل الجودات وهذه هي الافتراضية', className: 'shrink-0 px-2 py-1 rounded-md bg-accent-purple/15 border border-accent-purple/30 text-[10px] font-black text-accent-purple hover:bg-accent-purple/25' }, 'اعتماد'))),
-            skipped > 0 && h('p', { className: 'text-[10px] text-amber-300 mb-1' }, `${skipped} رابط استُبعد لأنه يحتاج بروكسي عام ولم يُضبط عنوان عام للسيرفر.`),
-            h('div', { className: 'flex items-center gap-2 mt-1' },
-                h('button', { type: 'button', onClick: () => adopt(links, 0), className: 'px-3 py-1.5 rounded-lg bg-accent-purple text-white text-[11px] font-black hover:brightness-110 transition' }, 'اعتماد كل الجودات'),
-                adopted && h('span', { className: 'text-[10px] font-black text-emerald-400' }, '✓ تم تعبئة رابط التشغيل من ' + src.name),
-                h('button', { type: 'button', onClick: () => { setResults(results); setState(results && results.length > 1 ? 'pick' : 'idle'); setLinks(null); }, className: 'mr-auto text-[10px] text-slate-500 hover:text-slate-300 underline' }, results && results.length > 1 ? 'رجوع للنتائج' : 'إغلاق'))));
-}
-
-function ExtraSourcesHelper({ kind, season, episode, defaultTitle, defaultYear, sourceId, onUse }) {
-    const h = React.createElement;
-    const [query, setQuery] = useState(defaultTitle || '');
-    const [health, setHealth] = useState({});
-    const [testing, setTesting] = useState(false);
-    const [token, setToken] = useState(0);
-    const [err, setErr] = useState('');
-    useEffect(() => { if (defaultTitle) setQuery(defaultTitle); }, [defaultTitle]);
-    const applyHealth = list => {
-        const m = {};
-        (list || []).forEach(s => { if (s.health) m[s.id] = s.health; });
-        setHealth(m);
-    };
-    useEffect(() => {
-        let alive = true;
-        srcApi('/src/list').then(r => { if (alive && r && r.sources) applyHealth(r.sources); }).catch(e => { if (alive) setErr(e.message || ''); });
-        return () => { alive = false; };
-    }, []);
-    const selfTest = async () => {
-        setTesting(true); setErr('');
-        try {
-            const r = await srcApi('/src/selftest');
-            if (r && r.results) setHealth(prev => ({ ...prev, ...r.results }));
-        }
-        catch (e) { setErr(e.message || 'فشل الفحص'); }
-        setTesting(false);
-    };
-    return h('div', { className: 'glass-card rounded-2xl p-3.5 border border-accent-cyan/20 mt-3.5' },
-        h('div', { className: 'flex items-center gap-2 mb-1.5' },
-            h('p', { className: 'text-[11px] font-bold text-accent-cyan flex items-center gap-1.5' }, h(Icon, { name: 'search', className: 'w-3.5 h-3.5' }), 'مصادر تشغيل إضافية: Cinema Box · Cima Cloud · MeowTV'),
-            h('button', { type: 'button', onClick: selfTest, disabled: testing, className: 'mr-auto px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold text-slate-300 hover:bg-white/10 disabled:opacity-50' }, testing ? 'جاري فحص المصادر...' : 'فحص المصادر')),
-        h('p', { className: 'text-[10px] text-slate-500 mb-2' }, 'لكل مصدر خانة برابطه الخاص. لا يظهر هنا إلا رابط اجتاز فحصًا فعليًا على السيرفر (يرد + m3u8 صالح + أول مقطع يتحمّل). ثم «اعتماد» يملأ رابط التشغيل والجودات.'),
-        h('div', { className: 'flex items-center gap-2 mb-2.5' },
-            h('input', { value: query, onChange: ev => setQuery(ev.target.value), onKeyDown: ev => ev.key === 'Enter' && setToken(t => t + 1), placeholder: 'اسم العمل بالإنجليزي أو العربي', className: 'flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan' }),
-            h('button', { type: 'button', onClick: () => setToken(t => t + 1), disabled: !query.trim(), className: 'shrink-0 px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 text-xs font-black hover:brightness-110 transition disabled:opacity-40' }, 'استخراج من الكل')),
-        kind !== 'movie' && h('p', { className: 'text-[10px] text-slate-500 mb-1.5' }, 'الموسم ', Number(season) || 1, ' · الحلقة ', Number(episode) || 1),
-        err && h('p', { className: 'text-[11px] font-bold text-rose-400 mb-2' }, err),
-        EXTRA_SOURCES.map(src => h(ExtraSourceRow, { key: src.id, src, kind, season, episode, query, year: defaultYear, sourceId, health: health[src.id], runToken: token, onUse })));
-}
-
-// ربط حلقات المسلسل كلها من مصدر إضافي (بعد استيراد TMDB): يرجع المواسم المحدّثة + ملخصًا صادقًا بما نجح وما فشل
-async function enrichSeasonsWithExtraSource(seasons, srcId, item, tmdbId, onProgress) {
-    const srcName = (EXTRA_SOURCES.find(s => s.id === srcId) || {}).name || srcId;
-    let epMap = null;
-    if (srcId !== 'meowtv') {
-        onProgress && onProgress(`جاري جلب قائمة حلقات ${srcName}...`);
-        const e = await srcApi(`/src/${srcId}/episodes?id=${encodeURIComponent(item.id)}`);
-        if (!e.ok) throw new Error(e.error || 'تعذر جلب حلقات المصدر');
-        epMap = new Map((e.episodes || []).map(x => [`${Number(x.season)}x${Number(x.episode)}`, x.id]));
-    }
-    const tm = String(tmdbId || '').replace(/\D/g, '') || String(item.id).replace(/^\D+:/, '');
-    const out = (seasons || []).map(s => ({ ...s, episodes: (s.episodes || []).map(e => ({ ...e })) }));
-    const tasks = [];
-    out.forEach((s, si) => (s.episodes || []).forEach((e, ei) => {
-        const sn = Number(s.number) || 1, en = Number(e.number) || 1;
-        const id = srcId === 'meowtv' ? `tv:${tm}:${sn}:${en}` : epMap.get(`${sn}x${en}`);
-        if (id) tasks.push({ si, ei, id, key: `S${String(sn).padStart(2, '0')}E${String(en).padStart(2, '0')}` });
-    }));
-    const totalEps = out.reduce((n, s) => n + (s.episodes || []).length, 0);
-    const failed = [];
-    let done = 0, linked = 0, skippedProxy = 0, next = 0;
-    const worker = async () => {
-        while (next < tasks.length) {
-            const t = tasks[next++];
-            try {
-                const r = await srcApi(`/src/${srcId}/links?id=${encodeURIComponent(t.id)}&kind=episode`);
-                const play = r.ok ? srcPlayableLinks(r.links) : { links: [], skipped: 0 };
-                skippedProxy += play.skipped;
-                if (play.links.length) {
-                    const ep = out[t.si].episodes[t.ei];
-                    ep.videoSources = srcToVideoSources(play.links);
-                    ep.videoUrl = play.links[0].url;
-                    ep.cinemanaId = '';
-                    ep.playbackProvider = srcId;
-                    linked++;
-                }
-                else failed.push(t.key);
-            }
-            catch (err) { failed.push(t.key); }
-            done++;
-            onProgress && onProgress(`تم فحص ${done} من ${tasks.length} حلقة من ${srcName} — نجح ${linked}...`);
-        }
-    };
-    // MeowTV يحدّ الطلبات بشدة (soft rate-limit) فنمشي حلقة حلقة؛ البقية 3 بالتوازي
-    await Promise.all(Array.from({ length: srcId === 'meowtv' ? 1 : 3 }, worker));
-    const notFound = totalEps - tasks.length;
-    let summary = `تم ربط ${linked} من ${totalEps} حلقة بروابط فعلية من ${srcName}.`;
-    if (notFound > 0) summary += ` ${notFound} حلقة غير موجودة عند المصدر.`;
-    if (failed.length) summary += ` فشل استخراج: ${failed.slice(0, 8).join('، ')}${failed.length > 8 ? '…' : ''}.`;
-    if (skippedProxy) summary += ` (${skippedProxy} رابط استُبعد لأنه يحتاج عنوان بروكسي عام.)`;
-    return { seasons: out, linked, total: totalEps, summary };
-}
-
-function ExtraSeriesImportPanel({ type, defaultTitle, defaultYear, onImport }) {
-    const h = React.createElement;
-    const [srcId, setSrcId] = useState(EXTRA_SOURCES[0].id);
-    const [query, setQuery] = useState(defaultTitle || '');
-    const [loading, setLoading] = useState(false);
-    const [progress, setProgress] = useState('');
-    const [error, setError] = useState('');
-    const [result, setResult] = useState('');
-    const [results, setResults] = useState(null);
-    useEffect(() => { if (defaultTitle) setQuery(defaultTitle); }, [defaultTitle]);
-    const src = EXTRA_SOURCES.find(s => s.id === srcId);
-    const search = async () => {
-        if (!query.trim()) return;
-        setLoading(true); setError(''); setResult(''); setResults(null); setProgress(`جاري البحث في ${src.name}...`);
-        try {
-            const usp = new URLSearchParams({ q: query.trim(), kind: type === 'anime' ? 'anime' : 'tv' });
-            if (defaultYear) usp.set('year', String(defaultYear));
-            const r = await srcApi(`/src/${srcId}/search?${usp}`);
-            if (!r.ok) throw new Error(r.error || 'فشل البحث');
-            setResults((r.results || []).filter(x => x.kind === 'series'));
-        }
-        catch (e) { setError(e.message || 'فشل البحث'); }
-        setProgress(''); setLoading(false);
-    };
-    const pick = async (item) => {
-        setLoading(true); setError(''); setResult(''); setProgress('جاري تعبئة TMDB وربط الحلقات...');
-        try { setResult(await onImport(item, srcId, setProgress) || ''); }
-        catch (e) { setError(e.message || 'تعذّر الاستيراد'); }
-        setLoading(false); setProgress('');
-    };
-    return h('div', { className: 'glass-card rounded-2xl p-4 border border-accent-cyan/25 mb-5' },
-        h('p', { className: 'text-[12px] font-bold text-accent-cyan flex items-center gap-1.5 mb-2.5' }, h(Icon, { name: 'sparkles', className: 'w-4 h-4' }), 'استيراد مسلسل/أنمي من مصدر إضافي: TMDB للبيانات + روابط فعلية لكل الحلقات'),
-        h('div', { className: 'flex flex-wrap gap-1.5 mb-2.5' },
-            EXTRA_SOURCES.map(s => h('button', { key: s.id, type: 'button', onClick: () => { setSrcId(s.id); setResults(null); setResult(''); setError(''); }, className: `px-3 py-1.5 rounded-lg border text-[11px] font-black transition ${srcId === s.id ? s.cls : 'text-slate-400 border-white/10 bg-white/5 hover:bg-white/10'}` }, s.name))),
-        h('div', { className: 'flex items-center gap-2 mb-2.5' },
-            h('input', { value: query, onChange: e => setQuery(e.target.value), onKeyDown: e => e.key === 'Enter' && !loading && search(), placeholder: type === 'anime' ? 'اسم الأنمي' : 'اسم المسلسل', className: 'flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-cyan' }),
-            h('button', { type: 'button', onClick: search, disabled: !query.trim() || loading, className: 'shrink-0 px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 text-xs font-black hover:brightness-110 transition disabled:opacity-40' }, loading ? 'جاري...' : 'بحث')),
-        progress && h('p', { className: 'text-[10px] font-bold text-accent-cyan mb-2' }, progress),
-        error && h('p', { className: 'text-[11px] font-bold text-rose-400 mb-2' }, error),
-        result && h('p', { className: 'text-[11px] font-bold text-emerald-400 mb-2' }, result),
-        results && h('div', { className: 'grid grid-cols-3 sm:grid-cols-5 gap-2 max-h-72 overflow-y-auto' },
-            results.length === 0 && h('p', { className: 'text-[11px] text-slate-500 col-span-full' }, 'لا نتائج'),
-            results.map(r => h('button', { key: r.id, type: 'button', onClick: () => pick(r), disabled: loading, className: 'text-right rounded-xl overflow-hidden border border-white/10 hover:border-accent-cyan/60 transition disabled:opacity-50' },
-                r.poster && h('img', { src: r.poster, alt: '', className: 'w-full h-28 object-cover' }),
-                h('div', { className: 'p-1.5' },
-                    h('p', { className: 'text-[10px] font-bold text-white truncate' }, h(BidiText, null, r.title || '')),
-                    h('p', { className: 'text-[9px] text-slate-400' }, r.year || ''))))),
-        h('p', { className: 'text-[10px] text-slate-500 mt-2' }, 'بعد الاختيار: تُجلب بيانات TMDB (البوستر والتقييم والحلقات وأسماؤها)، ثم تُستخرج روابط كل حلقة من المصدر وتُفحص فعليًا. الحلقة التي لا ينجح لها رابط تبقى فارغة ويُذكر ذلك في الملخص.'));
-}
-
 async function tmdbFindBestByTitle(title, currentType, year) {
     const query = String(title || '').trim();
     if (!query)
@@ -2432,6 +2228,8 @@ async function importFromTmdb(rawInput, currentType, opts) {
     const sourceId = imdbId || String(tmdbId);
     const parsedYear = dateStr ? parseInt(dateStr.slice(0, 4), 10) : NaN;
     const patch = {
+        tmdbId: String(tmdbId || ''),
+        imdbId: String(imdbId || ''),
         name: name,
         year: Number.isFinite(parsedYear) ? parsedYear : new Date().getFullYear(),
         genresText: genres.join(', '),
@@ -7105,10 +6903,10 @@ function VideoDisplaySettings({ value, onChange }) {
         showCropStudio && (React.createElement(CropStudioModal, { videoUrl: normalizeVideoUrl(v.videoUrl), initial: crop, onCancel: () => setShowCropStudio(false), onSave: (newCrop) => { set('crop', newCrop); setShowCropStudio(false); } }))));
 }
 function emptyForm(type) {
-    return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', runtimeMinutes: 0, rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
+    return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', runtimeMinutes: 0, rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], sourceLinks: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
 }
 function emptyEpisode(num) {
-    return { number: num, title: '', runtimeMinutes: 0, videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, imdb: '', tmdbRating: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
+    return { number: num, title: '', runtimeMinutes: 0, videoUrl: '', videoSources: [], sourceLinks: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, imdb: '', tmdbRating: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
 }
 function SubtitleHelper({ value, onChange, sourceId, title, type, season, episode, year, cinemanaId, offset = 0, onOffsetChange }) {
     const [loading, setLoading] = useState(false);
@@ -7187,8 +6985,6 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
     const [tmdbRatingMsg, setTmdbRatingMsg] = useState('');
     useEffect(() => { eRef.current = e; }, [e]);
     const set = (k, val) => onChange({ ...eRef.current, [k]: val });
-    // تحديث عدة حقول دفعة واحدة (المصادر الإضافية تملأ الرابط والجودات معًا)
-    const setMany = patch => { eRef.current = { ...eRef.current, ...patch }; onChange(eRef.current); };
     const loadTmdbRating = async () => {
         setTmdbRatingLoading(true);
         setTmdbRatingMsg('جاري جلب تقييم TMDB...');
@@ -7233,7 +7029,7 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
         React.createElement("div", { className: "mt-3.5" },
             React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u062D\u0644\u0642\u0629 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: e.videoUrl, onChange: v => set('videoUrl', v), folder: "episodes", accept: "video/*" })),
         React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb) }),
-        React.createElement(ExtraSourcesHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, sourceId: sourceId, onUse: setMany }),
+        React.createElement(SourceLinksPanel, { type: "series", title: seriesName, year: e.airDate ? String(e.airDate).slice(0,4) : "", tmdbId: e.tmdbId || (/^\d+$/.test(String(sourceId||'')) ? sourceId : ''), season: seasonNumber, episode: e.number, value: e.sourceLinks, onChange: v => set('sourceLinks', v), onSetPrimary: (url, sources, provider) => onChange({ ...eRef.current, videoUrl: url, videoSources: sources, playbackProvider: provider, cinemanaId: "" }) }),
         React.createElement(SubtitleHelper, { cinemanaId: e.cinemanaId, value: e.subtitleUrl || '', onChange: v => set('subtitleUrl', v), sourceId: sourceId, title: seriesName, year: new Date().getFullYear(), type: "series", season: seasonNumber, episode: e.number, folder: "subtitles", offset: e.subtitleOffset || 0, onOffsetChange: v => set('subtitleOffset', v) }),
         React.createElement("div", { className: "grid sm:grid-cols-3 gap-3.5 mt-3.5" },
             React.createElement("div", null,
@@ -7566,6 +7362,8 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             featured: form.featured === true,
             status: form.status === 'published' ? 'published' : 'draft',
             sourceId: sourceId || '',
+            tmdbId: String(form.tmdbId || ''),
+            imdbId: String(form.imdbId || ''),
             createdAt: initial ? (initial.createdAt || Date.now()) : Date.now(),
             likes: initial ? (initial.likes || 0) : 0,
             views: initial ? (initial.views || 0) : 0,
@@ -7573,6 +7371,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
         if (form.type === 'movie') {
             payload.videoUrl = normalizeVideoUrl(form.videoUrl.trim());
             payload.videoSources = normalizeVideoSources(form.videoSources);
+            payload.sourceLinks = normalizeSourceLinks(form.sourceLinks);
 
             // مهم جدًا للأفلام: لا نحفظ cinemanaId وحده ونترك videoUrl/videoSources فارغة.
             // الهاتف لا يستطيع الوصول إلى Node المحلي حتى يسترجع الرابط، بينما الحلقات
@@ -7599,7 +7398,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.subtitlePublicUrl = String(form.subtitlePublicUrl || '').trim();
             payload.subtitleOffset = Number(form.subtitleOffset) || 0;
             payload.cinemanaId = String(form.cinemanaId || '').trim();
-            payload.playbackProvider = payload.cinemanaId ? 'cinemana' : (isVidApiUrl(form.videoUrl) ? 'vidapi' : (form.playbackProvider || ''));
+            payload.playbackProvider = payload.cinemanaId ? 'cinemana' : (form.playbackProvider || (isVidApiUrl(form.videoUrl) ? 'vidapi' : ''));
             if (payload.cinemanaId) {
                 payload.videoUrl = '';
                 payload.videoSources = [];
@@ -7620,7 +7419,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 poster: (s.poster || '').trim(),
                 episodeThumbnail: (s.episodeThumbnail || '').trim(),
                 episodes: (s.episodes || []).map(e => ({
-                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || '').trim(), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
+                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), sourceLinks: normalizeSourceLinks(e.sourceLinks), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || '').trim(), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
                     trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, introStart: Number(e.introStart) || 0, introEnd: Number(e.introEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
                 }))
             }));
@@ -7711,7 +7510,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                     setBannerData(r.bannerData || null);
                     return r;
                   } }),
-            React.createElement(ExtraSourcesHelper, { kind: "movie", defaultTitle: form.name, defaultYear: form.year, sourceId: sourceId, onUse: patch => setForm(prev => ({ ...prev, ...patch })) }),
+            React.createElement(SourceLinksPanel, { type: form.type === "anime" ? "anime" : "movie", title: form.name, year: form.year, tmdbId: form.tmdbId || (/^\d+$/.test(String(sourceId||'')) ? sourceId : ''), value: form.sourceLinks, onChange: v => set('sourceLinks', v), onSetPrimary: (url, sources, provider) => setForm(prev => ({ ...prev, videoUrl: url, videoSources: sources, playbackProvider: provider, cinemanaId: "" })) }),
             React.createElement(SubtitleHelper, { cinemanaId: form.cinemanaId, value: form.subtitleUrl || '', onChange: v => set('subtitleUrl', v), sourceId: sourceId, title: form.name, year: form.year, type: "movie", folder: "subtitles", offset: form.subtitleOffset || 0, onOffsetChange: v => set('subtitleOffset', v) }),
             React.createElement(VideoDisplaySettings, { value: form, onChange: patch => setForm(prev => ({ ...prev, ...patch })) }))) : (React.createElement(React.Fragment, null,
             React.createElement("div", null,
@@ -7729,23 +7528,8 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                         setActiveSeasonIdx(0);
                         setEditingEpisodeIdx(null);
                     } })),
-            React.createElement("div", { className: "mt-3.5" },
-                React.createElement(ExtraSeriesImportPanel, { type: form.type === 'anime' ? 'anime' : 'tv', defaultTitle: form.name, defaultYear: form.year, onImport: async (item, srcId, onProgress) => {
-                        const r = sourceId
-                          ? await importFromTmdb(sourceId, form.type, { withEpisodes: true, onProgress })
-                          : await importFromTmdbTitle(item.title, form.type, item.year || form.year, { withEpisodes: true, onProgress });
-                        const en = await enrichSeasonsWithExtraSource(r.patch.seasons || [], srcId, item, r.tmdbId, onProgress);
-                        r.patch.seasons = en.seasons;
-                        setSourceId(r.sourceId || sourceId || '');
-                        setSubtitleSourceIds([r.imdbId, r.tmdbId].filter(Boolean));
-                        setBannerData(r.bannerData || null);
-                        setShowAllBanners(false);
-                        setForm(prev => ({ ...prev, ...r.patch }));
-                        setActiveSeasonIdx(0);
-                        setEditingEpisodeIdx(null);
-                        return en.summary;
-                    } })),
-            React.createElement("div", { className: "mt-6 border-t border-white/10 pt-5" },
+                        React.createElement(SourceBulkSeriesPanel, { type: form.type === 'anime' ? 'anime' : 'series', title: form.name, year: form.year, tmdbId: form.tmdbId || (/^\d+$/.test(String(sourceId||'')) ? sourceId : ''), seasons: form.seasons, onChange: seasons => set('seasons', seasons) }),
+React.createElement("div", { className: "mt-6 border-t border-white/10 pt-5" },
                 React.createElement("div", { className: "flex items-center justify-between mb-4" },
                     React.createElement("h4", { className: "font-black text-white text-base" }, "\u0627\u0644\u0645\u0648\u0627\u0633\u0645 \u0648\u0627\u0644\u062D\u0644\u0642\u0627\u062A"),
                     React.createElement("button", { onClick: addSeason, className: "flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 font-bold hover:brightness-110 transition shadow-sm" },
