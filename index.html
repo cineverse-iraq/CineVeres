@@ -685,7 +685,6 @@ function normalizeTitlePlaybackData(title) {
     clean.genres = normalizeGenresValue(clean.genres);
     clean.videoUrl = normalizeVideoUrl(clean.videoUrl || '');
     clean.videoSources = normalizeVideoSources(clean.videoSources);
-    clean.sourceLinks = normalizeSourceLinks(clean.sourceLinks);
     clean.subtitleUrl = normalizeSubtitleUrl(clean.subtitleUrl || clean.subtitleURL || '');
     clean.subtitleOffset = Number(clean.subtitleOffset) || 0;
     clean.seasons = normalizeSeasonsValue(clean.seasons).map(season => ({
@@ -696,7 +695,6 @@ function normalizeTitlePlaybackData(title) {
             runtimeMinutes: Number(ep.runtimeMinutes ?? ep.runtime) || 0,
             videoUrl: normalizeVideoUrl(ep.videoUrl || ''),
             videoSources: normalizeVideoSources(ep.videoSources),
-            sourceLinks: normalizeSourceLinks(ep.sourceLinks),
             subtitleUrl: normalizeSubtitleUrl(ep.subtitleUrl || ep.subtitleURL || ''),
             subtitleOffset: Number(ep.subtitleOffset) || 0,
             number: Number(ep.number) || 1
@@ -1370,147 +1368,6 @@ function cinemanaEpisodeSeason(ep) {
 function cinemanaEpisodeNumber(ep) {
     return Number(ep && (ep.episodeNummer ?? ep.episode ?? ep.episodeNumber ?? ep.number)) || 0;
 }
-/* ───────────── External source admin helpers ───────────── */
-const EXTRA_SOURCE_META = [
-  { id:'cinemaplus', name:'CinemaPlus', types:['movie','series','anime'] },
-  { id:'egydead', name:'EgyDead', types:['movie','series'] },
-  { id:'krmzy', name:'Krmzy', types:['series'] },
-  { id:'cartoondub', name:'CartoonDub', types:['movie','series','anime'] },
-];
-function normalizeSourcePlaybackUrl(url) {
-  const s = normalizeVideoUrl(url || '');
-  if (/^https?:\/\/localhost(?::\d+)?\//i.test(s)) {
-    const publicBase = String(CINEMANA_PROXY || '').replace(/\/$/, '');
-    if (publicBase && !/localhost|127\.0\.0\.1/i.test(publicBase)) {
-      return s.replace(/^https?:\/\/localhost(?::\d+)?/i, publicBase);
-    }
-  }
-  return s;
-}
-function normalizeSourceLinks(value) {
-  const arr = Array.isArray(value) ? value : (value && typeof value === 'object' ? Object.values(value) : []);
-  return arr.map(x => x && typeof x === 'object' ? {
-    provider: String(x.provider || x.source || '').trim(),
-    label: String(x.label || x.quality || '').trim(),
-    url: normalizeSourcePlaybackUrl(x.url || x.videoUrl || ''),
-    sourceUrl: normalizeVideoUrl(x.sourceUrl || x.originalUrl || x.extractedUrl || ''),
-    sourcePageUrl: String(x.sourcePageUrl || x.pageUrl || '').trim(),
-  } : null).filter(x => x && x.provider && x.url).filter((x,i,a) => a.findIndex(y => y.provider === x.provider && y.url === x.url) === i);
-}
-async function sourceEngineFetch(pathname, params = {}) {
-  const qs = new URLSearchParams();
-  Object.entries(params).forEach(([k,v]) => { if (v !== undefined && v !== null && String(v) !== '') qs.set(k,String(v)); });
-  const bases = [];
-  const add = b => { const x=String(b||'').replace(/\/+$/,''); if(x&&!bases.includes(x))bases.push(x); };
-  add(CINEMANA_PROXY); add('http://localhost:8787');
-  let last = null;
-  for (const base of bases) {
-    try {
-      const r = await fetch(`${base}${pathname}${qs.toString()?'?'+qs:''}`, {cache:'no-store',headers:{Accept:'application/json','Cache-Control':'no-cache'}});
-      const data = await r.json().catch(()=>({}));
-      if (r.ok) return data;
-      last = new Error(data.error || `HTTP ${r.status}`);
-    } catch(e){ last=e; }
-  }
-  throw last || new Error('تعذر الاتصال بمحرك المصادر الإضافية.');
-}
-async function extractExternalSourceOne({source,type,title,year,tmdb,season,episode,existingLinks=[]}) {
-  const catalog = await sourceEngineFetch('/sources/catalog', {source,type,title,year,tmdb});
-  if (!catalog || !catalog.ok) throw new Error((catalog && catalog.reason) || 'المصدر لم يجد تطابقًا قابلًا للاستخراج');
-  let resolved = null;
-  if (type === 'movie') {
-    const direct = catalog.videoCandidates && catalog.videoCandidates[0];
-    if (direct && direct.url) {
-      const r = await sourceEngineFetch('/sources/resolve', {source,type,tmdb,title,year,direct:direct.url,sourcePageUrl:direct.sourcePageUrl||catalog.match?.url,label:direct.label||''});
-      resolved = r && r.resolved;
-    } else {
-      const r = await sourceEngineFetch('/sources/resolve', {source,type,tmdb,title,year,sourceId:catalog.match && (catalog.match.id || catalog.match.url),sourcePageUrl:catalog.match && catalog.match.url});
-      resolved = r && r.resolved;
-    }
-  } else {
-    const row = (catalog.episodes || []).find(x => Number(x.season) === Number(season) && Number(x.episode) === Number(episode));
-    if (!row) throw new Error(`المصدر لم يجد الموسم ${season} الحلقة ${episode}`);
-    const r = await sourceEngineFetch('/sources/resolve', {source,type,tmdb,title,year,season,episode,sourceId:row.sourceId,sourcePageUrl:row.sourcePageUrl,url:row.url||''});
-    resolved = r && r.resolved;
-  }
-  if (!resolved || !resolved.url) throw new Error('تمت المطابقة لكن لم ينجح اختبار الفيديو النهائي');
-  return {
-    provider: source,
-    label: resolved.label || source,
-    url: normalizeSourcePlaybackUrl(resolved.url),
-    sourceUrl: normalizeVideoUrl(resolved.sourceUrl || resolved.url),
-    sourcePageUrl: resolved.sourcePageUrl || '',
-  };
-}
-function SourceLinksPanel({ type, title, year, tmdbId, season, episode, value, onChange, onSetPrimary }) {
-  const [busy,setBusy]=useState({});
-  const [msg,setMsg]=useState({});
-  const links=normalizeSourceLinks(value);
-  const applicable=EXTRA_SOURCE_META.filter(s=>s.types.includes(type));
-  const run=async source=>{
-    setBusy(p=>({...p,[source.id]:true})); setMsg(p=>({...p,[source.id]:''}));
-    try{
-      const x=await extractExternalSourceOne({source:source.id,type:title && type==='anime' ? 'series' : type,title,year,tmdb:String(tmdbId||''),season,episode,existingLinks:links});
-      const next=normalizeSourceLinks([...links.filter(l=>l.provider!==x.provider),x]);
-      onChange(next); onSetPrimary && onSetPrimary(x.url, [{label:x.label,resolution:x.label,url:x.url,subtitleUrl:''}], x.provider);
-      setMsg(p=>({...p,[source.id]:'✓ رابط فيديو حقيقي اختُبر ونجح'}));
-    }catch(e){setMsg(p=>({...p,[source.id]:e?.message||'لا يوجد رابط صالح'}));}
-    finally{setBusy(p=>({...p,[source.id]:false}));}
-  };
-  return React.createElement('div',{className:'mt-3.5 glass-card rounded-2xl p-3.5 border border-accent-purple/20'},
-    React.createElement('div',{className:'flex items-center justify-between gap-2 flex-wrap mb-2.5'},
-      React.createElement('p',{className:'text-[11px] font-black text-accent-purple'},'المصادر الإضافية — رابط الفيديو المباشر فقط'),
-      React.createElement('span',{className:'text-[9px] text-slate-500'},'المصدر لا يظهر هنا إلا بعد نجاح اختبار الفيديو')),
-    applicable.map(s=>{
-      const row=links.find(l=>l.provider===s.id);
-      return React.createElement('div',{key:s.id,className:'rounded-xl border border-white/10 bg-glass-900/50 p-2.5 mb-2 last:mb-0'},
-        React.createElement('div',{className:'flex items-center gap-2 mb-2 flex-wrap'},
-          React.createElement('span',{className:'text-[11px] font-black text-white'},s.name),
-          row && React.createElement('span',{className:'text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300'},'جاهز'),
-          React.createElement('button',{type:'button',onClick:()=>run(s),disabled:!!busy[s.id],className:'mr-auto px-2.5 py-1.5 rounded-lg bg-accent-purple/15 border border-accent-purple/30 text-accent-purple text-[10px] font-black disabled:opacity-40'},busy[s.id]?'جاري الاختبار...':row?'إعادة الاستخراج':'استخراج')),
-        React.createElement('input',{value:row?.url||'',readOnly:true,placeholder:'سيظهر هنا رابط التشغيل بعد نجاح الاختبار',dir:'ltr',className:'w-full bg-glass-950 border border-white/10 rounded-lg px-2.5 py-2 text-[10px] text-slate-200 outline-none'}),
-        row?.sourceUrl && row.sourceUrl !== row.url && React.createElement('p',{className:'text-[9px] text-cyan-300/70 mt-1 truncate',dir:'ltr'},`الرابط المستخرج: ${row.sourceUrl}`),
-        row?.sourcePageUrl && React.createElement('p',{className:'text-[9px] text-slate-500 mt-1 truncate',dir:'ltr'},row.sourcePageUrl),
-        msg[s.id] && React.createElement('p',{className:`text-[9px] font-bold mt-1 ${msg[s.id].startsWith('✓')?'text-emerald-400':'text-amber-400'}`},msg[s.id]));
-    }));
-}
-function SourceBulkSeriesPanel({ type, title, year, tmdbId, seasons, onChange }) {
-  const [source,setSource]=useState(type==='anime'?'cinemaplus':'egydead');
-  const [loading,setLoading]=useState(false); const [msg,setMsg]=useState('');
-  const applicable=EXTRA_SOURCE_META.filter(s=>s.types.includes(type));
-  const extractAll=async()=>{
-    if(!title||!tmdbId){setMsg('أولًا عبّي بيانات العمل من TMDB.');return;}
-    setLoading(true);setMsg('جاري استخراج الحلقات وفحص الروابط الفعلية...');
-    try{
-      const catalog=await sourceEngineFetch('/sources/catalog',{source,type:type==='anime'?'series':type,title,year,tmdb:String(tmdbId)});
-      if(!catalog.ok) throw new Error(catalog.reason||'لا توجد مطابقة');
-      const map=new Map((catalog.episodes||[]).filter(x=>x.episode!=null).map(x=>[`${x.season}x${x.episode}`,x]));
-      let done=0,total=(seasons||[]).reduce((n,s)=>n+(s.episodes||[]).length,0);
-      const out=(seasons||[]).map(s=>({...s,episodes:(s.episodes||[]).map(e=>({...e}))}));
-      for(const s of out){
-        for(const e of s.episodes||[]){
-          const row=map.get(`${Number(s.number)}x${Number(e.number)}`); if(!row)continue;
-          try{
-            const r=await sourceEngineFetch('/sources/resolve',{source,type:type==='anime'?'series':type,title,year,tmdb:String(tmdbId),season:s.number,episode:e.number,sourceId:row.sourceId,sourcePageUrl:row.sourcePageUrl,url:row.url||''});
-            if(r.ok&&r.resolved?.url){
-              e.videoUrl=normalizeSourcePlaybackUrl(r.resolved.url); e.videoSources=[{label:r.resolved.label||source,resolution:r.resolved.label||source,url:normalizeSourcePlaybackUrl(r.resolved.url),subtitleUrl:''}]; e.playbackProvider=source; e.sourceLinks=normalizeSourceLinks([...(e.sourceLinks||[]),{provider:source,label:r.resolved.label||source,url:r.resolved.url,sourcePageUrl:r.resolved.sourcePageUrl||''}]);
-            }
-          }catch(_){ }
-          done++; if(done%3===0||done===total)setMsg(`تم فحص ${done}/${total} حلقة — الروابط الناجحة تُحفظ فقط.`);
-        }
-      }
-      onChange(out); setMsg(`اكتمل المصدر ${source}: تم حفظ الروابط الفعلية التي نجح اختبارها.`);
-    }catch(e){setMsg(e?.message||'فشل استخراج المصدر');}
-    finally{setLoading(false);}
-  };
-  return React.createElement('div',{className:'glass-card rounded-2xl p-4 border border-emerald-500/15 mb-5'},
-    React.createElement('div',{className:'flex items-center gap-2 flex-wrap mb-2.5'},React.createElement('span',{className:'text-[12px] font-black text-emerald-300'},'استخراج حلقات من مصدر إضافي'),React.createElement('span',{className:'text-[9px] text-slate-500'},'TMDB للمعلومات + المصدر المحدد للتشغيل')),
-    React.createElement('div',{className:'flex items-center gap-2'},
-      React.createElement('select',{value:source,onChange:e=>setSource(e.target.value),className:'flex-1 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none'},applicable.map(s=>React.createElement('option',{key:s.id,value:s.id},s.name))),
-      React.createElement('button',{type:'button',onClick:extractAll,disabled:loading||!title,className:'px-4 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-black disabled:opacity-40'},loading?'جاري...':'استخراج الكل')),
-    msg&&React.createElement('p',{className:'text-[10px] text-slate-400 mt-2 font-bold'},msg));
-}
-
 function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGenerate, onGenerateQualities, onGenerateSubtitle, onPickedNb, onImportTmdb }) {
     const [query, setQuery] = useState(defaultTitle || '');
     useEffect(() => { if (defaultTitle)
@@ -2241,8 +2098,6 @@ async function importFromTmdb(rawInput, currentType, opts) {
     const sourceId = imdbId || String(tmdbId);
     const parsedYear = dateStr ? parseInt(dateStr.slice(0, 4), 10) : NaN;
     const patch = {
-        tmdbId: String(tmdbId || ''),
-        imdbId: String(imdbId || ''),
         name: name,
         year: Number.isFinite(parsedYear) ? parsedYear : new Date().getFullYear(),
         genresText: genres.join(', '),
@@ -6916,10 +6771,10 @@ function VideoDisplaySettings({ value, onChange }) {
         showCropStudio && (React.createElement(CropStudioModal, { videoUrl: normalizeVideoUrl(v.videoUrl), initial: crop, onCancel: () => setShowCropStudio(false), onSave: (newCrop) => { set('crop', newCrop); setShowCropStudio(false); } }))));
 }
 function emptyForm(type) {
-    return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', runtimeMinutes: 0, rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], sourceLinks: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
+    return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', runtimeMinutes: 0, rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
 }
 function emptyEpisode(num) {
-    return { number: num, title: '', runtimeMinutes: 0, videoUrl: '', videoSources: [], sourceLinks: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, imdb: '', tmdbRating: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
+    return { number: num, title: '', runtimeMinutes: 0, videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, imdb: '', tmdbRating: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
 }
 function SubtitleHelper({ value, onChange, sourceId, title, type, season, episode, year, cinemanaId, offset = 0, onOffsetChange }) {
     const [loading, setLoading] = useState(false);
@@ -7042,7 +6897,6 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
         React.createElement("div", { className: "mt-3.5" },
             React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u062D\u0644\u0642\u0629 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: e.videoUrl, onChange: v => set('videoUrl', v), folder: "episodes", accept: "video/*" })),
         React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb) }),
-        React.createElement(SourceLinksPanel, { type: "series", title: seriesName, year: e.airDate ? String(e.airDate).slice(0,4) : "", tmdbId: e.tmdbId || (/^\d+$/.test(String(sourceId||'')) ? sourceId : ''), season: seasonNumber, episode: e.number, value: e.sourceLinks, onChange: v => set('sourceLinks', v), onSetPrimary: (url, sources, provider) => onChange({ ...eRef.current, videoUrl: url, videoSources: sources, playbackProvider: provider, cinemanaId: "" }) }),
         React.createElement(SubtitleHelper, { cinemanaId: e.cinemanaId, value: e.subtitleUrl || '', onChange: v => set('subtitleUrl', v), sourceId: sourceId, title: seriesName, year: new Date().getFullYear(), type: "series", season: seasonNumber, episode: e.number, folder: "subtitles", offset: e.subtitleOffset || 0, onOffsetChange: v => set('subtitleOffset', v) }),
         React.createElement("div", { className: "grid sm:grid-cols-3 gap-3.5 mt-3.5" },
             React.createElement("div", null,
@@ -7375,8 +7229,6 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             featured: form.featured === true,
             status: form.status === 'published' ? 'published' : 'draft',
             sourceId: sourceId || '',
-            tmdbId: String(form.tmdbId || ''),
-            imdbId: String(form.imdbId || ''),
             createdAt: initial ? (initial.createdAt || Date.now()) : Date.now(),
             likes: initial ? (initial.likes || 0) : 0,
             views: initial ? (initial.views || 0) : 0,
@@ -7384,7 +7236,6 @@ function AdminContentForm({ initial, defaultType, onDone }) {
         if (form.type === 'movie') {
             payload.videoUrl = normalizeVideoUrl(form.videoUrl.trim());
             payload.videoSources = normalizeVideoSources(form.videoSources);
-            payload.sourceLinks = normalizeSourceLinks(form.sourceLinks);
 
             // مهم جدًا للأفلام: لا نحفظ cinemanaId وحده ونترك videoUrl/videoSources فارغة.
             // الهاتف لا يستطيع الوصول إلى Node المحلي حتى يسترجع الرابط، بينما الحلقات
@@ -7411,7 +7262,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.subtitlePublicUrl = String(form.subtitlePublicUrl || '').trim();
             payload.subtitleOffset = Number(form.subtitleOffset) || 0;
             payload.cinemanaId = String(form.cinemanaId || '').trim();
-            payload.playbackProvider = payload.cinemanaId ? 'cinemana' : (form.playbackProvider || (isVidApiUrl(form.videoUrl) ? 'vidapi' : ''));
+            payload.playbackProvider = payload.cinemanaId ? 'cinemana' : (isVidApiUrl(form.videoUrl) ? 'vidapi' : (form.playbackProvider || ''));
             if (payload.cinemanaId) {
                 payload.videoUrl = '';
                 payload.videoSources = [];
@@ -7432,7 +7283,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 poster: (s.poster || '').trim(),
                 episodeThumbnail: (s.episodeThumbnail || '').trim(),
                 episodes: (s.episodes || []).map(e => ({
-                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), sourceLinks: normalizeSourceLinks(e.sourceLinks), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || '').trim(), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
+                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || '').trim(), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
                     trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, introStart: Number(e.introStart) || 0, introEnd: Number(e.introEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
                 }))
             }));
@@ -7523,7 +7374,6 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                     setBannerData(r.bannerData || null);
                     return r;
                   } }),
-            React.createElement(SourceLinksPanel, { type: form.type === "anime" ? "anime" : "movie", title: form.name, year: form.year, tmdbId: form.tmdbId || (/^\d+$/.test(String(sourceId||'')) ? sourceId : ''), value: form.sourceLinks, onChange: v => set('sourceLinks', v), onSetPrimary: (url, sources, provider) => setForm(prev => ({ ...prev, videoUrl: url, videoSources: sources, playbackProvider: provider, cinemanaId: "" })) }),
             React.createElement(SubtitleHelper, { cinemanaId: form.cinemanaId, value: form.subtitleUrl || '', onChange: v => set('subtitleUrl', v), sourceId: sourceId, title: form.name, year: form.year, type: "movie", folder: "subtitles", offset: form.subtitleOffset || 0, onOffsetChange: v => set('subtitleOffset', v) }),
             React.createElement(VideoDisplaySettings, { value: form, onChange: patch => setForm(prev => ({ ...prev, ...patch })) }))) : (React.createElement(React.Fragment, null,
             React.createElement("div", null,
@@ -7541,8 +7391,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                         setActiveSeasonIdx(0);
                         setEditingEpisodeIdx(null);
                     } })),
-                        React.createElement(SourceBulkSeriesPanel, { type: form.type === 'anime' ? 'anime' : 'series', title: form.name, year: form.year, tmdbId: form.tmdbId || (/^\d+$/.test(String(sourceId||'')) ? sourceId : ''), seasons: form.seasons, onChange: seasons => set('seasons', seasons) }),
-React.createElement("div", { className: "mt-6 border-t border-white/10 pt-5" },
+            React.createElement("div", { className: "mt-6 border-t border-white/10 pt-5" },
                 React.createElement("div", { className: "flex items-center justify-between mb-4" },
                     React.createElement("h4", { className: "font-black text-white text-base" }, "\u0627\u0644\u0645\u0648\u0627\u0633\u0645 \u0648\u0627\u0644\u062D\u0644\u0642\u0627\u062A"),
                     React.createElement("button", { onClick: addSeason, className: "flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl bg-accent-cyan text-glass-950 font-bold hover:brightness-110 transition shadow-sm" },
