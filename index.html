@@ -1377,12 +1377,23 @@ const EXTRA_SOURCE_META = [
   { id:'krmzy', name:'Krmzy', types:['series'] },
   { id:'cartoondub', name:'CartoonDub', types:['movie','series','anime'] },
 ];
+function normalizeSourcePlaybackUrl(url) {
+  const s = normalizeVideoUrl(url || '');
+  if (/^https?:\/\/localhost(?::\d+)?\//i.test(s)) {
+    const publicBase = String(CINEMANA_PROXY || '').replace(/\/$/, '');
+    if (publicBase && !/localhost|127\.0\.0\.1/i.test(publicBase)) {
+      return s.replace(/^https?:\/\/localhost(?::\d+)?/i, publicBase);
+    }
+  }
+  return s;
+}
 function normalizeSourceLinks(value) {
   const arr = Array.isArray(value) ? value : (value && typeof value === 'object' ? Object.values(value) : []);
   return arr.map(x => x && typeof x === 'object' ? {
     provider: String(x.provider || x.source || '').trim(),
     label: String(x.label || x.quality || '').trim(),
-    url: normalizeVideoUrl(x.url || x.videoUrl || ''),
+    url: normalizeSourcePlaybackUrl(x.url || x.videoUrl || ''),
+    sourceUrl: normalizeVideoUrl(x.sourceUrl || x.originalUrl || x.extractedUrl || ''),
     sourcePageUrl: String(x.sourcePageUrl || x.pageUrl || '').trim(),
   } : null).filter(x => x && x.provider && x.url).filter((x,i,a) => a.findIndex(y => y.provider === x.provider && y.url === x.url) === i);
 }
@@ -1426,7 +1437,8 @@ async function extractExternalSourceOne({source,type,title,year,tmdb,season,epis
   return {
     provider: source,
     label: resolved.label || source,
-    url: resolved.url,
+    url: normalizeSourcePlaybackUrl(resolved.url),
+    sourceUrl: normalizeVideoUrl(resolved.sourceUrl || resolved.url),
     sourcePageUrl: resolved.sourcePageUrl || '',
   };
 }
@@ -1456,7 +1468,8 @@ function SourceLinksPanel({ type, title, year, tmdbId, season, episode, value, o
           React.createElement('span',{className:'text-[11px] font-black text-white'},s.name),
           row && React.createElement('span',{className:'text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300'},'جاهز'),
           React.createElement('button',{type:'button',onClick:()=>run(s),disabled:!!busy[s.id],className:'mr-auto px-2.5 py-1.5 rounded-lg bg-accent-purple/15 border border-accent-purple/30 text-accent-purple text-[10px] font-black disabled:opacity-40'},busy[s.id]?'جاري الاختبار...':row?'إعادة الاستخراج':'استخراج')),
-        React.createElement('input',{value:row?.url||'',readOnly:true,placeholder:'سيظهر هنا رابط الفيديو المباشر بعد نجاح الاختبار',dir:'ltr',className:'w-full bg-glass-950 border border-white/10 rounded-lg px-2.5 py-2 text-[10px] text-slate-200 outline-none'}),
+        React.createElement('input',{value:row?.url||'',readOnly:true,placeholder:'سيظهر هنا رابط التشغيل بعد نجاح الاختبار',dir:'ltr',className:'w-full bg-glass-950 border border-white/10 rounded-lg px-2.5 py-2 text-[10px] text-slate-200 outline-none'}),
+        row?.sourceUrl && row.sourceUrl !== row.url && React.createElement('p',{className:'text-[9px] text-cyan-300/70 mt-1 truncate',dir:'ltr'},`الرابط المستخرج: ${row.sourceUrl}`),
         row?.sourcePageUrl && React.createElement('p',{className:'text-[9px] text-slate-500 mt-1 truncate',dir:'ltr'},row.sourcePageUrl),
         msg[s.id] && React.createElement('p',{className:`text-[9px] font-bold mt-1 ${msg[s.id].startsWith('✓')?'text-emerald-400':'text-amber-400'}`},msg[s.id]));
     }));
@@ -1480,7 +1493,7 @@ function SourceBulkSeriesPanel({ type, title, year, tmdbId, seasons, onChange })
           try{
             const r=await sourceEngineFetch('/sources/resolve',{source,type:type==='anime'?'series':type,title,year,tmdb:String(tmdbId),season:s.number,episode:e.number,sourceId:row.sourceId,sourcePageUrl:row.sourcePageUrl,url:row.url||''});
             if(r.ok&&r.resolved?.url){
-              e.videoUrl=r.resolved.url; e.videoSources=[{label:r.resolved.label||source,resolution:r.resolved.label||source,url:r.resolved.url,subtitleUrl:''}]; e.playbackProvider=source; e.sourceLinks=normalizeSourceLinks([...(e.sourceLinks||[]),{provider:source,label:r.resolved.label||source,url:r.resolved.url,sourcePageUrl:r.resolved.sourcePageUrl||''}]);
+              e.videoUrl=normalizeSourcePlaybackUrl(r.resolved.url); e.videoSources=[{label:r.resolved.label||source,resolution:r.resolved.label||source,url:normalizeSourcePlaybackUrl(r.resolved.url),subtitleUrl:''}]; e.playbackProvider=source; e.sourceLinks=normalizeSourceLinks([...(e.sourceLinks||[]),{provider:source,label:r.resolved.label||source,url:r.resolved.url,sourcePageUrl:r.resolved.sourcePageUrl||''}]);
             }
           }catch(_){ }
           done++; if(done%3===0||done===total)setMsg(`تم فحص ${done}/${total} حلقة — الروابط الناجحة تُحفظ فقط.`);
