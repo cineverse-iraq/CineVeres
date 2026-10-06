@@ -49,6 +49,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
+  <script src="./source2-config.js"></script>
 
   <style>
     html { scroll-behavior: smooth; }
@@ -685,6 +686,10 @@ function normalizeTitlePlaybackData(title) {
     clean.genres = normalizeGenresValue(clean.genres);
     clean.videoUrl = normalizeVideoUrl(clean.videoUrl || '');
     clean.videoSources = normalizeVideoSources(clean.videoSources);
+    clean.tmdbId = String(clean.tmdbId || '').trim();
+    clean.imdbId = String(clean.imdbId || '').trim();
+    clean.source2Provider = String(clean.source2Provider || 'vidlink').trim() || 'vidlink';
+    clean.source2Sources = normalizeVideoSources(clean.source2Sources);
     clean.subtitleUrl = normalizeSubtitleUrl(clean.subtitleUrl || clean.subtitleURL || '');
     clean.subtitleOffset = Number(clean.subtitleOffset) || 0;
     clean.seasons = normalizeSeasonsValue(clean.seasons).map(season => ({
@@ -1207,6 +1212,136 @@ const CINEMANA_PROXY = (() => {
     if (isLanPage) return `http://${host}:8787`;
     return isLocalPage ? 'http://localhost:8787' : 'https://api.cinadam.xyz';
 })();
+
+// ==== SOURCE 2 ENGINE (TMDB Embed API / Vidlink only) ====
+// The public URL must point to YOUR deployed TMDB-Embed-API instance.
+// Do not point this at localhost: GitHub Pages/mobile browsers cannot reach it.
+const SOURCE2_PUBLIC_URL = (() => {
+    const explicit = (typeof window !== 'undefined' && (window.CINADAM_SOURCE2_URL || window.SOURCE2_API_URL)) || '';
+    const stored = (typeof localStorage !== 'undefined' ? localStorage.getItem('cinadam_source2_url') : '') || '';
+    return String(explicit || stored || '').trim().replace(/\/+$/, '');
+})();
+const SOURCE2_PROVIDER = 'vidlink';
+const SOURCE_PREF_KEY = 'cinadam_playback_source_v2';
+const SOURCE2_TIMEOUT_MS = 10000;
+
+function playbackPreferenceKey(titleId) {
+    let network = 'default';
+    try {
+        const c = navigator && navigator.connection;
+        network = String((c && (c.effectiveType || c.type)) || 'default');
+    } catch (_) {}
+    return `${SOURCE_PREF_KEY}:${String(titleId || 'unknown')}:${network}`;
+}
+function readPlaybackPreference(titleId) {
+    try {
+        const v = localStorage.getItem(playbackPreferenceKey(titleId));
+        return v === 'source2' || v === 'cinemana' ? v : '';
+    } catch (_) { return ''; }
+}
+function writePlaybackPreference(titleId, source) {
+    if (source !== 'source2' && source !== 'cinemana') return;
+    try { localStorage.setItem(playbackPreferenceKey(titleId), source); } catch (_) {}
+}
+function source2QualitySources(streams) {
+    const list = Array.isArray(streams) ? streams : [];
+    const out = [];
+    for (const x of list) {
+        const url = normalizeVideoUrl(x && (x.url || x.videoUrl || x.src || ''));
+        if (!/^https?:\/\//i.test(url)) continue;
+        const q = String((x && (x.quality || x.resolution || x.label || x.title)) || 'Auto').trim();
+        const label = /\d{3,4}p/i.test(q) ? q.match(/\d{3,4}p/i)[0].toLowerCase() : q;
+        out.push({ label: label || 'Auto', resolution: label || 'Auto', url, subtitleUrl: '', provider: SOURCE2_PROVIDER });
+    }
+    return out
+        .filter((x, i, a) => a.findIndex(y => y.url === x.url) === i)
+        .sort((a,b) => (parseInt(String(b.label).replace(/\D/g,''),10)||0) - (parseInt(String(a.label).replace(/\D/g,''),10)||0));
+}
+async function source2ResolveTmdbId(meta) {
+    const direct = String((meta && (meta.tmdbId || meta.tmdb_id)) || '').trim();
+    if (/^\d+$/.test(direct)) return direct;
+    const sourceId = String((meta && (meta.sourceId || meta.imdbId || meta.imdb)) || '').trim();
+    if (/^\d+$/.test(sourceId)) return sourceId;
+    const imdb = String((meta && (meta.imdbId || meta.imdb || sourceId)) || '').trim();
+    if (/^tt\d+$/i.test(imdb)) {
+        const found = await tmdbFetch(`find/${imdb}`, { external_source: 'imdb_id', language: 'en-US' });
+        const row = (found && found.movie_results && found.movie_results[0]) || (found && found.tv_results && found.tv_results[0]);
+        if (row && row.id) return String(row.id);
+    }
+    throw new Error('لا يوجد TMDB ID لهذا العمل للمصدر الثاني.');
+}
+async function source2FetchJson(path) {
+    if (!SOURCE2_PUBLIC_URL) throw new Error('المصدر الثاني غير مضبوط بعد.');
+    const res = await fetch(`${SOURCE2_PUBLIC_URL}${path}`, {
+        cache: 'no-store',
+        headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
+        signal: AbortSignal.timeout(SOURCE2_TIMEOUT_MS)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(`Source2 HTTP ${res.status}`);
+    return data;
+}
+async function resolveSource2Video(meta, kind, seasonNumber) {
+    const tmdbId = await source2ResolveTmdbId(meta);
+    const type = kind === 'movie' ? 'movie' : 'series';
+    let path = `/api/streams/${SOURCE2_PROVIDER}/${type}/${encodeURIComponent(tmdbId)}`;
+    if (type === 'series') {
+        const s = Number(seasonNumber) || 1;
+        const e = Number(meta && (meta.number || meta.episodeNumber || meta.episode)) || 1;
+        path += `?season=${encodeURIComponent(s)}&episode=${encodeURIComponent(e)}`;
+    }
+    const data = await source2FetchJson(path);
+    const sources = source2QualitySources(data && data.streams);
+    if (!sources.length) throw new Error('المصدر الثاني لم يُرجع رابط تشغيل صالحًا.');
+    return { url: sources[0].url, sources, tmdbId, provider: SOURCE2_PROVIDER, raw: data };
+}
+async function resolvePreferredPlayback(meta, kind, seasonNumber) {
+    const titleKey = String((meta && (meta.id || meta.titleId)) || 'unknown');
+    const pref = readPlaybackPreference(titleKey);
+    const cinemanaAvailable = !!String((meta && meta.cinemanaId) || '').trim() || !!getSavedVideoUrl(meta);
+    const tryCinemana = async () => {
+        const recovered = await resolveFreshCinemanaVideo(meta, kind, seasonNumber);
+        if (!recovered || !recovered.url) throw new Error('سينمانا لم تُرجع رابط تشغيل.');
+        writePlaybackPreference(titleKey, 'cinemana');
+        return { ...recovered, provider: 'cinemana', playbackProvider: 'cinemana' };
+    };
+    const trySource2 = async () => {
+        const recovered = await resolveSource2Video(meta, kind, seasonNumber);
+        writePlaybackPreference(titleKey, 'source2');
+        return { ...recovered, playbackProvider: 'source2' };
+    };
+    const order = pref === 'source2' ? ['source2', 'cinemana'] : ['cinemana', 'source2'];
+    let lastError = null;
+    for (const which of order) {
+        if (which === 'cinemana' && !cinemanaAvailable && pref !== 'cinemana') continue;
+        try { return which === 'cinemana' ? await tryCinemana() : await trySource2(); }
+        catch (e) { lastError = e; }
+    }
+    throw lastError || new Error('لم يتوفر مصدر تشغيل صالح.');
+}
+async function fallbackFromPlaybackError(meta, kind, seasonNumber) {
+    const current = String((meta && (meta.playbackProvider || meta.provider)) || '').toLowerCase();
+    const titleKey = String((meta && (meta.id || meta.titleId)) || 'unknown');
+    if (current === 'source2') {
+        try {
+            const recovered = await resolveFreshCinemanaVideo(meta, kind, seasonNumber);
+            if (recovered && recovered.url) {
+                writePlaybackPreference(titleKey, 'cinemana');
+                return { ...recovered, provider: 'cinemana', playbackProvider: 'cinemana' };
+            }
+        } catch (_) {}
+    } else {
+        try {
+            const recovered = await resolveSource2Video(meta, kind, seasonNumber);
+            if (recovered && recovered.url) {
+                writePlaybackPreference(titleKey, 'source2');
+                return { ...recovered, playbackProvider: 'source2' };
+            }
+        } catch (_) {}
+    }
+    return null;
+}
+// ==== SOURCE 2 ENGINE END ====
 const SUBTITLE_PUBLIC_BASE = (() => {
     const configured = (typeof window !== 'undefined' && (window.SUBTITLE_PUBLIC_BASE_URL || window.CINEMANA_SUBTITLE_PUBLIC_BASE)) ||
         (typeof localStorage !== 'undefined' ? localStorage.getItem('subtitle_public_base_url') : '') || '';
@@ -2108,6 +2243,10 @@ async function importFromTmdb(rawInput, currentType, opts) {
         writer: writer,
         imdbRating: '',
         runtimeMinutes: parseRuntimeSeconds(media === 'movie' ? (data.runtime || 0) : ((Array.isArray(data.episode_run_time) && data.episode_run_time[0]) || 0), true) / 60,
+        tmdbId: String(tmdbId || ''),
+        imdbId: String(imdbId || ''),
+        source2Provider: 'vidlink',
+        source2Sources: [],
     };
     const notes = [];
     let omdbBroken = false;
@@ -4968,30 +5107,12 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         setResumeAt(movieResume);
         try {
             if (title.type === 'movie') {
-                const cinemanaId = String(title.cinemanaId || '').trim();
-                let url = '';
-                let sources = [];
-                if (cinemanaId) {
-                    const recovered = await resolveFreshCinemanaVideo(title, 'movie');
-                    if (requestId !== playRequestRef.current) return;
-                    url = recovered.url;
-                    sources = recovered.sources;
-                }
-                else {
-                    url = getSavedVideoUrl(title);
-                    sources = normalizeVideoSources(title.videoSources);
-                    if (!url) {
-                        const recovered = await recoverMovieVideo();
-                        if (requestId !== playRequestRef.current) return;
-                        url = recovered.url;
-                        sources = recovered.sources;
-                    }
-                }
+                const recovered = await resolvePreferredPlayback(title, 'movie', null);
                 if (requestId !== playRequestRef.current) return;
-                setPlayingUrl(url);
-                setPlayingMeta({ ...title, videoUrl: url, videoSources: sources, playbackProvider: cinemanaId ? 'cinemana' : (title.playbackProvider || ''), subtitleUrl: title.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: title.subtitlePublicUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
+                setPlayingUrl(recovered.url);
+                setPlayingMeta({ ...title, videoUrl: recovered.url, videoSources: recovered.sources || [], playbackProvider: recovered.playbackProvider || recovered.provider || 'cinemana', tmdbId: recovered.tmdbId || title.tmdbId || '', subtitleUrl: title.subtitleUrl || ((recovered.sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: title.subtitlePublicUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
                 setPlayingLabel(title.name);
-                ensureVidApiSubtitlePublic({ ...title, videoUrl: url }).catch(() => {});
+                ensureVidApiSubtitlePublic({ ...title, videoUrl: recovered.url }).catch(() => {});
             }
             else {
                 let found = firstEpisode();
@@ -5023,31 +5144,14 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         const requestedResume = resumeOverride != null ? Number(resumeOverride)||0 : (savedProgress && !savedProgress.completed ? Number(savedProgress.position)||0 : 0);
         setResumeAt(requestedResume);
         try {
-            const cinemanaId = String((ep && ep.cinemanaId) || '').trim();
-            let url = '';
-            let sources = [];
-            if (cinemanaId) {
-                const recovered = await resolveFreshCinemanaVideo(ep, 'tv', seasonNumber);
-                if (requestId !== playRequestRef.current) return;
-                url = recovered.url;
-                sources = recovered.sources;
-            }
-            else {
-                url = getSavedVideoUrl(ep);
-                sources = normalizeVideoSources(ep.videoSources);
-                if (!url) {
-                    const recovered = await recoverEpisodeVideo(ep, seasonNumber);
-                    if (requestId !== playRequestRef.current) return;
-                    url = recovered.url;
-                    sources = recovered.sources;
-                }
-            }
+            const meta = { ...ep, id: title.id, titleId: title.id, tmdbId: title.tmdbId || '', imdbId: title.imdbId || title.imdb || '', sourceId: title.sourceId || title.imdbId || title.tmdbId || '', number: ep.number, cinemanaId: ep.cinemanaId || '' };
+            const recovered = await resolvePreferredPlayback(meta, 'tv', seasonNumber);
             if (requestId !== playRequestRef.current) return;
-            setPlayingUrl(url);
-            setPlayingMeta({ ...ep, videoUrl: url, videoSources: sources, playbackProvider: cinemanaId ? 'cinemana' : (ep.playbackProvider || ''), subtitleUrl: ep.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: ep.subtitlePublicUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
+            setPlayingUrl(recovered.url);
+            setPlayingMeta({ ...ep, videoUrl: recovered.url, videoSources: recovered.sources || [], playbackProvider: recovered.playbackProvider || recovered.provider || 'cinemana', tmdbId: recovered.tmdbId || title.tmdbId || '', imdbId: title.imdbId || title.imdb || '', subtitleUrl: ep.subtitleUrl || ((recovered.sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: ep.subtitlePublicUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
             setPlayingSeasonNumber(seasonNumber != null ? seasonNumber : null);
             setPlayingLabel(`${title.name} · ${ep.title || `الحلقة ${ep.number != null ? ep.number : ''}`}`);
-                ensureVidApiSubtitlePublic({ ...ep, videoUrl: url }).catch(() => {});
+            ensureVidApiSubtitlePublic({ ...ep, videoUrl: recovered.url }).catch(() => {});
         }
         catch (e) {
             setVideoError(true);
@@ -5103,36 +5207,18 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const activeSubtitlePublicUrl = (playingMeta && playingMeta.subtitlePublicUrl) || (title.type === 'movie' ? title.subtitlePublicUrl : '');
     const handleCinemanaPlaybackError = async () => {
         const meta = playingMeta || {};
-        const cinemanaId = String(meta.cinemanaId || '').trim();
-        const isCinemana = !!cinemanaId || isCinemanaPlayback(meta, playingUrl);
-        if (!isCinemana) {
+        const kind = title.type === 'movie' ? 'movie' : 'tv';
+        const recovered = await fallbackFromPlaybackError(meta, kind, playingSeasonNumber);
+        if (!recovered || !recovered.url) {
             setVideoError(true);
+            showToast('تعذّر تشغيل المصدرين على هذا الجهاز.', 'error');
             return;
         }
-        const attemptKey = [title.id, cinemanaId, playingSeasonNumber || 0, meta.number || 0, playingUrl || ''].join('|');
-        if (cinemanaRefreshAttemptRef.current === attemptKey || cinemanaRefreshingRef.current) {
-            setVideoError(true);
-            return;
-        }
-        cinemanaRefreshAttemptRef.current = attemptKey;
-        cinemanaRefreshingRef.current = true;
-        try {
-            const kind = title.type === 'movie' ? 'movie' : 'tv';
-            const recovered = await resolveFreshCinemanaVideo(meta, kind, playingSeasonNumber);
-            if (!recovered || !recovered.url) throw new Error('سينمانا لم تُرجع رابط تشغيل جديد.');
-            setPlayingMeta(prev => ({ ...prev, videoUrl: recovered.url, videoSources: recovered.sources, playbackProvider: 'cinemana', cinemanaId: recovered.sourceId || prev.cinemanaId }));
-            setPlayingUrl(normalizeVideoUrl(recovered.url));
-            setVideoError(false);
-            setPlayerRetryCount(c => c + 1);
-            showToast('تم تجديد رابط سينمانا وإعادة المحاولة', 'success');
-        }
-        catch (e) {
-            setVideoError(true);
-            showToast(e && e.message ? e.message : 'تعذّر تجديد رابط سينمانا', 'error');
-        }
-        finally {
-            cinemanaRefreshingRef.current = false;
-        }
+        setPlayingMeta(prev => ({ ...prev, videoUrl: recovered.url, videoSources: recovered.sources || [], playbackProvider: recovered.playbackProvider || recovered.provider || 'source2', cinemanaId: recovered.sourceId || prev.cinemanaId, tmdbId: recovered.tmdbId || prev.tmdbId }));
+        setPlayingUrl(normalizeVideoUrl(recovered.url));
+        setVideoError(false);
+        setPlayerRetryCount(c => c + 1);
+        showToast(recovered.playbackProvider === 'source2' ? 'تم التحويل للمصدر الاحتياطي' : 'تم الرجوع لمصدر سينمانا', 'success');
     };
     const handleQualityChange = (url, at, quality) => {
         if (!url || url === playingUrl)
@@ -6846,6 +6932,36 @@ function SubtitleHelper({ value, onChange, sourceId, title, type, season, episod
         warn && React.createElement("p", { className: "text-[10px] font-bold text-amber-400 mt-1" }, warn),
         React.createElement("p", { className: "text-[10px] text-slate-500 mt-1.5" }, "\u064A\u0628\u062D\u062B \u0623\u0648\u0644\u064B\u0627 \u0641\u064A \u062A\u0631\u062C\u0645\u0629 \u0633\u064A\u0646\u0645\u0627\u0646\u0627 \u0646\u0641\u0633\u0647\u0627 (\u0646\u0641\u0633 \u0646\u0633\u062E\u0629 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 = \u0623\u062F\u0642 \u062A\u0648\u0642\u064A\u062A) \u062B\u0645 SubDL. \u062A\u064F\u062D\u0641\u0638 \u0641\u064A Firebase \u0648\u0644\u0627 \u062A\u0633\u062A\u0647\u0644\u0643 \u0623\u064A \u0645\u0633\u0627\u062D\u0629 \u0645\u0646 \u062C\u0647\u0627\u0632\u0643.")));
 }
+function Source2Diagnostics({ meta, kind = 'movie', seasonNumber = null, value = [], onChange }) {
+    const [loading, setLoading] = useState(false);
+    const [msg, setMsg] = useState('');
+    const rows = Array.isArray(value) ? value : [];
+    const run = async () => {
+        setLoading(true);
+        setMsg('جاري اختبار Vidlink...');
+        try {
+            const r = await resolveSource2Video(meta || {}, kind, seasonNumber);
+            const sources = r.sources || [];
+            onChange && onChange(sources);
+            setMsg(sources.length ? `✓ تم العثور على ${sources.length} جودة` : 'لم يرجع المصدر أي جودة');
+        } catch (e) {
+            setMsg(e && e.message ? e.message : 'فشل اختبار المصدر الثاني');
+        } finally { setLoading(false); }
+    };
+    return React.createElement('div', { className: 'mt-3.5 glass-card rounded-2xl p-3.5 border border-purple-400/20' },
+        React.createElement('div', { className: 'flex items-center justify-between gap-3 flex-wrap' },
+            React.createElement('div', null,
+                React.createElement('p', { className: 'text-[11px] font-black text-purple-300' }, 'المصدر الثاني · Vidlink'),
+                React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1' }, 'اختبار الرابط والجودات وحفظ آخر نتيجة للفحص داخل العمل.')),
+            React.createElement('button', { type: 'button', onClick: run, disabled: loading || !SOURCE2_PUBLIC_URL, className: 'px-3 py-1.5 rounded-lg bg-purple-500/15 border border-purple-400/25 text-purple-200 text-[11px] font-bold disabled:opacity-40' }, loading ? 'جاري الاختبار...' : 'اختبار المصدر الثاني')),
+        !SOURCE2_PUBLIC_URL && React.createElement('p', { className: 'text-[10px] text-amber-400 mt-2 font-bold' }, 'ضع رابط Source 2 في source2-config.js أولًا.'),
+        msg && React.createElement('p', { className: 'text-[10px] text-slate-300 mt-2 font-bold' }, msg),
+        rows.length > 0 && React.createElement('div', { className: 'mt-3 space-y-1.5' }, rows.map((x, i) => React.createElement('div', { key: x.url || i, className: 'rounded-xl bg-black/20 border border-white/5 px-3 py-2' },
+            React.createElement('div', { className: 'flex items-center justify-between gap-2' },
+                React.createElement('span', { className: 'text-[11px] font-black text-purple-200' }, x.label || x.resolution || 'Auto'),
+                React.createElement('button', { type: 'button', onClick: () => navigator.clipboard && navigator.clipboard.writeText(x.url).catch(() => {}), className: 'text-[9px] text-slate-400 hover:text-white' }, 'نسخ')),
+            React.createElement('div', { dir: 'ltr', className: 'text-[9px] text-slate-500 break-all mt-1 select-text' }, x.url)))));
+}
 function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sourceId, seriesName }) {
     const e = episode;
     const eRef = useRef(e);
@@ -6897,6 +7013,7 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
         React.createElement("div", { className: "mt-3.5" },
             React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u062D\u0644\u0642\u0629 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: e.videoUrl, onChange: v => set('videoUrl', v), folder: "episodes", accept: "video/*" })),
         React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb) }),
+        React.createElement(Source2Diagnostics, { kind: "tv", seasonNumber: seasonNumber, meta: { ...e, id: seriesName, titleId: seriesName, tmdbId: sourceId, sourceId: sourceId, imdbId: e.imdb || sourceId, number: e.number }, value: e.source2Sources || [], onChange: sources => set('source2Sources', sources) }),
         React.createElement(SubtitleHelper, { cinemanaId: e.cinemanaId, value: e.subtitleUrl || '', onChange: v => set('subtitleUrl', v), sourceId: sourceId, title: seriesName, year: new Date().getFullYear(), type: "series", season: seasonNumber, episode: e.number, folder: "subtitles", offset: e.subtitleOffset || 0, onOffsetChange: v => set('subtitleOffset', v) }),
         React.createElement("div", { className: "grid sm:grid-cols-3 gap-3.5 mt-3.5" },
             React.createElement("div", null,
@@ -7228,7 +7345,11 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             rtRating: form.rtRating.trim(),
             featured: form.featured === true,
             status: form.status === 'published' ? 'published' : 'draft',
-            sourceId: sourceId || '',
+            sourceId: sourceId || form.imdbId || form.tmdbId || '',
+            tmdbId: String(form.tmdbId || (sourceId && /^\d+$/.test(String(sourceId)) ? sourceId : '') || '').trim(),
+            imdbId: String(form.imdbId || (sourceId && /^tt\d+$/i.test(String(sourceId)) ? sourceId : '') || '').trim(),
+            source2Provider: 'vidlink',
+            source2Sources: normalizeVideoSources(form.source2Sources),
             createdAt: initial ? (initial.createdAt || Date.now()) : Date.now(),
             likes: initial ? (initial.likes || 0) : 0,
             views: initial ? (initial.views || 0) : 0,
@@ -7263,10 +7384,8 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.subtitleOffset = Number(form.subtitleOffset) || 0;
             payload.cinemanaId = String(form.cinemanaId || '').trim();
             payload.playbackProvider = payload.cinemanaId ? 'cinemana' : (isVidApiUrl(form.videoUrl) ? 'vidapi' : (form.playbackProvider || ''));
-            if (payload.cinemanaId) {
-                payload.videoUrl = '';
-                payload.videoSources = [];
-            }
+            // Keep the saved Cinemana URL/sources for diagnostics and last-known-good playback.
+            // Playback resolution will refresh signed Cinemana links when needed.
             payload.trimStart = Number(form.trimStart) || 0;
             payload.trimEnd = Number(form.trimEnd) || 0;
             payload.introStart = Number(form.introStart) || 0;
@@ -7290,10 +7409,12 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.seasons.forEach(s => {
                 (s.episodes || []).forEach(e => {
                     if (e.cinemanaId) {
-                        e.videoUrl = '';
-                        e.videoSources = [];
-                        e.playbackProvider = 'cinemana';
+                        e.playbackProvider = e.playbackProvider || 'cinemana';
                     }
+                    e.tmdbId = String(payload.tmdbId || '').trim();
+                    e.imdbId = String(payload.imdbId || '').trim();
+                    e.source2Provider = 'vidlink';
+                    e.source2Sources = normalizeVideoSources(e.source2Sources);
                 });
             });
             payload.videoUrl = '';
@@ -7374,6 +7495,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                     setBannerData(r.bannerData || null);
                     return r;
                   } }),
+            React.createElement(Source2Diagnostics, { kind: "movie", meta: { ...form, id: sourceId || form.name, titleId: sourceId || form.name, sourceId: sourceId, tmdbId: form.tmdbId, imdbId: form.imdbId }, value: form.source2Sources || [], onChange: sources => set('source2Sources', sources) }),
             React.createElement(SubtitleHelper, { cinemanaId: form.cinemanaId, value: form.subtitleUrl || '', onChange: v => set('subtitleUrl', v), sourceId: sourceId, title: form.name, year: form.year, type: "movie", folder: "subtitles", offset: form.subtitleOffset || 0, onOffsetChange: v => set('subtitleOffset', v) }),
             React.createElement(VideoDisplaySettings, { value: form, onChange: patch => setForm(prev => ({ ...prev, ...patch })) }))) : (React.createElement(React.Fragment, null,
             React.createElement("div", null,
