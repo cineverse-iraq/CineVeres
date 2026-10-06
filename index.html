@@ -5073,8 +5073,12 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         const savedId = String((meta && meta.cinemanaId) || '').trim();
         // الهاتف لا يصل لبروكسي سينمانا (localhost = الهاتف نفسه)، فإذا فشل تجديد الرابط
         // نرجع للرابط المحفوظ في قاعدة البيانات بدل إظهار "تعذر" مباشرة.
-        const savedUrl = getSavedVideoUrl(meta);
-        const savedSources = normalizeVideoSources((meta && meta.videoSources) || []);
+        // Keep the original Cinemana candidate separate from the currently playing
+        // source. When Source 2 fails, playingMeta.videoUrl/videoSources may already
+        // contain Vidlink URLs; using them as Cinemana fallback would retry Source 2
+        // and make both sources appear broken.
+        const savedUrl = normalizeVideoUrl((meta && meta.cinemanaSavedVideoUrl) || getSavedVideoUrl(meta));
+        const savedSources = normalizeVideoSources((meta && meta.cinemanaSavedVideoSources) || (meta && meta.videoSources) || []);
         try {
             if (savedId) {
                 const sources = cinemanaVideoSources(await cinemanaVideos(savedId, kind === 'movie' ? 'movie' : 'tv'));
@@ -5110,7 +5114,10 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 const recovered = await resolvePreferredPlayback(title, 'movie', null);
                 if (requestId !== playRequestRef.current) return;
                 setPlayingUrl(recovered.url);
-                setPlayingMeta({ ...title, videoUrl: recovered.url, videoSources: recovered.sources || [], playbackProvider: recovered.playbackProvider || recovered.provider || 'cinemana', tmdbId: recovered.tmdbId || title.tmdbId || '', subtitleUrl: title.subtitleUrl || ((recovered.sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: title.subtitlePublicUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
+                setPlayingMeta({ ...title, videoUrl: recovered.url, videoSources: recovered.sources || [],
+                    cinemanaSavedVideoUrl: getSavedVideoUrl(title),
+                    cinemanaSavedVideoSources: normalizeVideoSources(title.videoSources || []),
+                    playbackProvider: recovered.playbackProvider || recovered.provider || 'cinemana', tmdbId: recovered.tmdbId || title.tmdbId || '', subtitleUrl: title.subtitleUrl || ((recovered.sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: title.subtitlePublicUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
                 setPlayingLabel(title.name);
                 ensureVidApiSubtitlePublic({ ...title, videoUrl: recovered.url }).catch(() => {});
             }
@@ -5148,7 +5155,10 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             const recovered = await resolvePreferredPlayback(meta, 'tv', seasonNumber);
             if (requestId !== playRequestRef.current) return;
             setPlayingUrl(recovered.url);
-            setPlayingMeta({ ...ep, videoUrl: recovered.url, videoSources: recovered.sources || [], playbackProvider: recovered.playbackProvider || recovered.provider || 'cinemana', tmdbId: recovered.tmdbId || title.tmdbId || '', imdbId: title.imdbId || title.imdb || '', subtitleUrl: ep.subtitleUrl || ((recovered.sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: ep.subtitlePublicUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
+            setPlayingMeta({ ...ep, videoUrl: recovered.url, videoSources: recovered.sources || [],
+                cinemanaSavedVideoUrl: getSavedVideoUrl(ep),
+                cinemanaSavedVideoSources: normalizeVideoSources(ep.videoSources || []),
+                playbackProvider: recovered.playbackProvider || recovered.provider || 'cinemana', tmdbId: recovered.tmdbId || title.tmdbId || '', imdbId: title.imdbId || title.imdb || '', subtitleUrl: ep.subtitleUrl || ((recovered.sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: ep.subtitlePublicUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
             setPlayingSeasonNumber(seasonNumber != null ? seasonNumber : null);
             setPlayingLabel(`${title.name} · ${ep.title || `الحلقة ${ep.number != null ? ep.number : ''}`}`);
             ensureVidApiSubtitlePublic({ ...ep, videoUrl: recovered.url }).catch(() => {});
@@ -5214,7 +5224,9 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             showToast('تعذّر تشغيل المصدرين على هذا الجهاز.', 'error');
             return;
         }
-        setPlayingMeta(prev => ({ ...prev, videoUrl: recovered.url, videoSources: recovered.sources || [], playbackProvider: recovered.playbackProvider || recovered.provider || 'source2', cinemanaId: recovered.sourceId || prev.cinemanaId, tmdbId: recovered.tmdbId || prev.tmdbId }));
+        setPlayingMeta(prev => ({ ...prev, videoUrl: recovered.url, videoSources: recovered.sources || [], playbackProvider: recovered.playbackProvider || recovered.provider || 'source2', cinemanaId: recovered.sourceId || prev.cinemanaId, tmdbId: recovered.tmdbId || prev.tmdbId,
+            cinemanaSavedVideoUrl: prev.cinemanaSavedVideoUrl || '',
+            cinemanaSavedVideoSources: prev.cinemanaSavedVideoSources || [] }));
         setPlayingUrl(normalizeVideoUrl(recovered.url));
         setVideoError(false);
         setPlayerRetryCount(c => c + 1);
