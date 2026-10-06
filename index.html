@@ -5073,11 +5073,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         const savedId = String((meta && meta.cinemanaId) || '').trim();
         // الهاتف لا يصل لبروكسي سينمانا (localhost = الهاتف نفسه)، فإذا فشل تجديد الرابط
         // نرجع للرابط المحفوظ في قاعدة البيانات بدل إظهار "تعذر" مباشرة.
-        // Keep the original Cinemana candidate separate from the currently playing
-        // source. When Source 2 fails, playingMeta.videoUrl/videoSources may already
-        // contain Vidlink URLs; using them as Cinemana fallback would retry Source 2
-        // and make both sources appear broken.
-        const savedUrl = normalizeVideoUrl((meta && meta.cinemanaSavedVideoUrl) || getSavedVideoUrl(meta));
+        const savedUrl = getSavedVideoUrl(meta && meta.cinemanaSavedVideoUrl ? { videoUrl: meta.cinemanaSavedVideoUrl } : meta);
         const savedSources = normalizeVideoSources((meta && meta.cinemanaSavedVideoSources) || (meta && meta.videoSources) || []);
         try {
             if (savedId) {
@@ -5095,6 +5091,56 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             throw e;
         }
     };
+    // LOCAL PLAYBACK RESOLVER: these helpers must live inside the player component
+    // because resolveFreshCinemanaVideo is component-scoped. Calling the old global
+    // resolver from here caused: ReferenceError: resolveFreshCinemanaVideo is not defined.
+    const resolvePreferredPlaybackLocal = async (meta, kind, seasonNumber) => {
+        const titleKey = String((meta && (meta.id || meta.titleId)) || 'unknown');
+        const pref = readPlaybackPreference(titleKey);
+        const cinemanaAvailable = !!String((meta && meta.cinemanaId) || '').trim() || !!getSavedVideoUrl(meta);
+        const tryCinemana = async () => {
+            const recovered = await resolveFreshCinemanaVideo(meta, kind, seasonNumber);
+            if (!recovered || !recovered.url) throw new Error('سينمانا لم تُرجع رابط تشغيل.');
+            writePlaybackPreference(titleKey, 'cinemana');
+            return { ...recovered, provider: 'cinemana', playbackProvider: 'cinemana' };
+        };
+        const trySource2 = async () => {
+            const recovered = await resolveSource2Video(meta, kind, seasonNumber);
+            writePlaybackPreference(titleKey, 'source2');
+            return { ...recovered, playbackProvider: 'source2' };
+        };
+        const order = pref === 'source2' ? ['source2', 'cinemana'] : ['cinemana', 'source2'];
+        let lastError = null;
+        for (const which of order) {
+            if (which === 'cinemana' && !cinemanaAvailable && pref !== 'cinemana') continue;
+            try { return which === 'cinemana' ? await tryCinemana() : await trySource2(); }
+            catch (e) { lastError = e; }
+        }
+        throw lastError || new Error('لم يتوفر مصدر تشغيل صالح.');
+    };
+    const fallbackFromPlaybackErrorLocal = async (meta, kind, seasonNumber) => {
+        const current = String((meta && (meta.playbackProvider || meta.provider)) || '').toLowerCase();
+        const titleKey = String((meta && (meta.id || meta.titleId)) || 'unknown');
+        if (current === 'source2') {
+            try {
+                const recovered = await resolveFreshCinemanaVideo(meta, kind, seasonNumber);
+                if (recovered && recovered.url) {
+                    writePlaybackPreference(titleKey, 'cinemana');
+                    return { ...recovered, provider: 'cinemana', playbackProvider: 'cinemana' };
+                }
+            } catch (_) {}
+        } else {
+            try {
+                const recovered = await resolveSource2Video(meta, kind, seasonNumber);
+                if (recovered && recovered.url) {
+                    writePlaybackPreference(titleKey, 'source2');
+                    return { ...recovered, playbackProvider: 'source2' };
+                }
+            } catch (_) {}
+        }
+        return null;
+    };
+
     const ensureVidApiSubtitlePublic = async (meta) => {
         if (!meta || !isVidApiUrl(meta.videoUrl || '') || meta.subtitlePublicUrl || !meta.subtitleUrl) return '';
         const publicUrl = await makeSubtitlePublicUrl(meta.subtitleUrl);
@@ -5111,13 +5157,10 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         setResumeAt(movieResume);
         try {
             if (title.type === 'movie') {
-                const recovered = await resolvePreferredPlayback(title, 'movie', null);
+                const recovered = await resolvePreferredPlaybackLocal(title, 'movie', null);
                 if (requestId !== playRequestRef.current) return;
                 setPlayingUrl(recovered.url);
-                setPlayingMeta({ ...title, videoUrl: recovered.url, videoSources: recovered.sources || [],
-                    cinemanaSavedVideoUrl: getSavedVideoUrl(title),
-                    cinemanaSavedVideoSources: normalizeVideoSources(title.videoSources || []),
-                    playbackProvider: recovered.playbackProvider || recovered.provider || 'cinemana', tmdbId: recovered.tmdbId || title.tmdbId || '', subtitleUrl: title.subtitleUrl || ((recovered.sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: title.subtitlePublicUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
+                setPlayingMeta({ ...title, videoUrl: recovered.url, videoSources: recovered.sources || [], cinemanaSavedVideoUrl: getSavedVideoUrl(title), cinemanaSavedVideoSources: normalizeVideoSources(title.videoSources || []), playbackProvider: recovered.playbackProvider || recovered.provider || 'cinemana', tmdbId: recovered.tmdbId || title.tmdbId || '', subtitleUrl: title.subtitleUrl || ((recovered.sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: title.subtitlePublicUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
                 setPlayingLabel(title.name);
                 ensureVidApiSubtitlePublic({ ...title, videoUrl: recovered.url }).catch(() => {});
             }
@@ -5155,10 +5198,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             const recovered = await resolvePreferredPlayback(meta, 'tv', seasonNumber);
             if (requestId !== playRequestRef.current) return;
             setPlayingUrl(recovered.url);
-            setPlayingMeta({ ...ep, videoUrl: recovered.url, videoSources: recovered.sources || [],
-                cinemanaSavedVideoUrl: getSavedVideoUrl(ep),
-                cinemanaSavedVideoSources: normalizeVideoSources(ep.videoSources || []),
-                playbackProvider: recovered.playbackProvider || recovered.provider || 'cinemana', tmdbId: recovered.tmdbId || title.tmdbId || '', imdbId: title.imdbId || title.imdb || '', subtitleUrl: ep.subtitleUrl || ((recovered.sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: ep.subtitlePublicUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
+            setPlayingMeta({ ...ep, videoUrl: recovered.url, videoSources: recovered.sources || [], cinemanaSavedVideoUrl: getSavedVideoUrl(ep), cinemanaSavedVideoSources: normalizeVideoSources(ep.videoSources || []), playbackProvider: recovered.playbackProvider || recovered.provider || 'cinemana', tmdbId: recovered.tmdbId || title.tmdbId || '', imdbId: title.imdbId || title.imdb || '', subtitleUrl: ep.subtitleUrl || ((recovered.sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: ep.subtitlePublicUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
             setPlayingSeasonNumber(seasonNumber != null ? seasonNumber : null);
             setPlayingLabel(`${title.name} · ${ep.title || `الحلقة ${ep.number != null ? ep.number : ''}`}`);
             ensureVidApiSubtitlePublic({ ...ep, videoUrl: recovered.url }).catch(() => {});
@@ -5218,15 +5258,13 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const handleCinemanaPlaybackError = async () => {
         const meta = playingMeta || {};
         const kind = title.type === 'movie' ? 'movie' : 'tv';
-        const recovered = await fallbackFromPlaybackError(meta, kind, playingSeasonNumber);
+        const recovered = await fallbackFromPlaybackErrorLocal(meta, kind, playingSeasonNumber);
         if (!recovered || !recovered.url) {
             setVideoError(true);
             showToast('تعذّر تشغيل المصدرين على هذا الجهاز.', 'error');
             return;
         }
-        setPlayingMeta(prev => ({ ...prev, videoUrl: recovered.url, videoSources: recovered.sources || [], playbackProvider: recovered.playbackProvider || recovered.provider || 'source2', cinemanaId: recovered.sourceId || prev.cinemanaId, tmdbId: recovered.tmdbId || prev.tmdbId,
-            cinemanaSavedVideoUrl: prev.cinemanaSavedVideoUrl || '',
-            cinemanaSavedVideoSources: prev.cinemanaSavedVideoSources || [] }));
+        setPlayingMeta(prev => ({ ...prev, videoUrl: recovered.url, videoSources: recovered.sources || [], playbackProvider: recovered.playbackProvider || recovered.provider || 'source2', cinemanaId: recovered.sourceId || prev.cinemanaId, tmdbId: recovered.tmdbId || prev.tmdbId }));
         setPlayingUrl(normalizeVideoUrl(recovered.url));
         setVideoError(false);
         setPlayerRetryCount(c => c + 1);
