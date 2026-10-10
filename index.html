@@ -1202,6 +1202,12 @@ function isCinemanaPlayback(meta, url) {
 const CINEMANA_PROXY = (() => {
     const host = String((typeof location !== 'undefined' && location.hostname) || '').toLowerCase();
     const isLocalPage = host === 'localhost' || host === '127.0.0.1';
+    // Local testing switch: append ?localProxy=1 to the site URL to route
+    // browser-side Cinema Box/Cinemana API requests to this computer's Node server.
+    // This is opt-in so ordinary visitors never accidentally target their own localhost.
+    let forceLocalProxy = false;
+    try { forceLocalProxy = new URLSearchParams(location.search || '').get('localProxy') === '1'; } catch (_) {}
+    if (forceLocalProxy) return 'http://localhost:8787';
     const explicit = (typeof window !== 'undefined' && (window.CINEMANA_PROXY_URL || window.CINEMANA_PROXY)) || '';
     const stored = (typeof localStorage !== 'undefined' ? localStorage.getItem('cinemana_proxy_url') : '') || '';
     const configured = String(explicit || stored || '').trim().replace(/\/+$/, '');
