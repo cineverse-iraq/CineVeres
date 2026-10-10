@@ -280,6 +280,17 @@
       .yt-controls-bottom { padding-left:8px; padding-right:8px; }
     }
     </style>
+
+  <style id="cinadam-social-suite-styles">
+    .cv-social-chat-scroll { scrollbar-width: thin; scrollbar-color: rgba(0,240,255,.24) transparent; }
+    .cv-social-chat-scroll::-webkit-scrollbar { width: 5px; }
+    .cv-social-chat-scroll::-webkit-scrollbar-thumb { background: rgba(0,240,255,.24); border-radius: 99px; }
+    .cv-social-story-ring { background: conic-gradient(from 25deg, #f59e0b, #ec4899, #a855f7, #22d3ee, #f59e0b); }
+    .cv-social-message-enter { animation: cvSocialMessageEnter .22s ease-out both; }
+    @keyframes cvSocialMessageEnter { from { opacity: 0; transform: translateY(7px) scale(.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    @media (max-width: 767px) { .cv-social-chat-scroll { overscroll-behavior: contain; } }
+    @media (prefers-reduced-motion: reduce) { .cv-social-message-enter { animation: none; } }
+  </style>
 </head>
 <body class="bg-glass-950 text-slate-100 min-h-screen selection:bg-accent-red selection:text-white">
   <style>
@@ -3105,7 +3116,7 @@ function Header({ currentUser, view, setView, search, setSearch, onOpenAccount, 
                         "Cina",
                         React.createElement("span", { className: "text-accent-cyan" }, "dam"))),
                 React.createElement("nav", { className: "hidden md:block" },
-                    React.createElement(SlidingTabs, { containerClassName: "flex items-center gap-1.5 bg-glass-900/80 p-1 rounded-2xl border border-white/5", items: [['home', 'الرئيسية'], ['movie', 'أفلام'], ['series', 'مسلسلات'], ['anime', 'أنمي'], ['lists', 'قوائمي']].map(([k, l]) => ({ key: k, label: l })), active: view, onChange: setView, getButtonClassName: (isActive) => `px-4 py-2 rounded-xl text-sm font-semibold ${isActive ? 'text-white' : 'text-slate-300 hover:text-white hover:bg-white/5'}` }))),
+                    React.createElement(SlidingTabs, { containerClassName: "flex items-center gap-1.5 bg-glass-900/80 p-1 rounded-2xl border border-white/5", items: [['home', 'الرئيسية'], ['movie', 'أفلام'], ['series', 'مسلسلات'], ['anime', 'أنمي'], ['community', 'المجتمع'], ['lists', 'قوائمي']].map(([k, l]) => ({ key: k, label: l })), active: view, onChange: setView, getButtonClassName: (isActive) => `px-4 py-2 rounded-xl text-sm font-semibold ${isActive ? 'text-white' : 'text-slate-300 hover:text-white hover:bg-white/5'}` }))),
             React.createElement("div", { className: "flex items-center gap-2 md:gap-3 shrink-0" },
                 React.createElement("div", { className: "relative hidden md:block md:w-72" },
                     React.createElement(Icon, { name: "search", className: "w-4 h-4 absolute top-1/2 -translate-y-1/2 right-3.5 text-slate-400" }),
@@ -3178,7 +3189,7 @@ function NotificationsBell({ currentUser, onOpenProfile, onOpenTitle }) {
                         React.createElement("p", { className: "text-[10px] text-slate-500 font-mono mt-0.5" }, fmtDateTime(n.date)))))))))));
 }
 function MobileBottomNav({ view, setView }) {
-    const items = [['home', 'الرئيسية', 'home'], ['movie', 'أفلام', 'film'], ['series', 'مسلسلات', 'tv'], ['anime', 'أنمي', 'sparkles'], ['lists', 'قوائمي', 'list']];
+    const items = [['home', 'الرئيسية', 'home'], ['movie', 'أفلام', 'film'], ['series', 'مسلسلات', 'tv'], ['anime', 'أنمي', 'sparkles'], ['community', 'المجتمع', 'messageCircle'], ['lists', 'قوائمي', 'list']];
     const [hidden, setHidden] = useState(false);
     const lastY = useRef(0);
     const ticking = useRef(false);
@@ -3234,6 +3245,9 @@ function AccountSheet({ currentUser, onClose, onLogin, onRegister, onLogout, onN
                 React.createElement("button", { onClick: () => navigate('profile'), className: "w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold" },
                     React.createElement(Icon, { name: "user", className: "w-4 h-4 text-accent-cyan" }),
                     "\u0645\u0644\u0641\u064A \u0627\u0644\u0634\u062E\u0635\u064A"),
+                React.createElement("button", { onClick: () => navigate('community'), className: "w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold" },
+                    React.createElement(Icon, { name: "messageCircle", className: "w-4 h-4 text-fuchsia-300" }),
+                    "المجتمع والرسائل"),
                 React.createElement("button", { onClick: () => navigate('settings'), className: "w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold" },
                     React.createElement(Icon, { name: "settings", className: "w-4 h-4 text-accent-cyan" }),
                     "\u0627\u0644\u0625\u0639\u062F\u0627\u062F\u0627\u062A"),
@@ -8530,6 +8544,555 @@ function saveWatchedToStorage(data, username) {
     }
     catch (e) { }
 }
+/* ========================================================================
+   CINADAM SOCIAL SUITE
+   Community feed, stories, direct messages, sticker packs, media sharing,
+   movie cards, voice notes, comments, reactions, and following shortcuts.
+   This module intentionally uses React.createElement because the site is a
+   standalone HTML file without a JSX/build step.
+   ======================================================================== */
+const CV_SOCIAL_STICKERS = [
+    { group: 'مشاعر', items: ['❤️','😍','😂','😭','🥹','😎','🤩','🥳','🥺','😴','😱','😡','🤔','🫡','🥰','🤗','😏','🙃','😇','🤯','💀','🫠','😈','🤝'] },
+    { group: 'تفاعل', items: ['🔥','👏','👍','👎','💯','✨','💖','💔','💥','💫','🎉','🎊','🫶','🙏','💪','👀','✅','❌','⭐','🏆','🎯','🧠','🪄','🚀'] },
+    { group: 'سينما', items: ['🎬','🍿','🎥','🎞️','📽️','🎭','🦸','🧙','👽','🤖','🧛','🧟','🕵️','🧑‍🚀','👑','⚔️','🗡️','🛡️','💣','🚨','🌌','🌠','🐉','👻'] },
+    { group: 'لطافة', items: ['🐱','🐶','🐼','🦊','🐸','🐵','🐻','🐰','🦄','🐣','🌸','🌹','🌈','☀️','🌙','⭐','🍓','🍕','🍩','🧋','🎈','🎁','💐','🧸'] }
+];
+const CV_SOCIAL_REACTIONS = ['❤️','😂','🔥','👏','😍','😮','😢','👍'];
+const cvSocEl = (type, props, ...children) => React.createElement(type, props, ...children);
+function cvSocialKey(value) { return sanitizeKey(String(value || '').trim().toLowerCase()); }
+function cvSocialChatId(a, b) { return [cvSocialKey(a), cvSocialKey(b)].sort().join('__'); }
+function cvSocialTime(ts) {
+    const d = new Date(Number(ts) || Date.now());
+    try { return d.toLocaleString('ar-IQ', { dateStyle: 'medium', timeStyle: 'short' }); }
+    catch (_) { return d.toLocaleString(); }
+}
+function cvSocialAgo(ts) {
+    const diff = Math.max(0, Date.now() - (Number(ts) || Date.now()));
+    if (diff < 60000) return 'الآن';
+    if (diff < 3600000) return `قبل ${Math.floor(diff / 60000)} د`;
+    if (diff < 86400000) return `قبل ${Math.floor(diff / 3600000)} س`;
+    if (diff < 604800000) return `قبل ${Math.floor(diff / 86400000)} يوم`;
+    return cvSocialTime(ts);
+}
+function cvSocialPreview(message) {
+    if (!message) return 'ابدأ محادثة جديدة';
+    if (message.type === 'movie') return `🎬 ${message.titleName || 'فيلم'}`;
+    if (message.type === 'sticker') return `${message.sticker || '✨'} ملصق`;
+    if (message.type === 'image') return '📷 صورة';
+    if (message.type === 'video') return '🎞️ مقطع فيديو';
+    if (message.type === 'audio') return '🎙️ رسالة صوتية';
+    return String(message.text || '').slice(0, 100) || 'رسالة';
+}
+function CvSocialAvatar({ user, size = 'w-11 h-11', ring = false }) {
+    const name = user && (user.name || user.username) || 'مستخدم';
+    return cvSocEl('div', { className: `${size} rounded-full bg-gradient-to-br from-fuchsia-500 via-purple-500 to-cyan-400 flex items-center justify-center text-white font-black overflow-hidden shrink-0 ${ring ? 'ring-2 ring-accent-cyan ring-offset-2 ring-offset-glass-950' : ''}` },
+        user && user.avatar ? cvSocEl('img', { src: user.avatar, alt: name, loading: 'lazy', className: 'w-full h-full object-cover' }) : name.charAt(0).toUpperCase());
+}
+function CvSocialTitleCard({ title, onOpen, compact = false }) {
+    if (!title) return null;
+    return cvSocEl('button', { type: 'button', onClick: onOpen, className: `w-full text-right flex gap-3 rounded-2xl border border-cyan-300/20 bg-cyan-300/5 hover:bg-cyan-300/10 p-3 ${compact ? 'max-w-sm' : ''}` },
+        cvSocEl('div', { className: `${compact ? 'w-12 h-[68px]' : 'w-16 h-24'} rounded-xl bg-glass-900 overflow-hidden shrink-0` }, title.poster ? cvSocEl('img', { src: title.poster, alt: '', loading: 'lazy', className: 'w-full h-full object-cover' }) : cvSocEl('div', { className: 'w-full h-full flex items-center justify-center text-2xl' }, '🎬')),
+        cvSocEl('div', { className: 'min-w-0 flex-1 self-center' },
+            cvSocEl('div', { className: 'text-[10px] font-black text-accent-cyan mb-1' }, title.type === 'series' ? 'مسلسل' : title.type === 'anime' ? 'أنمي' : 'فيلم'),
+            cvSocEl('div', { className: 'font-black text-sm text-white line-clamp-2' }, title.name || title.titleName || 'عمل من Cinadam'),
+            title.year ? cvSocEl('div', { className: 'text-xs text-slate-400 mt-1' }, String(title.year)) : null,
+            cvSocEl('span', { className: 'inline-flex mt-2 px-2 py-1 rounded-lg bg-cyan-300/10 text-cyan-200 text-[10px] font-black' }, 'عرض التفاصيل')));
+}
+function CvSocialPostCard({ post, currentUser, onOpenProfile, onOpenTitle, onMessage }) {
+    const [commentsOpen, setCommentsOpen] = useState(false);
+    const [comments, setComments] = useState([]);
+    const [commentText, setCommentText] = useState('');
+    const [liked, setLiked] = useState(false);
+    const [likesCount, setLikesCount] = useState(0);
+    const [busy, setBusy] = useState(false);
+    const myKey = cvSocialKey(currentUser && currentUser.username);
+    useEffect(() => {
+        if (!post || !post.id) return;
+        const likeRef = db.ref(`communityPosts/${post.id}/likes`);
+        const likeCb = snap => {
+            const vals = snap.val() || {};
+            setLikesCount(Object.keys(vals).length);
+            setLiked(!!vals[myKey]);
+        };
+        likeRef.on('value', likeCb);
+        return () => likeRef.off('value', likeCb);
+    }, [post && post.id, myKey]);
+    useEffect(() => {
+        if (!commentsOpen || !post || !post.id) return;
+        const ref = db.ref(`communityPosts/${post.id}/comments`).limitToLast(100);
+        const cb = snap => {
+            const value = snap.val() || {};
+            setComments(Object.keys(value).map(id => ({ id, ...value[id] })).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)));
+        };
+        ref.on('value', cb);
+        return () => ref.off('value', cb);
+    }, [commentsOpen, post && post.id]);
+    const toggleLike = async () => {
+        if (!currentUser) return;
+        const ref = db.ref(`communityPosts/${post.id}/likes/${myKey}`);
+        try { await ref.transaction(value => value ? null : { username: currentUser.username, createdAt: Date.now() }); }
+        catch (_) { showToast('تعذر تسجيل التفاعل', 'error'); }
+    };
+    const addComment = async () => {
+        const text = commentText.trim();
+        if (!text || !currentUser || busy) return;
+        setBusy(true);
+        try {
+            await db.ref(`communityPosts/${post.id}/comments`).push({ text: text.slice(0, 1200), username: currentUser.username, name: currentUser.name || currentUser.username, avatar: currentUser.avatar || '', createdAt: Date.now() });
+            setCommentText('');
+        } catch (_) { showToast('تعذر إرسال التعليق', 'error'); }
+        setBusy(false);
+    };
+    const own = currentUser && cvSocialKey(currentUser.username) === cvSocialKey(post.username);
+    const shared = post.sharedTitle || null;
+    return cvSocEl('article', { className: 'glass-card rounded-3xl border border-white/10 overflow-hidden' },
+        cvSocEl('div', { className: 'flex items-center gap-3 p-4 pb-3' },
+            cvSocEl('button', { type: 'button', onClick: () => onOpenProfile && onOpenProfile(post.username), className: 'shrink-0' }, cvSocEl(CvSocialAvatar, { user: { name: post.name, username: post.username, avatar: post.avatar }, size: 'w-11 h-11' })),
+            cvSocEl('div', { className: 'min-w-0 flex-1 text-right' },
+                cvSocEl('button', { type: 'button', onClick: () => onOpenProfile && onOpenProfile(post.username), className: 'font-black text-sm text-white hover:text-accent-cyan' }, post.name || post.username),
+                cvSocEl('div', { className: 'text-[11px] text-slate-500' }, `@${post.username || ''} · ${cvSocialAgo(post.createdAt)}`)),
+            own ? cvSocEl('button', { type: 'button', title: 'حذف المنشور', onClick: async () => { if (!window.confirm('تحذف هذا المنشور نهائيًا؟')) return; try { await db.ref(`communityPosts/${post.id}`).remove(); } catch (_) { showToast('تعذر حذف المنشور', 'error'); } }, className: 'w-9 h-9 rounded-xl hover:bg-rose-500/10 text-slate-500 hover:text-rose-400' }, '⋯') : cvSocEl('button', { type: 'button', title: 'مراسلة', onClick: () => onMessage && onMessage({ username: post.username, name: post.name, avatar: post.avatar }), className: 'w-9 h-9 rounded-xl hover:bg-white/5 text-slate-400' }, '✉')),
+        post.text ? cvSocEl('p', { className: 'px-4 pb-3 text-sm text-slate-200 leading-7 whitespace-pre-wrap break-words' }, post.text) : null,
+        post.mediaUrl && post.mediaType === 'image' ? cvSocEl('img', { src: post.mediaUrl, alt: 'صورة المنشور', loading: 'lazy', className: 'w-full max-h-[620px] object-contain bg-black/30' }) : null,
+        post.mediaUrl && post.mediaType === 'video' ? cvSocEl('video', { src: post.mediaUrl, controls: true, playsInline: true, preload: 'metadata', className: 'w-full max-h-[620px] bg-black' }) : null,
+        shared ? cvSocEl('div', { className: 'px-4 pb-3' }, cvSocEl(CvSocialTitleCard, { title: shared, onOpen: () => onOpenTitle && onOpenTitle(shared.id) })) : null,
+        post.sticker ? cvSocEl('div', { className: 'py-4 text-center text-6xl' }, post.sticker) : null,
+        cvSocEl('div', { className: 'px-4 pt-3 pb-4' },
+            cvSocEl('div', { className: 'flex items-center gap-4 border-b border-white/5 pb-3' },
+                cvSocEl('button', { type: 'button', onClick: toggleLike, className: `flex items-center gap-2 text-sm font-bold ${liked ? 'text-rose-400' : 'text-slate-300 hover:text-rose-300'}` }, cvSocEl('span', { className: 'text-xl' }, liked ? '❤️' : '🤍'), likesCount),
+                cvSocEl('button', { type: 'button', onClick: () => setCommentsOpen(v => !v), className: 'flex items-center gap-2 text-sm font-bold text-slate-300 hover:text-accent-cyan' }, cvSocEl('span', { className: 'text-xl' }, '💬'), commentsOpen ? 'إخفاء التعليقات' : 'التعليقات'),
+                cvSocEl('button', { type: 'button', onClick: () => onMessage && onMessage({ username: post.username, name: post.name, avatar: post.avatar }), className: 'mr-auto text-xs font-bold text-slate-400 hover:text-accent-cyan' }, 'إرسال رسالة')),
+            commentsOpen ? cvSocEl('div', { className: 'pt-3 space-y-3' },
+                comments.length ? comments.map(comment => cvSocEl('div', { key: comment.id, className: 'flex gap-2.5' },
+                    cvSocEl(CvSocialAvatar, { user: comment, size: 'w-8 h-8' }),
+                    cvSocEl('div', { className: 'min-w-0 flex-1 rounded-2xl bg-white/[0.035] px-3 py-2' },
+                        cvSocEl('div', { className: 'text-xs font-black text-white mb-1' }, comment.name || comment.username),
+                        cvSocEl('p', { className: 'text-xs text-slate-300 whitespace-pre-wrap break-words' }, comment.text || ''),
+                        cvSocEl('div', { className: 'text-[10px] text-slate-600 mt-1' }, cvSocialAgo(comment.createdAt)))) ) : cvSocEl('p', { className: 'text-xs text-slate-500 text-center py-2' }, 'كن أول من يعلّق'),
+                currentUser ? cvSocEl('div', { className: 'flex gap-2 mt-3' },
+                    cvSocEl('input', { value: commentText, onChange: e => setCommentText(e.target.value), onKeyDown: e => { if (e.key === 'Enter') addComment(); }, placeholder: 'اكتب تعليقك…', maxLength: 1200, className: 'flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs outline-none focus:border-accent-cyan' }),
+                    cvSocEl('button', { type: 'button', onClick: addComment, disabled: busy || !commentText.trim(), className: 'px-3 rounded-xl bg-accent-cyan text-glass-950 text-xs font-black disabled:opacity-40' }, 'نشر')) : cvSocEl('p', { className: 'text-xs text-slate-500 text-center' }, 'سجّل دخولك حتى تكتب تعليقًا')) : null));
+}
+function CinadamSocialHub({ currentUser, titles, onOpenAuth, onOpenTitle, onOpenProfile }) {
+    const [section, setSection] = useState('feed');
+    const [posts, setPosts] = useState([]);
+    const [stories, setStories] = useState([]);
+    const [inbox, setInbox] = useState([]);
+    const [followingNames, setFollowingNames] = useState([]);
+    const [followingUsers, setFollowingUsers] = useState([]);
+    const [userSearch, setUserSearch] = useState('');
+    const [newChatOpen, setNewChatOpen] = useState(false);
+    const [activeChat, setActiveChat] = useState(null);
+    const [messages, setMessages] = useState([]);
+    const [messageText, setMessageText] = useState('');
+    const [stickerOpen, setStickerOpen] = useState(false);
+    const [stickerGroup, setStickerGroup] = useState('مشاعر');
+    const [uploading, setUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [postText, setPostText] = useState('');
+    const [postFile, setPostFile] = useState(null);
+    const [postMovie, setPostMovie] = useState(null);
+    const [storyText, setStoryText] = useState('');
+    const [storyFile, setStoryFile] = useState(null);
+    const [storyComposerOpen, setStoryComposerOpen] = useState(false);
+    const [activeStory, setActiveStory] = useState(null);
+    const [titlePickerTarget, setTitlePickerTarget] = useState(null);
+    const [titleSearch, setTitleSearch] = useState('');
+    const [voiceRecording, setVoiceRecording] = useState(false);
+    const [typingUser, setTypingUser] = useState(false);
+    const [feedFilter, setFeedFilter] = useState('all');
+    const [postStickersOpen, setPostStickersOpen] = useState(false);
+    const [onlineNames, setOnlineNames] = useState({});
+    const postFileRef = useRef(null);
+    const storyFileRef = useRef(null);
+    const messageFileRef = useRef(null);
+    const titleSearchRef = useRef(null);
+    const messageInputRef = useRef(null);
+    const messagesEndRef = useRef(null);
+    const recorderRef = useRef(null);
+    const voiceChunksRef = useRef([]);
+    const typingTimerRef = useRef(null);
+    const userResults = useUserSearch(userSearch);
+    const meKey = cvSocialKey(currentUser && currentUser.username);
+
+    useEffect(() => {
+        if (!currentUser) { setPosts([]); setStories([]); setInbox([]); return; }
+        const postsRef = db.ref('communityPosts').limitToLast(100);
+        const postsCb = snap => {
+            const v = snap.val() || {};
+            setPosts(Object.keys(v).map(id => ({ id, ...v[id] })).filter(p => p && p.status !== 'removed').sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
+        };
+        postsRef.on('value', postsCb);
+        const storiesRef = db.ref('communityStories').limitToLast(200);
+        const storiesCb = snap => {
+            const v = snap.val() || {};
+            const cutoff = Date.now() - 86400000;
+            setStories(Object.keys(v).map(id => ({ id, ...v[id] })).filter(s => s && (s.createdAt || 0) >= cutoff).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
+        };
+        storiesRef.on('value', storiesCb);
+        const inboxRef = db.ref(`dmInbox/${meKey}`);
+        const inboxCb = snap => {
+            const v = snap.val() || {};
+            setInbox(Object.keys(v).map(id => ({ id, ...v[id] })).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)));
+        };
+        inboxRef.on('value', inboxCb);
+        return () => { postsRef.off('value', postsCb); storiesRef.off('value', storiesCb); inboxRef.off('value', inboxCb); };
+    }, [currentUser && currentUser.id, meKey]);
+
+    useEffect(() => {
+        if (!currentUser) { setFollowingNames([]); setFollowingUsers([]); return; }
+        const ref = db.ref(`following/${meKey}`);
+        const cb = snap => {
+            const val = snap.val() || {};
+            const names = Object.keys(val).filter(name => val[name] && cvSocialKey(name) !== meKey);
+            setFollowingNames(names);
+            if (!names.length) { setFollowingUsers([]); return; }
+            Promise.all(names.slice(0, 30).map(async name => {
+                try {
+                    const found = await db.ref('users').orderByChild('username').equalTo(name).limitToFirst(1).once('value');
+                    const d = found.val() || {};
+                    const id = Object.keys(d)[0];
+                    return id ? { id, name: d[id].name || name, username: d[id].username || name, avatar: d[id].avatar || '' } : { name: name, username: name, avatar: '' };
+                } catch (_) { return { name, username: name, avatar: '' }; }
+            })).then(setFollowingUsers).catch(() => setFollowingUsers([]));
+        };
+        ref.on('value', cb);
+        return () => ref.off('value', cb);
+    }, [currentUser && currentUser.id, meKey]);
+
+    useEffect(() => {
+        if (!activeChat || section !== 'messages' || !currentUser) { setMessages([]); setTypingUser(false); return; }
+        const ref = db.ref(`dmThreads/${activeChat.id}/messages`).limitToLast(160);
+        const cb = snap => {
+            const v = snap.val() || {};
+            const next = Object.keys(v).map(id => ({ id, ...v[id] })).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+            setMessages(next);
+            db.ref(`dmInbox/${meKey}/${activeChat.id}/unreadCount`).set(0).catch(() => {});
+            next.filter(m => m.fromUsername && cvSocialKey(m.fromUsername) !== meKey && !m.readBy?.[meKey]).slice(-30).forEach(m => {
+                db.ref(`dmThreads/${activeChat.id}/messages/${m.id}/readBy/${meKey}`).set(true).catch(() => {});
+            });
+        };
+        const typingRef = db.ref(`dmThreads/${activeChat.id}/typing`);
+        const typingCb = snap => {
+            const val = snap.val() || {};
+            setTypingUser(Object.keys(val).some(name => cvSocialKey(name) !== meKey && val[name] && Date.now() - Number(val[name]) < 5000));
+        };
+        ref.on('value', cb);
+        typingRef.on('value', typingCb);
+        db.ref(`dmInbox/${meKey}/${activeChat.id}/unreadCount`).set(0).catch(() => {});
+        return () => { ref.off('value', cb); typingRef.off('value', typingCb); };
+    }, [activeChat && activeChat.id, section, currentUser && currentUser.id, meKey]);
+
+    useEffect(() => {
+        if (section === 'messages' && activeChat) {
+            messagesEndRef.current && messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+    }, [messages.length, section, activeChat && activeChat.id]);
+
+    useEffect(() => () => {
+        if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+        try { if (recorderRef.current && recorderRef.current.state !== 'inactive') recorderRef.current.stop(); } catch (_) {}
+    }, []);
+
+    const ensureInbox = async user => {
+        if (!currentUser || !user || !user.username || cvSocialKey(user.username) === meKey) return null;
+        const id = cvSocialChatId(currentUser.username, user.username);
+        const baseMine = `dmInbox/${meKey}/${id}`;
+        const baseOther = `dmInbox/${cvSocialKey(user.username)}/${id}`;
+        const now = Date.now();
+        try {
+            await db.ref(baseMine).transaction(old => ({ ...(old || {}), conversationId: id, otherUsername: user.username, otherName: user.name || user.username, otherAvatar: user.avatar || '', updatedAt: Number(old && old.updatedAt) || now, unreadCount: Number(old && old.unreadCount) || 0 }));
+            await db.ref(baseOther).transaction(old => ({ ...(old || {}), conversationId: id, otherUsername: currentUser.username, otherName: currentUser.name || currentUser.username, otherAvatar: currentUser.avatar || '', updatedAt: Number(old && old.updatedAt) || now, unreadCount: Number(old && old.unreadCount) || 0 }));
+        } catch (_) {}
+        return id;
+    };
+    const launchChat = async user => {
+        if (!currentUser) { onOpenAuth('login'); return; }
+        if (!user || !user.username || cvSocialKey(user.username) === meKey) { showToast('لا يمكنك مراسلة حسابك', 'error'); return; }
+        const id = await ensureInbox(user);
+        if (!id) { showToast('تعذر فتح المحادثة', 'error'); return; }
+        setActiveChat({ id, username: user.username, name: user.name || user.username, avatar: user.avatar || '', userId: user.id || '' });
+        setSection('messages'); setNewChatOpen(false); setUserSearch(''); setStickerOpen(false); setActiveStory(null);
+        setTimeout(() => messageInputRef.current && messageInputRef.current.focus(), 120);
+    };
+    const sendMessage = async (type = 'text', payload = {}) => {
+        if (!currentUser || !activeChat) return;
+        const text = String(payload.text || messageText || '').trim();
+        if (type === 'text' && !text) return;
+        const message = {
+            type, text: type === 'text' ? text.slice(0, 5000) : String(payload.text || '').slice(0, 5000),
+            sticker: payload.sticker || '', mediaUrl: payload.mediaUrl || '', mediaType: payload.mediaType || '',
+            titleId: payload.titleId || '', titleName: payload.titleName || '', titlePoster: payload.titlePoster || '', titleType: payload.titleType || '', titleYear: payload.titleYear || '',
+            fromUsername: currentUser.username, fromName: currentUser.name || currentUser.username, fromAvatar: currentUser.avatar || '',
+            createdAt: Date.now(), readBy: { [meKey]: true }
+        };
+        try {
+            await db.ref(`dmThreads/${activeChat.id}/messages`).push(message);
+            const preview = cvSocialPreview(message);
+            const now = Date.now();
+            await db.ref(`dmInbox/${meKey}/${activeChat.id}`).update({ conversationId: activeChat.id, otherUsername: activeChat.username, otherName: activeChat.name, otherAvatar: activeChat.avatar, lastMessage: preview, updatedAt: now, unreadCount: 0 });
+            await db.ref(`dmInbox/${cvSocialKey(activeChat.username)}/${activeChat.id}`).transaction(old => ({ ...(old || {}), conversationId: activeChat.id, otherUsername: currentUser.username, otherName: currentUser.name || currentUser.username, otherAvatar: currentUser.avatar || '', lastMessage: preview, updatedAt: now, unreadCount: Math.max(0, Number(old && old.unreadCount) || 0) + 1 }));
+            setMessageText(''); setStickerOpen(false);
+            try { pushNotification(activeChat.username, { type: 'message', fromUsername: currentUser.username, text: `${currentUser.name || currentUser.username}: ${preview}` }); } catch (_) {}
+        } catch (err) { showToast('تعذر إرسال الرسالة. تحقق من اتصال Firebase وصلاحيات قاعدة البيانات.', 'error'); }
+    };
+    const handleTyping = value => {
+        setMessageText(value);
+        if (!activeChat || !currentUser) return;
+        const ref = db.ref(`dmThreads/${activeChat.id}/typing/${meKey}`);
+        ref.set(Date.now()).catch(() => {});
+        if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+        typingTimerRef.current = setTimeout(() => ref.remove().catch(() => {}), 2500);
+    };
+    const uploadAndSendMessage = async file => {
+        if (!file || !activeChat || !currentUser) return;
+        if (file.size > 30 * 1024 * 1024) { showToast('حجم الملف أكبر من 30 ميغابايت', 'error'); return; }
+        const type = file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : 'image';
+        setUploading(true); setUploadProgress(0);
+        try {
+            const url = await uploadFile(file, `social/messages/${activeChat.id}`, n => setUploadProgress(n));
+            await sendMessage(type, { mediaUrl: url, mediaType: file.type, text: file.name || '' });
+        } catch (err) { showToast((err && err.message) || 'فشل رفع المرفق', 'error'); }
+        setUploading(false); setUploadProgress(0);
+    };
+    const toggleVoiceRecording = async () => {
+        if (voiceRecording) {
+            try { recorderRef.current && recorderRef.current.stop(); } catch (_) {}
+            setVoiceRecording(false); return;
+        }
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) { showToast('المتصفح لا يدعم تسجيل الرسائل الصوتية', 'error'); return; }
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const recorder = new MediaRecorder(stream);
+            recorderRef.current = recorder; voiceChunksRef.current = [];
+            recorder.ondataavailable = ev => { if (ev.data && ev.data.size) voiceChunksRef.current.push(ev.data); };
+            recorder.onerror = () => { stream.getTracks().forEach(t => t.stop()); setVoiceRecording(false); showToast('تعذر تسجيل الصوت', 'error'); };
+            recorder.onstop = async () => {
+                stream.getTracks().forEach(t => t.stop());
+                const blob = new Blob(voiceChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+                if (!blob.size) return;
+                const file = new File([blob], `voice-${Date.now()}.webm`, { type: blob.type || 'audio/webm' });
+                await uploadAndSendMessage(file);
+            };
+            recorder.start(); setVoiceRecording(true); showToast('بدأ التسجيل؛ اضغط الميكروفون مرة ثانية للإرسال.');
+        } catch (_) { setVoiceRecording(false); showToast('لم تسمح للمتصفح باستخدام الميكروفون', 'error'); }
+    };
+
+    const createPost = async () => {
+        if (!currentUser) { onOpenAuth('login'); return; }
+        const text = postText.trim();
+        if (!text && !postFile && !postMovie) { showToast('اكتب شيئًا أو أرفق صورة/فيديو/عملًا', 'error'); return; }
+        setUploading(true); setUploadProgress(0);
+        try {
+            let mediaUrl = '', mediaType = '';
+            if (postFile) {
+                if (postFile.size > 30 * 1024 * 1024) throw new Error('حجم الملف أكبر من 30 ميغابايت');
+                mediaType = postFile.type.startsWith('video/') ? 'video' : 'image';
+                mediaUrl = await uploadFile(postFile, `social/posts/${meKey}`, n => setUploadProgress(n));
+            }
+            const record = { username: currentUser.username, name: currentUser.name || currentUser.username, avatar: currentUser.avatar || '', text: text.slice(0, 5000), mediaUrl, mediaType, sharedTitle: postMovie ? { id: postMovie.id, name: postMovie.name, poster: postMovie.poster || '', year: postMovie.year || '', type: postMovie.type || 'movie' } : null, createdAt: Date.now(), schema: 1 };
+            await db.ref('communityPosts').push(record);
+            setPostText(''); setPostFile(null); setPostMovie(null); setPostStickersOpen(false);
+            showToast('تم نشر منشورك بنجاح');
+        } catch (err) { showToast((err && err.message) || 'تعذر نشر المنشور', 'error'); }
+        setUploading(false); setUploadProgress(0);
+    };
+    const createStory = async () => {
+        if (!currentUser) { onOpenAuth('login'); return; }
+        const caption = storyText.trim();
+        if (!caption && !storyFile) { showToast('اكتب نص القصة أو اختر صورة/فيديو', 'error'); return; }
+        setUploading(true); setUploadProgress(0);
+        try {
+            let mediaUrl = '', mediaType = '';
+            if (storyFile) {
+                if (storyFile.size > 30 * 1024 * 1024) throw new Error('حجم الملف أكبر من 30 ميغابايت');
+                mediaType = storyFile.type.startsWith('video/') ? 'video' : 'image';
+                mediaUrl = await uploadFile(storyFile, `social/stories/${meKey}`, n => setUploadProgress(n));
+            }
+            const story = { username: currentUser.username, name: currentUser.name || currentUser.username, avatar: currentUser.avatar || '', caption: caption.slice(0, 1200), mediaUrl, mediaType, createdAt: Date.now() };
+            await db.ref('communityStories').push(story);
+            setStoryText(''); setStoryFile(null); setStoryComposerOpen(false); showToast('نُشرت قصتك، وستبقى ظاهرة لمدة 24 ساعة');
+        } catch (err) { showToast((err && err.message) || 'تعذر نشر القصة', 'error'); }
+        setUploading(false); setUploadProgress(0);
+    };
+    const pickTitle = title => {
+        if (!title) return;
+        if (titlePickerTarget === 'message') {
+            sendMessage('movie', { titleId: title.id, titleName: title.name, titlePoster: title.poster || '', titleType: title.type || 'movie', titleYear: title.year || '' });
+        } else if (titlePickerTarget === 'post') {
+            setPostMovie({ id: title.id, name: title.name, poster: title.poster || '', year: title.year || '', type: title.type || 'movie' });
+        }
+        setTitlePickerTarget(null); setTitleSearch('');
+    };
+    const deleteOwnStory = async story => {
+        if (!story || cvSocialKey(story.username) !== meKey) return;
+        try { await db.ref(`communityStories/${story.id}`).remove(); setActiveStory(null); showToast('حُذفت القصة'); }
+        catch (_) { showToast('تعذر حذف القصة', 'error'); }
+    };
+    const myStories = stories.filter(s => cvSocialKey(s.username) === meKey);
+    const newestStoryByUser = [];
+    const storyUserMap = new Map();
+    stories.forEach(s => { const k = cvSocialKey(s.username); if (!storyUserMap.has(k) || (storyUserMap.get(k).createdAt || 0) < (s.createdAt || 0)) storyUserMap.set(k, s); });
+    storyUserMap.forEach(v => newestStoryByUser.push(v));
+    newestStoryByUser.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    const visiblePosts = posts.filter(p => feedFilter === 'all' || cvSocialKey(p.username) === meKey || followingNames.some(n => cvSocialKey(n) === cvSocialKey(p.username)));
+    const unreadTotal = inbox.reduce((n, item) => n + Math.max(0, Number(item.unreadCount) || 0), 0);
+    const matchingTitles = (titles || []).filter(t => `${t.name || ''} ${t.year || ''}`.toLowerCase().includes(titleSearch.toLowerCase())).slice(0, 80);
+    const tabButton = (key, label, emoji, badge = 0) => cvSocEl('button', { key, type: 'button', onClick: () => { setSection(key); if (key !== 'messages') setActiveChat(null); }, className: `relative flex-1 min-w-0 flex items-center justify-center gap-2 px-3 py-3 rounded-2xl text-xs sm:text-sm font-black transition ${section === key ? 'bg-accent-cyan text-glass-950 shadow-[0_0_20px_rgba(0,240,255,.14)]' : 'text-slate-300 hover:bg-white/5'}` }, emoji, cvSocEl('span', { className: 'truncate' }, label), badge > 0 ? cvSocEl('span', { className: 'min-w-5 h-5 px-1 rounded-full bg-accent-red text-white text-[10px] flex items-center justify-center' }, badge > 9 ? '9+' : badge) : null);
+
+    if (!currentUser) {
+        return cvSocEl('section', { className: 'max-w-3xl mx-auto py-12' },
+            cvSocEl('div', { className: 'glass-panel rounded-[32px] border border-white/10 p-7 md:p-10 text-center relative overflow-hidden' },
+                cvSocEl('div', { className: 'absolute -top-20 -left-10 w-48 h-48 rounded-full bg-fuchsia-500/10 blur-3xl' }),
+                cvSocEl('div', { className: 'text-6xl mb-4 relative' }, '💬'),
+                cvSocEl('h1', { className: 'text-2xl md:text-3xl font-black text-white mb-3 relative' }, 'مجتمع Cinadam'),
+                cvSocEl('p', { className: 'text-sm text-slate-400 leading-7 max-w-lg mx-auto mb-6 relative' }, 'انشر مراجعاتك ولحظاتك، تابع القصص، راسل أصدقاءك، أرسل لهم أعمالًا من الكتالوج، وتفاعل بالملصقات والصور والفيديو والصوت.'),
+                cvSocEl('div', { className: 'grid grid-cols-2 md:grid-cols-4 gap-2 mb-7 relative' }, ['منشورات وصور 📸','قصص 24 ساعة ⏳','رسائل مباشرة ✉️','ملصقات وأفلام 🎬'].map(t => cvSocEl('div', { key: t, className: 'rounded-2xl bg-white/[0.035] border border-white/5 p-3 text-xs text-slate-300 font-bold' }, t))),
+                cvSocEl('button', { type: 'button', onClick: () => onOpenAuth('login'), className: 'px-8 py-3.5 rounded-2xl bg-accent-cyan text-glass-950 font-black text-sm' }, 'تسجيل الدخول للدخول إلى المجتمع')));
+    }
+
+    const renderTitlePicker = () => titlePickerTarget ? cvSocEl('div', { className: 'fixed inset-0 z-[90] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5', onClick: () => setTitlePickerTarget(null) },
+        cvSocEl('div', { className: 'glass-panel w-full max-w-2xl max-h-[88vh] rounded-3xl border border-white/10 p-4 sm:p-5 flex flex-col', onClick: e => e.stopPropagation() },
+            cvSocEl('div', { className: 'flex items-center gap-3 mb-4' },
+                cvSocEl('h3', { className: 'font-black text-white text-lg flex-1' }, 'اختر عملًا من Cinadam'),
+                cvSocEl('button', { type: 'button', onClick: () => setTitlePickerTarget(null), className: 'w-9 h-9 rounded-xl bg-white/5 text-slate-300' }, '✕')),
+            cvSocEl('input', { ref: titleSearchRef, value: titleSearch, onChange: e => setTitleSearch(e.target.value), placeholder: 'ابحث عن فيلم أو مسلسل أو أنمي…', className: 'w-full rounded-2xl bg-glass-900 border border-white/10 px-4 py-3 text-sm outline-none focus:border-accent-cyan mb-3' }),
+            cvSocEl('div', { className: 'overflow-y-auto space-y-2 pr-1' }, matchingTitles.map(title => cvSocEl('button', { key: title.id, type: 'button', onClick: () => pickTitle(title), className: 'w-full flex items-center gap-3 rounded-2xl p-2.5 text-right hover:bg-white/5 border border-transparent hover:border-white/10' },
+                cvSocEl('div', { className: 'w-11 h-16 rounded-xl overflow-hidden bg-glass-900 shrink-0' }, title.poster ? cvSocEl('img', { src: title.poster, alt: '', loading: 'lazy', className: 'w-full h-full object-cover' }) : cvSocEl('div', { className: 'h-full flex items-center justify-center' }, '🎬')),
+                cvSocEl('div', { className: 'flex-1 min-w-0' }, cvSocEl('div', { className: 'font-black text-sm text-white truncate' }, title.name), cvSocEl('div', { className: 'text-xs text-slate-500 mt-1' }, `${title.year || '—'} · ${title.type === 'series' ? 'مسلسل' : title.type === 'anime' ? 'أنمي' : 'فيلم'}`)),
+                cvSocEl('span', { className: 'text-accent-cyan font-black text-xs' }, 'اختيار'))),
+                !matchingTitles.length ? cvSocEl('div', { className: 'text-center text-slate-500 text-sm py-10' }, 'ماكو نتائج مطابقة.') : null)) ) : null;
+
+    const renderStories = () => cvSocEl('section', { className: 'glass-panel rounded-3xl p-4 sm:p-5 border border-white/10 mb-5' },
+        cvSocEl('div', { className: 'flex items-center justify-between gap-2 mb-4' },
+            cvSocEl('div', null, cvSocEl('h2', { className: 'font-black text-white text-lg' }, 'القصص'), cvSocEl('p', { className: 'text-[11px] text-slate-500 mt-1' }, 'تختفي من العرض بعد 24 ساعة')),
+            cvSocEl('button', { type: 'button', onClick: () => setStoryComposerOpen(v => !v), className: 'px-3 py-2 rounded-xl bg-fuchsia-500/15 text-fuchsia-200 border border-fuchsia-300/20 text-xs font-black' }, storyComposerOpen ? 'إغلاق' : '＋ أضف قصة')),
+        storyComposerOpen ? cvSocEl('div', { className: 'rounded-2xl bg-white/[0.035] border border-white/5 p-3 mb-4' },
+            cvSocEl('textarea', { value: storyText, onChange: e => setStoryText(e.target.value), rows: 2, maxLength: 1200, placeholder: 'شنو أخبارك اليوم؟ اكتب قصة قصيرة…', className: 'w-full resize-y bg-transparent outline-none text-sm text-white placeholder:text-slate-600 mb-3' }),
+            storyFile ? cvSocEl('div', { className: 'flex items-center gap-2 text-xs text-accent-cyan mb-3' }, '📎', storyFile.name, cvSocEl('button', { type: 'button', onClick: () => setStoryFile(null), className: 'mr-auto text-rose-400' }, 'إزالة')) : null,
+            cvSocEl('div', { className: 'flex items-center flex-wrap gap-2' },
+                cvSocEl('button', { type: 'button', onClick: () => storyFileRef.current && storyFileRef.current.click(), className: 'px-3 py-2 rounded-xl glass-card text-xs font-bold text-slate-300' }, '📷 صورة/فيديو'),
+                cvSocEl('button', { type: 'button', onClick: createStory, disabled: uploading, className: 'mr-auto px-4 py-2 rounded-xl bg-fuchsia-500 text-white text-xs font-black disabled:opacity-50' }, uploading ? `جارٍ النشر ${uploadProgress}%` : 'نشر القصة')),
+            cvSocEl('input', { ref: storyFileRef, type: 'file', accept: 'image/*,video/*', className: 'hidden', onChange: e => { setStoryFile(e.target.files && e.target.files[0] || null); e.target.value = ''; } })) : null,
+        cvSocEl('div', { className: 'flex gap-4 overflow-x-auto scrollbar-hide pb-2' },
+            cvSocEl('button', { type: 'button', onClick: () => myStories.length ? setActiveStory(myStories[0]) : setStoryComposerOpen(true), className: 'w-[72px] shrink-0 flex flex-col items-center gap-2' },
+                cvSocEl('div', { className: `w-[68px] h-[68px] rounded-full p-[3px] ${myStories.length ? 'bg-gradient-to-tr from-amber-400 via-rose-500 to-fuchsia-500' : 'bg-white/10 border border-dashed border-white/25'}` }, cvSocEl('div', { className: 'w-full h-full rounded-full bg-glass-900 flex items-center justify-center overflow-hidden relative' }, currentUser.avatar ? cvSocEl('img', { src: currentUser.avatar, alt: '', className: 'w-full h-full object-cover' }) : cvSocEl('span', { className: 'font-black text-white' }, (currentUser.name || currentUser.username).charAt(0)), !myStories.length ? cvSocEl('span', { className: 'absolute bottom-0 right-0 w-5 h-5 rounded-full bg-accent-cyan text-glass-950 flex items-center justify-center border-2 border-glass-900 text-sm font-black' }, '+') : null)),
+                cvSocEl('span', { className: 'text-[10px] text-slate-300 font-bold w-full truncate' }, 'قصتي')),
+            newestStoryByUser.filter(s => cvSocialKey(s.username) !== meKey).map(story => cvSocEl('button', { key: story.id, type: 'button', onClick: () => setActiveStory(story), className: 'w-[72px] shrink-0 flex flex-col items-center gap-2' },
+                cvSocEl('div', { className: 'w-[68px] h-[68px] rounded-full p-[3px] bg-gradient-to-tr from-amber-400 via-rose-500 to-fuchsia-500' }, cvSocEl('div', { className: 'w-full h-full rounded-full bg-glass-900 flex items-center justify-center overflow-hidden' }, story.avatar ? cvSocEl('img', { src: story.avatar, alt: '', className: 'w-full h-full object-cover' }) : cvSocEl('span', { className: 'text-white font-black' }, (story.name || story.username || '?').charAt(0)))),
+                cvSocEl('span', { className: 'text-[10px] text-slate-300 font-bold w-full truncate' }, story.name || story.username)))));
+
+    const renderComposer = () => cvSocEl('section', { className: 'glass-panel rounded-3xl p-4 sm:p-5 border border-white/10 mb-5' },
+        cvSocEl('div', { className: 'flex gap-3' },
+            cvSocEl(CvSocialAvatar, { user: currentUser, size: 'w-11 h-11' }),
+            cvSocEl('div', { className: 'flex-1 min-w-0' },
+                cvSocEl('textarea', { value: postText, onChange: e => setPostText(e.target.value), rows: 3, maxLength: 5000, placeholder: 'شنو يدور ببالك؟ شارك مراجعة، صورة، لقطة، أو رشّح فيلمًا…', className: 'w-full resize-y bg-transparent outline-none text-sm leading-7 text-white placeholder:text-slate-500' }),
+                postFile ? cvSocEl('div', { className: 'rounded-xl bg-white/[0.04] p-2 text-xs text-accent-cyan flex items-center gap-2 mb-3' }, postFile.type.startsWith('video/') ? '🎞️' : '📷', cvSocEl('span', { className: 'truncate' }, postFile.name), cvSocEl('button', { type: 'button', onClick: () => setPostFile(null), className: 'mr-auto text-rose-400' }, 'إزالة')) : null,
+                postMovie ? cvSocEl('div', { className: 'mb-3' }, cvSocEl(CvSocialTitleCard, { title: postMovie, compact: true, onOpen: () => onOpenTitle && onOpenTitle(postMovie.id) }), cvSocEl('button', { type: 'button', onClick: () => setPostMovie(null), className: 'text-xs text-rose-400 mt-1' }, 'إزالة العمل المرفق')) : null,
+                postStickersOpen ? cvSocEl('div', { className: 'flex flex-wrap gap-2 p-3 rounded-2xl bg-black/20 mb-3' }, CV_SOCIAL_STICKERS.flatMap(pack => pack.items.slice(0, 8)).map((sticker, i) => cvSocEl('button', { key: `${sticker}-${i}`, type: 'button', onClick: () => { setPostText(v => `${v}${v ? ' ' : ''}${sticker}`); setPostStickersOpen(false); }, className: 'text-2xl p-1.5 rounded-xl hover:bg-white/10' }, sticker))) : null,
+                cvSocEl('div', { className: 'flex flex-wrap items-center gap-2 pt-3 border-t border-white/5' },
+                    cvSocEl('button', { type: 'button', onClick: () => postFileRef.current && postFileRef.current.click(), className: 'px-3 py-2 rounded-xl text-xs font-bold text-emerald-300 hover:bg-emerald-400/10' }, '📷 صورة/فيديو'),
+                    cvSocEl('button', { type: 'button', onClick: () => { setTitlePickerTarget('post'); setTitleSearch(''); }, className: 'px-3 py-2 rounded-xl text-xs font-bold text-accent-cyan hover:bg-cyan-300/10' }, '🎬 مشاركة عمل'),
+                    cvSocEl('button', { type: 'button', onClick: () => setPostStickersOpen(v => !v), className: 'px-3 py-2 rounded-xl text-xs font-bold text-fuchsia-300 hover:bg-fuchsia-300/10' }, '✨ ملصق'),
+                    cvSocEl('button', { type: 'button', onClick: createPost, disabled: uploading, className: 'mr-auto px-5 py-2 rounded-xl bg-accent-cyan text-glass-950 text-xs font-black disabled:opacity-50' }, uploading ? `جارٍ النشر ${uploadProgress}%` : 'نشر')))),
+        cvSocEl('input', { ref: postFileRef, type: 'file', accept: 'image/*,video/*', className: 'hidden', onChange: e => { setPostFile(e.target.files && e.target.files[0] || null); e.target.value = ''; } }));
+
+    const renderMessageBubble = message => {
+        const mine = cvSocialKey(message.fromUsername) === meKey;
+        const title = message.type === 'movie' ? { id: message.titleId, name: message.titleName, poster: message.titlePoster, year: message.titleYear, type: message.titleType } : null;
+        const receivedRead = mine && activeChat && message.readBy && message.readBy[cvSocialKey(activeChat.username)];
+        return cvSocEl('div', { key: message.id, className: `flex ${mine ? 'justify-start' : 'justify-end'} mb-3` },
+            cvSocEl('div', { className: `max-w-[88%] sm:max-w-[75%] rounded-2xl p-3 border ${mine ? 'bg-cyan-300/10 border-cyan-300/15 rounded-tr-md' : 'bg-white/[0.05] border-white/10 rounded-tl-md'}` },
+                !mine ? cvSocEl('div', { className: 'text-[10px] text-slate-500 mb-1 font-bold' }, message.fromName || activeChat.name) : null,
+                message.type === 'text' ? cvSocEl('p', { className: 'text-sm text-slate-100 whitespace-pre-wrap break-words leading-6' }, message.text || '') : null,
+                message.type === 'sticker' ? cvSocEl('div', { className: 'text-5xl py-2 text-center' }, message.sticker || '✨') : null,
+                message.type === 'movie' ? cvSocEl(CvSocialTitleCard, { title, compact: true, onOpen: () => onOpenTitle && onOpenTitle(message.titleId) }) : null,
+                message.type === 'image' && message.mediaUrl ? cvSocEl('a', { href: message.mediaUrl, target: '_blank', rel: 'noopener noreferrer', className: 'block' }, cvSocEl('img', { src: message.mediaUrl, alt: message.text || 'صورة', loading: 'lazy', className: 'max-w-full max-h-80 rounded-xl object-contain bg-black/20' })) : null,
+                message.type === 'video' && message.mediaUrl ? cvSocEl('video', { src: message.mediaUrl, controls: true, playsInline: true, preload: 'metadata', className: 'max-w-full max-h-80 rounded-xl bg-black' }) : null,
+                message.type === 'audio' && message.mediaUrl ? cvSocEl('div', { className: 'min-w-[220px]' }, cvSocEl('div', { className: 'text-xs text-slate-300 mb-2' }, '🎙️ رسالة صوتية'), cvSocEl('audio', { src: message.mediaUrl, controls: true, preload: 'metadata', className: 'w-full max-w-full' })) : null,
+                message.reaction ? cvSocEl('div', { className: 'text-lg mt-1' }, message.reaction) : null,
+                cvSocEl('div', { className: 'flex items-center gap-2 mt-1.5 text-[9px] text-slate-500' }, cvSocEl('span', null, cvSocialTime(message.createdAt)), mine ? cvSocEl('span', { className: receivedRead ? 'text-accent-cyan' : '' }, receivedRead ? '✓✓ مقروءة' : '✓ أُرسلت') : null),
+                mine ? cvSocEl('div', { className: 'flex gap-1.5 pt-2 border-t border-white/5 mt-2' }, CV_SOCIAL_REACTIONS.slice(0, 5).map(emoji => cvSocEl('button', { key: emoji, type: 'button', onClick: () => db.ref(`dmThreads/${activeChat.id}/messages/${message.id}/reaction`).set(emoji).catch(() => {}), className: 'text-sm opacity-75 hover:opacity-100' }, emoji))) : null));
+    };
+
+    const renderChatPanel = () => {
+        if (!activeChat) return cvSocEl('div', { className: 'glass-panel rounded-3xl border border-white/10 min-h-[420px] flex flex-col items-center justify-center text-center p-8' },
+            cvSocEl('div', { className: 'text-5xl mb-4' }, '✉️'),
+            cvSocEl('h3', { className: 'font-black text-white text-lg mb-2' }, 'رسائلك الخاصة'),
+            cvSocEl('p', { className: 'text-sm text-slate-500 max-w-sm leading-6 mb-5' }, 'اختَر محادثة من القائمة أو ابدأ محادثة جديدة. تقدر ترسل نصوصًا وصورًا وفيديو وصوتًا وملصقات وبطاقات أفلام من الكتالوج.'),
+            cvSocEl('button', { type: 'button', onClick: () => setNewChatOpen(true), className: 'px-5 py-3 rounded-xl bg-accent-cyan text-glass-950 font-black text-sm' }, '＋ محادثة جديدة'));
+        return cvSocEl('div', { className: 'glass-panel rounded-3xl border border-white/10 overflow-hidden flex flex-col min-h-[540px] h-[calc(100dvh-230px)] max-h-[820px]' },
+            cvSocEl('div', { className: 'flex items-center gap-3 p-3 sm:p-4 border-b border-white/10 shrink-0' },
+                cvSocEl('button', { type: 'button', onClick: () => { setActiveChat(null); }, className: 'md:hidden w-9 h-9 rounded-xl bg-white/5 text-slate-300' }, '‹'),
+                cvSocEl('button', { type: 'button', onClick: () => onOpenProfile && onOpenProfile(activeChat.username), className: 'shrink-0' }, cvSocEl(CvSocialAvatar, { user: activeChat, size: 'w-10 h-10', ring: true })),
+                cvSocEl('div', { className: 'flex-1 min-w-0' }, cvSocEl('div', { className: 'font-black text-white text-sm truncate' }, activeChat.name), cvSocEl('div', { className: 'text-[11px] text-slate-500' }, `@${activeChat.username}${typingUser ? ' · يكتب الآن…' : ''}`)),
+                cvSocEl('button', { type: 'button', onClick: () => setActiveChat(null), className: 'hidden md:flex px-3 py-2 rounded-xl bg-white/5 text-slate-400 text-xs font-bold' }, 'إغلاق المحادثة')),
+            cvSocEl('div', { className: 'flex-1 overflow-y-auto p-3 sm:p-4 cv-social-chat-scroll' },
+                !messages.length ? cvSocEl('div', { className: 'text-center text-slate-600 text-sm py-16' }, 'ابدأ المحادثة برسالة لطيفة 👋') : messages.map(renderMessageBubble),
+                messages.length ? cvSocEl('div', { ref: messagesEndRef, className: 'h-1' }) : null),
+            cvSocEl('div', { className: 'border-t border-white/10 p-3 shrink-0 relative' },
+                stickerOpen ? cvSocEl('div', { className: 'absolute bottom-full inset-x-2 mb-2 rounded-2xl glass-panel border border-white/10 p-3 shadow-2xl z-20' },
+                    cvSocEl('div', { className: 'flex gap-1 overflow-x-auto scrollbar-hide mb-3' }, CV_SOCIAL_STICKERS.map(pack => cvSocEl('button', { key: pack.group, type: 'button', onClick: () => setStickerGroup(pack.group), className: `px-3 py-1.5 rounded-xl text-[10px] font-black whitespace-nowrap ${stickerGroup === pack.group ? 'bg-accent-cyan text-glass-950' : 'bg-white/5 text-slate-400'}` }, pack.group))),
+                    cvSocEl('div', { className: 'grid grid-cols-6 sm:grid-cols-8 gap-2 max-h-44 overflow-y-auto' }, (CV_SOCIAL_STICKERS.find(p => p.group === stickerGroup) || CV_SOCIAL_STICKERS[0]).items.map((emoji, i) => cvSocEl('button', { key: `${emoji}-${i}`, type: 'button', onClick: () => sendMessage('sticker', { sticker: emoji }), className: 'aspect-square rounded-xl hover:bg-white/10 text-2xl' }, emoji)))) : null,
+                cvSocEl('div', { className: 'flex items-end gap-1.5 sm:gap-2' },
+                    cvSocEl('button', { type: 'button', title: 'ملصقات', onClick: () => setStickerOpen(v => !v), className: 'w-10 h-10 rounded-xl text-xl hover:bg-fuchsia-400/10 text-fuchsia-300 shrink-0' }, '✨'),
+                    cvSocEl('button', { type: 'button', title: 'إرسال فيلم أو مسلسل', onClick: () => { setTitlePickerTarget('message'); setTitleSearch(''); }, className: 'w-10 h-10 rounded-xl text-xl hover:bg-cyan-400/10 text-accent-cyan shrink-0' }, '🎬'),
+                    cvSocEl('button', { type: 'button', title: 'إرفاق صورة أو فيديو', onClick: () => messageFileRef.current && messageFileRef.current.click(), className: 'w-10 h-10 rounded-xl text-xl hover:bg-emerald-400/10 text-emerald-300 shrink-0' }, '＋'),
+                    cvSocEl('button', { type: 'button', title: voiceRecording ? 'إيقاف وإرسال التسجيل' : 'تسجيل ملاحظة صوتية', onClick: toggleVoiceRecording, className: `w-10 h-10 rounded-xl text-xl shrink-0 ${voiceRecording ? 'bg-rose-500/20 text-rose-300 animate-pulse' : 'hover:bg-rose-400/10 text-rose-300'}` }, voiceRecording ? '⏹' : '🎙️'),
+                    cvSocEl('textarea', { ref: messageInputRef, rows: 1, value: messageText, onChange: e => handleTyping(e.target.value), onKeyDown: e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage('text'); } }, placeholder: voiceRecording ? 'التسجيل جارٍ…' : 'اكتب رسالة…', className: 'flex-1 min-w-0 max-h-28 resize-y rounded-2xl bg-glass-900 border border-white/10 px-3 py-2.5 text-sm outline-none focus:border-accent-cyan', disabled: voiceRecording || uploading }),
+                    cvSocEl('button', { type: 'button', onClick: () => sendMessage('text'), disabled: !messageText.trim() || uploading || voiceRecording, className: 'w-10 h-10 rounded-xl bg-accent-cyan text-glass-950 font-black disabled:opacity-30 shrink-0' }, '➤')),
+                uploading ? cvSocEl('div', { className: 'pt-2 text-[10px] text-accent-cyan' }, `جارٍ رفع المرفق… ${uploadProgress}%`) : null,
+                cvSocEl('input', { ref: messageFileRef, type: 'file', accept: 'image/*,video/*', className: 'hidden', onChange: e => { const file = e.target.files && e.target.files[0]; e.target.value = ''; if (file) uploadAndSendMessage(file); } })));
+    };
+
+    const renderUserResult = u => cvSocEl('button', { key: u.id, type: 'button', onClick: () => launchChat(u), className: 'w-full flex items-center gap-2.5 text-right p-2 rounded-xl hover:bg-white/5' },
+        cvSocEl(CvSocialAvatar, { user: u, size: 'w-9 h-9' }),
+        cvSocEl('span', { className: 'min-w-0 flex-1' },
+            cvSocEl('span', { className: 'block text-xs font-black text-white truncate' }, u.name || u.username),
+            cvSocEl('span', { className: 'block text-[10px] text-slate-500 truncate' }, `@${u.username}`)));
+
+    const renderInbox = () => cvSocEl('div', { className: 'grid grid-cols-1 md:grid-cols-[minmax(250px,0.8fr)_minmax(0,1.6fr)] gap-4 items-start' },
+        cvSocEl('div', { className: `${activeChat ? 'hidden md:block' : 'block'} glass-panel rounded-3xl border border-white/10 overflow-hidden` },
+            cvSocEl('div', { className: 'p-4 border-b border-white/10 flex items-center gap-2' }, cvSocEl('h2', { className: 'font-black text-white flex-1' }, 'المحادثات'), cvSocEl('button', { type: 'button', onClick: () => setNewChatOpen(v => !v), className: 'w-9 h-9 rounded-xl bg-accent-cyan text-glass-950 font-black' }, '＋')),
+            newChatOpen ? cvSocEl('div', { className: 'p-3 border-b border-white/5' },
+                cvSocEl('input', { value: userSearch, onChange: e => setUserSearch(e.target.value), placeholder: 'ابحث باسم المستخدم…', autoComplete: 'off', className: 'w-full rounded-xl bg-glass-900 border border-white/10 px-3 py-2.5 text-sm outline-none focus:border-accent-cyan' }),
+                userSearch.trim() ? cvSocEl('div', { className: 'mt-2 space-y-1 max-h-48 overflow-y-auto' }, userResults.filter(u => cvSocialKey(u.username) !== meKey).map(renderUserResult)) : cvSocEl('p', { className: 'text-[11px] text-slate-500 py-2' }, 'اكتب أولًا للبحث عن حساب')) : null,
+            inbox.length ? cvSocEl('div', { className: 'max-h-[650px] overflow-y-auto p-2' }, inbox.map(item => cvSocEl('button', { key: item.id, type: 'button', onClick: () => { setActiveChat({ id: item.id, username: item.otherUsername || '', name: item.otherName || item.otherUsername || 'مستخدم', avatar: item.otherAvatar || '' }); setSection('messages'); }, className: `w-full flex items-center gap-3 p-3 rounded-2xl text-right hover:bg-white/5 ${activeChat && activeChat.id === item.id ? 'bg-white/5 border border-white/10' : 'border border-transparent'}` },
+                cvSocEl(CvSocialAvatar, { user: { name: item.otherName, username: item.otherUsername, avatar: item.otherAvatar }, size: 'w-11 h-11' }),
+                cvSocEl('span', { className: 'min-w-0 flex-1' }, cvSocEl('span', { className: 'flex items-center gap-2' }, cvSocEl('span', { className: 'font-black text-sm text-white truncate' }, item.otherName || item.otherUsername), Number(item.unreadCount) > 0 ? cvSocEl('span', { className: 'w-5 h-5 rounded-full bg-accent-red text-white text-[10px] flex items-center justify-center font-black shrink-0' }, Number(item.unreadCount) > 9 ? '9+' : item.unreadCount) : null), cvSocEl('span', { className: 'block text-xs text-slate-500 truncate mt-1' }, item.lastMessage || 'ابدأ محادثة جديدة'), cvSocEl('span', { className: 'block text-[9px] text-slate-600 mt-1' }, cvSocialAgo(item.updatedAt)))))) : cvSocEl('div', { className: 'p-8 text-center' }, cvSocEl('div', { className: 'text-4xl mb-3' }, '📭'), cvSocEl('p', { className: 'text-xs text-slate-500 leading-6' }, 'ما عندك محادثات بعد. اضغط ＋ وابحث عن صديق حتى تبدأ.'))),
+        cvSocEl('div', { className: `${activeChat ? 'block' : 'hidden md:block'}` }, renderChatPanel()));
+
+    const renderFollowing = () => cvSocEl('section', { className: 'glass-panel rounded-3xl p-4 sm:p-5 border border-white/10' },
+        cvSocEl('div', { className: 'flex items-center justify-between mb-4' }, cvSocEl('div', null, cvSocEl('h2', { className: 'text-lg font-black text-white' }, 'الأشخاص الذين تتابعهم'), cvSocEl('p', { className: 'text-xs text-slate-500 mt-1' }, 'ابدأ محادثة أو افتح ملفًا شخصيًا'))),
+        followingUsers.length ? cvSocEl('div', { className: 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3' }, followingUsers.map(user => cvSocEl('div', { key: user.username, className: 'glass-card rounded-2xl p-3 flex items-center gap-3' },
+            cvSocEl('button', { type: 'button', onClick: () => onOpenProfile && onOpenProfile(user.username), className: 'shrink-0' }, cvSocEl(CvSocialAvatar, { user, size: 'w-12 h-12' })),
+            cvSocEl('div', { className: 'min-w-0 flex-1' }, cvSocEl('button', { type: 'button', onClick: () => onOpenProfile && onOpenProfile(user.username), className: 'text-white font-black text-sm truncate block max-w-full' }, user.name || user.username), cvSocEl('div', { className: 'text-xs text-slate-500 truncate' }, `@${user.username}`)),
+            cvSocEl('button', { type: 'button', onClick: () => launchChat(user), className: 'w-9 h-9 rounded-xl bg-accent-cyan/10 text-accent-cyan' }, '✉')))) : cvSocEl('div', { className: 'text-center py-12' }, cvSocEl('div', { className: 'text-5xl mb-3' }, '🫂'), cvSocEl('p', { className: 'font-bold text-slate-300 mb-2' }, 'بعدك ما تتابع أحد'), cvSocEl('p', { className: 'text-xs text-slate-500 mb-4' }, 'استخدم البحث أعلى الموقع حتى تلاقي أصدقاء وتتابعهم.'), cvSocEl('button', { type: 'button', onClick: () => { setNewChatOpen(true); setSection('messages'); }, className: 'px-4 py-2 rounded-xl glass-card text-xs font-black' }, 'البحث عن مستخدم')));
+
+    return cvSocEl('section', { className: 'max-w-5xl mx-auto pb-8' },
+        cvSocEl('div', { className: 'relative overflow-hidden rounded-[30px] p-5 sm:p-7 mb-5 border border-fuchsia-300/15 bg-gradient-to-l from-fuchsia-500/10 via-glass-900 to-cyan-300/5' },
+            cvSocEl('div', { className: 'absolute -right-12 -top-24 w-56 h-56 bg-fuchsia-500/10 rounded-full blur-3xl pointer-events-none' }),
+            cvSocEl('div', { className: 'relative flex items-center gap-3' }, cvSocEl(CvSocialAvatar, { user: currentUser, size: 'w-14 h-14', ring: true }), cvSocEl('div', { className: 'flex-1 min-w-0' }, cvSocEl('div', { className: 'text-[10px] tracking-widest text-fuchsia-200 font-black mb-1' }, 'CINADAM COMMUNITY'), cvSocEl('h1', { className: 'text-xl sm:text-2xl font-black text-white truncate' }, `هلا ${currentUser.name || currentUser.username} 👋`), cvSocEl('p', { className: 'text-xs text-slate-400 mt-1' }, 'مساحتك للأفلام والأصدقاء والقصص والرسائل')),
+                cvSocEl('button', { type: 'button', onClick: () => { setSection('messages'); setNewChatOpen(true); setActiveChat(null); }, className: 'hidden sm:flex items-center gap-2 px-4 py-3 rounded-2xl bg-accent-cyan text-glass-950 text-xs font-black' }, '✉ رسالة جديدة'))),
+        cvSocEl('div', { className: 'glass-card p-1.5 rounded-2xl flex items-center gap-1 mb-5' }, tabButton('feed', 'المنشورات', '▤'), tabButton('messages', 'الرسائل', '✉', unreadTotal), tabButton('friends', 'الأصدقاء', '♧')),
+        section === 'feed' ? cvSocEl(React.Fragment, null,
+            renderStories(), renderComposer(),
+            cvSocEl('div', { className: 'flex items-center justify-between gap-3 mb-4' }, cvSocEl('h2', { className: 'text-lg font-black text-white' }, 'آخر المنشورات'), cvSocEl('div', { className: 'flex p-1 rounded-xl bg-white/5 gap-1' }, cvSocEl('button', { type: 'button', onClick: () => setFeedFilter('all'), className: `px-3 py-1.5 rounded-lg text-[10px] font-black ${feedFilter === 'all' ? 'bg-white/10 text-white' : 'text-slate-500'}` }, 'الكل'), cvSocEl('button', { type: 'button', onClick: () => setFeedFilter('following'), className: `px-3 py-1.5 rounded-lg text-[10px] font-black ${feedFilter === 'following' ? 'bg-white/10 text-white' : 'text-slate-500'}` }, 'المتابَعون'))),
+            visiblePosts.length ? cvSocEl('div', { className: 'space-y-4' }, visiblePosts.map(post => cvSocEl(CvSocialPostCard, { key: post.id, post, currentUser, onOpenProfile, onOpenTitle, onMessage: launchChat }))) : cvSocEl('div', { className: 'glass-panel rounded-3xl border border-white/10 p-10 text-center' }, cvSocEl('div', { className: 'text-5xl mb-3' }, '🌱'), cvSocEl('h3', { className: 'font-black text-white mb-2' }, feedFilter === 'following' ? 'ماكو منشورات من الأشخاص اللي تتابعهم' : 'المجتمع ينتظر أول منشور'), cvSocEl('p', { className: 'text-sm text-slate-500' }, 'انشر ترشيح فيلم أو شارك صورة حتى تبدأ الحركة.')))
+            : section === 'messages' ? renderInbox() : renderFollowing(),
+        activeStory ? cvSocEl('div', { className: 'fixed inset-0 z-[85] bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-6', onClick: () => setActiveStory(null) },
+            cvSocEl('div', { className: 'relative w-full max-w-md h-[min(82dvh,760px)] rounded-[28px] overflow-hidden border border-white/10 bg-glass-900 flex flex-col shadow-2xl', onClick: e => e.stopPropagation() },
+                cvSocEl('div', { className: 'absolute top-0 inset-x-0 h-1 bg-white/20 z-10' }, cvSocEl('div', { className: 'h-full bg-white w-full' })),
+                cvSocEl('div', { className: 'absolute top-3 inset-x-3 z-20 flex items-center gap-2' }, cvSocEl(CvSocialAvatar, { user: activeStory, size: 'w-9 h-9' }), cvSocEl('div', { className: 'flex-1 min-w-0' }, cvSocEl('div', { className: 'font-black text-white text-xs drop-shadow' }, activeStory.name || activeStory.username), cvSocEl('div', { className: 'text-[10px] text-white/60' }, cvSocialAgo(activeStory.createdAt))), cvSocEl('button', { type: 'button', onClick: () => setActiveStory(null), className: 'w-9 h-9 rounded-full bg-black/40 text-white' }, '✕')),
+                activeStory.mediaType === 'image' && activeStory.mediaUrl ? cvSocEl('img', { src: activeStory.mediaUrl, alt: '', className: 'w-full h-full object-contain bg-black' }) : activeStory.mediaType === 'video' && activeStory.mediaUrl ? cvSocEl('video', { src: activeStory.mediaUrl, controls: true, autoPlay: true, playsInline: true, className: 'w-full h-full object-contain bg-black' }) : cvSocEl('div', { className: 'flex-1 flex items-center justify-center text-center p-8 bg-gradient-to-br from-fuchsia-900/70 to-cyan-900/50' }, cvSocEl('p', { className: 'text-2xl sm:text-3xl text-white font-black leading-relaxed whitespace-pre-wrap break-words' }, activeStory.caption || '✨')),
+                activeStory.caption && activeStory.mediaUrl ? cvSocEl('div', { className: 'absolute bottom-0 inset-x-0 p-5 pt-12 bg-gradient-to-t from-black/90 to-transparent text-white text-sm whitespace-pre-wrap' }, activeStory.caption) : null,
+                cvSocEl('div', { className: 'absolute bottom-3 inset-x-3 flex items-center gap-2 justify-end' },
+                    cvSocEl('button', { type: 'button', onClick: () => launchChat({ username: activeStory.username, name: activeStory.name, avatar: activeStory.avatar }), className: 'px-4 py-2 rounded-xl bg-white/15 backdrop-blur text-white text-xs font-black' }, '✉ رد برسالة'),
+                    cvSocialKey(activeStory.username) === meKey ? cvSocEl('button', { type: 'button', onClick: () => deleteOwnStory(activeStory), className: 'px-3 py-2 rounded-xl bg-rose-500/20 text-rose-200 text-xs font-black' }, 'حذف') : null))) : null,
+        renderTitlePicker());
+}
+
+
 function App() {
     const [titles, setTitles] = useState([]);
     const [currentUser, setCurrentUser] = useState(() => { try {
@@ -8734,7 +9297,7 @@ function App() {
         });
     }, []);
     const setView = (v) => {
-        const allowedViews = new Set(['home','movie','series','anime','lists','requests','settings','profile','admin']);
+        const allowedViews = new Set(['home','movie','series','anime','lists','community','requests','settings','profile','admin']);
         if (!allowedViews.has(v)) v = 'home';
         if (v === 'admin') {
             if (!currentUser || !(currentUser.username === 'mavilovelife' || currentUser.isModerator)) {
@@ -8855,7 +9418,7 @@ function App() {
         React.createElement(Header, { currentUser: currentUser, view: view, setView: setView, search: search, setSearch: setSearch, onOpenAccount: () => setAccountSheet(true), onOpenProfile: openProfile, onOpenTitleFromNotif: (id) => { const t = titles.find(x => x.id === id && x.status === 'published'); if (t)
                 setActiveTitle(t); } }),
         React.createElement("main", { className: "flex-1 max-w-7xl w-full mx-auto px-4 py-6 md:py-8" },
-            React.createElement("div", { key: searching ? 'search' : view, className: "page-fade-in" }, searching ? (React.createElement(TypeGrid, { title: `نتائج البحث عن "${search}"`, items: mainList, onOpen: setActiveTitle, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0646\u062A\u0627\u0626\u062C \u0645\u0637\u0627\u0628\u0642\u0629.", watchedMap: watched })) : view === 'home' ? (React.createElement(HomeView, { items: published, onOpen: openTitleFromContinue, watchedMap: watched, watchProgress: watchProgress })) : (view === 'movie' || view === 'series' || view === 'anime') ? (React.createElement(TypeGrid, { title: TYPE_PLURAL[view], items: published.filter(t => t.type === view), onOpen: setActiveTitle, showGenreFilter: true, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u0628\u0639\u062F.", watchedMap: watched })) : view === 'lists' ? (React.createElement(ListsView, { currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal })) : view === 'requests' ? (React.createElement(RequestsView, { currentUser: currentUser, onOpenAuth: setAuthModal })) : view === 'settings' ? (React.createElement(SettingsView, { currentUser: currentUser, onUpdateName: handleUpdateName, onUpdateAvatar: handleUpdateAvatar, onOpenAuth: setAuthModal })) : view === 'profile' ? (React.createElement(ProfileView, { username: profileTarget, currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal, onOpenProfile: openProfile })) : view === 'admin' ? (React.createElement(AdminPanel, { currentUser: currentUser, titles: titles, onOpenAuth: setAuthModal, moderators: moderators })) : null)),
+            React.createElement("div", { key: searching ? 'search' : view, className: "page-fade-in" }, searching ? (React.createElement(TypeGrid, { title: `نتائج البحث عن "${search}"`, items: mainList, onOpen: setActiveTitle, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0646\u062A\u0627\u0626\u062C \u0645\u0637\u0627\u0628\u0642\u0629.", watchedMap: watched })) : view === 'home' ? (React.createElement(HomeView, { items: published, onOpen: openTitleFromContinue, watchedMap: watched, watchProgress: watchProgress })) : (view === 'movie' || view === 'series' || view === 'anime') ? (React.createElement(TypeGrid, { title: TYPE_PLURAL[view], items: published.filter(t => t.type === view), onOpen: setActiveTitle, showGenreFilter: true, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u0628\u0639\u062F.", watchedMap: watched })) : view === 'community' ? React.createElement(CinadamSocialHub, { currentUser: currentUser, titles: published, onOpenAuth: setAuthModal, onOpenTitle: (id) => { const t = published.find(x => x.id === id); if (t) setActiveTitle(t); }, onOpenProfile: openProfile }) : view === 'lists' ? (React.createElement(ListsView, { currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal })) : view === 'requests' ? (React.createElement(RequestsView, { currentUser: currentUser, onOpenAuth: setAuthModal })) : view === 'settings' ? (React.createElement(SettingsView, { currentUser: currentUser, onUpdateName: handleUpdateName, onUpdateAvatar: handleUpdateAvatar, onOpenAuth: setAuthModal })) : view === 'profile' ? (React.createElement(ProfileView, { username: profileTarget, currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal, onOpenProfile: openProfile })) : view === 'admin' ? (React.createElement(AdminPanel, { currentUser: currentUser, titles: titles, onOpenAuth: setAuthModal, moderators: moderators })) : null)),
         React.createElement(MobileBottomNav, { view: view, setView: setView }),
         React.createElement(ToastHost, null),
         activeTitle && (React.createElement(TitleModal, { title: activeTitle, allTitles: published, currentUser: currentUser, liked: likedIds.includes(activeTitle.id), getRole: getRole, onLike: () => toggleLike(activeTitle), onClose: () => { setActiveTitle(null); if (new URLSearchParams(location.search).get('t'))
