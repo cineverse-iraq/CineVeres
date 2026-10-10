@@ -1648,6 +1648,10 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
 function CinemaBoxSeriesHelper({ title = '', year = '', seasons = [], onChangeSeasons }) {
     const safeSeasons = Array.isArray(seasons) ? seasons : [];
     const [selectedSeason, setSelectedSeason] = useState(String(safeSeasons[0] && safeSeasons[0].number || 1));
+    const [batchRunning, setBatchRunning] = useState(false);
+    const [batchStatus, setBatchStatus] = useState(null);
+    const [refreshExisting, setRefreshExisting] = useState(false);
+    const stopBatchRef = useRef(false);
     const season = safeSeasons.find(s => String(Number(s.number) || 1) === selectedSeason) || safeSeasons[0] || null;
     const episodes = season && Array.isArray(season.episodes) ? season.episodes : [];
     const [selectedEpisode, setSelectedEpisode] = useState(String(episodes[0] && episodes[0].number || 1));
@@ -1672,8 +1676,149 @@ function CinemaBoxSeriesHelper({ title = '', year = '', seasons = [], onChangeSe
             }
         ));
     };
+    const resolveCinemaBoxEpisode = async (seasonNumber, episodeNumber) => {
+        const titleText = String(title || '').trim();
+        if (!titleText) throw new Error('اسم المسلسل أو الأنمي فارغ.');
+        const params = new URLSearchParams({
+            title: titleText,
+            type: 'tv',
+            year: String(year || ''),
+            season: String(Number(seasonNumber) || 1),
+            episode: String(Number(episodeNumber) || 1)
+        });
+        const bases = [];
+        const addBase = value => { const base = String(value || '').trim().replace(/\/+$/, ''); if (base && !bases.includes(base)) bases.push(base); };
+        let forceLocalProxy = false;
+        try { forceLocalProxy = new URLSearchParams(location.search || '').get('localProxy') === '1'; } catch (_) {}
+        const host = String(location.hostname || '').toLowerCase();
+        if (forceLocalProxy || host === 'localhost' || host === '127.0.0.1' || host === '::1') addBase('http://localhost:8787');
+        addBase(CINEMANA_PROXY);
+        addBase('http://localhost:8787');
+        let lastError = null;
+        for (const base of bases) {
+            try {
+                const response = await cinadamFetch(`${base}/cinemabox/resolve?${params.toString()}`, {
+                    cache: 'no-store',
+                    headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
+                    signal: AbortSignal.timeout(60000)
+                });
+                const raw = await response.text();
+                let data = null;
+                try { data = JSON.parse(raw); } catch (_) {}
+                if (!response.ok || !data || data.ok !== true) {
+                    lastError = new Error(data && data.error ? String(data.error) : `Cinema Box HTTP ${response.status}`);
+                    continue;
+                }
+                const sources = normalizeVideoSources(data.sources).sort((a, b) => {
+                    const quality = item => Number((String(item || '').match(/(\d{3,4})p?/i) || [])[1]) || 0;
+                    return quality(b.quality || b.label) - quality(a.quality || a.label);
+                });
+                if (!sources.length) {
+                    lastError = new Error('لم يرجع المصدر روابط فيديو للحلقة.');
+                    continue;
+                }
+                return { sources, cinemaBoxId: String(data.cinemaBoxId || ''), matchedTitle: String(data.matchedTitle || titleText) };
+            } catch (e) { lastError = e; }
+        }
+        throw lastError || new Error('تعذّر الاتصال بمحرك Cinema Box.');
+    };
+    const runBatchExtraction = async scope => {
+        if (batchRunning) return;
+        if (typeof onChangeSeasons !== 'function') {
+            setBatchStatus({ message: 'تعذر تحديث بيانات الحلقات داخل النموذج.' });
+            return;
+        }
+        const chosenSeasons = scope === 'season'
+            ? safeSeasons.filter(s => (Number(s.number) || 1) === (Number(season && season.number) || 1))
+            : safeSeasons.slice();
+        const allTargets = chosenSeasons.flatMap(s => (Array.isArray(s.episodes) ? s.episodes : []).map(ep => ({
+            seasonNumber: Number(s.number) || 1,
+            episodeNumber: Number(ep.number) || 1,
+            title: String(ep.title || '').trim(),
+            existingSources: normalizeVideoSources(ep.cinemaBoxSources).length > 0
+        })));
+        if (!allTargets.length) {
+            setBatchStatus({ message: scope === 'season' ? 'هذا الموسم ما يحتوي حلقات.' : 'ماكو حلقات بالمواسم حتى نستخرج روابطها.' });
+            return;
+        }
+        const targets = refreshExisting ? allTargets : allTargets.filter(target => !target.existingSources);
+        const skipped = allTargets.length - targets.length;
+        if (!targets.length) {
+            setBatchStatus({ message: `كل الحلقات المحددة لديها روابط Cinema Box محفوظة (${skipped}). فعّل إعادة الاستخراج إذا تريد تحديثها.` });
+            return;
+        }
+        stopBatchRef.current = false;
+        setBatchRunning(true);
+        setBatchStatus({ done: skipped, total: allTargets.length, success: 0, failed: 0, skipped, current: 'بدء استخراج الروابط…', errors: [] });
+        let success = 0, failed = 0, processed = 0;
+        const errors = [];
+        try {
+            for (const target of targets) {
+                if (stopBatchRef.current) break;
+                const currentLabel = `الموسم ${target.seasonNumber} · الحلقة ${target.episodeNumber}`;
+                setBatchStatus({ done: skipped + processed, total: allTargets.length, success, failed, skipped, current: `جاري استخراج ${currentLabel}…`, errors: errors.slice(0, 6) });
+                try {
+                    const result = await resolveCinemaBoxEpisode(target.seasonNumber, target.episodeNumber);
+                    // Complete and persist the active request even if the user asked to stop mid-request.
+                    const firstUrl = result.sources[0] && result.sources[0].url || '';
+                    onChangeSeasons(previous => (Array.isArray(previous) ? previous : []).map(s =>
+                        (Number(s.number) || 1) !== target.seasonNumber ? s : {
+                            ...s,
+                            episodes: (s.episodes || []).map(ep => (Number(ep.number) || 1) !== target.episodeNumber ? ep : {
+                                ...ep,
+                                cinemaBoxSources: result.sources,
+                                cinemaBoxId: result.cinemaBoxId,
+                                cinemaBoxUrl: firstUrl || ep.cinemaBoxUrl || ''
+                            })
+                        }
+                    ));
+                    success++;
+                } catch (e) {
+                    failed++;
+                    errors.push(`${currentLabel}: ${String(e && e.message || e).slice(0, 180)}`);
+                }
+                processed++;
+                setBatchStatus({ done: skipped + processed, total: allTargets.length, success, failed, skipped, current: currentLabel, errors: errors.slice(0, 6) });
+                // Sequential requests avoid overwhelming the service or triggering temporary throttling.
+                if (!stopBatchRef.current && processed < targets.length) await new Promise(resolve => setTimeout(resolve, 250));
+            }
+            const stopped = stopBatchRef.current;
+            setBatchStatus({
+                done: skipped + processed,
+                total: allTargets.length,
+                success,
+                failed,
+                skipped,
+                stopped,
+                message: stopped ? 'تم إيقاف العملية بعد الطلب الجاري.' : `اكتمل الاستخراج: نجح ${success}، فشل ${failed}، وتجاوز ${skipped} لديها روابط محفوظة. اضغط «حفظ العمل» لحفظ النتائج في Firebase.`,
+                errors: errors.slice(0, 6)
+            });
+        } finally {
+            setBatchRunning(false);
+        }
+    };
     return React.createElement('div', { className: 'mt-4 min-w-0' },
         safeSeasons.length && episodes.length ? React.createElement(React.Fragment, null,
+            React.createElement('div', { className: 'glass-card rounded-2xl p-3.5 border border-emerald-400/25 mb-3' },
+                React.createElement('p', { className: 'text-[11px] font-black text-emerald-300 mb-1' }, 'استخراج جماعي لروابط Cinema Box'),
+                React.createElement('p', { className: 'text-[10px] leading-5 text-slate-400 mb-2.5' }, 'استخراج آلي حلقةً بعد حلقة وتخزين الجودات داخل كل حلقة. لا يغلق النموذج عند فشل حلقة، ويكمل بقية الحلقات. النتائج تبقى في النموذج حتى تضغط «حفظ العمل».'),
+                React.createElement('div', { className: 'flex flex-wrap items-center gap-2' },
+                    React.createElement('button', { type: 'button', onClick: () => runBatchExtraction('season'), disabled: batchRunning || !episodes.length, className: 'px-3.5 py-2 rounded-xl bg-emerald-500/15 border border-emerald-400/35 text-emerald-200 text-xs font-black disabled:opacity-40' }, batchRunning ? 'جاري الاستخراج…' : `استخراج حلقات الموسم ${Number(season && season.number) || 1} (${episodes.length})`),
+                    React.createElement('button', { type: 'button', onClick: () => runBatchExtraction('all'), disabled: batchRunning || !safeSeasons.some(s => (s.episodes || []).length), className: 'px-3.5 py-2 rounded-xl bg-emerald-500/15 border border-emerald-400/35 text-emerald-200 text-xs font-black disabled:opacity-40' }, `استخراج جميع الحلقات (${safeSeasons.reduce((n, s) => n + (Array.isArray(s.episodes) ? s.episodes.length : 0), 0)})`),
+                    batchRunning && React.createElement('button', { type: 'button', onClick: () => { stopBatchRef.current = true; }, className: 'px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-400/30 text-rose-300 text-xs font-bold' }, 'إيقاف بعد الطلب الجاري')),
+                React.createElement('label', { className: 'flex items-center gap-2 mt-2.5 text-[10px] text-slate-400 select-none' },
+                    React.createElement('input', { type: 'checkbox', checked: refreshExisting, onChange: e => setRefreshExisting(e.target.checked), disabled: batchRunning, className: 'accent-emerald-400' }),
+                    'إعادة استخراج الحلقات التي لديها جودات محفوظة أيضاً'),
+                batchStatus && React.createElement('div', { className: 'mt-3 rounded-xl bg-black/20 border border-white/5 p-2.5' },
+                    batchStatus.total ? React.createElement(React.Fragment, null,
+                        React.createElement('div', { className: 'flex items-center justify-between gap-2 text-[10px] font-bold text-slate-300 mb-1.5' },
+                            React.createElement('span', null, `${batchStatus.done || 0} / ${batchStatus.total}`),
+                            React.createElement('span', null, `نجح ${batchStatus.success || 0} · فشل ${batchStatus.failed || 0} · محفوظ مسبقاً ${batchStatus.skipped || 0}`)),
+                        React.createElement('div', { className: 'h-1.5 rounded-full bg-white/10 overflow-hidden mb-2' }, React.createElement('div', { className: 'h-full rounded-full bg-emerald-400 transition-all', style: { width: `${Math.min(100, Math.round((Number(batchStatus.done || 0) / Number(batchStatus.total || 1)) * 100))}%` } }))) : null,
+                    batchStatus.current && React.createElement('p', { className: 'text-[10px] text-slate-400 mb-1' }, batchStatus.current),
+                    batchStatus.message && React.createElement('p', { className: 'text-[10px] font-bold text-emerald-200 leading-5' }, batchStatus.message),
+                    Array.isArray(batchStatus.errors) && batchStatus.errors.length > 0 && React.createElement('div', { className: 'mt-2 space-y-1' }, batchStatus.errors.map((item, i) => React.createElement('p', { key: `${i}-${item}`, className: 'text-[10px] text-rose-300 leading-4' }, item)),
+                        (batchStatus.failed || 0) > batchStatus.errors.length && React.createElement('p', { className: 'text-[10px] text-rose-300' }, `وأخطاء أخرى: ${(batchStatus.failed || 0) - batchStatus.errors.length}`)))),
             React.createElement('div', { className: 'grid sm:grid-cols-2 gap-2 mb-2.5' },
                 React.createElement('div', null,
                     React.createElement('label', { className: 'text-[10px] font-bold text-slate-400 block mb-1' }, 'موسم Cinema Box'),
@@ -1683,11 +1828,11 @@ function CinemaBoxSeriesHelper({ title = '', year = '', seasons = [], onChangeSe
                     React.createElement('label', { className: 'text-[10px] font-bold text-slate-400 block mb-1' }, 'حلقة Cinema Box'),
                     React.createElement('select', { value: pickedEpisode ? String(Number(pickedEpisode.number) || 1) : selectedEpisode, onChange: e => setSelectedEpisode(e.target.value), className: 'w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-400' },
                         episodes.map((ep, i) => React.createElement('option', { key: `${ep.number}-${i}`, value: String(Number(ep.number) || i + 1) }, `الحلقة ${Number(ep.number) || i + 1}${ep.title ? ' · ' + ep.title : ''}`))))),
-            React.createElement(CinemaBoxHelper, { kind: 'tv', season: Number(season && season.number) || 1, episode: Number(pickedEpisode && pickedEpisode.number) || 1, defaultTitle: title, defaultYear: year, value: pickedEpisode && pickedEpisode.cinemaBoxSources || [], onChange: sources => updatePickedEpisode({ cinemaBoxSources: sources }), onPickedId: id => updatePickedEpisode({ cinemaBoxId: id }) }),
-            React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1.5' }, 'تُحفظ جودات Cinema Box للحلقة المحددة أعلاه ضمن بيانات الحلقة عند الضغط على «حفظ العمل».')) :
+            React.createElement(CinemaBoxHelper, { kind: 'tv', season: Number(season && season.number) || 1, episode: Number(pickedEpisode && pickedEpisode.number) || 1, defaultTitle: title, defaultYear: year, value: pickedEpisode && pickedEpisode.cinemaBoxSources || [], onChange: sources => updatePickedEpisode({ cinemaBoxSources: sources, cinemaBoxUrl: sources[0] && sources[0].url || '' }), onPickedId: id => updatePickedEpisode({ cinemaBoxId: id }) }),
+            React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1.5' }, 'استخراج الحلقة الواحدة ما زال متاحًا. استخدم الزرين أعلاه لاستخراج موسم كامل أو كل حلقات المسلسل والأنمي. بعد الانتهاء اضغط «حفظ العمل».')) :
             React.createElement('div', { className: 'glass-card rounded-2xl p-3.5 border border-emerald-400/25' },
                 React.createElement('p', { className: 'text-[11px] font-bold text-emerald-300 mb-1' }, 'Cinema Box — مصدر المسلسلات والأنمي'),
-                React.createElement('p', { className: 'text-[10px] leading-5 text-slate-400' }, 'استورد المواسم من أداة سينمانا أعلاه أو أضف موسمًا وحلقة أولًا. بعدها اختر الموسم والحلقة هنا لاستخراج روابط Cinema Box وحفظها للحلقة الصحيحة.')));
+                React.createElement('p', { className: 'text-[10px] leading-5 text-slate-400' }, 'استورد المواسم من أداة سينمانا أعلاه أو أضف موسمًا وحلقة أولًا. بعدها يمكنك استخراج الحلقة الواحدة أو كل الحلقات تلقائيًا.')));
 }
 
 async function tmdbFindBestByTitle(title, currentType, year) {
