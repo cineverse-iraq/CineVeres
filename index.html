@@ -1588,6 +1588,27 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
     const itemId = row => String(row && (row.id || row.movieId || row.movie_id || row.seriesId || row.series_id || row.showId || row.show_id || row.subjectId || row.subject_id) || '').trim();
     const itemYear = row => String(row && (row.year || row.release_year || row.releaseYear || row.release_date || row.first_air_date) || '').match(/(?:19|20)\d{2}/)?.[0] || '';
     const itemPoster = row => String(row && (row.poster || row.poster_url || row.posterUrl || row.image || row.image_url || (row.style && (row.style.image || row.style.poster || row.style.poster_url)) || '') || '').trim();
+    const normalizeCatalogTitle = value => String(value || '').normalize('NFKD').toLowerCase().replace(/[\u0300-\u036f]/g, '').replace(/&/g, ' and ').replace(/[^a-z0-9\u0600-\u06ff]+/g, ' ').trim().replace(/\s+/g, ' ');
+    const candidateCompatibility = row => {
+        const wantedTitle = normalizeCatalogTitle(defaultTitle || query);
+        const actualTitle = normalizeCatalogTitle(itemTitle(row));
+        const wantedYear = String(defaultYear || '').match(/(?:19|20)\d{2}/)?.[0] || '';
+        const actualYear = itemYear(row);
+        if (wantedYear && actualYear && wantedYear !== actualYear) {
+            return { ok: false, reason: `السنة ${actualYear} لا تطابق سنة العمل المطلوب ${wantedYear}.` };
+        }
+        if (wantedTitle && actualTitle && wantedTitle === actualTitle) return { ok: true, reason: '' };
+        // A title that merely contains the requested one-word title (e.g. Dexter's Laboratory)
+        // is not an acceptable match for the original series. For multi-word aliases, require
+        // the same year plus a strong token match before allowing selection.
+        const wantedWords = wantedTitle.split(' ').filter(Boolean);
+        const actualWords = new Set(actualTitle.split(' ').filter(Boolean));
+        if (wantedWords.length >= 2 && wantedYear && actualYear === wantedYear) {
+            const matched = wantedWords.filter(word => actualWords.has(word)).length;
+            if (matched / wantedWords.length >= 0.75) return { ok: true, reason: '' };
+        }
+        return { ok: false, reason: `«${itemTitle(row)}» لا يطابق العنوان المطلوب «${defaultTitle || query}».` };
+    };
     const search = async () => {
         const titleText = String(query || '').trim();
         if (!titleText) { setError('اكتب اسم الفيلم أو المسلسل أولاً.'); return; }
@@ -1613,7 +1634,12 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
                     const usable = data.results.filter(row => itemId(row) && itemTitle(row));
                     if (usable.length) {
                         setSearchResults(usable); setSearchDone(true);
-                        setMsg(`تم العثور على ${usable.length} نتيجة. اختَر البوستر المطابق للعمل الذي تريده.`);
+                        const compatibleCount = usable.filter(row => candidateCompatibility(row).ok).length;
+                        if (compatibleCount) {
+                            setMsg(`تم العثور على ${usable.length} نتيجة، منها ${compatibleCount} تطابق اسم/سنة العمل. اختَر نتيجة مطابقة فقط.`);
+                        } else {
+                            setMsg(`Cinema Box رجّع ${usable.length} نتيجة، لكن ولا وحدة تطابق «${defaultTitle || titleText}»${String(defaultYear || '').match(/(?:19|20)\d{2}/)?.[0] ? ' (' + String(defaultYear).match(/(?:19|20)\d{2}/)[0] + ')' : ''}. النتائج غير المطابقة معطّلة حتى لا نحفظ روابط عمل مختلف.`);
+                        }
                         return;
                     }
                     gotEmpty = true;
@@ -1660,7 +1686,7 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
                     if (!normalized.length) throw new Error('تم العثور على العمل لكن لم تُرجع الخدمة روابط فيديو قابلة للحفظ.');
                     setSources(normalized);
                     onChange && onChange(normalized);
-                    onPickedId && onPickedId(String(data.cinemaBoxId || selectedId));
+                    onPickedId && onPickedId(String(data.cinemaBoxId || selectedId), { title: String(data.matchedTitle || titleText), year: itemYear(selectedResult) || String(defaultYear || '') });
                     setMsg(`تم استخراج ${normalized.length} جودة/رابط من «${String(data.matchedTitle || titleText)}». تُحفظ مع العمل عند الضغط على «حفظ العمل».`);
                     setLoading(false);
                     return;
@@ -1687,16 +1713,19 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
         searchDone && searchResults.length > 0 && React.createElement('div', { className: 'mt-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-80 overflow-y-auto pr-0.5' },
             searchResults.map((row, index) => {
                 const id = itemId(row); const title = itemTitle(row); const yearText = itemYear(row); const poster = itemPoster(row);
+                const compatibility = candidateCompatibility(row);
                 const isSelected = !!selectedResult && itemId(selectedResult) === id;
                 const category = String(row.category_name || row.category || (String(row.type || '').toUpperCase() === 'SERIES' ? 'Series' : 'Movie'));
-                return React.createElement('button', { key: `${id}-${title}-${index}`, type: 'button', onClick: () => { setSelectedResult(row); onPickedId && onPickedId(id); setError(''); setMsg(`تم اختيار «${title}»${yearText ? ' (' + yearText + ')' : ''} وحُفظ معرّفه لهذا المسلسل؛ تقدر هسه تستخرج الحلقة أو تبدأ الاستخراج الجماعي.`); }, className: `relative min-w-0 text-right rounded-xl overflow-hidden border transition ${isSelected ? 'border-emerald-300 ring-2 ring-emerald-400/30 bg-emerald-400/10' : 'border-white/10 hover:border-emerald-400/60 bg-black/10'}` },
+                return React.createElement('button', { key: `${id}-${title}-${index}`, type: 'button', disabled: !compatibility.ok, title: compatibility.ok ? title : compatibility.reason, onClick: () => { if (!compatibility.ok) return; setSelectedResult(row); onPickedId && onPickedId(id, { title, year: yearText }); setError(''); setMsg(`تم اختيار «${title}»${yearText ? ' (' + yearText + ')' : ''} وحُفظ معرّفه لهذا المسلسل؛ تقدر هسه تستخرج الحلقة أو تبدأ الاستخراج الجماعي.`); }, className: `relative min-w-0 text-right rounded-xl overflow-hidden border transition ${!compatibility.ok ? 'opacity-45 cursor-not-allowed border-rose-400/20 bg-black/20' : isSelected ? 'border-emerald-300 ring-2 ring-emerald-400/30 bg-emerald-400/10' : 'border-white/10 hover:border-emerald-400/60 bg-black/10'}` },
                     poster ? React.createElement('img', { src: poster, alt: '', loading: 'lazy', className: 'w-full h-28 sm:h-32 object-cover bg-black/20', onError: e => { e.currentTarget.style.display = 'none'; } }) : React.createElement('div', { className: 'w-full h-28 sm:h-32 flex items-center justify-center bg-black/20 text-slate-600' }, React.createElement(Icon, { name: 'film', className: 'w-8 h-8' })),
-                    isSelected && React.createElement('span', { className: 'absolute top-1.5 left-1.5 rounded-full bg-emerald-400 text-slate-950 text-[9px] font-black px-2 py-1' }, 'تم الاختيار'),
+                    !compatibility.ok && React.createElement('span', { className: 'absolute top-1.5 left-1.5 rounded-full bg-rose-500/90 text-white text-[9px] font-black px-2 py-1' }, 'غير مطابق'),
+                    isSelected && React.createElement('span', { className: 'absolute top-1.5 right-1.5 rounded-full bg-emerald-400 text-slate-950 text-[9px] font-black px-2 py-1' }, 'تم الاختيار'),
                     React.createElement('div', { className: 'p-2' },
                         React.createElement('p', { className: 'text-[10px] leading-4 font-bold text-white line-clamp-2 min-h-8', dir: 'auto' }, title),
                         React.createElement('div', { className: 'mt-1 flex items-center justify-between gap-1 text-[9px] text-slate-400' },
                             React.createElement('span', { className: 'truncate' }, category),
-                            React.createElement('span', { className: 'shrink-0' }, yearText || 'السنة غير معروفة'))));
+                            React.createElement('span', { className: 'shrink-0' }, yearText || 'السنة غير معروفة')),
+                        !compatibility.ok && React.createElement('p', { className: 'mt-1 text-[9px] leading-4 text-rose-300' }, compatibility.reason)));
             })),
         searchDone && searchResults.length > 0 && selectedResult && React.createElement('div', { className: 'mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-2.5' },
             React.createElement('p', { className: 'text-[10px] text-emerald-100 min-w-0' }, `العمل المحدد: ${itemTitle(selectedResult)} · Cinema Box ID: ${itemId(selectedResult)}`),
@@ -1716,6 +1745,9 @@ function CinemaBoxSeriesHelper({ title = '', year = '', seasons = [], onChangeSe
     const [batchRunning, setBatchRunning] = useState(false);
     const [batchStatus, setBatchStatus] = useState(null);
     const [refreshExisting, setRefreshExisting] = useState(false);
+    // Batch extraction only uses a catalog selection explicitly verified in this UI session.
+    // Previously saved episode IDs alone are not proof that the chosen catalog item is correct.
+    const [verifiedBatchCatalogSelection, setVerifiedBatchCatalogSelection] = useState(null);
     const stopBatchRef = useRef(false);
     const season = safeSeasons.find(s => String(Number(s.number) || 1) === selectedSeason) || safeSeasons[0] || null;
     const episodes = season && Array.isArray(season.episodes) ? season.episodes : [];
@@ -1730,6 +1762,7 @@ function CinemaBoxSeriesHelper({ title = '', year = '', seasons = [], onChangeSe
         if (!nums.some(n => String(n) === selectedEpisode)) setSelectedEpisode(String(nums[0] || 1));
     }, [selectedSeason, JSON.stringify(episodes.map(e => Number(e.number) || 1))]);
     const pickedEpisode = episodes.find(e => String(Number(e.number) || 1) === selectedEpisode) || episodes[0] || null;
+    useEffect(() => { setVerifiedBatchCatalogSelection(null); }, [selectedSeason, selectedEpisode, title, year]);
     const updatePickedEpisode = patch => {
         if (!season || !pickedEpisode || typeof onChangeSeasons !== 'function') return;
         const sn = Number(season.number) || 1;
@@ -1804,15 +1837,11 @@ function CinemaBoxSeriesHelper({ title = '', year = '', seasons = [], onChangeSe
             cinemaBoxId: String(ep.cinemaBoxId || '').trim(),
             existingSources: normalizeVideoSources(ep.cinemaBoxSources).length > 0
         })));
-        // Prefer the catalog ID selected in the active episode's poster picker. Otherwise
-        // reuse the most common saved ID among episodes instead of fuzzy-searching every title.
-        const savedIds = allTargets.map(target => target.cinemaBoxId).filter(Boolean);
-        const idCounts = new Map();
-        for (const id of savedIds) idCounts.set(id, (idCounts.get(id) || 0) + 1);
-        const commonCatalogId = [...idCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || '';
-        const selectedCatalogId = String((pickedEpisode && pickedEpisode.cinemaBoxId) || commonCatalogId || '').trim();
+        // Never fall back to catalog IDs left over from an earlier failed/mismatched batch.
+        // Require a poster explicitly selected and validated during the current UI session.
+        const selectedCatalogId = String(verifiedBatchCatalogSelection && verifiedBatchCatalogSelection.id || '').trim();
         if (!selectedCatalogId) {
-            setBatchStatus({ message: 'قبل الاستخراج الجماعي، اضغط «بحث عن البوسترات» في قسم Cinema Box واختَر بوستر المسلسل الصحيح. اختيار البوستر يحفظ معرّف المسلسل، وبعدها يعاد استخدامه لكل الحلقات.' });
+            setBatchStatus({ message: 'أوقفت الاستخراج الآمن: لازم تبحث عن بوستر مطابق لاسم وسنة المسلسل وتختاره في قسم Cinema Box بهذه الجلسة. لن نستخدم معرّفات قديمة محفوظة من محاولة سابقة.' });
             return;
         }
         if (!allTargets.length) {
@@ -1906,7 +1935,7 @@ function CinemaBoxSeriesHelper({ title = '', year = '', seasons = [], onChangeSe
                     React.createElement('label', { className: 'text-[10px] font-bold text-slate-400 block mb-1' }, 'حلقة Cinema Box'),
                     React.createElement('select', { value: pickedEpisode ? String(Number(pickedEpisode.number) || 1) : selectedEpisode, onChange: e => setSelectedEpisode(e.target.value), className: 'w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-400' },
                         episodes.map((ep, i) => React.createElement('option', { key: `${ep.number}-${i}`, value: String(Number(ep.number) || i + 1) }, `الحلقة ${Number(ep.number) || i + 1}${ep.title ? ' · ' + ep.title : ''}`))))),
-            React.createElement(CinemaBoxHelper, { kind: 'tv', season: Number(season && season.number) || 1, episode: Number(pickedEpisode && pickedEpisode.number) || 1, defaultTitle: title, defaultYear: year, value: pickedEpisode && pickedEpisode.cinemaBoxSources || [], onChange: sources => updatePickedEpisode({ cinemaBoxSources: sources, cinemaBoxUrl: sources[0] && sources[0].url || '' }), onPickedId: id => updatePickedEpisode({ cinemaBoxId: id }) }),
+            React.createElement(CinemaBoxHelper, { kind: 'tv', season: Number(season && season.number) || 1, episode: Number(pickedEpisode && pickedEpisode.number) || 1, defaultTitle: title, defaultYear: year, value: pickedEpisode && pickedEpisode.cinemaBoxSources || [], onChange: sources => updatePickedEpisode({ cinemaBoxSources: sources, cinemaBoxUrl: sources[0] && sources[0].url || '' }), onPickedId: (id, meta) => { const catalogId = String(id || '').trim(); updatePickedEpisode({ cinemaBoxId: catalogId }); setVerifiedBatchCatalogSelection(catalogId ? { id: catalogId, title: String(meta && meta.title || ''), year: String(meta && meta.year || '') } : null); } }),
             React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1.5' }, 'استخراج الحلقة الواحدة ما زال متاحًا. استخدم الزرين أعلاه لاستخراج موسم كامل أو كل حلقات المسلسل والأنمي. بعد الانتهاء اضغط «حفظ العمل».')) :
             React.createElement('div', { className: 'glass-card rounded-2xl p-3.5 border border-emerald-400/25' },
                 React.createElement('p', { className: 'text-[11px] font-bold text-emerald-300 mb-1' }, 'Cinema Box — مصدر المسلسلات والأنمي'),
