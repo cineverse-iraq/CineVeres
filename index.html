@@ -1563,43 +1563,90 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
 function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle = '', defaultYear = '', value = [], onChange, onPickedId }) {
     const [query, setQuery] = useState(defaultTitle || '');
     const [loading, setLoading] = useState(false);
+    const [searchLoading, setSearchLoading] = useState(false);
+    const [searchResults, setSearchResults] = useState([]);
+    const [searchDone, setSearchDone] = useState(false);
+    const [selectedResult, setSelectedResult] = useState(null);
     const [msg, setMsg] = useState('');
     const [error, setError] = useState('');
     const [sources, setSources] = useState(() => normalizeVideoSources(value));
-    useEffect(() => { if (defaultTitle) setQuery(defaultTitle); }, [defaultTitle]);
+    useEffect(() => { if (defaultTitle && !selectedResult) setQuery(defaultTitle); }, [defaultTitle]);
     useEffect(() => { setSources(normalizeVideoSources(value)); }, [JSON.stringify(value || [])]);
-    const extract = async () => {
-        const titleText = String(query || '').trim();
-        if (!titleText) { setError('اكتب اسم العمل أولًا.'); return; }
-        setLoading(true); setError(''); setMsg('جاري البحث واستخراج روابط Cinema Box...');
-        const params = new URLSearchParams({
-            title: titleText,
-            type: kind === 'movie' ? 'movie' : 'tv',
-            year: String(defaultYear || ''),
-            season: String(Number(season) || 1),
-            episode: String(Number(episode) || 1)
-        });
+
+    const apiBases = () => {
         const host = String(location.hostname || '').toLowerCase();
         let forceLocalProxy = false;
         try { forceLocalProxy = new URLSearchParams(location.search || '').get('localProxy') === '1'; } catch (_) {}
         const bases = [];
-        const addBase = (v) => { const b = String(v || '').trim().replace(/\/+$/, ''); if (b && !bases.includes(b)) bases.push(b); };
-        // Match the older admin helper: the local Node service is a fallback even when the page is hosted.
+        const addBase = value => { const base = String(value || '').trim().replace(/\/+$/, ''); if (base && !bases.includes(base)) bases.push(base); };
         if (forceLocalProxy || host === 'localhost' || host === '127.0.0.1' || host === '::1') addBase('http://localhost:8787');
         addBase(CINEMANA_PROXY);
         addBase('http://localhost:8787');
+        return bases;
+    };
+    const itemTitle = row => String(row && (row.title || row.name || row.en_title || row.enTitle || row.original_title || row.originalTitle || row.series_name || row.movie_title) || '').trim();
+    const itemId = row => String(row && (row.id || row.movieId || row.movie_id || row.seriesId || row.series_id || row.showId || row.show_id || row.subjectId || row.subject_id) || '').trim();
+    const itemYear = row => String(row && (row.year || row.release_year || row.releaseYear || row.release_date || row.first_air_date) || '').match(/(?:19|20)\d{2}/)?.[0] || '';
+    const itemPoster = row => String(row && (row.poster || row.poster_url || row.posterUrl || row.image || row.image_url || (row.style && (row.style.image || row.style.poster || row.style.poster_url)) || '') || '').trim();
+    const search = async () => {
+        const titleText = String(query || '').trim();
+        if (!titleText) { setError('اكتب اسم الفيلم أو المسلسل أولاً.'); return; }
+        setSearchLoading(true); setError(''); setMsg('جاري البحث عن البوسترات في Cinema Box...');
+        setSearchResults([]); setSearchDone(false); setSelectedResult(null);
+        const params = new URLSearchParams({ q: titleText, type: kind === 'movie' ? 'movie' : 'tv' });
         let lastError = null;
+        let gotEmpty = false;
         try {
-            for (const base of bases) {
+            for (const base of apiBases()) {
                 try {
-                    const response = await cinadamFetch(`${base}/cinemabox/resolve?${params.toString()}`, {
-                        cache: 'no-store',
-                        headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
-                        signal: AbortSignal.timeout(60000)
+                    const response = await cinadamFetch(`${base}/cinemabox/search?${params.toString()}`, {
+                        cache: 'no-store', headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' }, signal: AbortSignal.timeout(30000)
                     });
                     const raw = await response.text();
-                    let data = null;
-                    try { data = JSON.parse(raw); } catch (_) {}
+                    let data = null; try { data = JSON.parse(raw); } catch (_) {}
+                    if (!response.ok || !data || data.ok !== true || !Array.isArray(data.results)) {
+                        lastError = new Error(data && data.error ? String(data.error) : `فشل البحث في Cinema Box (HTTP ${response.status})`);
+                        continue;
+                    }
+                    const usable = data.results.filter(row => itemId(row) && itemTitle(row));
+                    if (usable.length) {
+                        setSearchResults(usable); setSearchDone(true);
+                        setMsg(`تم العثور على ${usable.length} نتيجة. اختَر البوستر المطابق للعمل الذي تريده.`);
+                        return;
+                    }
+                    gotEmpty = true;
+                } catch (e) { lastError = e; }
+            }
+            setSearchDone(true);
+            if (gotEmpty) setMsg('ما ظهرت نتائج بهذا الاسم في Cinema Box. جرّب الاسم الإنجليزي أو جزءاً أقصر من الاسم.');
+            else setError('تعذّر البحث عن بوسترات Cinema Box. ' + String(lastError && lastError.message || 'تحقّق من اتصال محرك Cinema Box.'));
+            setMsg(gotEmpty ? 'ما لقينا نتائج مطابقة. جرّب اسمًا بديلًا أو كلمة أقصر.' : '');
+        } finally { setSearchLoading(false); }
+    };
+
+    const extract = async () => {
+        if (!selectedResult) { setError('ابحث عن العمل أولاً، ثم اختَر بوستره من النتائج.'); return; }
+        const titleText = itemTitle(selectedResult) || String(query || '').trim();
+        const selectedId = itemId(selectedResult);
+        if (!selectedId) { setError('نتيجة Cinema Box المختارة لا تحتوي معرّفاً واضحاً. جرّب اختيار نتيجة ثانية.'); return; }
+        setLoading(true); setError(''); setMsg(`جاري استخراج روابط ${titleText} من Cinema Box...`);
+        const params = new URLSearchParams({
+            title: titleText,
+            type: kind === 'movie' ? 'movie' : 'tv',
+            year: itemYear(selectedResult) || String(defaultYear || ''),
+            season: String(Number(season) || 1),
+            episode: String(Number(episode) || 1),
+            cinemaBoxId: selectedId
+        });
+        let lastError = null;
+        try {
+            for (const base of apiBases()) {
+                try {
+                    const response = await cinadamFetch(`${base}/cinemabox/resolve?${params.toString()}`, {
+                        cache: 'no-store', headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' }, signal: AbortSignal.timeout(60000)
+                    });
+                    const raw = await response.text();
+                    let data = null; try { data = JSON.parse(raw); } catch (_) {}
                     if (!response.ok || !data || data.ok !== true) {
                         lastError = new Error(data && data.error ? String(data.error) : `فشل Cinema Box (HTTP ${response.status})`);
                         continue;
@@ -1611,13 +1658,13 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
                     if (!normalized.length) throw new Error('تم العثور على العمل لكن لم تُرجع الخدمة روابط فيديو قابلة للحفظ.');
                     setSources(normalized);
                     onChange && onChange(normalized);
-                    onPickedId && onPickedId(String(data.cinemaBoxId || ''));
-                    setMsg(`تم استخراج ${normalized.length} جودة. ستُحفظ مع العمل عند الضغط على «حفظ العمل».`);
+                    onPickedId && onPickedId(String(data.cinemaBoxId || selectedId));
+                    setMsg(`تم استخراج ${normalized.length} جودة/رابط من «${String(data.matchedTitle || titleText)}». تُحفظ مع العمل عند الضغط على «حفظ العمل».`);
                     setLoading(false);
                     return;
                 } catch (e) { lastError = e; }
             }
-            throw new Error('تعذر الاتصال بمحرك Cinema Box. آخر خطأ: ' + String(lastError && lastError.message || 'اتصال غير معروف') + '. إذا كنت على cinadam.xyz اسمح بصلاحية Loopback network لهذا الموقع في Chrome، أو افتح النسخة المحلية http://127.0.0.1:8000.');
+            throw new Error('تعذّر استخراج روابط Cinema Box. آخر خطأ: ' + String(lastError && lastError.message || 'اتصال غير معروف') + '.');
         } catch (e) {
             setError(e && e.message ? e.message : 'فشل استخراج روابط Cinema Box.');
             setMsg('');
@@ -1629,12 +1676,29 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
     };
     return React.createElement('div', { className: 'glass-card rounded-2xl p-3.5 border border-emerald-400/25 mt-3.5 min-w-0' },
         React.createElement('p', { className: 'text-[11px] font-bold text-emerald-300 mb-2 flex items-center gap-1.5' },
-            React.createElement(Icon, { name: 'film', className: 'w-3.5 h-3.5' }), 'Cinema Box — استخراج رابط الاحتياط'),
+            React.createElement(Icon, { name: 'film', className: 'w-3.5 h-3.5' }), 'Cinema Box — ابحث بالبوستر ثم استخرج الجودات'),
         React.createElement('p', { className: 'text-[10px] text-slate-500 mb-2' },
-            'استخرج روابط هذا الفيلم أو الحلقة واحفظها مع العمل. سيستخدمها الموقع تلقائيًا إذا تعذّر تشغيل سينمانا؛ المشاهد لا يحتاج لاختيار المصدر.'),
+            'مثل بحث سينمانا: اكتب اسم العمل، اختَر البوستر الصحيح مع السنة، ثم استخرج روابط الفيلم أو الحلقة من نفس نتيجة Cinema Box المختارة.'),
         React.createElement('div', { className: 'flex items-center gap-2' },
-            React.createElement('input', { value: query, onChange: e => setQuery(e.target.value), onKeyDown: e => { if (e.key === 'Enter') extract(); }, placeholder: 'اسم العمل بالإنجليزية أو العربية', className: 'flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-400', dir: 'auto' }),
-            React.createElement('button', { type: 'button', onClick: extract, disabled: loading || !String(query || '').trim(), className: 'shrink-0 px-3.5 py-2 rounded-xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-200 text-xs font-black disabled:opacity-40' }, loading ? 'جاري الاستخراج...' : 'استخراج Cinema Box')),
+            React.createElement('input', { value: query, onChange: e => { setQuery(e.target.value); setSelectedResult(null); setSearchResults([]); setSearchDone(false); setMsg(''); setError(''); }, onKeyDown: e => { if (e.key === 'Enter') search(); }, placeholder: kind === 'movie' ? 'ابحث عن فيلم بالاسم' : 'ابحث عن مسلسل أو أنمي بالاسم', className: 'flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-400', dir: 'auto' }),
+            React.createElement('button', { type: 'button', onClick: search, disabled: searchLoading || !String(query || '').trim(), className: 'shrink-0 px-3.5 py-2 rounded-xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-200 text-xs font-black disabled:opacity-40' }, searchLoading ? 'جاري البحث...' : 'بحث عن البوسترات')),
+        searchDone && searchResults.length > 0 && React.createElement('div', { className: 'mt-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-80 overflow-y-auto pr-0.5' },
+            searchResults.map((row, index) => {
+                const id = itemId(row); const title = itemTitle(row); const yearText = itemYear(row); const poster = itemPoster(row);
+                const isSelected = !!selectedResult && itemId(selectedResult) === id;
+                const category = String(row.category_name || row.category || (String(row.type || '').toUpperCase() === 'SERIES' ? 'Series' : 'Movie'));
+                return React.createElement('button', { key: `${id}-${title}-${index}`, type: 'button', onClick: () => { setSelectedResult(row); setError(''); setMsg(`تم اختيار «${title}»${yearText ? ' (' + yearText + ')' : ''}. اضغط زر استخراج الروابط لتأكيد هذا العمل.`); }, className: `relative min-w-0 text-right rounded-xl overflow-hidden border transition ${isSelected ? 'border-emerald-300 ring-2 ring-emerald-400/30 bg-emerald-400/10' : 'border-white/10 hover:border-emerald-400/60 bg-black/10'}` },
+                    poster ? React.createElement('img', { src: poster, alt: '', loading: 'lazy', className: 'w-full h-28 sm:h-32 object-cover bg-black/20', onError: e => { e.currentTarget.style.display = 'none'; } }) : React.createElement('div', { className: 'w-full h-28 sm:h-32 flex items-center justify-center bg-black/20 text-slate-600' }, React.createElement(Icon, { name: 'film', className: 'w-8 h-8' })),
+                    isSelected && React.createElement('span', { className: 'absolute top-1.5 left-1.5 rounded-full bg-emerald-400 text-slate-950 text-[9px] font-black px-2 py-1' }, 'تم الاختيار'),
+                    React.createElement('div', { className: 'p-2' },
+                        React.createElement('p', { className: 'text-[10px] leading-4 font-bold text-white line-clamp-2 min-h-8', dir: 'auto' }, title),
+                        React.createElement('div', { className: 'mt-1 flex items-center justify-between gap-1 text-[9px] text-slate-400' },
+                            React.createElement('span', { className: 'truncate' }, category),
+                            React.createElement('span', { className: 'shrink-0' }, yearText || 'السنة غير معروفة'))));
+            })),
+        searchDone && searchResults.length > 0 && selectedResult && React.createElement('div', { className: 'mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-2.5' },
+            React.createElement('p', { className: 'text-[10px] text-emerald-100 min-w-0' }, `العمل المحدد: ${itemTitle(selectedResult)} · Cinema Box ID: ${itemId(selectedResult)}`),
+            React.createElement('button', { type: 'button', onClick: extract, disabled: loading, className: 'shrink-0 px-3.5 py-2 rounded-xl bg-emerald-400 text-slate-950 text-xs font-black disabled:opacity-40' }, loading ? 'جاري استخراج الروابط...' : 'استخراج روابط العمل المختار')),
         kind !== 'movie' && React.createElement('p', { className: 'text-[10px] text-slate-500 mt-2' }, `الموسم ${Number(season) || 1} · الحلقة ${Number(episode) || 1}`),
         error && React.createElement('p', { className: 'text-[10px] font-bold text-rose-400 mt-2' }, error),
         msg && React.createElement('p', { className: 'text-[10px] font-bold text-slate-300 mt-2' }, msg),
@@ -1643,7 +1707,6 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
                 source.label || source.quality || `مصدر ${i + 1}`, React.createElement(Icon, { name: 'external-link', className: 'w-3 h-3' }))),
         sources.length > 0 && React.createElement('button', { type: 'button', onClick: clear, className: 'mt-2 block text-[10px] text-slate-500 hover:text-rose-300 underline' }, 'مسح روابط Cinema Box من النموذج')));
 }
-
 
 function CinemaBoxSeriesHelper({ title = '', year = '', seasons = [], onChangeSeasons }) {
     const safeSeasons = Array.isArray(seasons) ? seasons : [];
