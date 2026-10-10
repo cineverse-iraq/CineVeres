@@ -687,6 +687,7 @@ function normalizeTitlePlaybackData(title) {
     clean.videoSources = normalizeVideoSources(clean.videoSources);
     clean.cinemaBoxSources = normalizeVideoSources(clean.cinemaBoxSources);
     clean.cinemaBoxId = String(clean.cinemaBoxId || '').trim();
+    clean.cinemaBoxUrl = normalizeVideoUrl(clean.cinemaBoxUrl || '');
     clean.subtitleUrl = normalizeSubtitleUrl(clean.subtitleUrl || clean.subtitleURL || '');
     clean.subtitleOffset = Number(clean.subtitleOffset) || 0;
     clean.seasons = normalizeSeasonsValue(clean.seasons).map(season => ({
@@ -696,6 +697,7 @@ function normalizeTitlePlaybackData(title) {
             title: String(ep.title || ep.name || '').trim(),
             runtimeMinutes: Number(ep.runtimeMinutes ?? ep.runtime) || 0,
             videoUrl: normalizeVideoUrl(ep.videoUrl || ''),
+            cinemaBoxUrl: normalizeVideoUrl(ep.cinemaBoxUrl || ''),
             videoSources: normalizeVideoSources(ep.videoSources),
             cinemaBoxSources: normalizeVideoSources(ep.cinemaBoxSources),
             cinemaBoxId: String(ep.cinemaBoxId || '').trim(),
@@ -1640,6 +1642,52 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
             sources.map((source, i) => React.createElement('a', { key: source.url || i, href: source.url, target: '_blank', rel: 'noopener noreferrer', className: 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold text-emerald-200 hover:border-emerald-400/40', dir: 'ltr' },
                 source.label || source.quality || `مصدر ${i + 1}`, React.createElement(Icon, { name: 'external-link', className: 'w-3 h-3' }))),
         sources.length > 0 && React.createElement('button', { type: 'button', onClick: clear, className: 'mt-2 block text-[10px] text-slate-500 hover:text-rose-300 underline' }, 'مسح روابط Cinema Box من النموذج')));
+}
+
+
+function CinemaBoxSeriesHelper({ title = '', year = '', seasons = [], onChangeSeasons }) {
+    const safeSeasons = Array.isArray(seasons) ? seasons : [];
+    const [selectedSeason, setSelectedSeason] = useState(String(safeSeasons[0] && safeSeasons[0].number || 1));
+    const season = safeSeasons.find(s => String(Number(s.number) || 1) === selectedSeason) || safeSeasons[0] || null;
+    const episodes = season && Array.isArray(season.episodes) ? season.episodes : [];
+    const [selectedEpisode, setSelectedEpisode] = useState(String(episodes[0] && episodes[0].number || 1));
+    useEffect(() => {
+        const first = safeSeasons[0];
+        if (!safeSeasons.some(s => String(Number(s.number) || 1) === selectedSeason))
+            setSelectedSeason(String(first && first.number || 1));
+    }, [JSON.stringify(safeSeasons.map(s => Number(s.number) || 1))]);
+    useEffect(() => {
+        const nums = (season && Array.isArray(season.episodes) ? season.episodes : []).map(e => Number(e.number) || 1);
+        if (!nums.some(n => String(n) === selectedEpisode)) setSelectedEpisode(String(nums[0] || 1));
+    }, [selectedSeason, JSON.stringify(episodes.map(e => Number(e.number) || 1))]);
+    const pickedEpisode = episodes.find(e => String(Number(e.number) || 1) === selectedEpisode) || episodes[0] || null;
+    const updatePickedEpisode = patch => {
+        if (!season || !pickedEpisode || typeof onChangeSeasons !== 'function') return;
+        const sn = Number(season.number) || 1;
+        const en = Number(pickedEpisode.number) || 1;
+        onChangeSeasons(previous => (Array.isArray(previous) ? previous : []).map(s =>
+            (Number(s.number) || 1) !== sn ? s : {
+                ...s,
+                episodes: (s.episodes || []).map(e => (Number(e.number) || 1) !== en ? e : { ...e, ...patch })
+            }
+        ));
+    };
+    return React.createElement('div', { className: 'mt-4 min-w-0' },
+        safeSeasons.length && episodes.length ? React.createElement(React.Fragment, null,
+            React.createElement('div', { className: 'grid sm:grid-cols-2 gap-2 mb-2.5' },
+                React.createElement('div', null,
+                    React.createElement('label', { className: 'text-[10px] font-bold text-slate-400 block mb-1' }, 'موسم Cinema Box'),
+                    React.createElement('select', { value: selectedSeason, onChange: e => { setSelectedSeason(e.target.value); const next = safeSeasons.find(s => String(Number(s.number) || 1) === e.target.value); setSelectedEpisode(String(next && next.episodes && next.episodes[0] && next.episodes[0].number || 1)); }, className: 'w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-400' },
+                        safeSeasons.map((s, i) => React.createElement('option', { key: `${s.number}-${i}`, value: String(Number(s.number) || i + 1) }, `الموسم ${Number(s.number) || i + 1}`)))),
+                React.createElement('div', null,
+                    React.createElement('label', { className: 'text-[10px] font-bold text-slate-400 block mb-1' }, 'حلقة Cinema Box'),
+                    React.createElement('select', { value: pickedEpisode ? String(Number(pickedEpisode.number) || 1) : selectedEpisode, onChange: e => setSelectedEpisode(e.target.value), className: 'w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-400' },
+                        episodes.map((ep, i) => React.createElement('option', { key: `${ep.number}-${i}`, value: String(Number(ep.number) || i + 1) }, `الحلقة ${Number(ep.number) || i + 1}${ep.title ? ' · ' + ep.title : ''}`))))),
+            React.createElement(CinemaBoxHelper, { kind: 'tv', season: Number(season && season.number) || 1, episode: Number(pickedEpisode && pickedEpisode.number) || 1, defaultTitle: title, defaultYear: year, value: pickedEpisode && pickedEpisode.cinemaBoxSources || [], onChange: sources => updatePickedEpisode({ cinemaBoxSources: sources }), onPickedId: id => updatePickedEpisode({ cinemaBoxId: id }) }),
+            React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1.5' }, 'تُحفظ جودات Cinema Box للحلقة المحددة أعلاه ضمن بيانات الحلقة عند الضغط على «حفظ العمل».')) :
+            React.createElement('div', { className: 'glass-card rounded-2xl p-3.5 border border-emerald-400/25' },
+                React.createElement('p', { className: 'text-[11px] font-bold text-emerald-300 mb-1' }, 'Cinema Box — مصدر المسلسلات والأنمي'),
+                React.createElement('p', { className: 'text-[10px] leading-5 text-slate-400' }, 'استورد المواسم من أداة سينمانا أعلاه أو أضف موسمًا وحلقة أولًا. بعدها اختر الموسم والحلقة هنا لاستخراج روابط Cinema Box وحفظها للحلقة الصحيحة.')));
 }
 
 async function tmdbFindBestByTitle(title, currentType, year) {
@@ -5169,7 +5217,11 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         setSourceBusy('cinemabox');
         setSourceNotice('جاري استخراج رابط Cinema Box والتحقق من الاستجابة…');
         try {
-            const savedBoxSources = normalizeVideoSources(meta && meta.cinemaBoxSources).sort((a, b) => {
+            const manualCinemaBoxUrl = String(meta && meta.cinemaBoxUrl || '').trim();
+            const savedBoxSources = normalizeVideoSources([
+                ...normalizeVideoSources(meta && meta.cinemaBoxSources),
+                ...(manualCinemaBoxUrl ? [{ url: manualCinemaBoxUrl, label: 'Cinema Box' }] : [])
+            ]).filter((source, i, all) => all.findIndex(x => x.url === source.url) === i).sort((a, b) => {
                 const qualityNumber = value => Number((String(value || '').match(/(\d{3,4})p?/i) || [])[1]) || 0;
                 return qualityNumber(b.quality || b.label) - qualityNumber(a.quality || a.label);
             });
@@ -7048,10 +7100,10 @@ function VideoDisplaySettings({ value, onChange }) {
         showCropStudio && (React.createElement(CropStudioModal, { videoUrl: normalizeVideoUrl(v.videoUrl), initial: crop, onCancel: () => setShowCropStudio(false), onSave: (newCrop) => { set('crop', newCrop); setShowCropStudio(false); } }))));
 }
 function emptyForm(type) {
-    return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', runtimeMinutes: 0, rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], cinemaBoxSources: [], cinemaBoxId: '', subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
+    return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', runtimeMinutes: 0, rtRating: '', featured: false, status: 'draft', videoUrl: '', cinemaBoxUrl: '', videoSources: [], cinemaBoxSources: [], cinemaBoxId: '', subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
 }
 function emptyEpisode(num) {
-    return { number: num, title: '', runtimeMinutes: 0, videoUrl: '', videoSources: [], cinemaBoxSources: [], cinemaBoxId: '', subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, imdb: '', tmdbRating: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
+    return { number: num, title: '', runtimeMinutes: 0, videoUrl: '', cinemaBoxUrl: '', videoSources: [], cinemaBoxSources: [], cinemaBoxId: '', subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, imdb: '', tmdbRating: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
 }
 function SubtitleHelper({ value, onChange, sourceId, title, type, season, episode, year, cinemanaId, offset = 0, onOffsetChange }) {
     const [loading, setLoading] = useState(false);
@@ -7173,6 +7225,10 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
                 "\u00BB")),
         React.createElement("div", { className: "mt-3.5" },
             React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u062D\u0644\u0642\u0629 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: e.videoUrl, onChange: v => set('videoUrl', v), folder: "episodes", accept: "video/*" })),
+        React.createElement("div", { className: "mt-3.5 rounded-2xl border border-emerald-400/20 bg-emerald-500/[0.04] p-3" },
+            React.createElement("label", { className: "text-xs font-bold text-emerald-200 mb-1.5 block" }, "رابط تشغيل هذه الحلقة من Cinema Box (اختياري)"),
+            React.createElement("input", { type: "url", dir: "ltr", value: e.cinemaBoxUrl || '', onChange: ev => set('cinemaBoxUrl', ev.target.value), placeholder: "https://.../episode.mp4", className: "w-full bg-glass-900 border border-emerald-400/20 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400" }),
+            React.createElement("p", { className: "text-[10px] text-slate-500 mt-1.5" }, "إذا فشل تشغيل سينمانا، يستطيع المشغل استخدام هذا الرابط المباشر كاحتياط.")),
         React.createElement("div", { className: "grid md:grid-cols-2 gap-3 items-start mt-3.5" },
             React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb) }),
             React.createElement(CinemaBoxHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, value: e.cinemaBoxSources || [], onChange: sources => set('cinemaBoxSources', sources), onPickedId: id => set('cinemaBoxId', id) })),
@@ -7508,6 +7564,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             featured: form.featured === true,
             status: form.status === 'published' ? 'published' : 'draft',
             sourceId: sourceId || '',
+            cinemaBoxUrl: normalizeVideoUrl(String(form.cinemaBoxUrl || '').trim()),
             createdAt: initial ? (initial.createdAt || Date.now()) : Date.now(),
             likes: initial ? (initial.likes || 0) : 0,
             views: initial ? (initial.views || 0) : 0,
@@ -7564,7 +7621,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 poster: (s.poster || '').trim(),
                 episodeThumbnail: (s.episodeThumbnail || '').trim(),
                 episodes: (s.episodes || []).map(e => ({
-                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), cinemaBoxSources: normalizeVideoSources(e.cinemaBoxSources), cinemaBoxId: String(e.cinemaBoxId || '').trim(), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || '').trim(), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
+                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), cinemaBoxUrl: normalizeVideoUrl(String(e.cinemaBoxUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), cinemaBoxSources: normalizeVideoSources(e.cinemaBoxSources), cinemaBoxId: String(e.cinemaBoxId || '').trim(), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || '').trim(), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
                     trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, introStart: Number(e.introStart) || 0, introEnd: Number(e.introEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
                 }))
             }));
@@ -7643,6 +7700,10 @@ function AdminContentForm({ initial, defaultType, onDone }) {
         React.createElement("div", { className: "mt-5" },
             React.createElement("label", { className: labelCls }, "\u0627\u0644\u0648\u0635\u0641"),
             React.createElement("textarea", { value: form.description, onChange: e => set('description', e.target.value), rows: 3, className: inputCls })),
+        React.createElement("div", { className: "mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/[0.04] p-3.5" },
+            React.createElement("label", { className: labelCls }, form.type === 'movie' ? "رابط تشغيل Cinema Box المباشر (اختياري)" : "رابط صفحة Cinema Box للعمل (اختياري)"),
+            React.createElement("input", { type: "url", dir: "ltr", value: form.cinemaBoxUrl || '', onChange: e => set('cinemaBoxUrl', e.target.value), placeholder: form.type === 'movie' ? "https://.../movie.mp4" : "https://.../series-or-anime", className: inputCls }),
+            React.createElement("p", { className: "text-[10px] text-slate-500 mt-1.5" }, form.type === 'movie' ? "يمكن استخدام الرابط كاحتياط عند فشل سينمانا. أدخل رابط تشغيل مباشر قابلًا للوصول." : "هذا الرابط يحفظ مرجع العمل فقط. رابط تشغيل Cinema Box الخاص بكل حلقة يُضاف داخل تعديل الحلقة أدناه.")),
         form.type === 'movie' ? (React.createElement("div", null,
             React.createElement("div", { className: "mt-5" },
                 React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u0644\u0645 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: form.videoUrl, onChange: v => set('videoUrl', v), folder: "videos", accept: "video/*" })),
@@ -7674,6 +7735,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                         setActiveSeasonIdx(0);
                         setEditingEpisodeIdx(null);
                     } })),
+            React.createElement(CinemaBoxSeriesHelper, { title: form.name, year: form.year, seasons: form.seasons || [], onChangeSeasons: updater => setForm(prev => ({ ...prev, seasons: typeof updater === 'function' ? updater(prev.seasons || []) : updater })) }),
             React.createElement("div", { className: "mt-6 border-t border-white/10 pt-5" },
                 React.createElement("div", { className: "flex items-center justify-between mb-4" },
                     React.createElement("h4", { className: "font-black text-white text-base" }, "\u0627\u0644\u0645\u0648\u0627\u0633\u0645 \u0648\u0627\u0644\u062D\u0644\u0642\u0627\u062A"),
