@@ -1565,7 +1565,9 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
     const [loading, setLoading] = useState(false);
     const [searchLoading, setSearchLoading] = useState(false);
     const [searchResults, setSearchResults] = useState([]);
+    const [visibleResultCount, setVisibleResultCount] = useState(60);
     const [searchDone, setSearchDone] = useState(false);
+    const [searchAliases, setSearchAliases] = useState([]);
     const [selectedResult, setSelectedResult] = useState(null);
     const [msg, setMsg] = useState('');
     const [error, setError] = useState('');
@@ -1579,9 +1581,9 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
         try { forceLocalProxy = new URLSearchParams(location.search || '').get('localProxy') === '1'; } catch (_) {}
         const bases = [];
         const addBase = value => { const base = String(value || '').trim().replace(/\/+$/, ''); if (base && !bases.includes(base)) bases.push(base); };
-        if (forceLocalProxy || host === 'localhost' || host === '127.0.0.1' || host === '::1') addBase('http://localhost:8787');
+        const isLocalAdmin = forceLocalProxy || host === 'localhost' || host === '127.0.0.1' || host === '::1';
+        if (isLocalAdmin) addBase('http://127.0.0.1:8787');
         addBase(CINEMANA_PROXY);
-        addBase('http://localhost:8787');
         return bases;
     };
     const itemTitle = row => String(row && (row.title || row.name || row.en_title || row.enTitle || row.original_title || row.originalTitle || row.series_name || row.movie_title) || '').trim();
@@ -1589,25 +1591,72 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
     const itemYear = row => String(row && (row.year || row.release_year || row.releaseYear || row.release_date || row.first_air_date) || '').match(/(?:19|20)\d{2}/)?.[0] || '';
     const itemPoster = row => String(row && (row.poster || row.poster_url || row.posterUrl || row.image || row.image_url || (row.style && (row.style.image || row.style.poster || row.style.poster_url)) || '') || '').trim();
     const normalizeCatalogTitle = value => String(value || '').normalize('NFKD').toLowerCase().replace(/[\u0300-\u036f]/g, '').replace(/&/g, ' and ').replace(/[^a-z0-9\u0600-\u06ff]+/g, ' ').trim().replace(/\s+/g, ' ');
-    const candidateCompatibility = row => {
-        const wantedTitle = normalizeCatalogTitle(defaultTitle || query);
+    const candidateCompatibility = (row, aliasesOverride = searchAliases) => {
+        const wantedTitles = [defaultTitle, query, ...(Array.isArray(aliasesOverride) ? aliasesOverride : [])]
+            .map(normalizeCatalogTitle).filter(Boolean);
         const actualTitle = normalizeCatalogTitle(itemTitle(row));
         const wantedYear = String(defaultYear || '').match(/(?:19|20)\d{2}/)?.[0] || '';
         const actualYear = itemYear(row);
         if (wantedYear && actualYear && wantedYear !== actualYear) {
             return { ok: false, reason: `السنة ${actualYear} لا تطابق سنة العمل المطلوب ${wantedYear}.` };
         }
-        if (wantedTitle && actualTitle && wantedTitle === actualTitle) return { ok: true, reason: '' };
-        // A title that merely contains the requested one-word title (e.g. Dexter's Laboratory)
-        // is not an acceptable match for the original series. For multi-word aliases, require
-        // the same year plus a strong token match before allowing selection.
-        const wantedWords = wantedTitle.split(' ').filter(Boolean);
-        const actualWords = new Set(actualTitle.split(' ').filter(Boolean));
-        if (wantedWords.length >= 2 && wantedYear && actualYear === wantedYear) {
-            const matched = wantedWords.filter(word => actualWords.has(word)).length;
-            if (matched / wantedWords.length >= 0.75) return { ok: true, reason: '' };
+        if (actualTitle && wantedTitles.includes(actualTitle)) return { ok: true, reason: '' };
+        // The source result must match a known title exactly. A one-word substring such as
+        // "Dexter's Laboratory" must never stand in for "Dexter" (2006).
+        const titleWords = actualTitle.split(' ').filter(Boolean);
+        for (const wanted of wantedTitles) {
+            const words = wanted.split(' ').filter(Boolean);
+            if (words.length >= 2 && wantedYear && actualYear === wantedYear && words.every(w => titleWords.includes(w))) {
+                return { ok: true, reason: '' };
+            }
         }
-        return { ok: false, reason: `«${itemTitle(row)}» لا يطابق العنوان المطلوب «${defaultTitle || query}».` };
+        return { ok: false, reason: `«${itemTitle(row)}» لا يطابق أي عنوان معروف للعمل المطلوب «${defaultTitle || query}».` };
+    };
+
+    const findTmdbSearchAliases = async titleText => {
+        const aliases = new Set();
+        const media = kind === 'movie' ? 'movie' : 'tv';
+        const expectedYear = String(defaultYear || '').match(/(?:19|20)\d{2}/)?.[0] || '';
+        const normalize = normalizeCatalogTitle;
+        const expectedNames = [titleText, defaultTitle].map(normalize).filter(Boolean);
+        const readYear = row => String(row && (row.release_date || row.first_air_date || row.year) || '').match(/(?:19|20)\d{2}/)?.[0] || '';
+        const getNames = row => [row && row.title, row && row.name, row && row.original_title, row && row.original_name]
+            .filter(value => typeof value === 'string' && value.trim());
+        const scoreRow = row => {
+            const names = getNames(row).map(normalize);
+            let score = names.reduce((best, name) => Math.max(best,
+                expectedNames.includes(name) ? 120 : expectedNames.some(w => w.length >= 3 && name === w) ? 115 :
+                (expectedNames.some(w => w.split(' ').length >= 2 && (name.includes(w) || w.includes(name))) ? 58 : 0)), 0);
+            const actualYear = readYear(row);
+            if (expectedYear && actualYear) score += actualYear === expectedYear ? 45 : -100;
+            if (row && Number(row.id) > 0) score += 2;
+            return score;
+        };
+        // TMDB supplies legitimate translated/original names only; all playable IDs and links still
+        // must come from Cinema Box. A loose/no-year result is not used to authorize a source card.
+        for (const language of ['en-US', 'ar-IQ']) {
+            try {
+                const data = await tmdbFetch(`search/${media}`, {
+                    query: titleText,
+                    language,
+                    include_adult: 'false',
+                    page: 1,
+                    ...(expectedYear ? (media === 'movie' ? { year: expectedYear } : { first_air_date_year: expectedYear }) : {})
+                });
+                const ranked = (Array.isArray(data && data.results) ? data.results : [])
+                    .map(row => ({ row, score: scoreRow(row) })).sort((a, b) => b.score - a.score);
+                const best = ranked[0];
+                if (!best || best.score < 70) continue;
+                const bestYear = readYear(best.row);
+                if (expectedYear && bestYear && bestYear !== expectedYear) continue;
+                for (const name of getNames(best.row)) {
+                    const clean = String(name).trim();
+                    const key = normalize(clean);
+                    if (key && !expectedNames.includes(key) && clean.length <= 140) aliases.add(clean);
+                }
+            } catch (_) {}
+        }
+        return [...aliases].slice(0, 6);
     };
     const search = async () => {
         const titleText = String(query || '').trim();
@@ -1615,15 +1664,21 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
         // A new search invalidates the previously selected catalog item for this episode.
         onPickedId && onPickedId('');
         setSearchLoading(true); setError(''); setMsg('جاري البحث عن البوسترات في Cinema Box...');
-        setSearchResults([]); setSearchDone(false); setSelectedResult(null);
-        const params = new URLSearchParams({ q: titleText, type: kind === 'movie' ? 'movie' : 'tv' });
+        setSearchResults([]); setVisibleResultCount(60); setSearchDone(false); setSelectedResult(null);
         let lastError = null;
         let gotEmpty = false;
         try {
+            const resolvedAliases = await findTmdbSearchAliases(titleText);
+            setSearchAliases(resolvedAliases);
+            const searchPayload = { q: titleText, type: kind === 'movie' ? 'movie' : 'tv', aliases: resolvedAliases };
             for (const base of apiBases()) {
                 try {
-                    const response = await cinadamFetch(`${base}/cinemabox/search?${params.toString()}`, {
-                        cache: 'no-store', headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' }, signal: AbortSignal.timeout(30000)
+                    const response = await cinadamFetch(`${base}/cinemabox/search`, {
+                        method: 'POST',
+                        cache: 'no-store',
+                        headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
+                        body: JSON.stringify(searchPayload),
+                        signal: AbortSignal.timeout(45000)
                     });
                     const raw = await response.text();
                     let data = null; try { data = JSON.parse(raw); } catch (_) {}
@@ -1634,7 +1689,7 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
                     const usable = data.results.filter(row => itemId(row) && itemTitle(row));
                     if (usable.length) {
                         setSearchResults(usable); setSearchDone(true);
-                        const compatibleCount = usable.filter(row => candidateCompatibility(row).ok).length;
+                        const compatibleCount = usable.filter(row => candidateCompatibility(row, resolvedAliases).ok).length;
                         if (compatibleCount) {
                             setMsg(`تم العثور على ${usable.length} نتيجة، منها ${compatibleCount} تطابق اسم/سنة العمل. اختَر نتيجة مطابقة فقط.`);
                         } else {
@@ -1708,10 +1763,10 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
         React.createElement('p', { className: 'text-[10px] text-slate-500 mb-2' },
             'مثل بحث سينمانا: اكتب اسم العمل، اختَر البوستر الصحيح مع السنة، ثم استخرج روابط الفيلم أو الحلقة من نفس نتيجة Cinema Box المختارة.'),
         React.createElement('div', { className: 'flex items-center gap-2' },
-            React.createElement('input', { value: query, onChange: e => { setQuery(e.target.value); setSelectedResult(null); onPickedId && onPickedId(''); setSearchResults([]); setSearchDone(false); setMsg(''); setError(''); }, onKeyDown: e => { if (e.key === 'Enter') search(); }, placeholder: kind === 'movie' ? 'ابحث عن فيلم بالاسم' : 'ابحث عن مسلسل أو أنمي بالاسم', className: 'flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-400', dir: 'auto' }),
+            React.createElement('input', { value: query, onChange: e => { setQuery(e.target.value); setSelectedResult(null); onPickedId && onPickedId(''); setSearchResults([]); setVisibleResultCount(60); setSearchDone(false); setMsg(''); setError(''); }, onKeyDown: e => { if (e.key === 'Enter') search(); }, placeholder: kind === 'movie' ? 'ابحث عن فيلم بالاسم' : 'ابحث عن مسلسل أو أنمي بالاسم', className: 'flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-400', dir: 'auto' }),
             React.createElement('button', { type: 'button', onClick: search, disabled: searchLoading || !String(query || '').trim(), className: 'shrink-0 px-3.5 py-2 rounded-xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-200 text-xs font-black disabled:opacity-40' }, searchLoading ? 'جاري البحث...' : 'بحث عن البوسترات')),
         searchDone && searchResults.length > 0 && React.createElement('div', { className: 'mt-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-80 overflow-y-auto pr-0.5' },
-            searchResults.map((row, index) => {
+            searchResults.slice(0, visibleResultCount).map((row, index) => {
                 const id = itemId(row); const title = itemTitle(row); const yearText = itemYear(row); const poster = itemPoster(row);
                 const compatibility = candidateCompatibility(row);
                 const isSelected = !!selectedResult && itemId(selectedResult) === id;
@@ -1727,6 +1782,9 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
                             React.createElement('span', { className: 'shrink-0' }, yearText || 'السنة غير معروفة')),
                         !compatibility.ok && React.createElement('p', { className: 'mt-1 text-[9px] leading-4 text-rose-300' }, compatibility.reason)));
             })),
+        searchDone && searchResults.length > visibleResultCount && React.createElement('div', { className: 'mt-2 flex items-center justify-center gap-2 text-[10px] text-slate-400' },
+            React.createElement('span', null, `عرض ${visibleResultCount} من ${searchResults.length} نتيجة`),
+            React.createElement('button', { type: 'button', onClick: () => setVisibleResultCount(n => Math.min(n + 60, searchResults.length)), className: 'px-3 py-1.5 rounded-lg border border-emerald-400/25 bg-emerald-400/10 text-emerald-200 font-black' }, `عرض 60 نتيجة إضافية (${searchResults.length - visibleResultCount} متبقية)`)),
         searchDone && searchResults.length > 0 && selectedResult && React.createElement('div', { className: 'mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-2.5' },
             React.createElement('p', { className: 'text-[10px] text-emerald-100 min-w-0' }, `العمل المحدد: ${itemTitle(selectedResult)} · Cinema Box ID: ${itemId(selectedResult)}`),
             React.createElement('button', { type: 'button', onClick: extract, disabled: loading, className: 'shrink-0 px-3.5 py-2 rounded-xl bg-emerald-400 text-slate-950 text-xs font-black disabled:opacity-40' }, loading ? 'جاري استخراج الروابط...' : 'استخراج روابط العمل المختار')),
@@ -1762,7 +1820,7 @@ function CinemaBoxSeriesHelper({ title = '', year = '', seasons = [], onChangeSe
         if (!nums.some(n => String(n) === selectedEpisode)) setSelectedEpisode(String(nums[0] || 1));
     }, [selectedSeason, JSON.stringify(episodes.map(e => Number(e.number) || 1))]);
     const pickedEpisode = episodes.find(e => String(Number(e.number) || 1) === selectedEpisode) || episodes[0] || null;
-    useEffect(() => { setVerifiedBatchCatalogSelection(null); }, [selectedSeason, selectedEpisode, title, year]);
+    useEffect(() => { setVerifiedBatchCatalogSelection(null); }, [title, year]);
     const updatePickedEpisode = patch => {
         if (!season || !pickedEpisode || typeof onChangeSeasons !== 'function') return;
         const sn = Number(season.number) || 1;
@@ -1790,9 +1848,9 @@ function CinemaBoxSeriesHelper({ title = '', year = '', seasons = [], onChangeSe
         let forceLocalProxy = false;
         try { forceLocalProxy = new URLSearchParams(location.search || '').get('localProxy') === '1'; } catch (_) {}
         const host = String(location.hostname || '').toLowerCase();
-        if (forceLocalProxy || host === 'localhost' || host === '127.0.0.1' || host === '::1') addBase('http://localhost:8787');
+        const isLocalAdmin = forceLocalProxy || host === 'localhost' || host === '127.0.0.1' || host === '::1';
+        if (isLocalAdmin) addBase('http://127.0.0.1:8787');
         addBase(CINEMANA_PROXY);
-        addBase('http://localhost:8787');
         let lastError = null;
         for (const base of bases) {
             try {
@@ -1837,11 +1895,9 @@ function CinemaBoxSeriesHelper({ title = '', year = '', seasons = [], onChangeSe
             cinemaBoxId: String(ep.cinemaBoxId || '').trim(),
             existingSources: normalizeVideoSources(ep.cinemaBoxSources).length > 0
         })));
-        // Never fall back to catalog IDs left over from an earlier failed/mismatched batch.
-        // Require a poster explicitly selected and validated during the current UI session.
         const selectedCatalogId = String(verifiedBatchCatalogSelection && verifiedBatchCatalogSelection.id || '').trim();
         if (!selectedCatalogId) {
-            setBatchStatus({ message: 'أوقفت الاستخراج الآمن: لازم تبحث عن بوستر مطابق لاسم وسنة المسلسل وتختاره في قسم Cinema Box بهذه الجلسة. لن نستخدم معرّفات قديمة محفوظة من محاولة سابقة.' });
+            setBatchStatus({ message: 'أوقفت الاستخراج: ابحث عن بوستر مطابق واختره بقسم Cinema Box أولاً. لن نستخدم معرّفات قديمة.' });
             return;
         }
         if (!allTargets.length) {
@@ -1854,52 +1910,119 @@ function CinemaBoxSeriesHelper({ title = '', year = '', seasons = [], onChangeSe
             setBatchStatus({ message: `كل الحلقات المحددة لديها روابط Cinema Box محفوظة (${skipped}). فعّل إعادة الاستخراج إذا تريد تحديثها.` });
             return;
         }
+        const host = String(location.hostname || '').toLowerCase();
+        let forceLocalProxy = false;
+        try { forceLocalProxy = new URLSearchParams(location.search || '').get('localProxy') === '1'; } catch (_) {}
+        const bases = [];
+        const addBase = value => { const base = String(value || '').trim().replace(/\/+$/, ''); if (base && !bases.includes(base)) bases.push(base); };
+        if (forceLocalProxy || host === 'localhost' || host === '127.0.0.1' || host === '::1') addBase('http://127.0.0.1:8787');
+        addBase(CINEMANA_PROXY);
+        if (!bases.length) {
+            setBatchStatus({ message: 'ماكو API إداري مضبوط. افتح لوحة الإدارة مع ?localProxy=1 حتى يستخدم Node المحلي.' });
+            return;
+        }
+        const readJson = async response => {
+            const raw = await response.text();
+            let data = null; try { data = JSON.parse(raw); } catch (_) {}
+            if (!response.ok || !data || data.ok !== true) throw new Error(data && data.error ? String(data.error) : `API HTTP ${response.status}`);
+            return data;
+        };
+        const postAt = async (base, path, payload) => {
+            const response = await cinadamFetch(`${base}${path}`, {
+                method: 'POST', cache: 'no-store',
+                headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
+                body: JSON.stringify(payload), signal: AbortSignal.timeout(30000)
+            });
+            return readJson(response);
+        };
         stopBatchRef.current = false;
         setBatchRunning(true);
-        setBatchStatus({ done: skipped, total: allTargets.length, success: 0, failed: 0, skipped, current: 'بدء استخراج الروابط…', errors: [] });
-        let success = 0, failed = 0, processed = 0;
+        setBatchStatus({ done: skipped, total: allTargets.length, success: 0, failed: 0, skipped, current: 'تهيئة مهمة الاستخراج…', errors: [] });
+        let activeBase = '';
+        let jobId = '';
+        let cursor = 0;
+        let stopSent = false;
+        const seenResultKeys = new Set();
         const errors = [];
+        let consecutivePollErrors = 0;
         try {
-            for (const target of targets) {
-                if (stopBatchRef.current) break;
-                const currentLabel = `الموسم ${target.seasonNumber} · الحلقة ${target.episodeNumber}`;
-                setBatchStatus({ done: skipped + processed, total: allTargets.length, success, failed, skipped, current: `جاري استخراج ${currentLabel}…`, errors: errors.slice(0, 6) });
+            let startError = null;
+            for (const base of bases) {
                 try {
-                    const result = await resolveCinemaBoxEpisode(target.seasonNumber, target.episodeNumber, selectedCatalogId);
-                    // Complete and persist the active request even if the user asked to stop mid-request.
-                    const firstUrl = result.sources[0] && result.sources[0].url || '';
-                    onChangeSeasons(previous => (Array.isArray(previous) ? previous : []).map(s =>
-                        (Number(s.number) || 1) !== target.seasonNumber ? s : {
-                            ...s,
-                            episodes: (s.episodes || []).map(ep => (Number(ep.number) || 1) !== target.episodeNumber ? ep : {
-                                ...ep,
-                                cinemaBoxSources: result.sources,
-                                cinemaBoxId: result.cinemaBoxId,
-                                cinemaBoxUrl: firstUrl || ep.cinemaBoxUrl || ''
-                            })
-                        }
-                    ));
-                    success++;
-                } catch (e) {
-                    failed++;
-                    errors.push(`${currentLabel}: ${String(e && e.message || e).slice(0, 180)}`);
-                }
-                processed++;
-                setBatchStatus({ done: skipped + processed, total: allTargets.length, success, failed, skipped, current: currentLabel, errors: errors.slice(0, 6) });
-                // Sequential requests avoid overwhelming the service or triggering temporary throttling.
-                if (!stopBatchRef.current && processed < targets.length) await new Promise(resolve => setTimeout(resolve, 250));
+                    const started = await postAt(base, '/cinemabox/batch/start', {
+                        cinemaBoxId: selectedCatalogId,
+                        title: String(verifiedBatchCatalogSelection && verifiedBatchCatalogSelection.title || title || '').trim(),
+                        year: String(verifiedBatchCatalogSelection && verifiedBatchCatalogSelection.year || year || ''),
+                        type: 'tv',
+                        targets: targets.map(t => ({ season: t.seasonNumber, episode: t.episodeNumber }))
+                    });
+                    if (!started.jobId) throw new Error('السيرفر لم يرجع معرّف مهمة الاستخراج.');
+                    activeBase = base; jobId = String(started.jobId); break;
+                } catch (e) { startError = e; }
             }
-            const stopped = stopBatchRef.current;
-            setBatchStatus({
-                done: skipped + processed,
-                total: allTargets.length,
-                success,
-                failed,
-                skipped,
-                stopped,
-                message: stopped ? 'تم إيقاف العملية بعد الطلب الجاري.' : `اكتمل الاستخراج: نجح ${success}، فشل ${failed}، وتجاوز ${skipped} لديها روابط محفوظة. اضغط «حفظ العمل» لحفظ النتائج في Firebase.`,
-                errors: errors.slice(0, 6)
-            });
+            if (!jobId) throw startError || new Error('تعذر بدء استخراج الحلقات.');
+            while (true) {
+                if (stopBatchRef.current && !stopSent) {
+                    stopSent = true;
+                    try { await postAt(activeBase, '/cinemabox/batch/stop', { jobId }); } catch (_) {}
+                }
+                let status;
+                try {
+                    const response = await cinadamFetch(`${activeBase}/cinemabox/batch/status?jobId=${encodeURIComponent(jobId)}&since=${cursor}`, {
+                        cache: 'no-store', headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' }, signal: AbortSignal.timeout(15000)
+                    });
+                    status = await readJson(response);
+                } catch (e) {
+                    // Retry temporary network failures, but never leave the admin UI polling forever.
+                    consecutivePollErrors++;
+                    errors.push(`تعذّر تحديث حالة المهمة: ${String(e && e.message || e).slice(0, 140)}`);
+                    setBatchStatus(prev => ({ ...(prev || {}), current: 'الاتصال انقطع مؤقتاً؛ إعادة محاولة متابعة المهمة…', errors: [...new Set(errors)].slice(-6) }));
+                    if (consecutivePollErrors >= 8) throw new Error('انقطع الاتصال بمهمة الاستخراج بعد 8 محاولات متابعة. قد تبقى المهمة تعمل في السيرفر؛ افحص الحالة ثم أعد المحاولة قبل تشغيل مهمة ثانية.');
+                    await new Promise(resolve => setTimeout(resolve, 1200));
+                    continue;
+                }
+                consecutivePollErrors = 0;
+                const newResults = Array.isArray(status.results) ? status.results : [];
+                cursor += newResults.length;
+                for (const result of newResults) {
+                    const key = `${Number(result.season)||1}x${Number(result.episode)||1}`;
+                    if (seenResultKeys.has(key)) continue;
+                    seenResultKeys.add(key);
+                    if (result.ok && Array.isArray(result.sources) && result.sources.length) {
+                        const targetSeason = Number(result.season) || 1;
+                        const targetEpisode = Number(result.episode) || 1;
+                        const normalizedSources = normalizeVideoSources(result.sources);
+                        if (normalizedSources.length) {
+                            const firstUrl = normalizedSources[0].url || '';
+                            onChangeSeasons(previous => (Array.isArray(previous) ? previous : []).map(s =>
+                                (Number(s.number) || 1) !== targetSeason ? s : {
+                                    ...s,
+                                    episodes: (s.episodes || []).map(ep => (Number(ep.number) || 1) !== targetEpisode ? ep : {
+                                        ...ep, cinemaBoxSources: normalizedSources,
+                                        cinemaBoxId: String(result.cinemaBoxId || selectedCatalogId),
+                                        cinemaBoxUrl: firstUrl || ep.cinemaBoxUrl || ''
+                                    })
+                                }
+                            ));
+                        }
+                    } else if (result.error) errors.push(`الموسم ${result.season} · الحلقة ${result.episode}: ${String(result.error).slice(0,180)}`);
+                }
+                const done = skipped + (Number(status.done) || seenResultKeys.size);
+                const terminal = ['completed','completed_with_errors','stopped','failed'].includes(String(status.status));
+                setBatchStatus({
+                    done: Math.min(allTargets.length, done), total: allTargets.length,
+                    success: Number(status.success) || 0, failed: Number(status.failed) || 0, skipped,
+                    stopped: Boolean(status.stopped || status.status === 'stopped'),
+                    current: status.current || (terminal ? '' : 'جاري استخراج الحلقات…'),
+                    message: terminal ? (status.message || 'اكتملت مهمة الاستخراج.') : `المهمة تعمل: ${Number(status.success)||0} نجاح · ${Number(status.failed)||0} فشل.`,
+                    errors: [...(Array.isArray(status.errors) ? status.errors : []), ...errors].slice(-6)
+                });
+                if (terminal) break;
+                await new Promise(resolve => setTimeout(resolve, 750));
+            }
+            setBatchStatus(prev => ({ ...(prev || {}), message: `${prev && prev.message ? prev.message + ' ' : ''}الروابط المستخرجة أُضيفت للنموذج؛ اضغط «حفظ العمل» لحفظها في Firebase.` }));
+        } catch (e) {
+            setBatchStatus(prev => ({ ...(prev || {}), message: `تعذّر تشغيل الاستخراج الجماعي: ${String(e && e.message || e)}`, errors: [...(prev && prev.errors || []), String(e && e.message || e)].slice(-6) }));
         } finally {
             setBatchRunning(false);
         }
@@ -1908,7 +2031,7 @@ function CinemaBoxSeriesHelper({ title = '', year = '', seasons = [], onChangeSe
         safeSeasons.length && episodes.length ? React.createElement(React.Fragment, null,
             React.createElement('div', { className: 'glass-card rounded-2xl p-3.5 border border-emerald-400/25 mb-3' },
                 React.createElement('p', { className: 'text-[11px] font-black text-emerald-300 mb-1' }, 'استخراج جماعي لروابط Cinema Box'),
-                React.createElement('p', { className: 'text-[10px] leading-5 text-slate-400 mb-2.5' }, 'اختَر بوستر المسلسل من قسم Cinema Box أولاً؛ سيُستخدم معرّفه نفسه لكل المواسم بدل إعادة البحث بالاسم لكل حلقة. الفشل هنا لا يعني بالضرورة أن الحلقة بلا روابط؛ قد تعجز الخدمة عن مطابقة الموسم/الحلقة. النتائج تبقى في النموذج حتى تضغط «حفظ العمل».'),
+                React.createElement('p', { className: 'text-[10px] leading-5 text-slate-400 mb-2.5' }, 'اختَر بوستر المسلسل من قسم Cinema Box أولاً؛ السيرفر يجلب التفاصيل مرة واحدة ويخزن بيانات المواسم مؤقتاً، ثم يستخرج الحلقات بتوازي محدود. الفشل لا يعني بالضرورة غياب الروابط؛ قد لا يعرض المصدر الموسم أو الحلقة في استجابته. النتائج تبقى في النموذج حتى تضغط «حفظ العمل».'),
                 React.createElement('div', { className: 'flex flex-wrap items-center gap-2' },
                     React.createElement('button', { type: 'button', onClick: () => runBatchExtraction('season'), disabled: batchRunning || !episodes.length, className: 'px-3.5 py-2 rounded-xl bg-emerald-500/15 border border-emerald-400/35 text-emerald-200 text-xs font-black disabled:opacity-40' }, batchRunning ? 'جاري الاستخراج…' : `استخراج حلقات الموسم ${Number(season && season.number) || 1} (${episodes.length})`),
                     React.createElement('button', { type: 'button', onClick: () => runBatchExtraction('all'), disabled: batchRunning || !safeSeasons.some(s => (s.episodes || []).length), className: 'px-3.5 py-2 rounded-xl bg-emerald-500/15 border border-emerald-400/35 text-emerald-200 text-xs font-black disabled:opacity-40' }, `استخراج جميع الحلقات (${safeSeasons.reduce((n, s) => n + (Array.isArray(s.episodes) ? s.episodes.length : 0), 0)})`),
@@ -3753,10 +3876,19 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onReady, o
     const outroTriggeredRef = useRef(false);
     const progressSaveRef = useRef(onProgressSave);
     const readyNotifiedRef = useRef(false);
+    const stableReadyTimerRef = useRef(null);
+    const stallWatchdogRef = useRef(null);
+    const stallTriggeredRef = useRef(false);
     const notifyReady = () => {
-        if (readyNotifiedRef.current) return;
-        readyNotifiedRef.current = true;
-        try { onReady && onReady(); } catch (e) { }
+        if (readyNotifiedRef.current || stableReadyTimerRef.current) return;
+        stableReadyTimerRef.current = setTimeout(() => {
+            stableReadyTimerRef.current = null;
+            const videoEl = videoRef.current;
+            // Save a preferred source only after real playback has continued for several seconds.
+            if (!videoEl || videoEl.paused || videoEl.ended || videoEl.readyState < 2) return;
+            readyNotifiedRef.current = true;
+            try { onReady && onReady(); } catch (e) { }
+        }, 3500);
     };
     const lastSavedProgressRef = useRef(0);
     const latestProgressRef = useRef({ position: 0, duration: 0 });
@@ -3851,7 +3983,16 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onReady, o
     const c = crop || {};
     const fit = (isMobile ? fitMobile : fitDesktop) || 'contain';
     const cropReady = fit === 'crop' && c.active && c.width > 0 && c.height > 0 && stage.w > 0 && stage.h > 0 && natural.w > 0 && natural.h > 0;
-    useEffect(() => { completedRef.current = false; outroTriggeredRef.current = false; readyNotifiedRef.current = false; }, [src]);
+    useEffect(() => {
+        completedRef.current = false;
+        outroTriggeredRef.current = false;
+        readyNotifiedRef.current = false;
+        stallTriggeredRef.current = false;
+        if (stableReadyTimerRef.current) clearTimeout(stableReadyTimerRef.current);
+        stableReadyTimerRef.current = null;
+        if (stallWatchdogRef.current) clearTimeout(stallWatchdogRef.current);
+        stallWatchdogRef.current = null;
+    }, [src]);
     useEffect(() => {
         let cancelled = false;
         setSubError('');
@@ -4032,10 +4173,13 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onReady, o
             videoEl.load();
         };
         setup();
-        const stuckTimer = setTimeout(() => { if (videoEl.readyState < 2) {
-            setLoading(false);
-            onError && onError();
-        } }, CV_LOW_POWER ? 20000 : 14000);
+        const stuckTimer = setTimeout(() => {
+            if (videoEl.readyState < 2 && !stallTriggeredRef.current) {
+                stallTriggeredRef.current = true;
+                setLoading(false);
+                try { onError && onError({ reason: 'timeout', currentTime: Number(videoEl.currentTime) || 0 }); } catch (_) {}
+            }
+        }, CV_LOW_POWER ? 20000 : 14000);
         return () => {
             cancelled = true;
             videoEl.removeEventListener('canplay', onReady);
@@ -4044,6 +4188,10 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onReady, o
                 hls.destroy();
             clearTimeout(stuckTimer);
             clearBufferingTimer();
+            if (stallWatchdogRef.current) clearTimeout(stallWatchdogRef.current);
+            stallWatchdogRef.current = null;
+            if (stableReadyTimerRef.current) clearTimeout(stableReadyTimerRef.current);
+            stableReadyTimerRef.current = null;
         };
     }, [src]);
     useEffect(() => {
@@ -4201,26 +4349,44 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onReady, o
             catch (e) { }
         };
         const onRate = () => setCtrl(c2 => ({ ...c2, rate: videoEl.playbackRate || 1 }));
+        const clearStallWatchdog = (resetTriggered = false) => {
+            if (stallWatchdogRef.current) clearTimeout(stallWatchdogRef.current);
+            stallWatchdogRef.current = null;
+            if (resetTriggered) stallTriggeredRef.current = false;
+        };
+        const startStallWatchdog = () => {
+            if (videoEl.paused || videoEl.ended || stallTriggeredRef.current || stallWatchdogRef.current) return;
+            const startedAt = Number(videoEl.currentTime) || 0;
+            stallWatchdogRef.current = setTimeout(() => {
+                stallWatchdogRef.current = null;
+                if (videoEl.paused || videoEl.ended || stallTriggeredRef.current) return;
+                const nowAt = Number(videoEl.currentTime) || 0;
+                const notAdvancing = Math.abs(nowAt - startedAt) < 0.2;
+                if (videoEl.readyState < 3 || notAdvancing) {
+                    stallTriggeredRef.current = true;
+                    setLoading(false);
+                    try { onError && onError({ reason: 'stalled', currentTime: nowAt }); } catch (_) {}
+                }
+            }, CV_LOW_POWER ? 18000 : 12000);
+        };
         const onWaiting = () => {
-            if (videoEl.paused || videoEl.ended)
-                return;
+            if (videoEl.paused || videoEl.ended) return;
+            startStallWatchdog();
             clearTimeout(bufferingTimerRef.current);
             bufferingTimerRef.current = setTimeout(() => {
-                if (!videoEl.paused && videoEl.readyState < 3)
-                    setLoading(true);
+                if (!videoEl.paused && videoEl.readyState < 3) setLoading(true);
             }, CV_LOW_POWER ? 850 : 650);
         };
         const onStalled = () => {
-            if (videoEl.paused || videoEl.ended)
-                return;
+            if (videoEl.paused || videoEl.ended) return;
+            startStallWatchdog();
             clearTimeout(bufferingTimerRef.current);
             bufferingTimerRef.current = setTimeout(() => {
-                if (!videoEl.paused && videoEl.readyState < 3)
-                    setLoading(true);
+                if (!videoEl.paused && videoEl.readyState < 3) setLoading(true);
             }, CV_LOW_POWER ? 1000 : 700);
         };
-        const onPlaying = () => { clearBufferingTimer(); setLoading(false); };
-        const onLoadedData = () => { clearBufferingTimer(); setLoading(false); };
+        const onPlaying = () => { clearBufferingTimer(); clearStallWatchdog(true); setLoading(false); notifyReady(); };
+        const onLoadedData = () => { clearBufferingTimer(); clearStallWatchdog(true); setLoading(false); notifyReady(); };
         const onEnded = () => { clearBufferingTimer(); setLoading(false); if (progressSaveRef.current) { try { progressSaveRef.current({ position: Number(videoEl.duration)||0, duration: Number(videoEl.duration)||0, completed: true, updatedAt: Date.now() }); } catch (e) {} } fireComplete(); };
         videoEl.addEventListener('play', onPlay);
         videoEl.addEventListener('pause', onPause);
@@ -5029,16 +5195,25 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         playbackPreferenceLoadedRef.current = false;
         const uid = currentUser && currentUser.id;
         if (!uid) {
+            let guestPreference = 'cinemana';
+            try {
+                const value = String(localStorage.getItem('cinadam_last_working_source') || '').toLowerCase();
+                if (value === 'cinemana' || value === 'cinemabox') guestPreference = value;
+            } catch (_) { }
+            setPreferredPlaybackSource(guestPreference);
             playbackPreferenceLoadedRef.current = true;
             return () => { cancelled = true; };
         }
+        // A user's preference belongs to their Firebase account, not the last account used on this device.
+        setPreferredPlaybackSource('cinemana');
+        try { localStorage.removeItem('cinadam_last_working_source'); } catch (_) { }
         db.ref(`users/${uid}/playbackPreferences/preferredSource`).once('value')
             .then(snap => {
                 if (cancelled) return;
                 const saved = String(snap.val() || '').toLowerCase();
-                if (saved === 'cinemana' || saved === 'cinemabox') setPreferredPlaybackSource(saved);
+                setPreferredPlaybackSource(saved === 'cinemabox' ? 'cinemabox' : 'cinemana');
             })
-            .catch(() => { })
+            .catch(() => { if (!cancelled) setPreferredPlaybackSource('cinemana'); })
             .finally(() => { if (!cancelled) playbackPreferenceLoadedRef.current = true; });
         return () => { cancelled = true; };
     }, [currentUser && currentUser.id]);
@@ -5413,16 +5588,45 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     };
     const rememberWorkingPlaybackSource = (source) => {
         const normalized = source === 'cinemabox' ? 'cinemabox' : 'cinemana';
-        setPreferredPlaybackSource(normalized);
-        setSourceNotice(`المصدر العامل المحفوظ: ${normalized === 'cinemabox' ? 'Cinema Box' : 'سينمانا'}`);
-        try { localStorage.setItem('cinadam_last_working_source', normalized); } catch (e) { }
         const uid = currentUser && currentUser.id;
+        setPreferredPlaybackSource(normalized);
+        setSourceNotice(`المصدر العامل محفوظ: ${normalized === 'cinemabox' ? 'Cinema Box' : 'سينمانا'}`);
         if (uid) {
+            // Signed-in preference is per-account; do not mirror it into device-wide guest storage.
+            try { localStorage.removeItem('cinadam_last_working_source'); } catch (_) { }
             db.ref(`users/${uid}/playbackPreferences`).update({ preferredSource: normalized, updatedAt: Date.now() }).catch(() => { });
+        } else {
+            try { localStorage.setItem('cinadam_last_working_source', normalized); } catch (_) { }
         }
+        playbackPreferenceLoadedRef.current = true;
     };
     const handlePlaybackReady = (source) => {
         rememberWorkingPlaybackSource(String(source || '').toLowerCase() === 'cinemabox' ? 'cinemabox' : 'cinemana');
+    };
+    const getPreferredPlaybackSource = async () => {
+        const normalize = value => String(value || '').toLowerCase() === 'cinemabox' ? 'cinemabox' : 'cinemana';
+        const uid = currentUser && currentUser.id;
+        if (uid && !playbackPreferenceLoadedRef.current) {
+            try {
+                const snapshot = await db.ref(`users/${uid}/playbackPreferences/preferredSource`).once('value');
+                const saved = String(snapshot.val() || '').toLowerCase();
+                if (saved === 'cinemana' || saved === 'cinemabox') {
+                    setPreferredPlaybackSource(saved);
+                    playbackPreferenceLoadedRef.current = true;
+                    return saved;
+                }
+            } catch (_) {}
+            playbackPreferenceLoadedRef.current = true;
+            // If Firebase is unavailable or has no preference, a signed-in account safely defaults to Cinemana.
+            setPreferredPlaybackSource('cinemana');
+            return 'cinemana';
+        }
+        if (uid) return normalize(preferredPlaybackSource);
+        try {
+            const localSaved = String(localStorage.getItem('cinadam_last_working_source') || '').toLowerCase();
+            if (localSaved === 'cinemana' || localSaved === 'cinemabox') return localSaved;
+        } catch (_) {}
+        return normalize(preferredPlaybackSource);
     };
     const fetchCinemaBoxPlayback = async (kind, seasonNumber, episodeNumber) => {
         const params = new URLSearchParams({
@@ -5432,14 +5636,14 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             season: String(Number(seasonNumber) || 1),
             episode: String(Number(episodeNumber) || 1)
         });
-        const bases = [];
-        const addBase = value => { const base = String(value || '').trim().replace(/\/+$/, ''); if (base && !bases.includes(base)) bases.push(base); };
         let forceLocalProxy = false;
         try { forceLocalProxy = new URLSearchParams(location.search || '').get('localProxy') === '1'; } catch (_) {}
         const host = String(location.hostname || '').toLowerCase();
-        if (forceLocalProxy || host === 'localhost' || host === '127.0.0.1' || host === '::1') addBase('http://localhost:8787');
-        addBase(CINEMANA_PROXY);
-        addBase('http://localhost:8787');
+        const isLocalAdmin = forceLocalProxy || host === 'localhost' || host === '127.0.0.1' || host === '::1';
+        if (!isLocalAdmin) {
+            throw new Error('ماكو روابط Cinema Box محفوظة لهذا العمل. لازم المسؤول يستخرج الروابط ويحفظها؛ المشاهدة ما تعتمد على Node المحلي عندك.');
+        }
+        const bases = ['http://127.0.0.1:8787'];
         let lastError = null;
         for (const base of bases) {
             try {
@@ -5552,7 +5756,8 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         setResumeAt(movieResume);
         try {
             if (title.type === 'movie') {
-                const first = requestedProvider || (preferredPlaybackSource === 'cinemabox' ? 'cinemabox' : 'cinemana');
+                const preferred = requestedProvider || await getPreferredPlaybackSource();
+                const first = preferred === 'cinemabox' ? 'cinemabox' : 'cinemana';
                 const order = first === 'cinemabox' ? ['cinemabox', 'cinemana'] : ['cinemana', 'cinemabox'];
                 const errors = [];
                 for (const source of order) {
@@ -5597,7 +5802,8 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         const savedProgress = currentEpisodeProgress(seasonNumber, ep && ep.number);
         const requestedResume = resumeOverride != null ? Number(resumeOverride) || 0 : (savedProgress && !savedProgress.completed ? Number(savedProgress.position) || 0 : 0);
         setResumeAt(requestedResume);
-        const first = requestedProvider || (preferredPlaybackSource === 'cinemabox' ? 'cinemabox' : 'cinemana');
+        const preferred = requestedProvider || await getPreferredPlaybackSource();
+        const first = preferred === 'cinemabox' ? 'cinemabox' : 'cinemana';
         const order = first === 'cinemabox' ? ['cinemabox', 'cinemana'] : ['cinemana', 'cinemabox'];
         const label = `${title.name} · ${ep.title || `الحلقة ${ep.number != null ? ep.number : ''}`}`;
         const errors = [];
@@ -5607,7 +5813,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                     const started = await launchCinemaBoxPlayback({ meta: ep, kind: 'tv', seasonNumber, episodeNumber: ep.number, label, requestId, resumeAtSec: requestedResume });
                     if (started) return;
                 } else {
-                    const forceResolve = requestedProvider === 'cinemana' || (first === 'cinemana' && preferredPlaybackSource === 'cinemabox');
+                    const forceResolve = requestedProvider === 'cinemana' || (first === 'cinemana' && preferred === 'cinemabox');
                     const started = await launchCinemanaPlayback({ meta: ep, kind: 'tv', seasonNumber, label, requestId, resumeAtSec: requestedResume, forceResolve });
                     if (started) return;
                 }
@@ -5666,14 +5872,17 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const activeSubtitleUrl = (playingMeta && playingMeta.subtitleUrl) || (playingQualities[0] && playingQualities[0].subtitleUrl) || (title.type === 'movie' ? title.subtitleUrl : '');
     const activeSubtitleOffset = Number((playingMeta && playingMeta.subtitleOffset) ?? (title.type === 'movie' ? title.subtitleOffset : 0)) || 0;
     const activeSubtitlePublicUrl = (playingMeta && playingMeta.subtitlePublicUrl) || (title.type === 'movie' ? title.subtitlePublicUrl : '');
-    const handlePlaybackError = async () => {
+    const handlePlaybackError = async (failure = {}) => {
         const meta = playingMeta || {};
+        const failedAt = Math.max(0, Number(failure && failure.currentTime) || 0);
+        const wasStalled = String(failure && failure.reason || '') === 'stalled';
+        const wasInitialTimeout = String(failure && failure.reason || '') === 'timeout';
         const provider = String(meta.playbackProvider || (isCinemanaPlayback(meta, playingUrl) ? 'cinemana' : '')).toLowerCase() === 'cinemabox' ? 'cinemabox' : 'cinemana';
         const kind = title.type === 'movie' ? 'movie' : 'tv';
         const itemKey = [title.id, kind, playingSeasonNumber || 0, meta.number || 0].join('|');
         const state = fallbackAttemptRef.current[itemKey] || (fallbackAttemptRef.current[itemKey] = { refreshCinemanaTried: false, failed: {} });
         const requestId = ++playRequestRef.current;
-        if (provider === 'cinemana' && !state.refreshCinemanaTried) {
+        if (provider === 'cinemana' && !wasStalled && !state.refreshCinemanaTried) {
             state.refreshCinemanaTried = true;
             // Refresh one possibly expired URL before switching sources. A retry that
             // fails will skip this step next time and move to Cinema Box.
@@ -5692,6 +5901,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         }
         state.failed[provider] = true;
         const other = provider === 'cinemana' ? 'cinemabox' : 'cinemana';
+        if (wasStalled && failedAt > 0) setResumeAt(failedAt);
         if (state.failed[other]) {
             setVideoError(true);
             setSourceNotice('فشل تشغيل المصدرين لهذا العمل. جرّب إعادة المحاولة أو اختر مصدرًا يدويًا.');
@@ -5701,11 +5911,11 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         setVideoError(false);
         try {
             if (other === 'cinemabox') {
-                const started = await launchCinemaBoxPlayback({ meta: { ...meta, title: title.name }, kind, seasonNumber: playingSeasonNumber, episodeNumber: meta.number || 1, label: playingLabel, requestId, resumeAtSec: 0 });
+                const started = await launchCinemaBoxPlayback({ meta: { ...meta, title: title.name }, kind, seasonNumber: playingSeasonNumber, episodeNumber: meta.number || 1, label: playingLabel, requestId, resumeAtSec: wasStalled ? failedAt : 0 });
                 if (started) return;
                 throw new Error('Cinema Box لم يقدّم رابط تشغيل بديلًا.');
             }
-            const started = await launchCinemanaPlayback({ meta, kind, seasonNumber: playingSeasonNumber, label: playingLabel, requestId, resumeAtSec: 0, forceResolve: true });
+            const started = await launchCinemanaPlayback({ meta, kind, seasonNumber: playingSeasonNumber, label: playingLabel, requestId, resumeAtSec: wasStalled ? failedAt : 0, forceResolve: true });
             if (started) return;
             throw new Error('سينمانا لم تُرجع رابط تشغيل بديلًا.');
         } catch (e) {
