@@ -685,6 +685,8 @@ function normalizeTitlePlaybackData(title) {
     clean.genres = normalizeGenresValue(clean.genres);
     clean.videoUrl = normalizeVideoUrl(clean.videoUrl || '');
     clean.videoSources = normalizeVideoSources(clean.videoSources);
+    clean.cinemanaXVideoUrl = normalizeVideoUrl(clean.cinemanaXVideoUrl || '');
+    clean.cinemanaXSources = normalizeVideoSources(clean.cinemanaXSources);
     clean.cinemanaId = String(clean.cinemanaId || '').trim();
     clean.cinemanaXId = String(clean.cinemanaXId || '').trim();
     clean.subtitleUrl = normalizeSubtitleUrl(clean.subtitleUrl || clean.subtitleURL || '');
@@ -697,6 +699,8 @@ function normalizeTitlePlaybackData(title) {
             runtimeMinutes: Number(ep.runtimeMinutes ?? ep.runtime) || 0,
             videoUrl: normalizeVideoUrl(ep.videoUrl || ''),
             videoSources: normalizeVideoSources(ep.videoSources),
+            cinemanaXVideoUrl: normalizeVideoUrl(ep.cinemanaXVideoUrl || ''),
+            cinemanaXSources: normalizeVideoSources(ep.cinemanaXSources),
             cinemanaId: String(ep.cinemanaId || '').trim(),
             cinemanaXId: String(ep.cinemanaXId || '').trim(),
             subtitleUrl: normalizeSubtitleUrl(ep.subtitleUrl || ep.subtitleURL || ''),
@@ -1478,7 +1482,7 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
                     const firstSource = fetchedSources[0];
                     if (firstSource) {
                         onGenerate && onGenerate(firstSource.url, firstSource, fetchedSources, selectedSource);
-                        onGenerateQualities && onGenerateQualities(fetchedSources);
+                        onGenerateQualities && onGenerateQualities(fetchedSources, selectedSource);
                     }
                 }
                 if (onPickedNb)
@@ -1497,7 +1501,7 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
                     const fetchedSources = cinemanaVideoSources(fetchedVideos);
                     if (fetchedSources.length) {
                         onGenerate && onGenerate(fetchedSources[0].url, fetchedSources[0], fetchedSources, selectedSource);
-                        onGenerateQualities && onGenerateQualities(fetchedSources);
+                        onGenerateQualities && onGenerateQualities(fetchedSources, selectedSource);
                     }
                     if (onPickedNb)
                         onPickedNb(nb, selectedSource);
@@ -1552,7 +1556,7 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
                 cinemanaVideoSources(videos).map((v, i) => (React.createElement("button", { key: i, type: "button", onClick: async () => {
                         const allSources = cinemanaVideoSources(videos);
                         onGenerate && onGenerate(v.url, v, allSources, source);
-                        onGenerateQualities && onGenerateQualities(allSources);
+                        onGenerateQualities && onGenerateQualities(allSources, source);
                     }, className: "px-3 py-1.5 rounded-lg bg-accent-purple/15 border border-accent-purple/30 hover:bg-accent-purple/25 text-accent-purple text-[11px] font-bold transition" }, v.label)))),
             React.createElement("button", { type: "button", onClick: () => { setVideos(null); setPicked(null); }, className: "mt-2 text-[10px] text-slate-500 hover:text-slate-300 underline" }, "\u0631\u062C\u0648\u0639 \u0644\u0644\u0646\u062A\u0627\u0626\u062C")))));
 }
@@ -1630,12 +1634,16 @@ async function enrichTmdbSeasonsWithCinemana(seasons, cinEpisodes, onProgress, p
         results.forEach(r => {
             const ep = out[r.si] && out[r.si].episodes && out[r.si].episodes[r.ei];
             if (ep) {
-                ep.cinemanaId = provider === 'cinemana' ? String(r.id) : '';
-                ep.cinemanaXId = provider === 'cinemana-x' ? String(r.id) : '';
+                if (provider === 'cinemana') ep.cinemanaId = String(r.id);
+                else ep.cinemanaXId = String(r.id);
                 ep.playbackProvider = provider;
             }
             if (!ep || !r.sources.length)
                 return;
+            if (provider === 'cinemana-x') {
+                ep.cinemanaXVideoUrl = r.sources[0].url;
+                ep.cinemanaXSources = r.sources;
+            }
             ep.videoSources = r.sources;
             ep.videoUrl = r.sources[0].url;
             ep.subtitleUrl = r.sources[0].subtitleUrl || ep.subtitleUrl || '';
@@ -6832,10 +6840,10 @@ function VideoDisplaySettings({ value, onChange }) {
         showCropStudio && (React.createElement(CropStudioModal, { videoUrl: normalizeVideoUrl(v.videoUrl), initial: crop, onCancel: () => setShowCropStudio(false), onSave: (newCrop) => { set('crop', newCrop); setShowCropStudio(false); } }))));
 }
 function emptyForm(type) {
-    return { name: '', type: type || 'movie', cinemanaId: '', cinemanaXId: '', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', runtimeMinutes: 0, rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
+    return { name: '', type: type || 'movie', cinemanaId: '', cinemanaXId: '', cinemanaXVideoUrl: '', cinemanaXSources: [], year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', runtimeMinutes: 0, rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
 }
 function emptyEpisode(num) {
-    return { number: num, title: '', runtimeMinutes: 0, cinemanaId: '', cinemanaXId: '', videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, imdb: '', tmdbRating: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
+    return { number: num, title: '', runtimeMinutes: 0, cinemanaId: '', cinemanaXId: '', cinemanaXVideoUrl: '', cinemanaXSources: [], videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, imdb: '', tmdbRating: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
 }
 function SubtitleHelper({ value, onChange, sourceId, title, type, season, episode, year, cinemanaId, offset = 0, onOffsetChange }) {
     const [loading, setLoading] = useState(false);
@@ -6912,9 +6920,9 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
     const eRef = useRef(e);
     const [tmdbRatingLoading, setTmdbRatingLoading] = useState(false);
     const [tmdbRatingMsg, setTmdbRatingMsg] = useState('');
-    const [cinemanaXPreviewUrl, setCinemanaXPreviewUrl] = useState(() => e.cinemanaXId && e.videoUrl ? e.videoUrl : '');
+    const [cinemanaXPreviewUrl, setCinemanaXPreviewUrl] = useState(() => e.cinemanaXVideoUrl || (e.playbackProvider === 'cinemana-x' && e.videoUrl ? e.videoUrl : ''));
     useEffect(() => { eRef.current = e; }, [e]);
-    useEffect(() => { if (e.cinemanaXId && e.videoUrl) setCinemanaXPreviewUrl(e.videoUrl); }, [e.cinemanaXId, e.videoUrl]);
+    useEffect(() => { if (e.cinemanaXVideoUrl) setCinemanaXPreviewUrl(e.cinemanaXVideoUrl); }, [e.cinemanaXVideoUrl]);
     const patchEpisode = (patch) => { const next = { ...eRef.current, ...patch }; eRef.current = next; onChange(next); };
     const set = (k, val) => patchEpisode({ [k]: val });
     const loadTmdbRating = async () => {
@@ -6964,7 +6972,7 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
             React.createElement("label", { className: "text-xs font-bold text-slate-300 mb-1.5 block" }, "رابط الفيديو الذي جلبه Cinemana X للحلقة"),
             React.createElement("input", { type: "text", value: cinemanaXPreviewUrl, readOnly: true, dir: "ltr", onFocus: ev => ev.target.select(), placeholder: "سيظهر رابط الحلقة هنا تلقائيًا عند اختيار Cinemana X", className: "w-full bg-glass-900 border border-accent-cyan/20 rounded-xl px-3 py-2.5 text-xs text-slate-300 outline-none focus:border-accent-cyan" }),
             React.createElement("p", { className: "text-[10px] text-slate-500 mt-1" }, "حقل عرض ونسخ لرابط المصدر الثاني، منفصل عن حقل ملف الحلقة.")),
-        React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url, quality, sources, provider) => { patchEpisode({ videoUrl: url, videoSources: normalizeVideoSources(sources), playbackProvider: provider }); setCinemanaXPreviewUrl(provider === 'cinemana-x' ? url : ''); }, onGenerateQualities: sources => patchEpisode({ videoSources: sources }), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: (nb, provider) => patchEpisode({ cinemanaId: provider === 'cinemana' ? nb : '', cinemanaXId: provider === 'cinemana-x' ? nb : '', playbackProvider: provider }) }),
+        React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url, quality, sources, provider) => { const normalized = normalizeVideoSources(sources); patchEpisode(provider === 'cinemana-x' ? { videoUrl: url, videoSources: normalized, cinemanaXVideoUrl: url, cinemanaXSources: normalized, playbackProvider: provider } : { videoUrl: url, videoSources: normalized, playbackProvider: provider }); if (provider === 'cinemana-x') setCinemanaXPreviewUrl(url); }, onGenerateQualities: (sources, provider) => { const normalized = normalizeVideoSources(sources); if (provider === 'cinemana-x') { patchEpisode({ cinemanaXVideoUrl: (normalized[0] && normalized[0].url) || eRef.current.cinemanaXVideoUrl || '', cinemanaXSources: normalized }); if (normalized[0] && normalized[0].url) setCinemanaXPreviewUrl(normalized[0].url); } else patchEpisode({ videoSources: normalized }); }, onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: (nb, provider) => patchEpisode(provider === 'cinemana' ? { cinemanaId: nb, playbackProvider: provider } : { cinemanaXId: nb, playbackProvider: provider }) }),
         React.createElement(SubtitleHelper, { cinemanaId: e.cinemanaId, value: e.subtitleUrl || '', onChange: v => set('subtitleUrl', v), sourceId: sourceId, title: seriesName, year: new Date().getFullYear(), type: "series", season: seasonNumber, episode: e.number, folder: "subtitles", offset: e.subtitleOffset || 0, onOffsetChange: v => set('subtitleOffset', v) }),
         React.createElement("div", { className: "grid sm:grid-cols-3 gap-3.5 mt-3.5" },
             React.createElement("div", null,
@@ -7114,7 +7122,8 @@ function AdminContentForm({ initial, defaultType, onDone }) {
         return { ...emptyForm(defaultType), ...cleanedInitial, genresText: (cleanedInitial.genres || []).join(', '), seasons: cleanedInitial.seasons ? JSON.parse(JSON.stringify(cleanedInitial.seasons)) : [] };
     });
     const [saving, setSaving] = useState(false);
-    const [cinemanaXPreviewUrl, setCinemanaXPreviewUrl] = useState('');
+    const [cinemanaXPreviewUrl, setCinemanaXPreviewUrl] = useState(() => form.cinemanaXVideoUrl || (form.playbackProvider === 'cinemana-x' ? form.videoUrl : ''));
+    useEffect(() => { if (form.cinemanaXVideoUrl) setCinemanaXPreviewUrl(form.cinemanaXVideoUrl); }, [form.cinemanaXVideoUrl]);
     const [error, setError] = useState('');
     const [activeSeasonIdx, setActiveSeasonIdx] = useState(0);
     const [refreshRatingsLoading, setRefreshRatingsLoading] = useState(false);
@@ -7305,25 +7314,46 @@ function AdminContentForm({ initial, defaultType, onDone }) {
         if (form.type === 'movie') {
             payload.videoUrl = normalizeVideoUrl(form.videoUrl.trim());
             payload.videoSources = normalizeVideoSources(form.videoSources);
+            payload.cinemanaXVideoUrl = normalizeVideoUrl(form.cinemanaXVideoUrl || (form.playbackProvider === 'cinemana-x' ? form.videoUrl : ''));
+            payload.cinemanaXSources = normalizeVideoSources(form.cinemanaXSources || (form.playbackProvider === 'cinemana-x' ? form.videoSources : []));
 
             // مهم جدًا للأفلام: لا نحفظ cinemanaId وحده ونترك videoUrl/videoSources فارغة.
             // الهاتف لا يستطيع الوصول إلى Node المحلي حتى يسترجع الرابط، بينما الحلقات
             // التي يكون رابطها محفوظًا تعمل طبيعيًا. إذا كان الفيلم مرتبطًا بـ Cinemana
             // ولم يُحفظ المصدر بعد، نجلبه الآن من نفس البروكسي الموجود على جهاز الإدارة
             // ونحفظ الرابط/الجودات داخل Firebase، حتى يعمل الهاتف مباشرة بدون بروكسي.
-            if ((form.cinemanaId || form.cinemanaXId) && !payload.videoUrl && !payload.videoSources.length) {
+            // احفظ Cinemana X مستقلًا عن المصدر الأساسي، حتى لا يختفي عند تبديل المصدر.
+            if (form.cinemanaXId && !payload.cinemanaXVideoUrl && !payload.cinemanaXSources.length) {
                 try {
-                    const sourceId = String(form.cinemanaXId || form.cinemanaId).trim();
-                    const provider = form.cinemanaXId && !form.cinemanaId ? 'cinemana-x' : 'cinemana';
-                    const fetched = cinemanaVideoSources(await cinemanaVideos(sourceId, 'movie', provider));
-                    if (fetched.length) {
-                        payload.videoSources = fetched;
-                        payload.videoUrl = fetched[0].url;
-                    } else {
-                        throw new Error('سينمانا لم تُرجع أي مصدر فيديو لهذا الفيلم.');
+                    const fetchedX = cinemanaVideoSources(await cinemanaVideos(String(form.cinemanaXId).trim(), 'movie', 'cinemana-x'));
+                    if (fetchedX.length) {
+                        payload.cinemanaXSources = fetchedX;
+                        payload.cinemanaXVideoUrl = fetchedX[0].url;
                     }
                 } catch (e) {
-                    throw new Error('تعذر حفظ رابط الفيلم من المصدر المحدد: ' + (e && e.message ? e.message : 'خطأ غير معروف'));
+                    throw new Error('تعذر حفظ رابط Cinemana X البديل: ' + (e && e.message ? e.message : 'خطأ غير معروف'));
+                }
+            }
+            // المصدر الأساسي يكون Cinemana إذا له معرّف، وإلا يستخدم Cinemana X كحل وحيد.
+            if (!payload.videoUrl && !payload.videoSources.length) {
+                const primaryId = String(form.cinemanaId || (!form.cinemanaXId ? '' : form.cinemanaXId)).trim();
+                const primaryProvider = form.cinemanaId ? 'cinemana' : 'cinemana-x';
+                if (primaryId) {
+                    try {
+                        const fetched = cinemanaVideoSources(await cinemanaVideos(primaryId, 'movie', primaryProvider));
+                        if (fetched.length) {
+                            payload.videoSources = fetched;
+                            payload.videoUrl = fetched[0].url;
+                            if (primaryProvider === 'cinemana-x') {
+                                payload.cinemanaXSources = fetched;
+                                payload.cinemanaXVideoUrl = fetched[0].url;
+                            }
+                        } else {
+                            throw new Error('المصدر لم يرجع أي رابط فيديو لهذا الفيلم.');
+                        }
+                    } catch (e) {
+                        throw new Error('تعذر حفظ رابط الفيلم من المصدر المحدد: ' + (e && e.message ? e.message : 'خطأ غير معروف'));
+                    }
                 }
             } else if (!payload.videoUrl && payload.videoSources.length) {
                 payload.videoUrl = payload.videoSources[0].url;
@@ -7334,7 +7364,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.subtitleOffset = Number(form.subtitleOffset) || 0;
             payload.cinemanaId = String(form.cinemanaId || '').trim();
             payload.cinemanaXId = String(form.cinemanaXId || '').trim();
-            payload.playbackProvider = payload.cinemanaXId && !payload.cinemanaId ? 'cinemana-x' : (payload.cinemanaId ? 'cinemana' : (isVidApiUrl(form.videoUrl) ? 'vidapi' : (form.playbackProvider || '')));
+            payload.playbackProvider = ['cinemana','cinemana-x'].includes(form.playbackProvider) ? form.playbackProvider : (payload.cinemanaId ? 'cinemana' : (payload.cinemanaXId ? 'cinemana-x' : (isVidApiUrl(form.videoUrl) ? 'vidapi' : '')));
             // لا نمسح رابط الفيديو المباشر الذي جلبناه من المصدر؛ نحتاج حفظه في Firebase
             // حتى يعمل التشغيل على الهاتف أو عندما يكون السيرفر المحلي متوقفًا.
             if (!payload.videoUrl && payload.videoSources.length) {
@@ -7356,7 +7386,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 poster: (s.poster || '').trim(),
                 episodeThumbnail: (s.episodeThumbnail || '').trim(),
                 episodes: (s.episodes || []).map(e => ({
-                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), playbackProvider: e.cinemanaXId && !e.cinemanaId ? 'cinemana-x' : (e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : ''))), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || '').trim(), cinemanaXId: String(e.cinemanaXId || '').trim(), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
+                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), cinemanaXVideoUrl: normalizeVideoUrl(e.cinemanaXVideoUrl || (e.playbackProvider === 'cinemana-x' ? e.videoUrl : '')), cinemanaXSources: normalizeVideoSources(e.cinemanaXSources || (e.playbackProvider === 'cinemana-x' ? e.videoSources : [])), playbackProvider: ['cinemana','cinemana-x'].includes(e.playbackProvider) ? e.playbackProvider : (e.cinemanaId ? 'cinemana' : (e.cinemanaXId ? 'cinemana-x' : (isVidApiUrl(e.videoUrl) ? 'vidapi' : ''))), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || '').trim(), cinemanaXId: String(e.cinemanaXId || '').trim(), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
                     trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, introStart: Number(e.introStart) || 0, introEnd: Number(e.introEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
                 }))
             }));
@@ -7372,19 +7402,34 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                     episode.playbackProvider = episode.cinemanaXId && !episode.cinemanaId
                         ? 'cinemana-x'
                         : (episode.cinemanaId ? 'cinemana' : (episode.playbackProvider || ''));
-                    const savedSourceId = String(episode.cinemanaXId || episode.cinemanaId || '').trim();
+                    const savedSourceId = String(episode.cinemanaId || episode.cinemanaXId || '').trim();
                     if (!episode.videoUrl && !(episode.videoSources || []).length && savedSourceId) {
-                        const provider = episode.cinemanaXId && !episode.cinemanaId ? 'cinemana-x' : 'cinemana';
+                        const provider = episode.cinemanaId ? 'cinemana' : 'cinemana-x';
                         try {
                             const fetched = cinemanaVideoSources(await cinemanaVideos(savedSourceId, 'tv', provider));
                             if (fetched.length) {
                                 episode.videoSources = fetched;
                                 episode.videoUrl = fetched[0].url;
+                                if (provider === 'cinemana-x') {
+                                    episode.cinemanaXVideoUrl = fetched[0].url;
+                                    episode.cinemanaXSources = fetched;
+                                }
                             } else {
                                 unresolvedEpisodes.push(`م${season.number} ح${episode.number}: لم يرجع المصدر رابطًا`);
                             }
                         } catch (episodeFetchError) {
                             unresolvedEpisodes.push(`م${season.number} ح${episode.number}: ${episodeFetchError && episodeFetchError.message ? episodeFetchError.message : 'تعذّر جلب الرابط'}`);
+                        }
+                    }
+                    if (episode.cinemanaXId && !episode.cinemanaXVideoUrl && !(episode.cinemanaXSources || []).length) {
+                        try {
+                            const fetchedX = cinemanaVideoSources(await cinemanaVideos(String(episode.cinemanaXId).trim(), 'tv', 'cinemana-x'));
+                            if (fetchedX.length) {
+                                episode.cinemanaXVideoUrl = fetchedX[0].url;
+                                episode.cinemanaXSources = fetchedX;
+                            }
+                        } catch (episodeXError) {
+                            unresolvedEpisodes.push(`م${season.number} ح${episode.number} (Cinemana X): ${episodeXError && episodeXError.message ? episodeXError.message : 'تعذّر جلب الرابط البديل'}`);
                         }
                     }
                 }
@@ -7465,7 +7510,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 React.createElement("label", { className: "text-xs font-bold text-slate-300 mb-1.5 block" }, "\u0631\u0627\u0628\u0637 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u0627\u0644\u0630\u064A \u062C\u0644\u0628\u0647 Cinemana X"),
                 React.createElement("input", { type: "text", value: cinemanaXPreviewUrl, readOnly: true, dir: "ltr", onFocus: ev => ev.target.select(), placeholder: "\u0633\u064A\u0638\u0647\u0631 \u0647\u0646\u0627 \u0628\u0639\u062F \u0627\u0644\u0628\u062D\u062B \u0648\u0627\u062E\u062A\u064A\u0627\u0631 Cinemana X", className: "w-full bg-glass-900 border border-accent-cyan/20 rounded-xl px-3 py-2.5 text-xs text-slate-300 outline-none focus:border-accent-cyan" }),
                 React.createElement("p", { className: "text-[10px] text-slate-500 mt-1" }, "\u0647\u0630\u0647 \u0627\u0644\u062E\u0627\u0646\u0629 \u0644\u0639\u0631\u0636 \u0648\u0646\u0633\u062E \u0631\u0627\u0628\u0637 Cinemana X \u0641\u0642\u0637; \u0644\u0627 \u062A\u063A\u064A\u0651\u0631 \u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u0627\u0644\u0623\u0633\u0627\u0633\u064A.")),
-            React.createElement(CinemanaHelper, { kind: form.type === 'anime' ? 'anime' : 'movie', defaultTitle: form.name, defaultYear: form.year, onGenerate: (url, quality, sources, provider) => { set('videoUrl', url); setCinemanaXPreviewUrl(provider === 'cinemana-x' ? url : ''); }, onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: (nb, provider) => setForm(prev => ({ ...prev, cinemanaId: provider === 'cinemana' ? nb : '', cinemanaXId: provider === 'cinemana-x' ? nb : '' })), onImportTmdb: async (item) => {
+            React.createElement(CinemanaHelper, { kind: form.type === 'anime' ? 'anime' : 'movie', defaultTitle: form.name, defaultYear: form.year, onGenerate: (url, quality, sources, provider) => { const normalized = normalizeVideoSources(sources); setForm(prev => provider === 'cinemana-x' ? ({ ...prev, videoUrl: url, videoSources: normalized, cinemanaXVideoUrl: url, cinemanaXSources: normalized, playbackProvider: provider }) : ({ ...prev, videoUrl: url, videoSources: normalized, playbackProvider: provider })); if (provider === 'cinemana-x') setCinemanaXPreviewUrl(url); }, onGenerateQualities: (sources, provider) => { const normalized = normalizeVideoSources(sources); if (provider === 'cinemana-x') { setForm(prev => ({ ...prev, cinemanaXVideoUrl: (normalized[0] && normalized[0].url) || prev.cinemanaXVideoUrl || '', cinemanaXSources: normalized })); if (normalized[0] && normalized[0].url) setCinemanaXPreviewUrl(normalized[0].url); } else set('videoSources', normalized); }, onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: (nb, provider) => setForm(prev => provider === 'cinemana' ? ({ ...prev, cinemanaId: nb, playbackProvider: provider }) : ({ ...prev, cinemanaXId: nb, playbackProvider: provider })), onImportTmdb: async (item) => {
                     if (sourceId) return { patch: {}, sourceId, imdbId: '', tmdbId: '' };
                     const r = await importFromTmdbTitle(cinemanaTitle(item), form.type, cinemanaYear(item) || form.year, { withEpisodes: false });
                     setSourceId(r.sourceId || '');
@@ -7483,13 +7528,13 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                           : await importFromTmdbTitle(cinemanaTitle(item), form.type, cinemanaYear(item) || form.year, { withEpisodes: true, onProgress });
                         const ce = await cinemanaEpisodes(String(item.nb), provider);
                         r.patch.seasons = await enrichTmdbSeasonsWithCinemana(r.patch.seasons || [], ce, onProgress, provider);
-                        r.patch.cinemanaId = provider === 'cinemana' ? String(item.nb) : '';
-                        r.patch.cinemanaXId = provider === 'cinemana-x' ? String(item.nb) : '';
+                        if (provider === 'cinemana') r.patch.cinemanaId = String(item.nb);
+                        else r.patch.cinemanaXId = String(item.nb);
                         setSourceId(r.sourceId || sourceId || '');
                         setSubtitleSourceIds([r.imdbId, r.tmdbId].filter(Boolean));
                         setBannerData(r.bannerData || null);
                         setShowAllBanners(false);
-                        setForm(prev => ({ ...prev, ...r.patch }));
+                        setForm(prev => ({ ...prev, ...r.patch, cinemanaId: provider === 'cinemana' ? String(item.nb) : prev.cinemanaId, cinemanaXId: provider === 'cinemana-x' ? String(item.nb) : prev.cinemanaXId }));
                         setActiveSeasonIdx(0);
                         setEditingEpisodeIdx(null);
                     } })),
