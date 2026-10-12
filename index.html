@@ -7319,9 +7319,10 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.cinemanaId = String(form.cinemanaId || '').trim();
             payload.cinemanaXId = String(form.cinemanaXId || '').trim();
             payload.playbackProvider = payload.cinemanaXId && !payload.cinemanaId ? 'cinemana-x' : (payload.cinemanaId ? 'cinemana' : (isVidApiUrl(form.videoUrl) ? 'vidapi' : (form.playbackProvider || '')));
-            if (payload.cinemanaId || payload.cinemanaXId) {
-                payload.videoUrl = '';
-                payload.videoSources = [];
+            // لا نمسح رابط الفيديو المباشر الذي جلبناه من المصدر؛ نحتاج حفظه في Firebase
+            // حتى يعمل التشغيل على الهاتف أو عندما يكون السيرفر المحلي متوقفًا.
+            if (!payload.videoUrl && payload.videoSources.length) {
+                payload.videoUrl = payload.videoSources[0].url;
             }
             payload.trimStart = Number(form.trimStart) || 0;
             payload.trimEnd = Number(form.trimEnd) || 0;
@@ -7343,15 +7344,38 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                     trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, introStart: Number(e.introStart) || 0, introEnd: Number(e.introEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
                 }))
             }));
-            payload.seasons.forEach(s => {
-                (s.episodes || []).forEach(e => {
-                    if (e.cinemanaId || e.cinemanaXId) {
-                        e.videoUrl = '';
-                        e.videoSources = [];
-                        e.playbackProvider = e.cinemanaXId && !e.cinemanaId ? 'cinemana-x' : 'cinemana';
+            // احفظ الروابط المباشرة لكل حلقة بدل مسحها بمجرد وجود معرّف المصدر.
+            // إن كانت الحلقة تحتوي على معرّف فقط (عمل قديم)، نجلب رابطها أثناء الحفظ
+            // والسيرفر المحلي متاح على جهاز الإدارة، ثم نخزّنه حتى لا يحتاج المشاهد إلى البروكسي.
+            const unresolvedEpisodes = [];
+            for (const season of payload.seasons) {
+                for (const episode of (season.episodes || [])) {
+                    if (!episode.videoUrl && episode.videoSources && episode.videoSources.length) {
+                        episode.videoUrl = episode.videoSources[0].url;
                     }
-                });
-            });
+                    episode.playbackProvider = episode.cinemanaXId && !episode.cinemanaId
+                        ? 'cinemana-x'
+                        : (episode.cinemanaId ? 'cinemana' : (episode.playbackProvider || ''));
+                    const savedSourceId = String(episode.cinemanaXId || episode.cinemanaId || '').trim();
+                    if (!episode.videoUrl && !(episode.videoSources || []).length && savedSourceId) {
+                        const provider = episode.cinemanaXId && !episode.cinemanaId ? 'cinemana-x' : 'cinemana';
+                        try {
+                            const fetched = cinemanaVideoSources(await cinemanaVideos(savedSourceId, 'tv', provider));
+                            if (fetched.length) {
+                                episode.videoSources = fetched;
+                                episode.videoUrl = fetched[0].url;
+                            } else {
+                                unresolvedEpisodes.push(`م${season.number} ح${episode.number}: لم يرجع المصدر رابطًا`);
+                            }
+                        } catch (episodeFetchError) {
+                            unresolvedEpisodes.push(`م${season.number} ح${episode.number}: ${episodeFetchError && episodeFetchError.message ? episodeFetchError.message : 'تعذّر جلب الرابط'}`);
+                        }
+                    }
+                }
+            }
+            if (unresolvedEpisodes.length) {
+                setError(`تم حفظ بيانات الحلقات، لكن تعذّر حفظ رابط مباشر لـ ${unresolvedEpisodes.length} حلقة: ${unresolvedEpisodes.slice(0, 5).join(' | ')}`);
+            }
             payload.videoUrl = '';
         }
         if (payload.status === 'published') {
