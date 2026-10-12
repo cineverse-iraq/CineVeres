@@ -1241,7 +1241,7 @@ async function cinemanaFetch(path, provider = 'cinemana') {
         if (b && !candidates.includes(b)) candidates.push(b);
     };
     addCandidate(CINEMANA_PROXY);
-    if (isLocalPage) addCandidate('http://localhost:8787');
+    addCandidate('http://localhost:8787');
 
     let lastError = null;
     for (const base of candidates) {
