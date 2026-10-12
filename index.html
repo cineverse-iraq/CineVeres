@@ -5011,23 +5011,23 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 let url = '';
                 let sources = [];
                 let resolvedPlayback = null;
-                if (hasCinemanaId) {
+                // Prefer a saved direct playback URL first. Mobile browsers must not
+                // depend on localhost/API refresh merely because provider IDs exist.
+                url = getSavedVideoUrl(title);
+                sources = normalizeVideoSources(title.videoSources);
+                if (!url && hasCinemanaId) {
                     const recovered = await resolveFreshCinemanaVideo(title, 'movie');
                     resolvedPlayback = recovered;
                     if (requestId !== playRequestRef.current) return;
                     url = recovered.url;
                     sources = recovered.sources;
                 }
-                else {
-                    url = getSavedVideoUrl(title);
-                    sources = normalizeVideoSources(title.videoSources);
-                    if (!url && !title.videoUrl) {
-                        const recovered = await resolveFreshCinemanaVideo(title, 'movie');
-                        resolvedPlayback = recovered;
-                        if (requestId !== playRequestRef.current) return;
-                        url = recovered.url;
-                        sources = recovered.sources;
-                    }
+                else if (!url && !title.videoUrl) {
+                    const recovered = await resolveFreshCinemanaVideo(title, 'movie');
+                    resolvedPlayback = recovered;
+                    if (requestId !== playRequestRef.current) return;
+                    url = recovered.url;
+                    sources = recovered.sources;
                 }
                 if (requestId !== playRequestRef.current) return;
                 setPlayingUrl(url);
@@ -5071,23 +5071,23 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             let url = '';
             let sources = [];
             let resolvedPlayback = null;
-            if (hasCinemanaId) {
+            // Use a stored direct URL before asking a proxy for a refreshed one.
+            // This preserves playback on phones where localhost is the phone itself.
+            url = getSavedVideoUrl(ep);
+            sources = normalizeVideoSources(ep.videoSources);
+            if (!url && hasCinemanaId) {
                 const recovered = await resolveFreshCinemanaVideo(ep, 'tv', seasonNumber);
                 resolvedPlayback = recovered;
                 if (requestId !== playRequestRef.current) return;
                 url = recovered.url;
                 sources = recovered.sources;
             }
-            else {
-                url = getSavedVideoUrl(ep);
-                sources = normalizeVideoSources(ep.videoSources);
-                if (!url && !(ep && ep.videoUrl)) {
-                    const recovered = await resolveFreshCinemanaVideo(ep, 'tv', seasonNumber);
-                    resolvedPlayback = recovered;
-                    if (requestId !== playRequestRef.current) return;
-                    url = recovered.url;
-                    sources = recovered.sources;
-                }
+            else if (!url && !(ep && ep.videoUrl)) {
+                const recovered = await resolveFreshCinemanaVideo(ep, 'tv', seasonNumber);
+                resolvedPlayback = recovered;
+                if (requestId !== playRequestRef.current) return;
+                url = recovered.url;
+                sources = recovered.sources;
             }
             if (requestId !== playRequestRef.current) return;
             setPlayingUrl(url);
