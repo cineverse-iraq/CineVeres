@@ -1205,7 +1205,7 @@ const CINEMANA_PROXY = (() => {
     const host = String((typeof location !== 'undefined' && location.hostname) || '').toLowerCase();
     const isLocalPage = host === 'localhost' || host === '127.0.0.1';
     // Local testing switch: append ?localProxy=1 to the site URL to route
-    // browser-side Cinema Box/Cinemana API requests to this computer's Node server.
+    // browser-side سينمانا X/Cinemana API requests to this computer's Node server.
     // This is opt-in so ordinary visitors never accidentally target their own localhost.
     let forceLocalProxy = false;
     try { forceLocalProxy = new URLSearchParams(location.search || '').get('localProxy') === '1'; } catch (_) {}
@@ -1525,25 +1525,25 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
         if (first && onGenerate)
             onGenerate(first.url, first, sources);
     };
-    return (React.createElement("div", { className: "glass-card rounded-2xl p-3.5 border border-accent-purple/20 mt-3.5" },
-        React.createElement("p", { className: "text-[11px] font-bold text-accent-purple mb-2 flex items-center gap-1.5" },
+    return (React.createElement("div", { className: "glass-card rounded-2xl p-3.5 border border-slate-400/20 mt-3.5" },
+        React.createElement("p", { className: "text-[11px] font-bold text-slate-400 mb-2 flex items-center gap-1.5" },
             React.createElement(Icon, { name: "search", className: "w-3.5 h-3.5" }),
             "\u0633\u064A\u0646\u0645\u0627\u0646\u0627 \u0644\u0631\u0648\u0627\u0628\u0637 \u0627\u0644\u062A\u0634\u063A\u064A\u0644 \u0641\u0642\u0637 + TMDB \u0644\u0644\u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0648\u0627\u0644\u062a\u0639\u0628\u0626\u0629 \u0641\u0642\u0637"),
-        React.createElement("p", { className: "text-[10px] text-slate-500 mb-2" }, "\u0627\u0644\u0645\u0639\u0644\u0648\u0645\u0627\u062a \u0648\u0627\u0644\u0628\u064a\u0627\u0646\u0627\u062a \u062a\u064f\u0633\u062d\u0628 \u0645\u0646 TMDB \u0641\u0642\u0637\u060c \u0628\u064a\u0646\u0645\u0627 \u0631\u0648\u0627\u0628\u0637 \u0627\u0644\u062a\u0634\u063a\u064a\u0644 \u0648\u0627\u0644\u062c\u0648\u062f\u0627\u062a \u062a\u064f\u0633\u062a\u062e\u0644\u0635 \u0645\u0646 \u0633\u064a\u0646\u0645\u0627\u0646\u0627 \u0641\u0642\u0637. \u0644\u0627 \u064a\u062a\u0645 \u0625\u0646\u0634\u0627\u0621 \u0631\u0627\u0628\u0637 VidAPI \u0647\u0646\u0627."),
+        React.createElement("p", { className: "text-[10px] text-slate-500 mb-2" }, "معلومات TMDB للتعبئة فقط، أما روابط التشغيل والجودات فتُستخرج من سينمانا مباشرةً."),
         React.createElement("div", { className: "flex items-center gap-2 mb-2.5" },
-            React.createElement("input", { value: query, onChange: ev => setQuery(ev.target.value), onKeyDown: ev => ev.key === 'Enter' && search(), placeholder: kind === 'anime' ? 'اسم الأنمي' : 'اسم العمل بالإنجليزي أو العربي', className: "flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-purple" }),
-            React.createElement("button", { type: "button", onClick: () => search(), disabled: !query.trim() || loading, className: "shrink-0 px-4 py-2 rounded-xl bg-accent-purple text-white text-xs font-bold hover:brightness-110 transition disabled:opacity-40" }, loading ? 'جاري...' : 'بحث')),
-        metaLoading && React.createElement("p", { className: "text-[10px] text-accent-cyan font-bold mb-1.5" }, "\u062C\u0627\u0631\u064A \u062A\u0639\u0628\u0626\u0629 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A \u0645\u0646 TMDB..."),
+            React.createElement("input", { value: query, onChange: ev => setQuery(ev.target.value), onKeyDown: ev => ev.key === 'Enter' && search(), placeholder: kind === 'anime' ? 'اسم الأنمي' : 'اسم العمل بالإنجليزي أو العربي', className: "flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-slate-400" }),
+            React.createElement("button", { type: "button", onClick: () => search(), disabled: !query.trim() || loading, className: "shrink-0 px-4 py-2 rounded-xl bg-slate-400 text-white text-xs font-bold hover:brightness-110 transition disabled:opacity-40" }, loading ? 'جاري...' : 'بحث')),
+        metaLoading && React.createElement("p", { className: "text-[10px] text-slate-300 font-bold mb-1.5" }, "\u062C\u0627\u0631\u064A \u062A\u0639\u0628\u0626\u0629 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A \u0645\u0646 TMDB..."),
         kind !== 'movie' && React.createElement("p", { className: "text-[10px] text-slate-500 mb-1.5" },
             "\u0627\u0644\u0645\u0648\u0633\u0645 ",
             Number(season) || 1,
             " \u00B7 \u0627\u0644\u062D\u0644\u0642\u0629 ",
             Number(episode) || 1),
         error && React.createElement("p", { className: "text-[11px] font-bold text-rose-400 mb-2" }, error),
-        subMsg && React.createElement("p", { className: "text-[10px] font-bold text-accent-cyan mb-2" }, subMsg),
+        subMsg && React.createElement("p", { className: "text-[10px] font-bold text-slate-300 mb-2" }, subMsg),
         results && !videos && (React.createElement("div", { className: "grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-64 overflow-y-auto" },
             results.length === 0 && React.createElement("p", { className: "text-[11px] text-slate-500 col-span-full" }, "\u0644\u0627 \u0646\u062A\u0627\u0626\u062C"),
-            results.map(r => (React.createElement("button", { key: r.nb || r.id, type: "button", onClick: () => pickTitle(r), className: `text-right rounded-xl overflow-hidden border transition ${picked && picked.nb === r.nb ? 'border-accent-purple' : 'border-white/10 hover:border-accent-purple/60'}` },
+            results.map(r => (React.createElement("button", { key: r.nb || r.id, type: "button", onClick: () => pickTitle(r), className: `text-right rounded-xl overflow-hidden border transition ${picked && picked.nb === r.nb ? 'border-slate-400' : 'border-white/10 hover:border-slate-400/60'}` },
                 r.imgThumbObjUrl && React.createElement("img", { src: r.imgThumbObjUrl, alt: "", className: "w-full h-24 object-cover" }),
                 React.createElement("div", { className: "p-1.5" },
                     React.createElement("p", { className: "text-[10px] font-bold text-white truncate" },
@@ -1557,7 +1557,7 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
                         const allSources = cinemanaVideoSources(videos);
                         onGenerate && onGenerate(v.url, v, allSources);
                         onGenerateQualities && onGenerateQualities(allSources);
-                    }, className: "px-3 py-1.5 rounded-lg bg-accent-purple/15 border border-accent-purple/30 hover:bg-accent-purple/25 text-accent-purple text-[11px] font-bold transition" }, v.label)))),
+                    }, className: "px-3 py-1.5 rounded-lg bg-slate-400/15 border border-slate-400/30 hover:bg-slate-400/25 text-slate-400 text-[11px] font-bold transition" }, v.label)))),
             React.createElement("button", { type: "button", onClick: () => { setVideos(null); setPicked(null); }, className: "mt-2 text-[10px] text-slate-500 hover:text-slate-300 underline" }, "\u0631\u062C\u0648\u0639 \u0644\u0644\u0646\u062A\u0627\u0626\u062C")))));
 }
 function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle = '', defaultYear = '', value = [], onChange, onPickedId }) {
@@ -1633,7 +1633,7 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
             return score;
         };
         // TMDB supplies legitimate translated/original names only; all playable IDs and links still
-        // must come from Cinema Box. A loose/no-year result is not used to authorize a source card.
+        // must come from سينمانا X. A loose/no-year result is not used to authorize a source card.
         for (const language of ['en-US', 'ar-IQ']) {
             try {
                 const data = await tmdbFetch(`search/${media}`, {
@@ -1663,7 +1663,7 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
         if (!titleText) { setError('اكتب اسم الفيلم أو المسلسل أولاً.'); return; }
         // A new search invalidates the previously selected catalog item for this episode.
         onPickedId && onPickedId('');
-        setSearchLoading(true); setError(''); setMsg('جاري البحث عن البوسترات في Cinema Box...');
+        setSearchLoading(true); setError(''); setMsg('جاري البحث عن البوسترات في سينمانا X...');
         setSearchResults([]); setVisibleResultCount(60); setSearchDone(false); setSelectedResult(null);
         let lastError = null;
         let gotEmpty = false;
@@ -1683,7 +1683,7 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
                     const raw = await response.text();
                     let data = null; try { data = JSON.parse(raw); } catch (_) {}
                     if (!response.ok || !data || data.ok !== true || !Array.isArray(data.results)) {
-                        lastError = new Error(data && data.error ? String(data.error) : `فشل البحث في Cinema Box (HTTP ${response.status})`);
+                        lastError = new Error(data && data.error ? String(data.error) : `فشل البحث في سينمانا X (HTTP ${response.status})`);
                         continue;
                     }
                     const usable = data.results.filter(row => itemId(row) && itemTitle(row));
@@ -1693,7 +1693,7 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
                         if (compatibleCount) {
                             setMsg(`تم العثور على ${usable.length} نتيجة، منها ${compatibleCount} تطابق اسم/سنة العمل. اختَر نتيجة مطابقة فقط.`);
                         } else {
-                            setMsg(`Cinema Box رجّع ${usable.length} نتيجة، لكن ولا وحدة تطابق «${defaultTitle || titleText}»${String(defaultYear || '').match(/(?:19|20)\d{2}/)?.[0] ? ' (' + String(defaultYear).match(/(?:19|20)\d{2}/)[0] + ')' : ''}. النتائج غير المطابقة معطّلة حتى لا نحفظ روابط عمل مختلف.`);
+                            setMsg(`سينمانا X رجّع ${usable.length} نتيجة، لكن ولا وحدة تطابق «${defaultTitle || titleText}»${String(defaultYear || '').match(/(?:19|20)\d{2}/)?.[0] ? ' (' + String(defaultYear).match(/(?:19|20)\d{2}/)[0] + ')' : ''}. النتائج غير المطابقة معطّلة حتى لا نحفظ روابط عمل مختلف.`);
                         }
                         return;
                     }
@@ -1701,8 +1701,8 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
                 } catch (e) { lastError = e; }
             }
             setSearchDone(true);
-            if (gotEmpty) setMsg('ما ظهرت نتائج بهذا الاسم في Cinema Box. جرّب الاسم الإنجليزي أو جزءاً أقصر من الاسم.');
-            else setError('تعذّر البحث عن بوسترات Cinema Box. ' + String(lastError && lastError.message || 'تحقّق من اتصال محرك Cinema Box.'));
+            if (gotEmpty) setMsg('ما ظهرت نتائج بهذا الاسم في سينمانا X. جرّب الاسم الإنجليزي أو جزءاً أقصر من الاسم.');
+            else setError('تعذّر البحث عن بوسترات سينمانا X. ' + String(lastError && lastError.message || 'تحقّق من اتصال محرك سينمانا X.'));
             setMsg(gotEmpty ? 'ما لقينا نتائج مطابقة. جرّب اسمًا بديلًا أو كلمة أقصر.' : '');
         } finally { setSearchLoading(false); }
     };
@@ -1711,8 +1711,8 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
         if (!selectedResult) { setError('ابحث عن العمل أولاً، ثم اختَر بوستره من النتائج.'); return; }
         const titleText = itemTitle(selectedResult) || String(query || '').trim();
         const selectedId = itemId(selectedResult);
-        if (!selectedId) { setError('نتيجة Cinema Box المختارة لا تحتوي معرّفاً واضحاً. جرّب اختيار نتيجة ثانية.'); return; }
-        setLoading(true); setError(''); setMsg(`جاري استخراج روابط ${titleText} من Cinema Box...`);
+        if (!selectedId) { setError('نتيجة سينمانا X المختارة لا تحتوي معرّفاً واضحاً. جرّب اختيار نتيجة ثانية.'); return; }
+        setLoading(true); setError(''); setMsg(`جاري استخراج روابط ${titleText} من سينمانا X...`);
         const params = new URLSearchParams({
             title: titleText,
             type: kind === 'movie' ? 'movie' : 'tv',
@@ -1731,7 +1731,7 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
                     const raw = await response.text();
                     let data = null; try { data = JSON.parse(raw); } catch (_) {}
                     if (!response.ok || !data || data.ok !== true) {
-                        lastError = new Error(data && data.error ? String(data.error) : `فشل Cinema Box (HTTP ${response.status})`);
+                        lastError = new Error(data && data.error ? String(data.error) : `فشل سينمانا X (HTTP ${response.status})`);
                         continue;
                     }
                     const normalized = normalizeVideoSources(data.sources).sort((a, b) => {
@@ -1747,34 +1747,34 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
                     return;
                 } catch (e) { lastError = e; }
             }
-            throw new Error('تعذّر استخراج روابط Cinema Box. آخر خطأ: ' + String(lastError && lastError.message || 'اتصال غير معروف') + '.');
+            throw new Error('تعذّر استخراج روابط سينمانا X. آخر خطأ: ' + String(lastError && lastError.message || 'اتصال غير معروف') + '.');
         } catch (e) {
-            setError(e && e.message ? e.message : 'فشل استخراج روابط Cinema Box.');
+            setError(e && e.message ? e.message : 'فشل استخراج روابط سينمانا X.');
             setMsg('');
         } finally { setLoading(false); }
     };
     const clear = () => {
         setSources([]); onChange && onChange([]); onPickedId && onPickedId('');
-        setMsg('تم مسح روابط Cinema Box من النموذج؛ لن تُحذف من Firebase إلا بعد حفظ العمل.'); setError('');
+        setMsg('تم مسح روابط سينمانا X من النموذج؛ لن تُحذف من Firebase إلا بعد حفظ العمل.'); setError('');
     };
-    return React.createElement('div', { className: 'glass-card rounded-2xl p-3.5 border border-emerald-400/25 mt-3.5 min-w-0' },
-        React.createElement('p', { className: 'text-[11px] font-bold text-emerald-300 mb-2 flex items-center gap-1.5' },
-            React.createElement(Icon, { name: 'film', className: 'w-3.5 h-3.5' }), 'Cinema Box — ابحث بالبوستر ثم استخرج الجودات'),
+    return React.createElement('div', { className: 'glass-card rounded-2xl p-3.5 border border-slate-400/25 mt-3.5 min-w-0' },
+        React.createElement('p', { className: 'text-[11px] font-bold text-slate-300 mb-2 flex items-center gap-1.5' },
+            React.createElement(Icon, { name: 'film', className: 'w-3.5 h-3.5' }), 'سينمانا X — ابحث بالبوستر ثم استخرج الجودات'),
         React.createElement('p', { className: 'text-[10px] text-slate-500 mb-2' },
-            'مثل بحث سينمانا: اكتب اسم العمل، اختَر البوستر الصحيح مع السنة، ثم استخرج روابط الفيلم أو الحلقة من نفس نتيجة Cinema Box المختارة.'),
+            'مثل بحث سينمانا: اكتب اسم العمل، اختَر البوستر الصحيح مع السنة، ثم استخرج روابط الفيلم أو الحلقة من نفس نتيجة سينمانا X المختارة.'),
         React.createElement('div', { className: 'flex items-center gap-2' },
-            React.createElement('input', { value: query, onChange: e => { setQuery(e.target.value); setSelectedResult(null); onPickedId && onPickedId(''); setSearchResults([]); setVisibleResultCount(60); setSearchDone(false); setMsg(''); setError(''); }, onKeyDown: e => { if (e.key === 'Enter') search(); }, placeholder: kind === 'movie' ? 'ابحث عن فيلم بالاسم' : 'ابحث عن مسلسل أو أنمي بالاسم', className: 'flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-400', dir: 'auto' }),
-            React.createElement('button', { type: 'button', onClick: search, disabled: searchLoading || !String(query || '').trim(), className: 'shrink-0 px-3.5 py-2 rounded-xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-200 text-xs font-black disabled:opacity-40' }, searchLoading ? 'جاري البحث...' : 'بحث عن البوسترات')),
+            React.createElement('input', { value: query, onChange: e => { setQuery(e.target.value); setSelectedResult(null); onPickedId && onPickedId(''); setSearchResults([]); setVisibleResultCount(60); setSearchDone(false); setMsg(''); setError(''); }, onKeyDown: e => { if (e.key === 'Enter') search(); }, placeholder: kind === 'movie' ? 'ابحث عن فيلم بالاسم' : 'ابحث عن مسلسل أو أنمي بالاسم', className: 'flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-slate-400', dir: 'auto' }),
+            React.createElement('button', { type: 'button', onClick: search, disabled: searchLoading || !String(query || '').trim(), className: 'shrink-0 px-3.5 py-2 rounded-xl bg-slate-500/15 border border-slate-400/30 text-slate-200 text-xs font-black disabled:opacity-40' }, searchLoading ? 'جاري البحث...' : 'بحث عن البوسترات')),
         searchDone && searchResults.length > 0 && React.createElement('div', { className: 'mt-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-80 overflow-y-auto pr-0.5' },
             searchResults.slice(0, visibleResultCount).map((row, index) => {
                 const id = itemId(row); const title = itemTitle(row); const yearText = itemYear(row); const poster = itemPoster(row);
                 const compatibility = candidateCompatibility(row);
                 const isSelected = !!selectedResult && itemId(selectedResult) === id;
                 const category = String(row.category_name || row.category || (String(row.type || '').toUpperCase() === 'SERIES' ? 'Series' : 'Movie'));
-                return React.createElement('button', { key: `${id}-${title}-${index}`, type: 'button', disabled: !compatibility.ok, title: compatibility.ok ? title : compatibility.reason, onClick: () => { if (!compatibility.ok) return; setSelectedResult(row); onPickedId && onPickedId(id, { title, year: yearText }); setError(''); setMsg(`تم اختيار «${title}»${yearText ? ' (' + yearText + ')' : ''} وحُفظ معرّفه لهذا المسلسل؛ تقدر هسه تستخرج الحلقة أو تبدأ الاستخراج الجماعي.`); }, className: `relative min-w-0 text-right rounded-xl overflow-hidden border transition ${!compatibility.ok ? 'opacity-45 cursor-not-allowed border-rose-400/20 bg-black/20' : isSelected ? 'border-emerald-300 ring-2 ring-emerald-400/30 bg-emerald-400/10' : 'border-white/10 hover:border-emerald-400/60 bg-black/10'}` },
+                return React.createElement('button', { key: `${id}-${title}-${index}`, type: 'button', disabled: !compatibility.ok, title: compatibility.ok ? title : compatibility.reason, onClick: () => { if (!compatibility.ok) return; setSelectedResult(row); onPickedId && onPickedId(id, { title, year: yearText }); setError(''); setMsg(`تم اختيار «${title}»${yearText ? ' (' + yearText + ')' : ''} وحُفظ معرّفه لهذا المسلسل؛ تقدر هسه تستخرج الحلقة أو تبدأ الاستخراج الجماعي.`); }, className: `relative min-w-0 text-right rounded-xl overflow-hidden border transition ${!compatibility.ok ? 'opacity-45 cursor-not-allowed border-rose-400/20 bg-black/20' : isSelected ? 'border-slate-300 ring-2 ring-slate-400/30 bg-slate-400/10' : 'border-white/10 hover:border-slate-400/60 bg-black/10'}` },
                     poster ? React.createElement('img', { src: poster, alt: '', loading: 'lazy', className: 'w-full h-28 sm:h-32 object-cover bg-black/20', onError: e => { e.currentTarget.style.display = 'none'; } }) : React.createElement('div', { className: 'w-full h-28 sm:h-32 flex items-center justify-center bg-black/20 text-slate-600' }, React.createElement(Icon, { name: 'film', className: 'w-8 h-8' })),
                     !compatibility.ok && React.createElement('span', { className: 'absolute top-1.5 left-1.5 rounded-full bg-rose-500/90 text-white text-[9px] font-black px-2 py-1' }, 'غير مطابق'),
-                    isSelected && React.createElement('span', { className: 'absolute top-1.5 right-1.5 rounded-full bg-emerald-400 text-slate-950 text-[9px] font-black px-2 py-1' }, 'تم الاختيار'),
+                    isSelected && React.createElement('span', { className: 'absolute top-1.5 right-1.5 rounded-full bg-slate-400 text-slate-950 text-[9px] font-black px-2 py-1' }, 'تم الاختيار'),
                     React.createElement('div', { className: 'p-2' },
                         React.createElement('p', { className: 'text-[10px] leading-4 font-bold text-white line-clamp-2 min-h-8', dir: 'auto' }, title),
                         React.createElement('div', { className: 'mt-1 flex items-center justify-between gap-1 text-[9px] text-slate-400' },
@@ -1784,17 +1784,17 @@ function CinemaBoxHelper({ kind = 'movie', season = 1, episode = 1, defaultTitle
             })),
         searchDone && searchResults.length > visibleResultCount && React.createElement('div', { className: 'mt-2 flex items-center justify-center gap-2 text-[10px] text-slate-400' },
             React.createElement('span', null, `عرض ${visibleResultCount} من ${searchResults.length} نتيجة`),
-            React.createElement('button', { type: 'button', onClick: () => setVisibleResultCount(n => Math.min(n + 60, searchResults.length)), className: 'px-3 py-1.5 rounded-lg border border-emerald-400/25 bg-emerald-400/10 text-emerald-200 font-black' }, `عرض 60 نتيجة إضافية (${searchResults.length - visibleResultCount} متبقية)`)),
-        searchDone && searchResults.length > 0 && selectedResult && React.createElement('div', { className: 'mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-2.5' },
-            React.createElement('p', { className: 'text-[10px] text-emerald-100 min-w-0' }, `العمل المحدد: ${itemTitle(selectedResult)} · Cinema Box ID: ${itemId(selectedResult)}`),
-            React.createElement('button', { type: 'button', onClick: extract, disabled: loading, className: 'shrink-0 px-3.5 py-2 rounded-xl bg-emerald-400 text-slate-950 text-xs font-black disabled:opacity-40' }, loading ? 'جاري استخراج الروابط...' : 'استخراج روابط العمل المختار')),
+            React.createElement('button', { type: 'button', onClick: () => setVisibleResultCount(n => Math.min(n + 60, searchResults.length)), className: 'px-3 py-1.5 rounded-lg border border-slate-400/25 bg-slate-400/10 text-slate-200 font-black' }, `عرض 60 نتيجة إضافية (${searchResults.length - visibleResultCount} متبقية)`)),
+        searchDone && searchResults.length > 0 && selectedResult && React.createElement('div', { className: 'mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-400/20 bg-slate-400/5 p-2.5' },
+            React.createElement('p', { className: 'text-[10px] text-slate-100 min-w-0' }, `العمل المحدد: ${itemTitle(selectedResult)} · سينمانا X ID: ${itemId(selectedResult)}`),
+            React.createElement('button', { type: 'button', onClick: extract, disabled: loading, className: 'shrink-0 px-3.5 py-2 rounded-xl bg-slate-400 text-slate-950 text-xs font-black disabled:opacity-40' }, loading ? 'جاري استخراج الروابط...' : 'استخراج روابط العمل المختار')),
         kind !== 'movie' && React.createElement('p', { className: 'text-[10px] text-slate-500 mt-2' }, `الموسم ${Number(season) || 1} · الحلقة ${Number(episode) || 1}`),
         error && React.createElement('p', { className: 'text-[10px] font-bold text-rose-400 mt-2' }, error),
         msg && React.createElement('p', { className: 'text-[10px] font-bold text-slate-300 mt-2' }, msg),
         sources.length > 0 && React.createElement('div', { className: 'flex flex-wrap gap-1.5 mt-2.5' },
-            sources.map((source, i) => React.createElement('a', { key: source.url || i, href: source.url, target: '_blank', rel: 'noopener noreferrer', className: 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold text-emerald-200 hover:border-emerald-400/40', dir: 'ltr' },
+            sources.map((source, i) => React.createElement('a', { key: source.url || i, href: source.url, target: '_blank', rel: 'noopener noreferrer', className: 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold text-slate-200 hover:border-slate-400/40', dir: 'ltr' },
                 source.label || source.quality || `مصدر ${i + 1}`, React.createElement(Icon, { name: 'external-link', className: 'w-3 h-3' }))),
-        sources.length > 0 && React.createElement('button', { type: 'button', onClick: clear, className: 'mt-2 block text-[10px] text-slate-500 hover:text-rose-300 underline' }, 'مسح روابط Cinema Box من النموذج')));
+        sources.length > 0 && React.createElement('button', { type: 'button', onClick: clear, className: 'mt-2 block text-[10px] text-slate-500 hover:text-rose-300 underline' }, 'مسح روابط سينمانا X من النموذج')));
 }
 
 function CinemaBoxSeriesHelper({ title = '', year = '', seasons = [], onChangeSeasons }) {
@@ -1863,7 +1863,7 @@ function CinemaBoxSeriesHelper({ title = '', year = '', seasons = [], onChangeSe
                 let data = null;
                 try { data = JSON.parse(raw); } catch (_) {}
                 if (!response.ok || !data || data.ok !== true) {
-                    lastError = new Error(data && data.error ? String(data.error) : `Cinema Box HTTP ${response.status}`);
+                    lastError = new Error(data && data.error ? String(data.error) : `سينمانا X HTTP ${response.status}`);
                     continue;
                 }
                 const sources = normalizeVideoSources(data.sources).sort((a, b) => {
@@ -1877,7 +1877,7 @@ function CinemaBoxSeriesHelper({ title = '', year = '', seasons = [], onChangeSe
                 return { sources, cinemaBoxId: String(data.cinemaBoxId || ''), matchedTitle: String(data.matchedTitle || titleText) };
             } catch (e) { lastError = e; }
         }
-        throw lastError || new Error('تعذّر الاتصال بمحرك Cinema Box.');
+        throw lastError || new Error('تعذّر الاتصال بمحرك سينمانا X.');
     };
     const runBatchExtraction = async scope => {
         if (batchRunning) return;
@@ -1897,7 +1897,7 @@ function CinemaBoxSeriesHelper({ title = '', year = '', seasons = [], onChangeSe
         })));
         const selectedCatalogId = String(verifiedBatchCatalogSelection && verifiedBatchCatalogSelection.id || '').trim();
         if (!selectedCatalogId) {
-            setBatchStatus({ message: 'أوقفت الاستخراج: ابحث عن بوستر مطابق واختره بقسم Cinema Box أولاً. لن نستخدم معرّفات قديمة.' });
+            setBatchStatus({ message: 'أوقفت الاستخراج: ابحث عن بوستر مطابق واختره بقسم سينمانا X أولاً. لن نستخدم معرّفات قديمة.' });
             return;
         }
         if (!allTargets.length) {
@@ -1907,7 +1907,7 @@ function CinemaBoxSeriesHelper({ title = '', year = '', seasons = [], onChangeSe
         const targets = refreshExisting ? allTargets : allTargets.filter(target => !target.existingSources);
         const skipped = allTargets.length - targets.length;
         if (!targets.length) {
-            setBatchStatus({ message: `كل الحلقات المحددة لديها روابط Cinema Box محفوظة (${skipped}). فعّل إعادة الاستخراج إذا تريد تحديثها.` });
+            setBatchStatus({ message: `كل الحلقات المحددة لديها روابط سينمانا X محفوظة (${skipped}). فعّل إعادة الاستخراج إذا تريد تحديثها.` });
             return;
         }
         const host = String(location.hostname || '').toLowerCase();
@@ -2029,39 +2029,39 @@ function CinemaBoxSeriesHelper({ title = '', year = '', seasons = [], onChangeSe
     };
     return React.createElement('div', { className: 'mt-4 min-w-0' },
         safeSeasons.length && episodes.length ? React.createElement(React.Fragment, null,
-            React.createElement('div', { className: 'glass-card rounded-2xl p-3.5 border border-emerald-400/25 mb-3' },
-                React.createElement('p', { className: 'text-[11px] font-black text-emerald-300 mb-1' }, 'استخراج جماعي لروابط Cinema Box'),
-                React.createElement('p', { className: 'text-[10px] leading-5 text-slate-400 mb-2.5' }, 'اختَر بوستر المسلسل من قسم Cinema Box أولاً؛ السيرفر يجلب التفاصيل مرة واحدة ويخزن بيانات المواسم مؤقتاً، ثم يستخرج الحلقات بتوازي محدود. الفشل لا يعني بالضرورة غياب الروابط؛ قد لا يعرض المصدر الموسم أو الحلقة في استجابته. النتائج تبقى في النموذج حتى تضغط «حفظ العمل».'),
+            React.createElement('div', { className: 'glass-card rounded-2xl p-3.5 border border-slate-400/25 mb-3' },
+                React.createElement('p', { className: 'text-[11px] font-black text-slate-300 mb-1' }, 'استخراج جماعي لروابط سينمانا X'),
+                React.createElement('p', { className: 'text-[10px] leading-5 text-slate-400 mb-2.5' }, 'اختَر بوستر المسلسل من قسم سينمانا X أولاً؛ السيرفر يجلب التفاصيل مرة واحدة ويخزن بيانات المواسم مؤقتاً، ثم يستخرج الحلقات بتوازي محدود. الفشل لا يعني بالضرورة غياب الروابط؛ قد لا يعرض المصدر الموسم أو الحلقة في استجابته. النتائج تبقى في النموذج حتى تضغط «حفظ العمل».'),
                 React.createElement('div', { className: 'flex flex-wrap items-center gap-2' },
-                    React.createElement('button', { type: 'button', onClick: () => runBatchExtraction('season'), disabled: batchRunning || !episodes.length, className: 'px-3.5 py-2 rounded-xl bg-emerald-500/15 border border-emerald-400/35 text-emerald-200 text-xs font-black disabled:opacity-40' }, batchRunning ? 'جاري الاستخراج…' : `استخراج حلقات الموسم ${Number(season && season.number) || 1} (${episodes.length})`),
-                    React.createElement('button', { type: 'button', onClick: () => runBatchExtraction('all'), disabled: batchRunning || !safeSeasons.some(s => (s.episodes || []).length), className: 'px-3.5 py-2 rounded-xl bg-emerald-500/15 border border-emerald-400/35 text-emerald-200 text-xs font-black disabled:opacity-40' }, `استخراج جميع الحلقات (${safeSeasons.reduce((n, s) => n + (Array.isArray(s.episodes) ? s.episodes.length : 0), 0)})`),
+                    React.createElement('button', { type: 'button', onClick: () => runBatchExtraction('season'), disabled: batchRunning || !episodes.length, className: 'px-3.5 py-2 rounded-xl bg-slate-500/15 border border-slate-400/35 text-slate-200 text-xs font-black disabled:opacity-40' }, batchRunning ? 'جاري الاستخراج…' : `استخراج حلقات الموسم ${Number(season && season.number) || 1} (${episodes.length})`),
+                    React.createElement('button', { type: 'button', onClick: () => runBatchExtraction('all'), disabled: batchRunning || !safeSeasons.some(s => (s.episodes || []).length), className: 'px-3.5 py-2 rounded-xl bg-slate-500/15 border border-slate-400/35 text-slate-200 text-xs font-black disabled:opacity-40' }, `استخراج جميع الحلقات (${safeSeasons.reduce((n, s) => n + (Array.isArray(s.episodes) ? s.episodes.length : 0), 0)})`),
                     batchRunning && React.createElement('button', { type: 'button', onClick: () => { stopBatchRef.current = true; }, className: 'px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-400/30 text-rose-300 text-xs font-bold' }, 'إيقاف بعد الطلب الجاري')),
                 React.createElement('label', { className: 'flex items-center gap-2 mt-2.5 text-[10px] text-slate-400 select-none' },
-                    React.createElement('input', { type: 'checkbox', checked: refreshExisting, onChange: e => setRefreshExisting(e.target.checked), disabled: batchRunning, className: 'accent-emerald-400' }),
+                    React.createElement('input', { type: 'checkbox', checked: refreshExisting, onChange: e => setRefreshExisting(e.target.checked), disabled: batchRunning, className: 'accent-slate-400' }),
                     'إعادة استخراج الحلقات التي لديها جودات محفوظة أيضاً'),
                 batchStatus && React.createElement('div', { className: 'mt-3 rounded-xl bg-black/20 border border-white/5 p-2.5' },
                     batchStatus.total ? React.createElement(React.Fragment, null,
                         React.createElement('div', { className: 'flex items-center justify-between gap-2 text-[10px] font-bold text-slate-300 mb-1.5' },
                             React.createElement('span', null, `${batchStatus.done || 0} / ${batchStatus.total}`),
                             React.createElement('span', null, `نجح ${batchStatus.success || 0} · فشل ${batchStatus.failed || 0} · محفوظ مسبقاً ${batchStatus.skipped || 0}`)),
-                        React.createElement('div', { className: 'h-1.5 rounded-full bg-white/10 overflow-hidden mb-2' }, React.createElement('div', { className: 'h-full rounded-full bg-emerald-400 transition-all', style: { width: `${Math.min(100, Math.round((Number(batchStatus.done || 0) / Number(batchStatus.total || 1)) * 100))}%` } }))) : null,
+                        React.createElement('div', { className: 'h-1.5 rounded-full bg-white/10 overflow-hidden mb-2' }, React.createElement('div', { className: 'h-full rounded-full bg-slate-400 transition-all', style: { width: `${Math.min(100, Math.round((Number(batchStatus.done || 0) / Number(batchStatus.total || 1)) * 100))}%` } }))) : null,
                     batchStatus.current && React.createElement('p', { className: 'text-[10px] text-slate-400 mb-1' }, batchStatus.current),
-                    batchStatus.message && React.createElement('p', { className: 'text-[10px] font-bold text-emerald-200 leading-5' }, batchStatus.message),
+                    batchStatus.message && React.createElement('p', { className: 'text-[10px] font-bold text-slate-200 leading-5' }, batchStatus.message),
                     Array.isArray(batchStatus.errors) && batchStatus.errors.length > 0 && React.createElement('div', { className: 'mt-2 space-y-1' }, batchStatus.errors.map((item, i) => React.createElement('p', { key: `${i}-${item}`, className: 'text-[10px] text-rose-300 leading-4' }, item)),
                         (batchStatus.failed || 0) > batchStatus.errors.length && React.createElement('p', { className: 'text-[10px] text-rose-300' }, `وأخطاء أخرى: ${(batchStatus.failed || 0) - batchStatus.errors.length}`)))),
             React.createElement('div', { className: 'grid sm:grid-cols-2 gap-2 mb-2.5' },
                 React.createElement('div', null,
-                    React.createElement('label', { className: 'text-[10px] font-bold text-slate-400 block mb-1' }, 'موسم Cinema Box'),
-                    React.createElement('select', { value: selectedSeason, onChange: e => { setSelectedSeason(e.target.value); const next = safeSeasons.find(s => String(Number(s.number) || 1) === e.target.value); setSelectedEpisode(String(next && next.episodes && next.episodes[0] && next.episodes[0].number || 1)); }, className: 'w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-400' },
+                    React.createElement('label', { className: 'text-[10px] font-bold text-slate-400 block mb-1' }, 'موسم سينمانا X'),
+                    React.createElement('select', { value: selectedSeason, onChange: e => { setSelectedSeason(e.target.value); const next = safeSeasons.find(s => String(Number(s.number) || 1) === e.target.value); setSelectedEpisode(String(next && next.episodes && next.episodes[0] && next.episodes[0].number || 1)); }, className: 'w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-slate-400' },
                         safeSeasons.map((s, i) => React.createElement('option', { key: `${s.number}-${i}`, value: String(Number(s.number) || i + 1) }, `الموسم ${Number(s.number) || i + 1}`)))),
                 React.createElement('div', null,
-                    React.createElement('label', { className: 'text-[10px] font-bold text-slate-400 block mb-1' }, 'حلقة Cinema Box'),
-                    React.createElement('select', { value: pickedEpisode ? String(Number(pickedEpisode.number) || 1) : selectedEpisode, onChange: e => setSelectedEpisode(e.target.value), className: 'w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-400' },
+                    React.createElement('label', { className: 'text-[10px] font-bold text-slate-400 block mb-1' }, 'حلقة سينمانا X'),
+                    React.createElement('select', { value: pickedEpisode ? String(Number(pickedEpisode.number) || 1) : selectedEpisode, onChange: e => setSelectedEpisode(e.target.value), className: 'w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-slate-400' },
                         episodes.map((ep, i) => React.createElement('option', { key: `${ep.number}-${i}`, value: String(Number(ep.number) || i + 1) }, `الحلقة ${Number(ep.number) || i + 1}${ep.title ? ' · ' + ep.title : ''}`))))),
             React.createElement(CinemaBoxHelper, { kind: 'tv', season: Number(season && season.number) || 1, episode: Number(pickedEpisode && pickedEpisode.number) || 1, defaultTitle: title, defaultYear: year, value: pickedEpisode && pickedEpisode.cinemaBoxSources || [], onChange: sources => updatePickedEpisode({ cinemaBoxSources: sources, cinemaBoxUrl: sources[0] && sources[0].url || '' }), onPickedId: (id, meta) => { const catalogId = String(id || '').trim(); updatePickedEpisode({ cinemaBoxId: catalogId }); setVerifiedBatchCatalogSelection(catalogId ? { id: catalogId, title: String(meta && meta.title || ''), year: String(meta && meta.year || '') } : null); } }),
             React.createElement('p', { className: 'text-[10px] text-slate-500 mt-1.5' }, 'استخراج الحلقة الواحدة ما زال متاحًا. استخدم الزرين أعلاه لاستخراج موسم كامل أو كل حلقات المسلسل والأنمي. بعد الانتهاء اضغط «حفظ العمل».')) :
-            React.createElement('div', { className: 'glass-card rounded-2xl p-3.5 border border-emerald-400/25' },
-                React.createElement('p', { className: 'text-[11px] font-bold text-emerald-300 mb-1' }, 'Cinema Box — مصدر المسلسلات والأنمي'),
+            React.createElement('div', { className: 'glass-card rounded-2xl p-3.5 border border-slate-400/25' },
+                React.createElement('p', { className: 'text-[11px] font-bold text-slate-300 mb-1' }, 'سينمانا X — مصدر المسلسلات والأنمي'),
                 React.createElement('p', { className: 'text-[10px] leading-5 text-slate-400' }, 'استورد المواسم من أداة سينمانا أعلاه أو أضف موسمًا وحلقة أولًا. بعدها يمكنك استخراج الحلقة الواحدة أو كل الحلقات تلقائيًا.')));
 }
 
@@ -5590,7 +5590,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         const normalized = source === 'cinemabox' ? 'cinemabox' : 'cinemana';
         const uid = currentUser && currentUser.id;
         setPreferredPlaybackSource(normalized);
-        setSourceNotice(`المصدر العامل محفوظ: ${normalized === 'cinemabox' ? 'Cinema Box' : 'سينمانا'}`);
+        setSourceNotice(`المصدر العامل محفوظ: ${normalized === 'cinemabox' ? 'سينمانا X' : 'سينمانا'}`);
         if (uid) {
             // Signed-in preference is per-account; do not mirror it into device-wide guest storage.
             try { localStorage.removeItem('cinadam_last_working_source'); } catch (_) { }
@@ -5641,7 +5641,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         const host = String(location.hostname || '').toLowerCase();
         const isLocalAdmin = forceLocalProxy || host === 'localhost' || host === '127.0.0.1' || host === '::1';
         if (!isLocalAdmin) {
-            throw new Error('ماكو روابط Cinema Box محفوظة لهذا العمل. لازم المسؤول يستخرج الروابط ويحفظها؛ المشاهدة ما تعتمد على Node المحلي عندك.');
+            throw new Error('ماكو روابط سينمانا X محفوظة لهذا العمل. لازم المسؤول يستخرج الروابط ويحفظها؛ المشاهدة ما تعتمد على Node المحلي عندك.');
         }
         const bases = ['http://127.0.0.1:8787'];
         let lastError = null;
@@ -5656,27 +5656,27 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 let data = null;
                 try { data = JSON.parse(raw); } catch (e) { }
                 if (!response.ok || !data || data.ok !== true) {
-                    lastError = new Error(data && data.error ? String(data.error) : `فشل Cinema Box (HTTP ${response.status})`);
+                    lastError = new Error(data && data.error ? String(data.error) : `فشل سينمانا X (HTTP ${response.status})`);
                     continue;
                 }
                 const sources = normalizeVideoSources(data.sources).sort((a, b) => {
                     const qualityNumber = value => Number((String(value || '').match(/(\d{3,4})p?/i) || [])[1]) || 0;
                     return qualityNumber(b.quality || b.label) - qualityNumber(a.quality || a.label);
                 });
-                if (!sources.length) throw new Error('Cinema Box رجّع استجابة، لكن ما بيها روابط فيديو قابلة للتشغيل.');
+                if (!sources.length) throw new Error('سينمانا X رجّع استجابة، لكن ما بيها روابط فيديو قابلة للتشغيل.');
                 return { ...data, sources };
             } catch (e) { lastError = e; }
         }
-        throw lastError || new Error('تعذر الاتصال بمحرك Cinema Box المنشور.');
+        throw lastError || new Error('تعذر الاتصال بمحرك سينمانا X المنشور.');
     };
     const launchCinemaBoxPlayback = async ({ meta, kind, seasonNumber, episodeNumber, label, requestId, resumeAtSec = 0 }) => {
         setSourceBusy('cinemabox');
-        setSourceNotice('جاري استخراج رابط Cinema Box والتحقق من الاستجابة…');
+        setSourceNotice('جاري استخراج رابط سينمانا X والتحقق من الاستجابة…');
         try {
             const manualCinemaBoxUrl = String(meta && meta.cinemaBoxUrl || '').trim();
             const savedBoxSources = normalizeVideoSources([
                 ...normalizeVideoSources(meta && meta.cinemaBoxSources),
-                ...(manualCinemaBoxUrl ? [{ url: manualCinemaBoxUrl, label: 'Cinema Box' }] : [])
+                ...(manualCinemaBoxUrl ? [{ url: manualCinemaBoxUrl, label: 'سينمانا X' }] : [])
             ]).filter((source, i, all) => all.findIndex(x => x.url === source.url) === i).sort((a, b) => {
                 const qualityNumber = value => Number((String(value || '').match(/(\d{3,4})p?/i) || [])[1]) || 0;
                 return qualityNumber(b.quality || b.label) - qualityNumber(a.quality || a.label);
@@ -5687,7 +5687,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             if (requestId !== playRequestRef.current) return false;
             const sources = result.sources;
             const best = sources[0];
-            if (!best || !best.url) throw new Error('ما حصلنا رابط فيديو واضح من Cinema Box.');
+            if (!best || !best.url) throw new Error('ما حصلنا رابط فيديو واضح من سينمانا X.');
             const subtitleUrl = best.subtitleUrl || (Array.isArray(result.subtitles) && ((result.subtitles.find(x => x && x.isArabic && /vtt/i.test(x.format || '')) || result.subtitles.find(x => x && x.isArabic) || {}).url)) || '';
             setPlayingUrl(normalizeVideoUrl(best.url));
             setPlayingMeta({ ...meta, videoUrl: best.url, videoSources: sources, playbackProvider: 'cinemabox', sourceTitle: result.matchedTitle || '', subtitleUrl, subtitlePublicUrl: '', subtitleOffset: Number(meta && meta.subtitleOffset) || 0 });
@@ -5696,7 +5696,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             setResumeAt(Number(resumeAtSec) || 0);
             setVideoError(false);
             setPlayerRetryCount(c => c + 1);
-            setSourceNotice(`عُثر على ${sources.length} جودة من Cinema Box؛ نختبر التشغيل…`);
+            setSourceNotice(`عُثر على ${sources.length} جودة من سينمانا X؛ نختبر التشغيل…`);
             return true;
         } finally { setSourceBusy(''); }
     };
@@ -5769,7 +5769,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                             const started = await launchCinemanaPlayback({ meta: title, kind: 'movie', requestId, label: title.name, resumeAtSec: movieResume, forceResolve: requestedProvider === 'cinemana' || first === 'cinemana' && preferredPlaybackSource === 'cinemabox' });
                             if (started) return;
                         }
-                    } catch (e) { errors.push(`${source === 'cinemabox' ? 'Cinema Box' : 'سينمانا'}: ${e && e.message ? e.message : 'فشل المصدر'}`); }
+                    } catch (e) { errors.push(`${source === 'cinemabox' ? 'سينمانا X' : 'سينمانا'}: ${e && e.message ? e.message : 'فشل المصدر'}`); }
                 }
                 throw new Error(`تعذّر تشغيل العمل من المصدرين. ${errors.join(' | ')}`);
             }
@@ -5817,7 +5817,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                     const started = await launchCinemanaPlayback({ meta: ep, kind: 'tv', seasonNumber, label, requestId, resumeAtSec: requestedResume, forceResolve });
                     if (started) return;
                 }
-            } catch (e) { errors.push(`${source === 'cinemabox' ? 'Cinema Box' : 'سينمانا'}: ${e && e.message ? e.message : 'فشل المصدر'}`); }
+            } catch (e) { errors.push(`${source === 'cinemabox' ? 'سينمانا X' : 'سينمانا'}: ${e && e.message ? e.message : 'فشل المصدر'}`); }
         }
         if (requestId !== playRequestRef.current) return;
         setVideoError(true);
@@ -5885,7 +5885,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         if (provider === 'cinemana' && !wasStalled && !state.refreshCinemanaTried) {
             state.refreshCinemanaTried = true;
             // Refresh one possibly expired URL before switching sources. A retry that
-            // fails will skip this step next time and move to Cinema Box.
+            // fails will skip this step next time and move to سينمانا X.
             try {
                 const refreshed = await resolveFreshCinemanaVideo(meta, kind, playingSeasonNumber);
                 if (requestId !== playRequestRef.current) return;
@@ -5913,7 +5913,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             if (other === 'cinemabox') {
                 const started = await launchCinemaBoxPlayback({ meta: { ...meta, title: title.name }, kind, seasonNumber: playingSeasonNumber, episodeNumber: meta.number || 1, label: playingLabel, requestId, resumeAtSec: wasStalled ? failedAt : 0 });
                 if (started) return;
-                throw new Error('Cinema Box لم يقدّم رابط تشغيل بديلًا.');
+                throw new Error('سينمانا X لم يقدّم رابط تشغيل بديلًا.');
             }
             const started = await launchCinemanaPlayback({ meta, kind, seasonNumber: playingSeasonNumber, label: playingLabel, requestId, resumeAtSec: wasStalled ? failedAt : 0, forceResolve: true });
             if (started) return;
@@ -7687,9 +7687,9 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
                 "\u00BB")),
         React.createElement("div", { className: "mt-3.5" },
             React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u062D\u0644\u0642\u0629 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: e.videoUrl, onChange: v => set('videoUrl', v), folder: "episodes", accept: "video/*" })),
-        React.createElement("div", { className: "mt-3.5 rounded-2xl border border-emerald-400/20 bg-emerald-500/[0.04] p-3" },
-            React.createElement("label", { className: "text-xs font-bold text-emerald-200 mb-1.5 block" }, "رابط تشغيل هذه الحلقة من Cinema Box (اختياري)"),
-            React.createElement("input", { type: "url", dir: "ltr", value: e.cinemaBoxUrl || '', onChange: ev => set('cinemaBoxUrl', ev.target.value), placeholder: "https://.../episode.mp4", className: "w-full bg-glass-900 border border-emerald-400/20 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400" }),
+        React.createElement("div", { className: "mt-3.5 rounded-2xl border border-slate-400/20 bg-slate-500/[0.04] p-3" },
+            React.createElement("label", { className: "text-xs font-bold text-slate-200 mb-1.5 block" }, "رابط تشغيل هذه الحلقة من سينمانا X (اختياري)"),
+            React.createElement("input", { type: "url", dir: "ltr", value: e.cinemaBoxUrl || '', onChange: ev => set('cinemaBoxUrl', ev.target.value), placeholder: "https://.../episode.mp4", className: "w-full bg-glass-900 border border-slate-400/20 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-slate-400" }),
             React.createElement("p", { className: "text-[10px] text-slate-500 mt-1.5" }, "إذا فشل تشغيل سينمانا، يستطيع المشغل استخدام هذا الرابط المباشر كاحتياط.")),
         React.createElement("div", { className: "grid md:grid-cols-2 gap-3 items-start mt-3.5" },
             React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb) }),
@@ -8162,10 +8162,10 @@ function AdminContentForm({ initial, defaultType, onDone }) {
         React.createElement("div", { className: "mt-5" },
             React.createElement("label", { className: labelCls }, "\u0627\u0644\u0648\u0635\u0641"),
             React.createElement("textarea", { value: form.description, onChange: e => set('description', e.target.value), rows: 3, className: inputCls })),
-        React.createElement("div", { className: "mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/[0.04] p-3.5" },
-            React.createElement("label", { className: labelCls }, form.type === 'movie' ? "رابط تشغيل Cinema Box المباشر (اختياري)" : "رابط صفحة Cinema Box للعمل (اختياري)"),
+        React.createElement("div", { className: "mt-4 rounded-2xl border border-slate-400/20 bg-slate-500/[0.04] p-3.5" },
+            React.createElement("label", { className: labelCls }, form.type === 'movie' ? "رابط تشغيل سينمانا X المباشر (اختياري)" : "رابط صفحة سينمانا X للعمل (اختياري)"),
             React.createElement("input", { type: "url", dir: "ltr", value: form.cinemaBoxUrl || '', onChange: e => set('cinemaBoxUrl', e.target.value), placeholder: form.type === 'movie' ? "https://.../movie.mp4" : "https://.../series-or-anime", className: inputCls }),
-            React.createElement("p", { className: "text-[10px] text-slate-500 mt-1.5" }, form.type === 'movie' ? "يمكن استخدام الرابط كاحتياط عند فشل سينمانا. أدخل رابط تشغيل مباشر قابلًا للوصول." : "هذا الرابط يحفظ مرجع العمل فقط. رابط تشغيل Cinema Box الخاص بكل حلقة يُضاف داخل تعديل الحلقة أدناه.")),
+            React.createElement("p", { className: "text-[10px] text-slate-500 mt-1.5" }, form.type === 'movie' ? "يمكن استخدام الرابط كاحتياط عند فشل سينمانا. أدخل رابط تشغيل مباشر قابلًا للوصول." : "هذا الرابط يحفظ مرجع العمل فقط. رابط تشغيل سينمانا X الخاص بكل حلقة يُضاف داخل تعديل الحلقة أدناه.")),
         form.type === 'movie' ? (React.createElement("div", null,
             React.createElement("div", { className: "mt-5" },
                 React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u0644\u0645 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: form.videoUrl, onChange: v => set('videoUrl', v), folder: "videos", accept: "video/*" })),
