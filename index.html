@@ -685,10 +685,6 @@ function normalizeTitlePlaybackData(title) {
     clean.genres = normalizeGenresValue(clean.genres);
     clean.videoUrl = normalizeVideoUrl(clean.videoUrl || '');
     clean.videoSources = normalizeVideoSources(clean.videoSources);
-    clean.cinemanaXVideoUrl = normalizeVideoUrl(clean.cinemanaXVideoUrl || '');
-    clean.cinemanaXSources = normalizeVideoSources(clean.cinemanaXSources);
-    clean.cinemanaId = String(clean.cinemanaId || '').trim();
-    clean.cinemanaXId = String(clean.cinemanaXId || '').trim();
     clean.subtitleUrl = normalizeSubtitleUrl(clean.subtitleUrl || clean.subtitleURL || '');
     clean.subtitleOffset = Number(clean.subtitleOffset) || 0;
     clean.seasons = normalizeSeasonsValue(clean.seasons).map(season => ({
@@ -699,10 +695,6 @@ function normalizeTitlePlaybackData(title) {
             runtimeMinutes: Number(ep.runtimeMinutes ?? ep.runtime) || 0,
             videoUrl: normalizeVideoUrl(ep.videoUrl || ''),
             videoSources: normalizeVideoSources(ep.videoSources),
-            cinemanaXVideoUrl: normalizeVideoUrl(ep.cinemanaXVideoUrl || ''),
-            cinemanaXSources: normalizeVideoSources(ep.cinemanaXSources),
-            cinemanaId: String(ep.cinemanaId || '').trim(),
-            cinemanaXId: String(ep.cinemanaXId || '').trim(),
             subtitleUrl: normalizeSubtitleUrl(ep.subtitleUrl || ep.subtitleURL || ''),
             subtitleOffset: Number(ep.subtitleOffset) || 0,
             number: Number(ep.number) || 1
@@ -1194,18 +1186,9 @@ function isDirectVideo(url) {
 }
 function isCinemanaPlayback(meta, url) {
     const m = meta || {};
-    return ['cinemana', 'cinemana-x', 'cinemanax'].includes(String(m.playbackProvider || '').toLowerCase())
+    return String(m.playbackProvider || '').toLowerCase() === 'cinemana'
         || !!String(m.cinemanaId || '').trim()
-        || !!String(m.cinemanaXId || '').trim()
         || /cinemana/i.test(String(url || ''));
-}
-function preferredCinemanaSource() {
-    try { return localStorage.getItem('cinadam_preferred_video_source') === 'cinemana-x' ? 'cinemana-x' : 'cinemana'; }
-    catch (_) { return 'cinemana'; }
-}
-function rememberCinemanaSource(provider) {
-    try { localStorage.setItem('cinadam_preferred_video_source', provider === 'cinemana-x' ? 'cinemana-x' : 'cinemana'); }
-    catch (_) {}
 }
 // http://localhost:8787/search
 // http://localhost:8787/info/:id
@@ -1229,16 +1212,13 @@ const SUBTITLE_PUBLIC_BASE = (() => {
         (typeof localStorage !== 'undefined' ? localStorage.getItem('subtitle_public_base_url') : '') || '';
     return String(configured || '').trim().replace(/\/+$/, '');
 })();
-async function cinemanaFetch(path, provider = 'cinemana') {
+async function cinemanaFetch(path) {
     if (!CINEMANA_PROXY)
         throw new Error('لم يتم ضبط رابط بروكسي سينمانا. استخدم window.CINEMANA_PROXY_URL أو المسار /api/cinemana.');
 
     // على جهاز الإدارة قد يكون البروكسي العام غير متاح، بينما Node المحلي يعمل أصلًا.
     // لذلك نجرب الرابط المضبوط أولًا، ثم localhost كاحتياط. هذا لا يغيّر روابط الموقع
     // المنشور؛ فقط يمنع فشل البحث/الرفع من لوحة الإدارة بسبب Worker أو DNS متوقف.
-    const host = String((typeof location !== 'undefined' && location.hostname) || '').toLowerCase();
-    const isLocalPage = host === 'localhost' || host === '127.0.0.1';
-    const routedPath = provider === 'cinemana-x' ? `/x${path}` : path;
     const candidates = [];
     const addCandidate = (base) => {
         const b = String(base || '').trim().replace(/\/+$/, '');
@@ -1250,7 +1230,7 @@ async function cinemanaFetch(path, provider = 'cinemana') {
     let lastError = null;
     for (const base of candidates) {
         try {
-            const res = await fetch(`${base}${routedPath}`, {
+            const res = await fetch(`${base}${path}`, {
                 cache: 'no-store',
                 headers: { 'Accept': 'application/json', 'Cache-Control': 'no-cache' }
             });
@@ -1288,7 +1268,7 @@ function cinemanaArray(data, keys = ['results', 'items', 'data', 'list']) {
     }
     return [];
 }
-async function cinemanaSearch(title, type, provider = 'cinemana') {
+async function cinemanaSearch(title, type) {
     const primary = cinemanaApiType(type);
     const types = type === 'anime' ? ['anime', 'series', 'movie'] : [primary];
     const out = [];
@@ -1297,7 +1277,7 @@ async function cinemanaSearch(title, type, provider = 'cinemana') {
     for (const apiType of types) {
         try {
             const usp = new URLSearchParams({ videoTitle: title, type: apiType });
-            const data = await cinemanaFetch(`/search?${usp.toString()}`, provider);
+            const data = await cinemanaFetch(`/search?${usp.toString()}`);
             cinemanaArray(data).forEach(r => {
                 const k = String(r && (r.nb || r.id || r._id) || '');
                 if (!k || seen.has(k))
@@ -1309,9 +1289,6 @@ async function cinemanaSearch(title, type, provider = 'cinemana') {
         catch (e) {
             if (!firstHardError)
                 firstHardError = e;
-            // إذا تعذّر الاتصال بالمصدر نفسه، لا ننتظر محاولات أنواع أخرى على الخادم المتوقف؛
-            // الانتقال للمحرك البديل أسرع من تكرار المهلة ثلاث مرات.
-            if (!out.length) break;
         }
     }
     // لا نخفي خطأ البروكسي للأنمي؛ ظهور "لا نتائج" كان يخفي المشكلة الحقيقية.
@@ -1319,73 +1296,15 @@ async function cinemanaSearch(title, type, provider = 'cinemana') {
         throw firstHardError;
     return out;
 }
-function flattenCinemanaEpisodeRows(data) {
-    const out = [];
-    const seen = new Set();
-    const episodeChildren = new Set(['episodes', 'episodeList', 'episode_list', 'seasonEpisodes', 'season_episodes', 'videos', 'items', 'results', 'data', 'list']);
-    const explicitSeasonOf = obj => {
-        if (!obj || typeof obj !== 'object') return 0;
-        const raw = obj.season ?? obj.seasonNumber ?? obj.season_num ?? obj.season_number ?? obj.seasonNo ?? obj.season_no;
-        const n = Number(raw);
-        return Number.isFinite(n) && n > 0 ? n : 0;
-    };
-    const episodeNoOf = obj => {
-        const raw = obj && (obj.episodeNummer ?? obj.episodeNumber ?? obj.episode_number ?? obj.episode_no ?? obj.epNumber ?? obj.ep_number ?? obj.episode ?? obj.ep ?? obj.number);
-        const n = Number(raw);
-        return Number.isFinite(n) && n > 0 ? n : 0;
-    };
-    const idOf = obj => obj && (obj.nb ?? obj.id ?? obj._id ?? obj.videoId ?? obj.video_id);
-    const visit = (value, inheritedSeason = 0, inheritedExplicit = false, depth = 0) => {
-        if (depth > 12 || value == null) return;
-        if (Array.isArray(value)) {
-            value.forEach(v => visit(v, inheritedSeason, inheritedExplicit, depth + 1));
-            return;
-        }
-        if (typeof value !== 'object') return;
-        const directSeason = explicitSeasonOf(value);
-        const season = directSeason || inheritedSeason || 1;
-        const seasonExplicit = !!directSeason || inheritedExplicit;
-        const childEntries = Object.entries(value).filter(([key, child]) => episodeChildren.has(key) && (Array.isArray(child) || (child && typeof child === 'object')));
-        // Season/group objects hold their episode rows in a child list. Walk those
-        // rows with the parent season, rather than mistaking the season itself for an episode.
-        if (childEntries.length) {
-            for (const [key, child] of childEntries) visit(child, season, seasonExplicit, depth + 1);
-            return;
-        }
-        const id = idOf(value);
-        const epNo = episodeNoOf(value);
-        const hasVideoEvidence = !!(value.fileFile || value.file || value.fileUrl || value.file_url || value.videoUrl || value.video_url || value.transcoddedFileName || value.transcodedFileName || value.episode_flag != null);
-        if (id != null && String(id).trim() && (epNo > 0 || hasVideoEvidence)) {
-            const key = `${String(id)}|${season}|${epNo}`;
-            if (!seen.has(key)) {
-                seen.add(key);
-                out.push({ ...value, nb: value.nb ?? value.id ?? value._id ?? id, season, _seasonExplicit: seasonExplicit });
-            }
-            return;
-        }
-        // Some APIs wrap seasons in an object keyed by season number: {"1":[...]}. 
-        for (const [key, child] of Object.entries(value)) {
-            if (child && typeof child === 'object') {
-                const keySeason = /^\d+$/.test(key) && Number(key) > 0 ? Number(key) : 0;
-                visit(child, directSeason || keySeason || inheritedSeason, !!directSeason || !!keySeason || inheritedExplicit, depth + 1);
-            }
-        }
-    };
-    visit(data);
-    return out;
+async function cinemanaEpisodes(id) {
+    const data = await cinemanaFetch(`/episodes/${encodeURIComponent(id)}`);
+    return cinemanaArray(data, ['episodes', 'results', 'items', 'data', 'list']);
 }
-async function cinemanaEpisodes(id, provider = 'cinemana') {
-    const data = await cinemanaFetch(`/episodes/${encodeURIComponent(id)}`, provider);
-    const flattened = flattenCinemanaEpisodeRows(data);
-    if (flattened.length) return flattened;
-    // Keep compatibility with older servers that already return a flat episode array.
-    return cinemanaArray(data, ['episodes', 'results', 'items', 'data', 'list']).filter(ep => ep && typeof ep === 'object');
-}
-async function cinemanaVideos(id, kind = '', provider = 'cinemana') {
+async function cinemanaVideos(id, kind = '') {
     const enc = encodeURIComponent(id);
     let firstError = null;
     try {
-        const data = await cinemanaFetch(`/videos/${enc}`, provider);
+        const data = await cinemanaFetch(`/videos/${enc}`);
         const list = cinemanaArray(data, ['videos', 'files', 'results', 'items', 'data', 'list']);
         if (list.length) return list;
     } catch (e) {
@@ -1395,7 +1314,7 @@ async function cinemanaVideos(id, kind = '', provider = 'cinemana') {
     // نستخدمه كمسار احتياطي للأفلام فقط، حتى لا يتأثر مسار الحلقات الذي يعمل أصلًا.
     if (kind === 'movie') {
         try {
-            const info = await cinemanaFetch(`/info/${enc}`, provider);
+            const info = await cinemanaFetch(`/info/${enc}`);
             const found = [];
             const seen = new Set();
             const visit = value => {
@@ -1444,14 +1363,13 @@ function cinemanaYear(item) {
     return String(item && (item.year || item.releaseYear || item.release_date) || '').slice(0, 4);
 }
 function cinemanaEpisodeSeason(ep) {
-    return Number(ep && (ep.season ?? ep.seasonNumber ?? ep.season_num ?? ep.season_number ?? ep.seasonNo ?? ep.season_no)) || 1;
+    return Number(ep && (ep.season ?? ep.seasonNumber ?? ep.season_num)) || 1;
 }
 function cinemanaEpisodeNumber(ep) {
-    return Number(ep && (ep.episodeNummer ?? ep.episodeNumber ?? ep.episode_number ?? ep.episode_no ?? ep.epNumber ?? ep.ep_number ?? ep.episode ?? ep.ep ?? ep.number)) || 0;
+    return Number(ep && (ep.episodeNummer ?? ep.episode ?? ep.episodeNumber ?? ep.number)) || 0;
 }
 function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGenerate, onGenerateQualities, onGenerateSubtitle, onPickedNb, onImportTmdb }) {
     const [query, setQuery] = useState(defaultTitle || '');
-    const [source, setSource] = useState('cinemana');
     useEffect(() => { if (defaultTitle)
         setQuery(defaultTitle); }, [defaultTitle]);
     const [loading, setLoading] = useState(false);
@@ -1478,30 +1396,28 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
             setSubMsg('لم تكتمل مطابقة الترجمة العربية: ' + (e && e.message ? e.message : ''));
         }
     };
-    const search = async (auto, providerOverride = '', queryOverride = '') => {
-        const selectedSource = providerOverride || source;
-        const searchQuery = String(queryOverride || query || '').trim();
-        if (!searchQuery) return;
+    const search = async (auto) => {
+        if (!query.trim())
+            return;
         setLoading(true);
         setError('');
         setResults(null);
         setVideos(null);
         setPicked(null);
         try {
-            const data = await cinemanaSearch(searchQuery, kind, selectedSource);
+            const data = await cinemanaSearch(query.trim(), kind);
             setResults(data);
             if (auto && data && data.length) {
-                const normalizedQuery = normName(searchQuery).replace(/\b(?:19|20)\d{2}\b/g, ' ').replace(/\s+/g, ' ').trim();
-                const namesFor = r => [r && r.en_title, r && r.ar_title, r && r.other_title, r && r.title, r && r.name].map(normName).filter(Boolean);
-                const exactMatches = data.filter(r => namesFor(r).some(n => n === normalizedQuery));
-                const exactByYear = defaultYear ? exactMatches.find(r => String(cinemanaYear(r)) === String(defaultYear)) : null;
-                const softMatches = data.filter(r => namesFor(r).some(n => normalizedQuery.length >= 3 && (n.startsWith(normalizedQuery) || normalizedQuery.startsWith(n))));
-                const autoPick = exactByYear || exactMatches[0] || (softMatches.length === 1 ? softMatches[0] : null) || (data.length === 1 ? data[0] : null);
-                if (autoPick) await pickTitle(autoPick, selectedSource);
+                const byYear = defaultYear ? data.find(r => String(cinemanaYear(r)) === String(defaultYear)) : null;
+                const autoPick = byYear || (data.length === 1 ? data[0] : null);
+                if (autoPick)
+                    await pickTitle(autoPick);
             }
         }
-        catch (e) { setError(e.message || 'فشل البحث'); }
-        finally { setLoading(false); }
+        catch (e) {
+            setError(e.message || 'فشل البحث');
+        }
+        setLoading(false);
     };
     useEffect(() => {
         if (defaultTitle && defaultTitle.trim() && autoRanFor.current !== defaultTitle) {
@@ -1511,8 +1427,7 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
         }
         // eslint-disable-next-line
     }, [defaultTitle, defaultYear]);
-    const pickTitle = async (item, providerOverride = '') => {
-        const selectedSource = providerOverride || source;
+    const pickTitle = async (item) => {
         setPicked(item);
         setVideos(null);
         setError('');
@@ -1530,7 +1445,7 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
             }
             if (kind === 'movie' || kind === 'anime') {
                 const nb = String(item.nb);
-                const fetchedVideos = await cinemanaVideos(nb, kind, selectedSource);
+                const fetchedVideos = await cinemanaVideos(nb, kind);
                 setVideos(fetchedVideos);
                 // بمجرد جلب مصادر الفيلم، خزّن أول مصدر مباشرة في نموذج الإدارة.
                 // سابقًا كان الرابط لا يُحفظ إلا إذا ضغط المستخدم على زر الجودة،
@@ -1539,41 +1454,25 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
                     const fetchedSources = cinemanaVideoSources(fetchedVideos);
                     const firstSource = fetchedSources[0];
                     if (firstSource) {
-                        onGenerate && onGenerate(firstSource.url, firstSource, fetchedSources, selectedSource);
-                        onGenerateQualities && onGenerateQualities(fetchedSources, selectedSource);
+                        onGenerate && onGenerate(firstSource.url, firstSource, fetchedSources);
+                        onGenerateQualities && onGenerateQualities(fetchedSources);
                     }
                 }
                 if (onPickedNb)
-                    onPickedNb(nb, selectedSource);
-                if (selectedSource === 'cinemana') autoSubtitle(nb, item);
+                    onPickedNb(nb);
+                autoSubtitle(nb, item);
             }
             else {
-                const eps = await cinemanaEpisodes(String(item.nb), selectedSource);
-                const wantedSeason = Number(season) || 1;
-                const wantedEpisode = Number(episode) || 1;
-                let match = eps.find(e => cinemanaEpisodeSeason(e) === wantedSeason && cinemanaEpisodeNumber(e) === wantedEpisode);
-                // If the provider's response omitted season metadata (common for a
-                // single-season result), match the episode number only when unique.
-                if (!match) {
-                    const byEpisode = eps.filter(e => cinemanaEpisodeNumber(e) === wantedEpisode);
-                    const anyExplicitSeason = eps.some(e => e && e._seasonExplicit);
-                    if (!anyExplicitSeason && byEpisode.length === 1) match = byEpisode[0];
-                }
+                const eps = await cinemanaEpisodes(String(item.nb));
+                const match = eps.find(e => cinemanaEpisodeSeason(e) === (Number(season) || 1) && cinemanaEpisodeNumber(e) === (Number(episode) || 1));
                 if (!match)
-                    setError(`لم يُعثر على رابط الموسم ${wantedSeason} الحلقة ${wantedEpisode} في ${selectedSource === 'cinemana-x' ? 'Cinemana X' : 'سينمانا'}؛ تأكد من توفر الحلقة بهذا الرقم.`);
+                    setError(`لم يُعثر تلقائيًا على الموسم ${Number(season) || 1} الحلقة ${Number(episode) || 1} بهذا العنوان على سينمانا`);
                 else {
-                    const nb = String(match.nb ?? match.id ?? match._id ?? '');
-                    if (!nb) throw new Error('وجدت الحلقة لكن المصدر لم يرجع معرّف فيديو صالحًا.');
-                    const fetchedVideos = await cinemanaVideos(nb, kind, selectedSource);
-                    setVideos(fetchedVideos);
-                    const fetchedSources = cinemanaVideoSources(fetchedVideos);
-                    if (fetchedSources.length) {
-                        onGenerate && onGenerate(fetchedSources[0].url, fetchedSources[0], fetchedSources, selectedSource);
-                        onGenerateQualities && onGenerateQualities(fetchedSources, selectedSource);
-                    }
+                    const nb = String(match.nb);
+                    setVideos(await cinemanaVideos(nb, kind));
                     if (onPickedNb)
-                        onPickedNb(nb, selectedSource);
-                    if (selectedSource === 'cinemana') autoSubtitle(nb, item);
+                        onPickedNb(nb);
+                    autoSubtitle(nb, item);
                 }
             }
         }
@@ -1588,16 +1487,13 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
             onGenerateQualities(sources);
         const first = sources[0];
         if (first && onGenerate)
-            onGenerate(first.url, first, sources, source);
+            onGenerate(first.url, first, sources);
     };
     return (React.createElement("div", { className: "glass-card rounded-2xl p-3.5 border border-accent-purple/20 mt-3.5" },
         React.createElement("p", { className: "text-[11px] font-bold text-accent-purple mb-2 flex items-center gap-1.5" },
             React.createElement(Icon, { name: "search", className: "w-3.5 h-3.5" }),
-            "\u0645\u0635\u0627\u062f\u0631 \u0627\u0644\u062A\u0634\u063A\u064A\u0644: \u0633\u064A\u0646\u0645\u0627\u0646\u0627 (1) + Cinemana X (2) \u00B7 TMDB \u0644\u0644\u0645\u0639\u0644\u0648\u0645\u0627\u062A"),
+            "\u0633\u064A\u0646\u0645\u0627\u0646\u0627 \u0644\u0631\u0648\u0627\u0628\u0637 \u0627\u0644\u062A\u0634\u063A\u064A\u0644 \u0641\u0642\u0637 + TMDB \u0644\u0644\u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0648\u0627\u0644\u062a\u0639\u0628\u0626\u0629 \u0641\u0642\u0637"),
         React.createElement("p", { className: "text-[10px] text-slate-500 mb-2" }, "\u0627\u0644\u0645\u0639\u0644\u0648\u0645\u0627\u062a \u0648\u0627\u0644\u0628\u064a\u0627\u0646\u0627\u062a \u062a\u064f\u0633\u062d\u0628 \u0645\u0646 TMDB \u0641\u0642\u0637\u060c \u0628\u064a\u0646\u0645\u0627 \u0631\u0648\u0627\u0628\u0637 \u0627\u0644\u062a\u0634\u063a\u064a\u0644 \u0648\u0627\u0644\u062c\u0648\u062f\u0627\u062a \u062a\u064f\u0633\u062a\u062e\u0644\u0635 \u0645\u0646 \u0633\u064a\u0646\u0645\u0627\u0646\u0627 \u0641\u0642\u0637. \u0644\u0627 \u064a\u062a\u0645 \u0625\u0646\u0634\u0627\u0621 \u0631\u0627\u0628\u0637 VidAPI \u0647\u0646\u0627."),
-        React.createElement("div", { className: "grid grid-cols-2 gap-2 mb-2.5" },
-            React.createElement("button", { type: "button", onClick: () => { const next = 'cinemana'; const q = String(query || defaultTitle || '').trim(); setSource(next); setResults(null); setVideos(null); setPicked(null); setError(''); if (q) { if (!query.trim()) setQuery(q); search(true, next, q); } }, className: `px-3 py-2 rounded-xl border text-[11px] font-black transition ${source === 'cinemana' ? 'bg-accent-purple/20 border-accent-purple text-accent-purple' : 'bg-glass-900 border-white/10 text-slate-400'}` }, "سينمانا · المصدر 1"),
-            React.createElement("button", { type: "button", onClick: () => { const next = 'cinemana-x'; const q = String(query || defaultTitle || '').trim(); setSource(next); setResults(null); setVideos(null); setPicked(null); setError(''); if (q) { if (!query.trim()) setQuery(q); search(true, next, q); } }, className: `px-3 py-2 rounded-xl border text-[11px] font-black transition ${source === 'cinemana-x' ? 'bg-accent-cyan/15 border-accent-cyan text-accent-cyan' : 'bg-glass-900 border-white/10 text-slate-400'}` }, "Cinemana X · المصدر 2")),
         React.createElement("div", { className: "flex items-center gap-2 mb-2.5" },
             React.createElement("input", { value: query, onChange: ev => setQuery(ev.target.value), onKeyDown: ev => ev.key === 'Enter' && search(), placeholder: kind === 'anime' ? 'اسم الأنمي' : 'اسم العمل بالإنجليزي أو العربي', className: "flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-purple" }),
             React.createElement("button", { type: "button", onClick: () => search(), disabled: !query.trim() || loading, className: "shrink-0 px-4 py-2 rounded-xl bg-accent-purple text-white text-xs font-bold hover:brightness-110 transition disabled:opacity-40" }, loading ? 'جاري...' : 'بحث')),
@@ -1623,8 +1519,8 @@ function CinemanaHelper({ kind, season, episode, defaultTitle, defaultYear, onGe
                 videos.length === 0 && React.createElement("p", { className: "text-[11px] text-slate-500" }, "\u0644\u0627 \u062A\u0648\u062C\u062F \u0631\u0648\u0627\u0628\u0637 \u0641\u064A\u062F\u064A\u0648 \u0645\u062A\u0627\u062D\u0629 \u0644\u0647\u0630\u0627 \u0627\u0644\u0639\u0646\u0648\u0627\u0646"),
                 cinemanaVideoSources(videos).map((v, i) => (React.createElement("button", { key: i, type: "button", onClick: async () => {
                         const allSources = cinemanaVideoSources(videos);
-                        onGenerate && onGenerate(v.url, v, allSources, source);
-                        onGenerateQualities && onGenerateQualities(allSources, source);
+                        onGenerate && onGenerate(v.url, v, allSources);
+                        onGenerateQualities && onGenerateQualities(allSources);
                     }, className: "px-3 py-1.5 rounded-lg bg-accent-purple/15 border border-accent-purple/30 hover:bg-accent-purple/25 text-accent-purple text-[11px] font-bold transition" }, v.label)))),
             React.createElement("button", { type: "button", onClick: () => { setVideos(null); setPicked(null); }, className: "mt-2 text-[10px] text-slate-500 hover:text-slate-300 underline" }, "\u0631\u062C\u0648\u0639 \u0644\u0644\u0646\u062A\u0627\u0626\u062C")))));
 }
@@ -1674,7 +1570,7 @@ async function importFromTmdbTitle(title, currentType, year, opts) {
     const media = best._media === 'movie' ? 'movie' : 'tv';
     return importFromTmdb(`https://www.themoviedb.org/${media}/${best.id}`, currentType, opts);
 }
-async function enrichTmdbSeasonsWithCinemana(seasons, cinEpisodes, onProgress, provider = 'cinemana') {
+async function enrichTmdbSeasonsWithCinemana(seasons, cinEpisodes, onProgress) {
     const episodeMap = new Map();
     (cinEpisodes || []).forEach(ep => {
         const key = `${cinemanaEpisodeSeason(ep)}x${cinemanaEpisodeNumber(ep)}`;
@@ -1693,7 +1589,7 @@ async function enrichTmdbSeasonsWithCinemana(seasons, cinEpisodes, onProgress, p
         const chunk = tasks.slice(i, i + chunkSize);
         const results = await Promise.all(chunk.map(async (t) => {
             try {
-                return { ...t, sources: cinemanaVideoSources(await cinemanaVideos(t.id, 'tv', provider)) };
+                return { ...t, sources: cinemanaVideoSources(await cinemanaVideos(t.id)) };
             }
             catch (e) {
                 return { ...t, sources: [] };
@@ -1701,23 +1597,16 @@ async function enrichTmdbSeasonsWithCinemana(seasons, cinEpisodes, onProgress, p
         }));
         results.forEach(r => {
             const ep = out[r.si] && out[r.si].episodes && out[r.si].episodes[r.ei];
-            if (ep) {
-                if (provider === 'cinemana') ep.cinemanaId = String(r.id);
-                else ep.cinemanaXId = String(r.id);
-                ep.playbackProvider = provider;
-            }
+            if (ep)
+                ep.cinemanaId = String(r.id);
             if (!ep || !r.sources.length)
                 return;
-            if (provider === 'cinemana-x') {
-                ep.cinemanaXVideoUrl = r.sources[0].url;
-                ep.cinemanaXSources = r.sources;
-            }
             ep.videoSources = r.sources;
             ep.videoUrl = r.sources[0].url;
             ep.subtitleUrl = r.sources[0].subtitleUrl || ep.subtitleUrl || '';
         });
         if (onProgress)
-            onProgress(`تم ربط ${Math.min(i + chunk.length, tasks.length)} من ${tasks.length} حلقة من ${provider === 'cinemana-x' ? 'Cinemana X' : 'سينمانا'}...`);
+            onProgress(`تم ربط ${Math.min(i + chunk.length, tasks.length)} من ${tasks.length} حلقة من سينمانا...`);
     }
     return out;
 }
@@ -1959,7 +1848,6 @@ async function fetchSubdlPlaybackVtt({ title, season, episode, type }) {
 }
 function CinemanaSeriesImportPanel({ type, defaultTitle, defaultYear, onImport }) {
     const [query, setQuery] = useState(defaultTitle || '');
-    const [source, setSource] = useState('cinemana');
     const [loading, setLoading] = useState(false);
     const [progress, setProgress] = useState('');
     const [error, setError] = useState('');
@@ -1972,9 +1860,9 @@ function CinemanaSeriesImportPanel({ type, defaultTitle, defaultYear, onImport }
         setLoading(true);
         setError('');
         setResults(null);
-        setProgress(source === 'cinemana-x' ? 'جاري البحث في Cinemana X...' : 'جاري البحث في سينمانا...');
+        setProgress('جاري البحث في سينمانا...');
         try {
-            setResults(await cinemanaSearch(query.trim(), type, source));
+            setResults(await cinemanaSearch(query.trim(), type));
             setProgress('');
         }
         catch (e) {
@@ -1986,9 +1874,9 @@ function CinemanaSeriesImportPanel({ type, defaultTitle, defaultYear, onImport }
     const pick = async (item) => {
         setLoading(true);
         setError('');
-        setProgress(source === 'cinemana-x' ? 'جاري تعبئة TMDB وربط حلقات Cinemana X...' : 'جاري تعبئة TMDB وربط حلقات سينمانا...');
+        setProgress('جاري تعبئة TMDB وربط حلقات سينمانا...');
         try {
-            await onImport(item, setProgress, source);
+            await onImport(item, setProgress);
         }
         catch (e) {
             setError(e.message || 'تعذّر استيراد العمل');
@@ -1999,10 +1887,7 @@ function CinemanaSeriesImportPanel({ type, defaultTitle, defaultYear, onImport }
     return (React.createElement("div", { className: "glass-card rounded-2xl p-4 border border-accent-purple/25 mb-5" },
         React.createElement("p", { className: "text-[12px] font-bold text-accent-purple flex items-center gap-1.5 mb-2.5" },
             React.createElement(Icon, { name: "sparkles", className: "w-4 h-4" }),
-            "\u0627\u0633\u062A\u064A\u0631\u0627\u062F \u0645\u0633\u0644\u0633\u0644/\u0623\u0646\u0645\u064A: TMDB \u0644\u0644\u0628\u064A\u0627\u0646\u0627\u062A + \u0633\u064A\u0646\u0645\u0627\u0646\u0627 (1) / Cinemana X (2) \u0644\u0644\u062A\u0634\u063A\u064A\u0644"),
-        React.createElement("div", { className: "grid grid-cols-2 gap-2 mb-2.5" },
-            React.createElement("button", { type: "button", onClick: () => { setSource('cinemana'); setResults(null); setError(''); }, className: `px-3 py-2 rounded-xl border text-[11px] font-black ${source === 'cinemana' ? 'bg-accent-purple/20 border-accent-purple text-accent-purple' : 'bg-glass-900 border-white/10 text-slate-400'}` }, "سينمانا · المصدر 1"),
-            React.createElement("button", { type: "button", onClick: () => { setSource('cinemana-x'); setResults(null); setError(''); }, className: `px-3 py-2 rounded-xl border text-[11px] font-black ${source === 'cinemana-x' ? 'bg-accent-cyan/15 border-accent-cyan text-accent-cyan' : 'bg-glass-900 border-white/10 text-slate-400'}` }, "Cinemana X · المصدر 2")),
+            "\u0627\u0633\u062A\u064A\u0631\u0627\u062F \u0645\u0633\u0644\u0633\u0644/\u0623\u0646\u0645\u064A: TMDB \u0644\u0644\u0628\u064A\u0627\u0646\u0627\u062A + \u0633\u064A\u0646\u0645\u0627\u0646\u0627 \u0644\u0644\u062A\u0634\u063A\u064A\u0644"),
         React.createElement("div", { className: "flex items-center gap-2 mb-2.5" },
             React.createElement("input", { value: query, onChange: e => setQuery(e.target.value), onKeyDown: e => e.key === 'Enter' && !loading && search(), placeholder: type === 'anime' ? 'اسم الأنمي' : 'اسم المسلسل', className: "flex-1 min-w-0 bg-glass-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-accent-purple" }),
             React.createElement("button", { type: "button", onClick: search, disabled: !query.trim() || loading, className: "shrink-0 px-4 py-2 rounded-xl bg-accent-purple text-white text-xs font-bold hover:brightness-110 transition disabled:opacity-40" }, loading ? 'جاري...' : 'بحث')),
@@ -3439,7 +3324,7 @@ function SubSlider({ label, value, unit, min, max, step, onChange }) {
                 unit)),
         React.createElement("input", { type: "range", min: min, max: max, step: step, value: value, onChange: e => onChange(Number(e.target.value)), className: "w-full mb-2", style: { accentColor: '#00F0FF' } })));
 }
-function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onPlaybackSuccess, onDuration, trimStart, trimEnd, introStart, introEnd, recapStart, recapEnd, outroStart, outroEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, onEnded, onOutroStart, onPreviousEpisode, onNextEpisode, hasPreviousEpisode, hasNextEpisode, previousEpisodeLabel, nextEpisodeLabel, qualities, onQualityChange, startAt, onProgressSave }) {
+function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration, trimStart, trimEnd, introStart, introEnd, recapStart, recapEnd, outroStart, outroEnd, fitMobile, fitDesktop, crop, episodeLabel, onComplete, onEnded, onOutroStart, onPreviousEpisode, onNextEpisode, hasPreviousEpisode, hasNextEpisode, previousEpisodeLabel, nextEpisodeLabel, qualities, onQualityChange, startAt, onProgressSave }) {
     const videoRef = useRef(null);
     const wrapRef = useRef(null);
     const hideTimerRef = useRef(null);
@@ -3649,28 +3534,11 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onPlayback
             if (p && p.catch)
                 p.catch(() => { });
         };
-        let hasActuallyPlayed = false;
-        let initialWatchdog = null;
         const markReady = () => {
             clearBufferingTimer();
             setLoading(false);
         };
-        const markActuallyPlaying = () => {
-            markReady();
-            hasActuallyPlayed = true;
-            if (initialWatchdog) { clearTimeout(initialWatchdog); initialWatchdog = null; }
-            if (onPlaybackSuccess) onPlaybackSuccess();
-        };
         const onReady = () => { markReady(); tryPlay(); };
-        const onTimeProgress = () => {}; // لا نوقف المهلة لمجرد وصول metadata؛ لازم يبدأ التشغيل فعليًا
-        videoEl.addEventListener('playing', markActuallyPlaying);
-        videoEl.addEventListener('timeupdate', onTimeProgress);
-        initialWatchdog = setTimeout(() => {
-            if (!cancelled && !hasActuallyPlayed && !videoEl.ended) {
-                setLoading(false);
-                onError && onError(Math.max(0, Number(videoEl.currentTime) || 0));
-            }
-        }, 11500);
         videoEl.addEventListener('canplay', onReady);
         videoEl.addEventListener('loadeddata', onReady);
         const setup = async () => {
@@ -3685,7 +3553,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onPlayback
                     catch (e) {
                         if (!cancelled) {
                             setLoading(false);
-                            onError && onError(Math.max(0, Number(videoEl.currentTime) || 0));
+                            onError && onError();
                         }
                         return;
                     }
@@ -3717,12 +3585,12 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onPlayback
                             }
                             else {
                                 setLoading(false);
-                                onError && onError(Math.max(0, Number(videoEl.currentTime) || 0));
+                                onError && onError();
                             }
                             return;
                         }
                         setLoading(false);
-                        onError && onError(Math.max(0, Number(videoEl.currentTime) || 0));
+                        onError && onError();
                     });
                     return;
                 }
@@ -3732,7 +3600,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onPlayback
                     return;
                 }
                 setLoading(false);
-                onError && onError(Math.max(0, Number(videoEl.currentTime) || 0));
+                onError && onError();
                 return;
             }
             videoEl.src = src;
@@ -3743,9 +3611,6 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onPlayback
             setLoading(false); }, CV_LOW_POWER ? 20000 : 14000);
         return () => {
             cancelled = true;
-            if (initialWatchdog) clearTimeout(initialWatchdog);
-            videoEl.removeEventListener('playing', markActuallyPlaying);
-            videoEl.removeEventListener('timeupdate', onTimeProgress);
             videoEl.removeEventListener('canplay', onReady);
             videoEl.removeEventListener('loadeddata', onReady);
             if (hls)
@@ -4300,7 +4165,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onPlayback
     return (React.createElement("div", { ref: wrapRef, className: `video-crop-wrap cv-player-stage ${fakeFullscreen ? 'ios-fake-fullscreen' : ''}${!barVisible ? ' cv-nocursor' : ''}`, style: fakeFullscreen ? undefined : playerStageStyle, onMouseMove: showBarTemporarily, onPointerDown: onPlayerPointerDown, onPointerMove: onPlayerPointerMove, onPointerUp: onPlayerPointerUp, onPointerCancel: onPlayerPointerUp, onClick: onStageClick },
         loading && (React.createElement("div", { className: "absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none z-10" },
             React.createElement("div", { className: "w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan yt-spinner" }))),
-        React.createElement("video", { ref: videoRef, controls: false, autoPlay: true, playsInline: true, "webkit-playsinline": "true", "x5-playsinline": "true", preload: "metadata", onCanPlay: () => setLoading(false), onPlaying: () => setLoading(false), onLoadedData: () => setLoading(false), onError: () => { setLoading(false); onError && onError(Math.max(0, Number(videoRef.current && videoRef.current.currentTime) || 0)); }, style: videoStyle }, subtitleSrc && React.createElement("track", { key: subtitleSrc, kind: "subtitles", src: subtitleSrc, srcLang: "ar", label: "\u0627\u0644\u0639\u0631\u0628\u064A\u0629", default: true, ref: node => { if (node && node.track)
+        React.createElement("video", { ref: videoRef, controls: false, autoPlay: true, playsInline: true, "webkit-playsinline": "true", "x5-playsinline": "true", preload: "metadata", onCanPlay: () => setLoading(false), onPlaying: () => setLoading(false), onLoadedData: () => setLoading(false), onError: () => { setLoading(false); onError && onError(); }, style: videoStyle }, subtitleSrc && React.createElement("track", { key: subtitleSrc, kind: "subtitles", src: subtitleSrc, srcLang: "ar", label: "\u0627\u0644\u0639\u0631\u0628\u064A\u0629", default: true, ref: node => { if (node && node.track)
                 node.track.mode = subtitleOn ? 'showing' : 'hidden'; } })),
         !isIOS && subtitleOn && activeCues.length > 0 && React.createElement(SubtitleOverlay, { videoRef: videoRef, cues: activeCues, shiftMs: subtitleShift, prefs: subPrefs, lifted: barVisible }),
         episodeLabel && (React.createElement("div", { className: `absolute inset-x-0 top-0 z-20 p-3 md:p-4 bg-gradient-to-b from-black/80 to-transparent transition-opacity duration-300 ${barVisible ? 'opacity-100' : 'opacity-0'}` },
@@ -4687,7 +4552,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const [replyText, setReplyText] = useState('');
     const [videoError, setVideoError] = useState(false);
     const [playerRetryCount, setPlayerRetryCount] = useState(0);
-    const retryPlayback = () => { cinemanaFallbackTriedRef.current = false; cinemanaRefreshAttemptRef.current = ''; setVideoError(false); setPlayerRetryCount(c => c + 1); };
+    const retryPlayback = () => { setVideoError(false); setPlayerRetryCount(c => c + 1); };
     const [copied, setCopied] = useState(false);
     const [resumeAt, setResumeAt] = useState(0);
     const [playingDurationSec, setPlayingDurationSec] = useState(0);
@@ -4702,7 +4567,6 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const playRequestRef = useRef(0);
     const cinemanaRefreshAttemptRef = useRef('');
     const cinemanaRefreshingRef = useRef(false);
-    const cinemanaFallbackTriedRef = useRef(false);
     const explicitContinueTarget = title.__continueTarget && title.__continueTarget.season != null && title.__continueTarget.episode != null
         ? { kind: 'episode', progress: { season: Number(title.__continueTarget.season), episode: Number(title.__continueTarget.episode), position: 0, completed: false, updatedAt: Date.now() } }
         : null;
@@ -5023,57 +4887,70 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         return null;
     };
     const getSavedVideoUrl = (item) => normalizeVideoUrl((item && item.videoUrl) || (((item && item.videoSources) || [])[0] || {}).url || '');
-    const resolveCinemanaFromProvider = async (meta, kind, seasonNumber, provider) => {
-        const x = provider === 'cinemana-x';
-        const idField = x ? 'cinemanaXId' : 'cinemanaId';
-        const providerName = x ? 'Cinemana X' : 'سينمانا';
-        const videoKind = kind === 'movie' ? 'movie' : 'tv';
-        const savedId = String((meta && meta[idField]) || '').trim();
-        const fetchVideo = async id => {
-            if (id == null || String(id).trim() === '') return null;
-            const list = cinemanaVideoSources(await cinemanaVideos(String(id), videoKind, provider));
-            return list.length ? { url: list[0].url, sources: list, sourceId: String(id), provider } : null;
-        };
+    const recoverMovieVideo = async () => {
+        // إذا كان الفيلم محفوظًا ومعه cinemanaId فلا داعي للبحث بالعنوان.
+        // البحث كان سبب المشكلة الجديدة: الهاتف/الموقع يحاول أولًا /search ثم يفشل
+        // عند البروكسي، رغم أن رقم الفيلم موجود أصلًا داخل Firebase.
+        const savedId = String(title.cinemanaId || '').trim();
         if (savedId) {
-            const known = await fetchVideo(savedId);
-            if (known) return known;
-            // استجابة فارغة تعني أن المعرف قديم؛ أما خطأ الشبكة فينقل المحاولة فورًا للمصدر الآخر.
+            const sources = cinemanaVideoSources(await cinemanaVideos(savedId, 'movie'));
+            if (sources.length)
+                return { url: sources[0].url, sources, sourceId: savedId };
         }
-        const searchType = kind === 'movie' ? (title.type === 'anime' ? 'anime' : 'movie') : (title.type === 'anime' ? 'anime' : 'tv');
-        const results = await cinemanaSearch(title.name, searchType, provider);
+
+        // احتياطي فقط للأفلام القديمة التي لا تحتوي cinemanaId.
+        const results = await cinemanaSearch(title.name, title.type === 'anime' ? 'anime' : 'movie');
         const pick = results.find(r => String(cinemanaYear(r) || '') === String(title.year || '')) || results[0];
-        if (!pick || pick.nb == null) throw new Error(`${providerName}: ما لكيت العمل بالاسم`);
-        if (kind === 'movie') {
-            const resolved = await fetchVideo(pick.nb);
-            if (!resolved) throw new Error(`${providerName}: ما رجّع روابط فيديو للفيلم`);
-            return resolved;
-        }
-        const eps = await cinemanaEpisodes(String(pick.nb), provider);
-        const targetSeason = Number(seasonNumber) || 1;
-        const targetEpisode = Number((meta && (meta.number ?? meta.episodeNumber)) || 1);
-        const match = eps.find(e => cinemanaEpisodeSeason(e) === targetSeason && cinemanaEpisodeNumber(e) === targetEpisode);
-        if (!match || match.nb == null) throw new Error(`${providerName}: ما لكيت الموسم ${targetSeason} الحلقة ${targetEpisode}`);
-        const resolved = await fetchVideo(match.nb);
-        if (!resolved) throw new Error(`${providerName}: ما رجّع روابط فيديو للحلقة`);
-        return resolved;
+        if (!pick || pick.nb == null)
+            throw new Error('ما لكيت العمل على سينمانا حتى أسترجع رابط التشغيل.');
+        const sources = cinemanaVideoSources(await cinemanaVideos(String(pick.nb), 'movie'));
+        if (!sources.length)
+            throw new Error('سينمانا ما رجّعت روابط فيديو لهذا الفيلم.');
+        return { url: sources[0].url, sources, sourceId: String(pick.nb) };
     };
-    const resolveFreshCinemanaVideo = async (meta, kind, seasonNumber, preferredProviderOverride = '', options = {}) => {
+    const recoverEpisodeVideo = async (ep, seasonNumber) => {
+        const savedId = String((ep && ep.cinemanaId) || '').trim();
+        if (savedId) {
+            const sources = cinemanaVideoSources(await cinemanaVideos(savedId, 'tv'));
+            if (sources.length)
+                return { url: sources[0].url, sources, sourceId: savedId };
+        }
+        const results = await cinemanaSearch(title.name, title.type === 'anime' ? 'anime' : 'tv');
+        const pick = results.find(r => String(cinemanaYear(r) || '') === String(title.year || '')) || results[0];
+        if (!pick || pick.nb == null)
+            throw new Error('ما لكيت المسلسل على سينمانا حتى أسترجع رابط الحلقة.');
+        const eps = await cinemanaEpisodes(String(pick.nb));
+        const targetSeason = Number(seasonNumber) || 1;
+        const targetEpisode = Number(ep.number) || 1;
+        const match = eps.find(e => cinemanaEpisodeSeason(e) === targetSeason && cinemanaEpisodeNumber(e) === targetEpisode);
+        if (!match || match.nb == null)
+            throw new Error(`ما لكيت الموسم ${targetSeason} الحلقة ${targetEpisode} على سينمانا.`);
+        const sources = cinemanaVideoSources(await cinemanaVideos(String(match.nb), 'tv'));
+        if (!sources.length)
+            throw new Error('سينمانا ما رجّعت روابط فيديو لهذه الحلقة.');
+        return { url: sources[0].url, sources, sourceId: String(match.nb) };
+    };
+    const resolveFreshCinemanaVideo = async (meta, kind, seasonNumber) => {
+        const savedId = String((meta && meta.cinemanaId) || '').trim();
+        // الهاتف لا يصل لبروكسي سينمانا (localhost = الهاتف نفسه)، فإذا فشل تجديد الرابط
+        // نرجع للرابط المحفوظ في قاعدة البيانات بدل إظهار "تعذر" مباشرة.
         const savedUrl = getSavedVideoUrl(meta);
         const savedSources = normalizeVideoSources((meta && meta.videoSources) || []);
-        const defaultProvider = preferredProviderOverride || preferredCinemanaSource();
-        const allProviders = defaultProvider === 'cinemana-x' ? ['cinemana-x', 'cinemana'] : ['cinemana', 'cinemana-x'];
-        const order = options.onlyPreferred ? [defaultProvider] : allProviders;
-        const failures = [];
-        for (const provider of order) {
-            try {
-                const result = await resolveCinemanaFromProvider(meta, kind, seasonNumber, provider);
-                if (result && result.url) return result;
-                failures.push(provider + ': لا يوجد رابط صالح');
-            } catch (e) { failures.push((provider === 'cinemana-x' ? 'Cinemana X' : 'سينمانا') + ': ' + (e && e.message ? e.message : 'فشل')); }
+        try {
+            if (savedId) {
+                const sources = cinemanaVideoSources(await cinemanaVideos(savedId, kind === 'movie' ? 'movie' : 'tv'));
+                if (sources.length)
+                    return { url: sources[0].url, sources, sourceId: savedId };
+            }
+            if (kind === 'movie')
+                return await recoverMovieVideo();
+            return await recoverEpisodeVideo(meta, seasonNumber);
         }
-        // عند انقطاع واجهتي الـ API بالكامل نُبقي الرابط المحفوظ محاولة أخيرة، ولا نخفي خطأ التشغيل.
-        if (savedUrl && options.allowSavedFallback !== false) return { url: savedUrl, sources: savedSources.length ? savedSources : [{ url: savedUrl }], sourceId: '', provider: String((meta && meta.playbackProvider) || defaultProvider), savedFallback: true };
-        throw new Error('تعذّر إيجاد رابط تشغيل من سينمانا أو Cinemana X. ' + failures.join(' | '));
+        catch (e) {
+            if (savedUrl)
+                return { url: savedUrl, sources: savedSources.length ? savedSources : [{ url: savedUrl }], sourceId: savedId };
+            throw e;
+        }
     };
     const ensureVidApiSubtitlePublic = async (meta) => {
         if (!meta || !isVidApiUrl(meta.videoUrl || '') || meta.subtitlePublicUrl || !meta.subtitleUrl) return '';
@@ -5083,7 +4960,6 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     };
     const handlePlay = async (forceStart = false) => {
         scrollTitleModalToTop();
-        cinemanaFallbackTriedRef.current = false;
         const requestId = ++playRequestRef.current;
         cinemanaRefreshAttemptRef.current = '';
         setVideoError(false);
@@ -5092,32 +4968,28 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         setResumeAt(movieResume);
         try {
             if (title.type === 'movie') {
-                const hasCinemanaId = !!String(title.cinemanaId || '').trim() || !!String(title.cinemanaXId || '').trim() || ['cinemana','cinemana-x','cinemanax'].includes(String(title.playbackProvider || '').toLowerCase());
+                const cinemanaId = String(title.cinemanaId || '').trim();
                 let url = '';
                 let sources = [];
-                let resolvedPlayback = null;
-                // Prefer a saved direct playback URL first. Mobile browsers must not
-                // depend on localhost/API refresh merely because provider IDs exist.
-                url = getSavedVideoUrl(title);
-                sources = normalizeVideoSources(title.videoSources);
-                if (!url && hasCinemanaId) {
+                if (cinemanaId) {
                     const recovered = await resolveFreshCinemanaVideo(title, 'movie');
-                    resolvedPlayback = recovered;
                     if (requestId !== playRequestRef.current) return;
                     url = recovered.url;
                     sources = recovered.sources;
                 }
-                else if (!url && !title.videoUrl) {
-                    const recovered = await resolveFreshCinemanaVideo(title, 'movie');
-                    resolvedPlayback = recovered;
-                    if (requestId !== playRequestRef.current) return;
-                    url = recovered.url;
-                    sources = recovered.sources;
+                else {
+                    url = getSavedVideoUrl(title);
+                    sources = normalizeVideoSources(title.videoSources);
+                    if (!url) {
+                        const recovered = await recoverMovieVideo();
+                        if (requestId !== playRequestRef.current) return;
+                        url = recovered.url;
+                        sources = recovered.sources;
+                    }
                 }
                 if (requestId !== playRequestRef.current) return;
                 setPlayingUrl(url);
-                const chosenProvider = (resolvedPlayback && resolvedPlayback.provider) || title.playbackProvider || (title.cinemanaXId ? 'cinemana-x' : (title.cinemanaId ? 'cinemana' : ''));
-                setPlayingMeta({ ...title, videoUrl: url, videoSources: sources, playbackProvider: chosenProvider, cinemanaId: chosenProvider === 'cinemana' && resolvedPlayback && resolvedPlayback.sourceId ? resolvedPlayback.sourceId : title.cinemanaId, cinemanaXId: chosenProvider === 'cinemana-x' && resolvedPlayback && resolvedPlayback.sourceId ? resolvedPlayback.sourceId : title.cinemanaXId, subtitleUrl: title.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: title.subtitlePublicUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
+                setPlayingMeta({ ...title, videoUrl: url, videoSources: sources, playbackProvider: cinemanaId ? 'cinemana' : (title.playbackProvider || ''), subtitleUrl: title.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: title.subtitlePublicUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
                 setPlayingLabel(title.name);
                 ensureVidApiSubtitlePublic({ ...title, videoUrl: url }).catch(() => {});
             }
@@ -5145,39 +5017,34 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     };
     const playEpisode = async (ep, seasonNumber, resumeOverride = null) => {
         scrollTitleModalToTop();
-        cinemanaFallbackTriedRef.current = false;
         const requestId = ++playRequestRef.current;
         setVideoError(false);
         const savedProgress = currentEpisodeProgress(seasonNumber, ep && ep.number);
         const requestedResume = resumeOverride != null ? Number(resumeOverride)||0 : (savedProgress && !savedProgress.completed ? Number(savedProgress.position)||0 : 0);
         setResumeAt(requestedResume);
         try {
-            const hasCinemanaId = !!String((ep && ep.cinemanaId) || '').trim() || !!String((ep && ep.cinemanaXId) || '').trim() || ['cinemana','cinemana-x','cinemanax'].includes(String((ep && ep.playbackProvider) || '').toLowerCase());
+            const cinemanaId = String((ep && ep.cinemanaId) || '').trim();
             let url = '';
             let sources = [];
-            let resolvedPlayback = null;
-            // Use a stored direct URL before asking a proxy for a refreshed one.
-            // This preserves playback on phones where localhost is the phone itself.
-            url = getSavedVideoUrl(ep);
-            sources = normalizeVideoSources(ep.videoSources);
-            if (!url && hasCinemanaId) {
+            if (cinemanaId) {
                 const recovered = await resolveFreshCinemanaVideo(ep, 'tv', seasonNumber);
-                resolvedPlayback = recovered;
                 if (requestId !== playRequestRef.current) return;
                 url = recovered.url;
                 sources = recovered.sources;
             }
-            else if (!url && !(ep && ep.videoUrl)) {
-                const recovered = await resolveFreshCinemanaVideo(ep, 'tv', seasonNumber);
-                resolvedPlayback = recovered;
-                if (requestId !== playRequestRef.current) return;
-                url = recovered.url;
-                sources = recovered.sources;
+            else {
+                url = getSavedVideoUrl(ep);
+                sources = normalizeVideoSources(ep.videoSources);
+                if (!url) {
+                    const recovered = await recoverEpisodeVideo(ep, seasonNumber);
+                    if (requestId !== playRequestRef.current) return;
+                    url = recovered.url;
+                    sources = recovered.sources;
+                }
             }
             if (requestId !== playRequestRef.current) return;
             setPlayingUrl(url);
-            const chosenProvider = (resolvedPlayback && resolvedPlayback.provider) || ep.playbackProvider || (ep.cinemanaXId ? 'cinemana-x' : (ep.cinemanaId ? 'cinemana' : ''));
-            setPlayingMeta({ ...ep, videoUrl: url, videoSources: sources, playbackProvider: chosenProvider, cinemanaId: chosenProvider === 'cinemana' && resolvedPlayback && resolvedPlayback.sourceId ? resolvedPlayback.sourceId : ep.cinemanaId, cinemanaXId: chosenProvider === 'cinemana-x' && resolvedPlayback && resolvedPlayback.sourceId ? resolvedPlayback.sourceId : ep.cinemanaXId, subtitleUrl: ep.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: ep.subtitlePublicUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
+            setPlayingMeta({ ...ep, videoUrl: url, videoSources: sources, playbackProvider: cinemanaId ? 'cinemana' : (ep.playbackProvider || ''), subtitleUrl: ep.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: ep.subtitlePublicUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
             setPlayingSeasonNumber(seasonNumber != null ? seasonNumber : null);
             setPlayingLabel(`${title.name} · ${ep.title || `الحلقة ${ep.number != null ? ep.number : ''}`}`);
                 ensureVidApiSubtitlePublic({ ...ep, videoUrl: url }).catch(() => {});
@@ -5234,16 +5101,16 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     const activeSubtitleUrl = (playingMeta && playingMeta.subtitleUrl) || (playingQualities[0] && playingQualities[0].subtitleUrl) || (title.type === 'movie' ? title.subtitleUrl : '');
     const activeSubtitleOffset = Number((playingMeta && playingMeta.subtitleOffset) ?? (title.type === 'movie' ? title.subtitleOffset : 0)) || 0;
     const activeSubtitlePublicUrl = (playingMeta && playingMeta.subtitlePublicUrl) || (title.type === 'movie' ? title.subtitlePublicUrl : '');
-    const handleCinemanaPlaybackError = async (failedAt = 0) => {
+    const handleCinemanaPlaybackError = async () => {
         const meta = playingMeta || {};
         const cinemanaId = String(meta.cinemanaId || '').trim();
-        const isCinemana = !!cinemanaId || !!String(meta.cinemanaXId || '').trim() || isCinemanaPlayback(meta, playingUrl);
+        const isCinemana = !!cinemanaId || isCinemanaPlayback(meta, playingUrl);
         if (!isCinemana) {
             setVideoError(true);
             return;
         }
-        const attemptKey = [title.id, cinemanaId, meta.cinemanaXId || '', playingSeasonNumber || 0, meta.number || 0, playingUrl || ''].join('|');
-        if (cinemanaFallbackTriedRef.current || cinemanaRefreshAttemptRef.current === attemptKey || cinemanaRefreshingRef.current) {
+        const attemptKey = [title.id, cinemanaId, playingSeasonNumber || 0, meta.number || 0, playingUrl || ''].join('|');
+        if (cinemanaRefreshAttemptRef.current === attemptKey || cinemanaRefreshingRef.current) {
             setVideoError(true);
             return;
         }
@@ -5251,21 +5118,17 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         cinemanaRefreshingRef.current = true;
         try {
             const kind = title.type === 'movie' ? 'movie' : 'tv';
-            const currentProvider = String(meta.playbackProvider || (meta.cinemanaXId ? 'cinemana-x' : 'cinemana')).toLowerCase() === 'cinemana-x' ? 'cinemana-x' : 'cinemana';
-            const otherProvider = currentProvider === 'cinemana-x' ? 'cinemana' : 'cinemana-x';
-            const recovered = await resolveFreshCinemanaVideo(meta, kind, playingSeasonNumber, otherProvider, { onlyPreferred: true, allowSavedFallback: false });
-            if (!recovered || !recovered.url) throw new Error('لم يرجع أي مصدر رابط تشغيل صالحًا.');
-            cinemanaFallbackTriedRef.current = true;
-            const resolvedProvider = recovered.provider === 'cinemana-x' ? 'cinemana-x' : (recovered.provider === 'cinemana' ? 'cinemana' : otherProvider);
-            setResumeAt(Math.max(0, Number(failedAt) || 0));
-            setPlayingMeta(prev => ({ ...prev, videoUrl: recovered.url, videoSources: recovered.sources, playbackProvider: resolvedProvider, cinemanaId: resolvedProvider === 'cinemana' && recovered.sourceId ? recovered.sourceId : prev.cinemanaId, cinemanaXId: resolvedProvider === 'cinemana-x' && recovered.sourceId ? recovered.sourceId : prev.cinemanaXId }));
+            const recovered = await resolveFreshCinemanaVideo(meta, kind, playingSeasonNumber);
+            if (!recovered || !recovered.url) throw new Error('سينمانا لم تُرجع رابط تشغيل جديد.');
+            setPlayingMeta(prev => ({ ...prev, videoUrl: recovered.url, videoSources: recovered.sources, playbackProvider: 'cinemana', cinemanaId: recovered.sourceId || prev.cinemanaId }));
             setPlayingUrl(normalizeVideoUrl(recovered.url));
             setVideoError(false);
             setPlayerRetryCount(c => c + 1);
+            showToast('تم تجديد رابط سينمانا وإعادة المحاولة', 'success');
         }
         catch (e) {
             setVideoError(true);
-            showToast('تعذّر تشغيل هذا العمل من المصدرين المتاحين.', 'error');
+            showToast(e && e.message ? e.message : 'تعذّر تجديد رابط سينمانا', 'error');
         }
         finally {
             cinemanaRefreshingRef.current = false;
@@ -5402,7 +5265,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         React.createElement("div", { ref: titleModalScrollRef, onClick: e => e.stopPropagation(), className: `${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl` },
             React.createElement("div", { className: "relative" },
                 playingUrl ? (React.createElement("div", { className: "relative" },
-                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: 'cinadam-player-' + title.id + '-' + playerRetryCount, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: handleCinemanaPlaybackError, onPlaybackSuccess: isCinemanaPlayback(playingMeta, playingUrl) ? () => rememberCinemanaSource(playingMeta && playingMeta.playbackProvider === 'cinemana-x' ? 'cinemana-x' : 'cinemana') : null, onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : Number(playingMeta.introStart) || 0, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : Number(playingMeta.introEnd) || 0, recapStart: skipDbSegments.recap ? Number(skipDbSegments.recap.start_ms) / 1000 : Number(playingMeta.recapStart) || 0, recapEnd: skipDbSegments.recap ? Number(skipDbSegments.recap.end_ms) / 1000 : Number(playingMeta.recapEnd) || 0, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : Number(playingMeta.outroStart) || 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : Number(playingMeta.outroEnd) || 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onOutroStart: handleEpisodeComplete, onPreviousEpisode: playPreviousEpisode, onNextEpisode: playNextEpisode, hasPreviousEpisode: !!getPreviousEpisodeInfo(), hasNextEpisode: !!getNextEpisodeInfo(), previousEpisodeLabel: (() => { const p = getPreviousEpisodeInfo(); return p ? `الحلقة السابقة · ${p.title || `الحلقة ${p.number}`}` : 'الحلقة السابقة'; })(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete, onProgressSave: onSaveWatchProgress ? (r => onSaveWatchProgress(title.id, title.type === 'movie' ? { kind: 'movie', ...r, titleName: title.name, poster: title.poster } : { kind: 'episode', season: playingSeasonNumber, episode: playingMeta && playingMeta.number, ...r, titleName: title.name, poster: title.poster, label: playingLabel })) : null })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
+                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: 'cinadam-player-' + title.id + '-' + playerRetryCount, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: handleCinemanaPlaybackError, onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : Number(playingMeta.introStart) || 0, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : Number(playingMeta.introEnd) || 0, recapStart: skipDbSegments.recap ? Number(skipDbSegments.recap.start_ms) / 1000 : Number(playingMeta.recapStart) || 0, recapEnd: skipDbSegments.recap ? Number(skipDbSegments.recap.end_ms) / 1000 : Number(playingMeta.recapEnd) || 0, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : Number(playingMeta.outroStart) || 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : Number(playingMeta.outroEnd) || 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onOutroStart: handleEpisodeComplete, onPreviousEpisode: playPreviousEpisode, onNextEpisode: playNextEpisode, hasPreviousEpisode: !!getPreviousEpisodeInfo(), hasNextEpisode: !!getNextEpisodeInfo(), previousEpisodeLabel: (() => { const p = getPreviousEpisodeInfo(); return p ? `الحلقة السابقة · ${p.title || `الحلقة ${p.number}`}` : 'الحلقة السابقة'; })(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete, onProgressSave: onSaveWatchProgress ? (r => onSaveWatchProgress(title.id, title.type === 'movie' ? { kind: 'movie', ...r, titleName: title.name, poster: title.poster } : { kind: 'episode', season: playingSeasonNumber, episode: playingMeta && playingMeta.number, ...r, titleName: title.name, poster: title.poster, label: playingLabel })) : null })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
                     videoError && (React.createElement("div", { className: "absolute inset-0 bg-black/90 flex flex-col items-center justify-center gap-3 p-6 text-center" },
                         React.createElement("p", { className: "text-sm text-slate-200 font-bold" }, "\u062A\u0639\u0630\u0651\u0631 \u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u0639\u0644\u0649 \u0647\u0630\u0627 \u0627\u0644\u062C\u0647\u0627\u0632."),
                         isIOS && (React.createElement("p", { className: "text-xs text-slate-400 max-w-xs leading-relaxed" }, "\u063A\u0627\u0644\u0628\u064B\u0627 \u0627\u0644\u0633\u0628\u0628 \u0623\u0646 \u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u063A\u064A\u0631 \u0645\u0631\u0641\u0648\u0639 \u0628\u0635\u064A\u063A\u0629 \u064A\u062F\u0639\u0645\u0647\u0627 \u0627\u0644\u0622\u064A\u0641\u0648\u0646 \u0645\u0628\u0627\u0634\u0631\u0629. \u0627\u0644\u0623\u0639\u0645\u0627\u0644 \u0627\u0644\u062A\u064A \u062A\u064F\u0631\u0641\u0639 \u0645\u0646 \u0644\u0648\u062D\u0629 \u0627\u0644\u062A\u062D\u0643\u0645 \u0639\u0628\u0631 \u0632\u0631 \"\u0631\u0641\u0639 \u0645\u0646 \u0627\u0644\u062C\u0647\u0627\u0632\" \u062A\u0639\u0645\u0644 \u0628\u0634\u0643\u0644 \u0635\u062D\u064A\u062D \u0639\u0644\u0649 \u0643\u0644 \u0627\u0644\u0623\u062C\u0647\u0632\u0629.")),
@@ -6908,10 +6771,10 @@ function VideoDisplaySettings({ value, onChange }) {
         showCropStudio && (React.createElement(CropStudioModal, { videoUrl: normalizeVideoUrl(v.videoUrl), initial: crop, onCancel: () => setShowCropStudio(false), onSave: (newCrop) => { set('crop', newCrop); setShowCropStudio(false); } }))));
 }
 function emptyForm(type) {
-    return { name: '', type: type || 'movie', cinemanaId: '', cinemanaXId: '', cinemanaXVideoUrl: '', cinemanaXSources: [], year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', runtimeMinutes: 0, rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
+    return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', runtimeMinutes: 0, rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
 }
 function emptyEpisode(num) {
-    return { number: num, title: '', runtimeMinutes: 0, cinemanaId: '', cinemanaXId: '', cinemanaXVideoUrl: '', cinemanaXSources: [], videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, imdb: '', tmdbRating: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
+    return { number: num, title: '', runtimeMinutes: 0, videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, imdb: '', tmdbRating: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
 }
 function SubtitleHelper({ value, onChange, sourceId, title, type, season, episode, year, cinemanaId, offset = 0, onOffsetChange }) {
     const [loading, setLoading] = useState(false);
@@ -6988,15 +6851,8 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
     const eRef = useRef(e);
     const [tmdbRatingLoading, setTmdbRatingLoading] = useState(false);
     const [tmdbRatingMsg, setTmdbRatingMsg] = useState('');
-    const [cinemanaXPreviewUrl, setCinemanaXPreviewUrl] = useState(() => e.cinemanaXVideoUrl || (e.cinemanaXSources && e.cinemanaXSources[0] && e.cinemanaXSources[0].url) || (e.playbackProvider === 'cinemana-x' && e.videoUrl ? e.videoUrl : ''));
     useEffect(() => { eRef.current = e; }, [e]);
-    useEffect(() => {
-        const savedXUrl = e.cinemanaXVideoUrl || (e.cinemanaXSources && e.cinemanaXSources[0] && e.cinemanaXSources[0].url) || '';
-        if (savedXUrl) setCinemanaXPreviewUrl(savedXUrl);
-        else if (e.playbackProvider !== 'cinemana-x') setCinemanaXPreviewUrl('');
-    }, [e.cinemanaXVideoUrl, e.cinemanaXSources, e.playbackProvider]);
-    const patchEpisode = (patch) => { const next = { ...eRef.current, ...patch }; eRef.current = next; onChange(next); };
-    const set = (k, val) => patchEpisode({ [k]: val });
+    const set = (k, val) => onChange({ ...eRef.current, [k]: val });
     const loadTmdbRating = async () => {
         setTmdbRatingLoading(true);
         setTmdbRatingMsg('جاري جلب تقييم TMDB...');
@@ -7040,11 +6896,7 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
                 "\u00BB")),
         React.createElement("div", { className: "mt-3.5" },
             React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u062D\u0644\u0642\u0629 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: e.videoUrl, onChange: v => set('videoUrl', v), folder: "episodes", accept: "video/*" })),
-        React.createElement("div", { className: "mt-2.5" },
-            React.createElement("label", { className: "text-xs font-bold text-slate-300 mb-1.5 block" }, "رابط الفيديو الذي جلبه Cinemana X للحلقة"),
-            React.createElement("input", { type: "text", value: cinemanaXPreviewUrl, readOnly: true, dir: "ltr", onFocus: ev => ev.target.select(), placeholder: "سيظهر رابط الحلقة هنا تلقائيًا عند اختيار Cinemana X", className: "w-full bg-glass-900 border border-accent-cyan/20 rounded-xl px-3 py-2.5 text-xs text-slate-300 outline-none focus:border-accent-cyan" }),
-            React.createElement("p", { className: "text-[10px] text-slate-500 mt-1" }, "حقل عرض ونسخ لرابط المصدر الثاني، منفصل عن حقل ملف الحلقة.")),
-        React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url, quality, sources, provider) => { const normalized = normalizeVideoSources(sources); patchEpisode(provider === 'cinemana-x' ? { videoUrl: url, videoSources: normalized, cinemanaXVideoUrl: url, cinemanaXSources: normalized, playbackProvider: provider } : { videoUrl: url, videoSources: normalized, playbackProvider: provider }); if (provider === 'cinemana-x') setCinemanaXPreviewUrl(url); }, onGenerateQualities: (sources, provider) => { const normalized = normalizeVideoSources(sources); if (provider === 'cinemana-x') { const firstX = normalized[0] && normalized[0].url || eRef.current.cinemanaXVideoUrl || ''; patchEpisode({ cinemanaXVideoUrl: firstX, cinemanaXSources: normalized }); if (firstX) setCinemanaXPreviewUrl(firstX); } else patchEpisode({ videoSources: normalized }); }, onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: (nb, provider) => patchEpisode(provider === 'cinemana' ? { cinemanaId: nb, playbackProvider: provider } : { cinemanaXId: nb, playbackProvider: provider }) }),
+        React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb) }),
         React.createElement(SubtitleHelper, { cinemanaId: e.cinemanaId, value: e.subtitleUrl || '', onChange: v => set('subtitleUrl', v), sourceId: sourceId, title: seriesName, year: new Date().getFullYear(), type: "series", season: seasonNumber, episode: e.number, folder: "subtitles", offset: e.subtitleOffset || 0, onOffsetChange: v => set('subtitleOffset', v) }),
         React.createElement("div", { className: "grid sm:grid-cols-3 gap-3.5 mt-3.5" },
             React.createElement("div", null,
@@ -7194,8 +7046,6 @@ function AdminContentForm({ initial, defaultType, onDone }) {
         return { ...emptyForm(defaultType), ...cleanedInitial, genresText: (cleanedInitial.genres || []).join(', '), seasons: cleanedInitial.seasons ? JSON.parse(JSON.stringify(cleanedInitial.seasons)) : [] };
     });
     const [saving, setSaving] = useState(false);
-    const [cinemanaXPreviewUrl, setCinemanaXPreviewUrl] = useState(() => form.cinemanaXVideoUrl || (form.playbackProvider === 'cinemana-x' ? form.videoUrl : ''));
-    useEffect(() => { if (form.cinemanaXVideoUrl) setCinemanaXPreviewUrl(form.cinemanaXVideoUrl); }, [form.cinemanaXVideoUrl]);
     const [error, setError] = useState('');
     const [activeSeasonIdx, setActiveSeasonIdx] = useState(0);
     const [refreshRatingsLoading, setRefreshRatingsLoading] = useState(false);
@@ -7364,7 +7214,6 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             return;
         }
         setSaving(true);
-        let episodeLinkWarning = '';
         let payload = {
             name: form.name.trim(),
             type: form.type,
@@ -7380,11 +7229,6 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             featured: form.featured === true,
             status: form.status === 'published' ? 'published' : 'draft',
             sourceId: sourceId || '',
-            // Keep the series-level source IDs too; episode auto-repair on later edits
-            // must be able to re-enumerate Cinemana X episodes after reopening Firebase data.
-            cinemanaId: String(form.cinemanaId || '').trim(),
-            cinemanaXId: String(form.cinemanaXId || '').trim(),
-            playbackProvider: ['cinemana', 'cinemana-x'].includes(form.playbackProvider) ? form.playbackProvider : (form.cinemanaXId && !form.cinemanaId ? 'cinemana-x' : (form.cinemanaId ? 'cinemana' : '')),
             createdAt: initial ? (initial.createdAt || Date.now()) : Date.now(),
             likes: initial ? (initial.likes || 0) : 0,
             views: initial ? (initial.views || 0) : 0,
@@ -7392,46 +7236,23 @@ function AdminContentForm({ initial, defaultType, onDone }) {
         if (form.type === 'movie') {
             payload.videoUrl = normalizeVideoUrl(form.videoUrl.trim());
             payload.videoSources = normalizeVideoSources(form.videoSources);
-            payload.cinemanaXVideoUrl = normalizeVideoUrl(form.cinemanaXVideoUrl || (form.playbackProvider === 'cinemana-x' ? form.videoUrl : ''));
-            payload.cinemanaXSources = normalizeVideoSources(form.cinemanaXSources || (form.playbackProvider === 'cinemana-x' ? form.videoSources : []));
 
             // مهم جدًا للأفلام: لا نحفظ cinemanaId وحده ونترك videoUrl/videoSources فارغة.
             // الهاتف لا يستطيع الوصول إلى Node المحلي حتى يسترجع الرابط، بينما الحلقات
             // التي يكون رابطها محفوظًا تعمل طبيعيًا. إذا كان الفيلم مرتبطًا بـ Cinemana
             // ولم يُحفظ المصدر بعد، نجلبه الآن من نفس البروكسي الموجود على جهاز الإدارة
             // ونحفظ الرابط/الجودات داخل Firebase، حتى يعمل الهاتف مباشرة بدون بروكسي.
-            // احفظ Cinemana X مستقلًا عن المصدر الأساسي، حتى لا يختفي عند تبديل المصدر.
-            if (form.cinemanaXId && !payload.cinemanaXVideoUrl && !payload.cinemanaXSources.length) {
+            if (form.cinemanaId && !payload.videoUrl && !payload.videoSources.length) {
                 try {
-                    const fetchedX = cinemanaVideoSources(await cinemanaVideos(String(form.cinemanaXId).trim(), 'movie', 'cinemana-x'));
-                    if (fetchedX.length) {
-                        payload.cinemanaXSources = fetchedX;
-                        payload.cinemanaXVideoUrl = fetchedX[0].url;
+                    const fetched = cinemanaVideoSources(await cinemanaVideos(String(form.cinemanaId).trim(), 'movie'));
+                    if (fetched.length) {
+                        payload.videoSources = fetched;
+                        payload.videoUrl = fetched[0].url;
+                    } else {
+                        throw new Error('سينمانا لم تُرجع أي مصدر فيديو لهذا الفيلم.');
                     }
                 } catch (e) {
-                    throw new Error('تعذر حفظ رابط Cinemana X البديل: ' + (e && e.message ? e.message : 'خطأ غير معروف'));
-                }
-            }
-            // المصدر الأساسي يكون Cinemana إذا له معرّف، وإلا يستخدم Cinemana X كحل وحيد.
-            if (!payload.videoUrl && !payload.videoSources.length) {
-                const primaryId = String(form.cinemanaId || (!form.cinemanaXId ? '' : form.cinemanaXId)).trim();
-                const primaryProvider = form.cinemanaId ? 'cinemana' : 'cinemana-x';
-                if (primaryId) {
-                    try {
-                        const fetched = cinemanaVideoSources(await cinemanaVideos(primaryId, 'movie', primaryProvider));
-                        if (fetched.length) {
-                            payload.videoSources = fetched;
-                            payload.videoUrl = fetched[0].url;
-                            if (primaryProvider === 'cinemana-x') {
-                                payload.cinemanaXSources = fetched;
-                                payload.cinemanaXVideoUrl = fetched[0].url;
-                            }
-                        } else {
-                            throw new Error('المصدر لم يرجع أي رابط فيديو لهذا الفيلم.');
-                        }
-                    } catch (e) {
-                        throw new Error('تعذر حفظ رابط الفيلم من المصدر المحدد: ' + (e && e.message ? e.message : 'خطأ غير معروف'));
-                    }
+                    throw new Error('تعذر حفظ رابط الفيلم من سينمانا: ' + (e && e.message ? e.message : 'خطأ غير معروف'));
                 }
             } else if (!payload.videoUrl && payload.videoSources.length) {
                 payload.videoUrl = payload.videoSources[0].url;
@@ -7441,12 +7262,10 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.subtitlePublicUrl = String(form.subtitlePublicUrl || '').trim();
             payload.subtitleOffset = Number(form.subtitleOffset) || 0;
             payload.cinemanaId = String(form.cinemanaId || '').trim();
-            payload.cinemanaXId = String(form.cinemanaXId || '').trim();
-            payload.playbackProvider = ['cinemana','cinemana-x'].includes(form.playbackProvider) ? form.playbackProvider : (payload.cinemanaId ? 'cinemana' : (payload.cinemanaXId ? 'cinemana-x' : (isVidApiUrl(form.videoUrl) ? 'vidapi' : '')));
-            // لا نمسح رابط الفيديو المباشر الذي جلبناه من المصدر؛ نحتاج حفظه في Firebase
-            // حتى يعمل التشغيل على الهاتف أو عندما يكون السيرفر المحلي متوقفًا.
-            if (!payload.videoUrl && payload.videoSources.length) {
-                payload.videoUrl = payload.videoSources[0].url;
+            payload.playbackProvider = payload.cinemanaId ? 'cinemana' : (isVidApiUrl(form.videoUrl) ? 'vidapi' : (form.playbackProvider || ''));
+            if (payload.cinemanaId) {
+                payload.videoUrl = '';
+                payload.videoSources = [];
             }
             payload.trimStart = Number(form.trimStart) || 0;
             payload.trimEnd = Number(form.trimEnd) || 0;
@@ -7464,95 +7283,19 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 poster: (s.poster || '').trim(),
                 episodeThumbnail: (s.episodeThumbnail || '').trim(),
                 episodes: (s.episodes || []).map(e => ({
-                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), cinemanaXVideoUrl: normalizeVideoUrl(e.cinemanaXVideoUrl || ((e.playbackProvider === 'cinemana-x' || (e.cinemanaXId && !e.cinemanaId)) ? e.videoUrl : '') || (e.cinemanaXSources && e.cinemanaXSources[0] && e.cinemanaXSources[0].url) || ''), cinemanaXSources: normalizeVideoSources((e.cinemanaXSources && e.cinemanaXSources.length ? e.cinemanaXSources : ((e.playbackProvider === 'cinemana-x' || (e.cinemanaXId && !e.cinemanaId)) ? e.videoSources : []))), playbackProvider: ['cinemana','cinemana-x'].includes(e.playbackProvider) ? e.playbackProvider : (e.cinemanaXId && !e.cinemanaId ? 'cinemana-x' : (e.cinemanaId ? 'cinemana' : (isVidApiUrl(e.videoUrl) ? 'vidapi' : ''))), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || '').trim(), cinemanaXId: String(e.cinemanaXId || '').trim(), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
+                    number: Number(e.number) || 1, title: (e.title || '').trim(), videoUrl: normalizeVideoUrl((e.videoUrl || '').trim()), videoSources: normalizeVideoSources(e.videoSources), playbackProvider: e.cinemanaId ? 'cinemana' : (e.playbackProvider || (isVidApiUrl(e.videoUrl) ? 'vidapi' : '')), subtitleUrl: normalizeSubtitleUrl(e.subtitleUrl || ''), subtitlePublicUrl: String(e.subtitlePublicUrl || '').trim(), subtitleOffset: Number(e.subtitleOffset) || 0, cinemanaId: String(e.cinemanaId || '').trim(), imdb: (e.imdb || '').trim(), tmdbRating: (e.tmdbRating || '').trim(), rt: (e.rt || '').trim(),
                     trimStart: Number(e.trimStart) || 0, trimEnd: Number(e.trimEnd) || 0, introStart: Number(e.introStart) || 0, introEnd: Number(e.introEnd) || 0, fitMobile: e.fitMobile || 'contain', fitDesktop: e.fitDesktop || 'contain', crop: e.crop || {}, finality: e.finality || 'none'
                 }))
             }));
-            // احفظ الروابط المباشرة لكل حلقة بدل مسحها بمجرد وجود معرّف المصدر.
-            // إن كانت الحلقة تحتوي على معرّف فقط (عمل قديم)، نجلب رابطها أثناء الحفظ
-            // والسيرفر المحلي متاح على جهاز الإدارة، ثم نخزّنه حتى لا يحتاج المشاهد إلى البروكسي.
-            const unresolvedEpisodes = [];
-            // Repair missing per-episode Cinemana X IDs from the saved series ID.
-            // This is deliberately done before the permanent Firebase write, so episode
-            // URLs are not dependent on the editor component still being open.
-            if (form.cinemanaXId && payload.seasons.some(season => (season.episodes || []).some(ep => !ep.cinemanaXId || !ep.cinemanaXVideoUrl || !(ep.cinemanaXSources || []).length))) {
-                try {
-                    const xEpisodeRows = await cinemanaEpisodes(String(form.cinemanaXId).trim(), 'cinemana-x');
-                    const xMap = new Map();
-                    for (const row of xEpisodeRows) {
-                        const nb = row && (row.nb ?? row.id ?? row._id ?? row.videoId ?? row.video_id);
-                        const epNo = cinemanaEpisodeNumber(row);
-                        if (nb == null || !epNo) continue;
-                        const key = `${cinemanaEpisodeSeason(row)}x${epNo}`;
-                        if (!xMap.has(key)) xMap.set(key, row);
+            payload.seasons.forEach(s => {
+                (s.episodes || []).forEach(e => {
+                    if (e.cinemanaId) {
+                        e.videoUrl = '';
+                        e.videoSources = [];
+                        e.playbackProvider = 'cinemana';
                     }
-                    for (const season of payload.seasons) {
-                        for (const episode of (season.episodes || [])) {
-                            if (episode.cinemanaXId && episode.cinemanaXVideoUrl && (episode.cinemanaXSources || []).length) continue;
-                            let row = xMap.get(`${Number(season.number) || 1}x${Number(episode.number) || 1}`);
-                            if (!row) {
-                                const matches = xEpisodeRows.filter(item => cinemanaEpisodeNumber(item) === (Number(episode.number) || 1));
-                                if (matches.length === 1 && !xEpisodeRows.some(item => item && item._seasonExplicit)) row = matches[0];
-                            }
-                            if (row) {
-                                const nb = String(row.nb ?? row.id ?? row._id ?? row.videoId ?? row.video_id);
-                                episode.cinemanaXId = nb;
-                            }
-                        }
-                    }
-                } catch (xIndexError) {
-                    unresolvedEpisodes.push(`تعذر تحميل فهرس حلقات Cinemana X: ${xIndexError && xIndexError.message ? xIndexError.message : 'خطأ اتصال'}`);
-                }
-            }
-            for (const season of payload.seasons) {
-                for (const episode of (season.episodes || [])) {
-                    if (!episode.videoUrl && episode.videoSources && episode.videoSources.length) {
-                        episode.videoUrl = episode.videoSources[0].url;
-                    }
-                    episode.playbackProvider = episode.playbackProvider === 'cinemana-x' && episode.cinemanaXId
-                        ? 'cinemana-x'
-                        : (episode.cinemanaId ? 'cinemana' : (episode.cinemanaXId ? 'cinemana-x' : (episode.playbackProvider || '')));
-                    const provider = episode.playbackProvider === 'cinemana-x' && episode.cinemanaXId ? 'cinemana-x' : (episode.cinemanaId ? 'cinemana' : 'cinemana-x');
-                    const savedSourceId = String(provider === 'cinemana' ? episode.cinemanaId : episode.cinemanaXId || episode.cinemanaId || '').trim();
-                    if (!episode.videoUrl && !(episode.videoSources || []).length && savedSourceId) {
-                        try {
-                            const fetched = cinemanaVideoSources(await cinemanaVideos(savedSourceId, 'tv', provider));
-                            if (fetched.length) {
-                                episode.videoSources = fetched;
-                                episode.videoUrl = fetched[0].url;
-                                if (provider === 'cinemana-x') {
-                                    episode.cinemanaXVideoUrl = fetched[0].url;
-                                    episode.cinemanaXSources = fetched;
-                                }
-                            } else {
-                                unresolvedEpisodes.push(`م${season.number} ح${episode.number}: لم يرجع المصدر رابطًا`);
-                            }
-                        } catch (episodeFetchError) {
-                            unresolvedEpisodes.push(`م${season.number} ح${episode.number}: ${episodeFetchError && episodeFetchError.message ? episodeFetchError.message : 'تعذّر جلب الرابط'}`);
-                        }
-                    }
-                    if (episode.cinemanaXId && !episode.cinemanaXVideoUrl && !(episode.cinemanaXSources || []).length) {
-                        try {
-                            const fetchedX = cinemanaVideoSources(await cinemanaVideos(String(episode.cinemanaXId).trim(), 'tv', 'cinemana-x'));
-                            if (fetchedX.length) {
-                                episode.cinemanaXVideoUrl = fetchedX[0].url;
-                                episode.cinemanaXSources = fetchedX;
-                                if (!episode.videoUrl || episode.playbackProvider === 'cinemana-x') {
-                                    episode.videoUrl = fetchedX[0].url;
-                                    episode.videoSources = fetchedX;
-                                    episode.playbackProvider = 'cinemana-x';
-                                }
-                            }
-                        } catch (episodeXError) {
-                            unresolvedEpisodes.push(`م${season.number} ح${episode.number} (Cinemana X): ${episodeXError && episodeXError.message ? episodeXError.message : 'تعذّر جلب الرابط البديل'}`);
-                        }
-                    }
-                }
-            }
-            if (unresolvedEpisodes.length) {
-                episodeLinkWarning = `حُفظت بيانات المسلسل، لكن تعذّر جلب روابط ${unresolvedEpisodes.length} مشكلة/حلقة: ${unresolvedEpisodes.slice(0, 4).join(' | ')}`;
-                setError(episodeLinkWarning);
-            }
+                });
+            });
             payload.videoUrl = '';
         }
         if (payload.status === 'published') {
@@ -7570,7 +7313,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 await db.ref(`titles/${initial.id}`).set(payload);
             else
                 await db.ref('titles').push(payload);
-            showToast(episodeLinkWarning || (initial && initial.id ? 'تم حفظ التعديلات بنجاح' : 'تم إضافة العمل بنجاح'), episodeLinkWarning ? 'error' : 'success');
+            showToast(initial && initial.id ? 'تم حفظ التعديلات بنجاح' : 'تم إضافة العمل بنجاح');
             onDone();
         }
         catch (e) {
@@ -7622,11 +7365,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
         form.type === 'movie' ? (React.createElement("div", null,
             React.createElement("div", { className: "mt-5" },
                 React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u0644\u0645 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: form.videoUrl, onChange: v => set('videoUrl', v), folder: "videos", accept: "video/*" })),
-            React.createElement("div", { className: "mt-2.5" },
-                React.createElement("label", { className: "text-xs font-bold text-slate-300 mb-1.5 block" }, "\u0631\u0627\u0628\u0637 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u0627\u0644\u0630\u064A \u062C\u0644\u0628\u0647 Cinemana X"),
-                React.createElement("input", { type: "text", value: cinemanaXPreviewUrl, readOnly: true, dir: "ltr", onFocus: ev => ev.target.select(), placeholder: "\u0633\u064A\u0638\u0647\u0631 \u0647\u0646\u0627 \u0628\u0639\u062F \u0627\u0644\u0628\u062D\u062B \u0648\u0627\u062E\u062A\u064A\u0627\u0631 Cinemana X", className: "w-full bg-glass-900 border border-accent-cyan/20 rounded-xl px-3 py-2.5 text-xs text-slate-300 outline-none focus:border-accent-cyan" }),
-                React.createElement("p", { className: "text-[10px] text-slate-500 mt-1" }, "\u0647\u0630\u0647 \u0627\u0644\u062E\u0627\u0646\u0629 \u0644\u0639\u0631\u0636 \u0648\u0646\u0633\u062E \u0631\u0627\u0628\u0637 Cinemana X \u0641\u0642\u0637; \u0644\u0627 \u062A\u063A\u064A\u0651\u0631 \u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u0627\u0644\u0623\u0633\u0627\u0633\u064A.")),
-            React.createElement(CinemanaHelper, { kind: form.type === 'anime' ? 'anime' : 'movie', defaultTitle: form.name, defaultYear: form.year, onGenerate: (url, quality, sources, provider) => { const normalized = normalizeVideoSources(sources); setForm(prev => provider === 'cinemana-x' ? ({ ...prev, videoUrl: url, videoSources: normalized, cinemanaXVideoUrl: url, cinemanaXSources: normalized, playbackProvider: provider }) : ({ ...prev, videoUrl: url, videoSources: normalized, playbackProvider: provider })); if (provider === 'cinemana-x') setCinemanaXPreviewUrl(url); }, onGenerateQualities: (sources, provider) => { const normalized = normalizeVideoSources(sources); if (provider === 'cinemana-x') { setForm(prev => ({ ...prev, cinemanaXVideoUrl: (normalized[0] && normalized[0].url) || prev.cinemanaXVideoUrl || '', cinemanaXSources: normalized })); if (normalized[0] && normalized[0].url) setCinemanaXPreviewUrl(normalized[0].url); } else set('videoSources', normalized); }, onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: (nb, provider) => setForm(prev => provider === 'cinemana' ? ({ ...prev, cinemanaId: nb, playbackProvider: provider }) : ({ ...prev, cinemanaXId: nb, playbackProvider: provider })), onImportTmdb: async (item) => {
+            React.createElement(CinemanaHelper, { kind: form.type === 'anime' ? 'anime' : 'movie', defaultTitle: form.name, defaultYear: form.year, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb), onImportTmdb: async (item) => {
                     if (sourceId) return { patch: {}, sourceId, imdbId: '', tmdbId: '' };
                     const r = await importFromTmdbTitle(cinemanaTitle(item), form.type, cinemanaYear(item) || form.year, { withEpisodes: false });
                     setSourceId(r.sourceId || '');
@@ -7638,19 +7377,17 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             React.createElement(SubtitleHelper, { cinemanaId: form.cinemanaId, value: form.subtitleUrl || '', onChange: v => set('subtitleUrl', v), sourceId: sourceId, title: form.name, year: form.year, type: "movie", folder: "subtitles", offset: form.subtitleOffset || 0, onOffsetChange: v => set('subtitleOffset', v) }),
             React.createElement(VideoDisplaySettings, { value: form, onChange: patch => setForm(prev => ({ ...prev, ...patch })) }))) : (React.createElement(React.Fragment, null,
             React.createElement("div", null,
-                React.createElement(CinemanaSeriesImportPanel, { type: form.type === 'anime' ? 'anime' : 'tv', defaultTitle: form.name, defaultYear: form.year, onImport: async (item, onProgress, provider = 'cinemana') => {
+                React.createElement(CinemanaSeriesImportPanel, { type: form.type === 'anime' ? 'anime' : 'tv', defaultTitle: form.name, defaultYear: form.year, onImport: async (item, onProgress) => {
                         const r = sourceId
                           ? await importFromTmdb(sourceId, form.type, { withEpisodes: true, onProgress })
                           : await importFromTmdbTitle(cinemanaTitle(item), form.type, cinemanaYear(item) || form.year, { withEpisodes: true, onProgress });
-                        const ce = await cinemanaEpisodes(String(item.nb), provider);
-                        r.patch.seasons = await enrichTmdbSeasonsWithCinemana(r.patch.seasons || [], ce, onProgress, provider);
-                        if (provider === 'cinemana') r.patch.cinemanaId = String(item.nb);
-                        else r.patch.cinemanaXId = String(item.nb);
+                        const ce = await cinemanaEpisodes(String(item.nb));
+                        r.patch.seasons = await enrichTmdbSeasonsWithCinemana(r.patch.seasons || [], ce, onProgress);
                         setSourceId(r.sourceId || sourceId || '');
                         setSubtitleSourceIds([r.imdbId, r.tmdbId].filter(Boolean));
                         setBannerData(r.bannerData || null);
                         setShowAllBanners(false);
-                        setForm(prev => ({ ...prev, ...r.patch, cinemanaId: provider === 'cinemana' ? String(item.nb) : prev.cinemanaId, cinemanaXId: provider === 'cinemana-x' ? String(item.nb) : prev.cinemanaXId }));
+                        setForm(prev => ({ ...prev, ...r.patch }));
                         setActiveSeasonIdx(0);
                         setEditingEpisodeIdx(null);
                     } })),
