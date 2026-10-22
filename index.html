@@ -574,22 +574,50 @@ function readTitleCache() {
         return [];
     }
 }
+function compactCatalogEntry(title) {
+    if (!title || typeof title !== 'object') return null;
+    const clean = {
+        id: String(title.id || '').trim(),
+        name: String(title.name || 'بدون اسم').trim(),
+        status: title.status || 'draft',
+        type: ['movie','series','anime'].includes(title.type) ? title.type : 'movie',
+        year: Number(title.year) || 0,
+        createdAt: Number(title.createdAt) || 0,
+        updatedAt: Number(title.updatedAt) || 0,
+        publishedAt: Number(title.publishedAt) || 0,
+        poster: String(title.poster || ''),
+        backdrop: String(title.backdrop || ''),
+        description: String(title.description || '').slice(0, 1800),
+        genres: normalizeGenresValue(title.genres),
+        featured: title.featured === true,
+        imdbRating: title.imdbRating || '',
+        rtRating: title.rtRating || '',
+        likes: Number(title.likes) || 0,
+        views: Number(title.views) || 0,
+        runtimeMinutes: Number(title.runtimeMinutes || title.runtime) || 0,
+        runtimeSeconds: Number(title.runtimeSeconds) || 0,
+        seasons: normalizeSeasonsValue(title.seasons).map(season => ({
+            number: Number(season.number) || 1,
+            episodes: season.episodes.map(ep => ({
+                number: Number(ep.number) || 1,
+                title: String(ep.title || ep.name || '').slice(0, 120),
+                runtimeMinutes: Number(ep.runtimeMinutes || ep.runtime) || 0
+            }))
+        })),
+        __catalogOnly: true
+    };
+    return clean;
+}
 function writeTitleCache(list) {
     try {
-        const published = (list || []).filter(t => t && t.status === 'published');
+        const published = (list || []).filter(t => t && t.status === 'published')
+            .map(compactCatalogEntry).filter(Boolean);
         const payload = JSON.stringify({ time: Date.now(), items: published });
-        if (payload.length > 3000000)
-            return;
-        const save = () => { try {
-            localStorage.setItem(CV_TITLE_CACHE_KEY, payload);
-        }
-        catch (e) { } };
-        if (window.requestIdleCallback)
-            window.requestIdleCallback(save, { timeout: 1500 });
-        else
-            setTimeout(save, 0);
-    }
-    catch (e) { }
+        if (payload.length > 3000000) return;
+        const save = () => { try { localStorage.setItem(CV_TITLE_CACHE_KEY, payload); } catch (e) { } };
+        if (window.requestIdleCallback) window.requestIdleCallback(save, { timeout: 1500 });
+        else setTimeout(save, 0);
+    } catch (e) { }
 }
 let toastListeners = [];
 let toastIdCounter = 0;
@@ -8278,13 +8306,51 @@ function App() {
         })).catch(() => {});
     };
 
-    const openTitleFromContinue = (title, nextTarget = null) => {
+    const loadFullTitleForCatalog = async (title) => {
+        if (!title || !title.__catalogOnly) return title;
+        const id = String(title.id || '').trim();
+        if (!id) throw new Error('معرّف العمل غير موجود');
+        let lastError = null;
+        // A single title is much smaller than downloading the whole catalog with every episode.
+        try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 22000);
+            try {
+                const base = String(firebaseConfig.databaseURL || '').replace(/\/+$/, '');
+                const response = await fetch(`${base}/titles/${encodeURIComponent(id)}.json?cv_cb=${Date.now()}`, {
+                    method: 'GET', cache: 'no-store', headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' }, signal: controller.signal
+                });
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                const data = await response.json();
+                if (data && typeof data === 'object') return normalizeTitlePlaybackData({ id, ...data });
+                throw new Error('تفاصيل العمل غير موجودة في قاعدة البيانات');
+            } finally { clearTimeout(timer); }
+        } catch (e) { lastError = e; }
+        try {
+            const pending = db.ref(`titles/${id}`).once('value').then(snap => snap.val());
+            const data = await Promise.race([pending, new Promise((_, reject) => setTimeout(() => reject(new Error('انتهت مهلة قراءة تفاصيل العمل')), 18000))]);
+            if (data && typeof data === 'object') return normalizeTitlePlaybackData({ id, ...data });
+        } catch (e) { lastError = e; }
+        throw lastError || new Error('تعذر تحميل تفاصيل العمل');
+    };
+    const openTitle = async (title, extra = null) => {
         if (!title) return;
-        if (nextTarget && nextTarget.season != null && nextTarget.episode != null) {
-            setActiveTitle({ ...title, __continueTarget: { season: Number(nextTarget.season), episode: Number(nextTarget.episode) } });
-        } else {
-            setActiveTitle(title);
+        let full = title;
+        if (title.__catalogOnly) {
+            try {
+                full = await loadFullTitleForCatalog(title);
+            } catch (e) {
+                showToast('ظهرت الأعمال، لكن تعذر تحميل تفاصيل هذا العمل من قاعدة البيانات.', 'error');
+                return;
+            }
         }
+        setActiveTitle({ ...full, ...(extra || {}) });
+    };
+    const openTitleFromContinue = (title, nextTarget = null) => {
+        const extra = nextTarget && nextTarget.season != null && nextTarget.episode != null
+            ? { __continueTarget: { season: Number(nextTarget.season), episode: Number(nextTarget.episode) } }
+            : null;
+        return openTitle(title, extra);
     };
     const openProfile = (uname) => { setProfileTarget(uname || null); setActiveTitle(null); setAccountSheet(false); setViewRaw('profile'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
     const markEpisodeWatched = (titleId, seasonNumber, episodeNumber) => {
@@ -8415,88 +8481,125 @@ function App() {
     const [booted, setBooted] = useState(() => readTitleCache().some(t => t && t.status === 'published'));
     useEffect(() => {
         let cancelled = false;
-        let hasFirebaseSnapshot = false;
-        let restInFlight = null;
+        let hasCatalog = false;
+        let fullFallbackStarted = false;
         const isAdmin = !!(currentUser && (currentUser.username === 'mavilovelife' || currentUser.isModerator));
-        const ref = db.ref('titles');
+        const databaseBase = String(firebaseConfig.databaseURL || '').replace(/\/+$/, '');
 
-        const applyCatalog = data => {
-            if (cancelled) return;
-            const list = data && typeof data === 'object'
-                ? Object.keys(data)
-                    .map(k => normalizeTitlePlaybackData({ id: k, ...data[k] }))
-                    .filter(Boolean)
-                    .filter(t => isAdmin || t.status === 'published')
-                : [];
-            list.sort((a, b) =>
-                ((b.publishedAt || b.createdAt || b.updatedAt || 0) -
-                 (a.publishedAt || a.createdAt || a.updatedAt || 0))
-            );
-            // لا تمسح كتالوجًا مخزّنًا عند وصول رد احتياطي فارغ أثناء انقطاع الشبكة.
+        const rawToList = (data, compact) => {
+            if (!data || typeof data !== 'object') return [];
+            return Object.keys(data).map(k => {
+                const normalized = normalizeTitlePlaybackData({ id: k, ...data[k] });
+                return compact ? compactCatalogEntry(normalized) : normalized;
+            }).filter(Boolean).filter(t => isAdmin || t.status === 'published');
+        };
+        const sortList = list => list.sort((a, b) =>
+            ((b.publishedAt || b.createdAt || b.updatedAt || 0) - (a.publishedAt || a.createdAt || a.updatedAt || 0))
+        );
+        const applyPublicCatalog = data => {
+            if (cancelled) return false;
+            const list = sortList(rawToList(data, true));
+            if (!list.length) return false;
+            hasCatalog = true;
             setTitles(previous => list.length || !previous.length ? list : previous);
-            if (!isAdmin && list.length) writeTitleCache(list);
-            setActiveTitle(prev => {
-                if (!prev) return prev;
-                const updated = list.find(x => x.id === prev.id);
-                return updated || prev;
-            });
+            writeTitleCache(list);
             setBooted(true);
+            return true;
         };
-
-        // Firebase Realtime listeners may fail on networks that interfere with
-        // persistent connections. Try the database's ordinary HTTPS REST endpoint too.
-        const loadViaRest = () => {
-            if (restInFlight) return restInFlight;
-            restInFlight = (async () => {
-                const controller = new AbortController();
-                const timeout = setTimeout(() => controller.abort(), 10000);
+        const fetchWithTimeout = async (url, ms) => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), ms);
+            try {
+                const response = await fetch(url, {
+                    method: 'GET', cache: 'no-store',
+                    headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
+                    signal: controller.signal
+                });
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                return await response.json();
+            } finally { clearTimeout(timer); }
+        };
+        const loadStaticCatalog = async () => {
+            if (cancelled || hasCatalog) return hasCatalog;
+            for (let attempt = 0; attempt < 3 && !cancelled && !hasCatalog; attempt++) {
                 try {
-                    const url = `${String(firebaseConfig.databaseURL).replace(/\/+$/, '')}/titles.json?cv_cb=${Date.now()}`;
-                    const response = await fetch(url, {
-                        method: 'GET',
-                        cache: 'no-store',
-                        headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
-                        signal: controller.signal
-                    });
-                    if (!response.ok) throw new Error('Firebase REST HTTP ' + response.status);
-                    const data = await response.json();
-                    if (!data || typeof data !== 'object' || !Object.keys(data).length) return false;
-                    applyCatalog(data);
-                    return true;
-                } catch (_) {
-                    return false;
-                } finally {
-                    clearTimeout(timeout);
-                    restInFlight = null;
-                }
-            })();
-            return restInFlight;
+                    const staticUrl = new URL('./catalog.json?cv_cb=' + Date.now(), window.location.href).toString();
+                    const data = await fetchWithTimeout(staticUrl, 12000);
+                    if (applyPublicCatalog(data)) return true;
+                } catch (_) { }
+                if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 700 * (attempt + 1)));
+            }
+            return false;
+        };
+        const loadPublicCatalogRest = async () => {
+            if (cancelled || hasCatalog) return hasCatalog;
+            try {
+                const data = await fetchWithTimeout(`${databaseBase}/publicCatalog.json?cv_cb=${Date.now()}`, 9000);
+                if (applyPublicCatalog(data)) return true;
+            } catch (_) { }
+            return false;
+        };
+        const loadLegacyFullCatalogRest = async () => {
+            if (cancelled || hasCatalog || fullFallbackStarted || isAdmin) return;
+            fullFallbackStarted = true;
+            try {
+                // Last resort only: this is much larger than catalog.json.
+                const data = await fetchWithTimeout(`${databaseBase}/titles.json?cv_cb=${Date.now()}`, 40000);
+                if (!data || typeof data !== 'object') return;
+                const list = sortList(rawToList(data, true));
+                if (!list.length || cancelled) return;
+                hasCatalog = true;
+                setTitles(previous => list.length || !previous.length ? list : previous);
+                writeTitleCache(list);
+                setBooted(true);
+            } catch (_) {
+                if (!cancelled && !hasCatalog) setBooted(true);
+            }
         };
 
-        const startupTimer = setTimeout(async () => {
-            if (cancelled || hasFirebaseSnapshot) return;
-            const loaded = await loadViaRest();
-            if (!cancelled && !loaded) setBooted(true);
-        }, 7000);
+        if (!isAdmin) {
+            const publicRef = db.ref('publicCatalog');
+            const publicCb = snap => {
+                if (!applyPublicCatalog(snap.val())) void loadStaticCatalog();
+            };
+            const publicErr = () => { void loadStaticCatalog(); };
+            publicRef.on('value', publicCb, publicErr);
+            // Parallel HTTPS reads work even where persistent Firebase connections are blocked.
+            void loadPublicCatalogRest();
+            void loadStaticCatalog();
+            const fallbackTimer = setTimeout(() => { if (!hasCatalog) void loadLegacyFullCatalogRest(); }, 9000);
+            return () => {
+                cancelled = true;
+                clearTimeout(fallbackTimer);
+                publicRef.off('value', publicCb);
+            };
+        }
 
-        const cb = snap => {
+        const ref = db.ref('titles');
+        const applyAdminCatalog = data => {
             if (cancelled) return;
-            hasFirebaseSnapshot = true;
-            clearTimeout(startupTimer);
-            applyCatalog(snap.val());
+            const list = sortList(rawToList(data, false));
+            setTitles(previous => list.length || !previous.length ? list : previous);
+            setBooted(true);
+            if (list.length) {
+                // Keep a lightweight public mirror so visitors don't need to download all episode links at startup.
+                const catalog = {};
+                list.filter(t => t.status === 'published').forEach(t => {
+                    const entry = compactCatalogEntry(t);
+                    if (entry) { delete entry.__catalogOnly; catalog[t.id] = entry; }
+                });
+                db.ref('publicCatalog').set(catalog).catch(() => {});
+            }
         };
-
+        const cb = snap => applyAdminCatalog(snap.val());
         ref.on('value', cb, async () => {
-            // If the live connection is unavailable, try HTTPS REST before giving up.
-            const loaded = await loadViaRest();
-            if (!cancelled && !loaded) setBooted(true);
+            try {
+                const data = await fetchWithTimeout(`${databaseBase}/titles.json?cv_cb=${Date.now()}`, 40000);
+                if (!cancelled && data) applyAdminCatalog(data);
+                else if (!cancelled) setBooted(true);
+            } catch (_) { if (!cancelled) setBooted(true); }
         });
-
-        return () => {
-            cancelled = true;
-            clearTimeout(startupTimer);
-            ref.off('value', cb);
-        };
+        return () => { cancelled = true; ref.off('value', cb); };
     }, [currentUser && currentUser.id, currentUser && currentUser.username, currentUser && currentUser.isModerator]);
     useEffect(() => {
         if (!booted)
@@ -8513,8 +8616,8 @@ function App() {
         const t = new URLSearchParams(location.search).get('t');
         if (t) {
             const found = titles.find(x => x.id === t && x.status === 'published');
-            if (found)
-                setActiveTitle(found);
+            if (found && (!activeTitle || activeTitle.id !== found.id))
+                openTitle(found);
         }
         const u = new URLSearchParams(location.search).get('u');
         if (u)
@@ -8559,13 +8662,13 @@ function App() {
     }
     return (React.createElement("div", { className: "min-h-screen flex flex-col mobile-safe-bottom md:pb-0" },
         React.createElement(Header, { currentUser: currentUser, view: view, setView: setView, search: search, setSearch: setSearch, onOpenAccount: () => setAccountSheet(true), onOpenProfile: openProfile, onOpenTitleFromNotif: (id) => { const t = titles.find(x => x.id === id && x.status === 'published'); if (t)
-                setActiveTitle(t); } }),
+                openTitle(t); } }),
         React.createElement("main", { className: "flex-1 max-w-7xl w-full mx-auto px-4 py-6 md:py-8" },
-            React.createElement("div", { key: searching ? 'search' : view, className: "page-fade-in" }, searching ? (React.createElement(TypeGrid, { title: `نتائج البحث عن "${search}"`, items: mainList, onOpen: setActiveTitle, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0646\u062A\u0627\u0626\u062C \u0645\u0637\u0627\u0628\u0642\u0629.", watchedMap: watched })) : view === 'home' ? (React.createElement(HomeView, { items: published, onOpen: openTitleFromContinue, watchedMap: watched, watchProgress: watchProgress })) : (view === 'movie' || view === 'series' || view === 'anime') ? (React.createElement(TypeGrid, { title: TYPE_PLURAL[view], items: published.filter(t => t.type === view), onOpen: setActiveTitle, showGenreFilter: true, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u0628\u0639\u062F.", watchedMap: watched })) : view === 'lists' ? (React.createElement(ListsView, { currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal })) : view === 'requests' ? (React.createElement(RequestsView, { currentUser: currentUser, onOpenAuth: setAuthModal })) : view === 'settings' ? (React.createElement(SettingsView, { currentUser: currentUser, onUpdateName: handleUpdateName, onUpdateAvatar: handleUpdateAvatar, onOpenAuth: setAuthModal })) : view === 'profile' ? (React.createElement(ProfileView, { username: profileTarget, currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal, onOpenProfile: openProfile })) : view === 'admin' ? (React.createElement(AdminPanel, { currentUser: currentUser, titles: titles, onOpenAuth: setAuthModal, moderators: moderators })) : null)),
+            React.createElement("div", { key: searching ? 'search' : view, className: "page-fade-in" }, searching ? (React.createElement(TypeGrid, { title: `نتائج البحث عن "${search}"`, items: mainList, onOpen: openTitle, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0646\u062A\u0627\u0626\u062C \u0645\u0637\u0627\u0628\u0642\u0629.", watchedMap: watched })) : view === 'home' ? (React.createElement(HomeView, { items: published, onOpen: openTitleFromContinue, watchedMap: watched, watchProgress: watchProgress })) : (view === 'movie' || view === 'series' || view === 'anime') ? (React.createElement(TypeGrid, { title: TYPE_PLURAL[view], items: published.filter(t => t.type === view), onOpen: openTitle, showGenreFilter: true, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u0628\u0639\u062F.", watchedMap: watched })) : view === 'lists' ? (React.createElement(ListsView, { currentUser: currentUser, titles: published, onOpen: openTitle, onOpenAuth: setAuthModal })) : view === 'requests' ? (React.createElement(RequestsView, { currentUser: currentUser, onOpenAuth: setAuthModal })) : view === 'settings' ? (React.createElement(SettingsView, { currentUser: currentUser, onUpdateName: handleUpdateName, onUpdateAvatar: handleUpdateAvatar, onOpenAuth: setAuthModal })) : view === 'profile' ? (React.createElement(ProfileView, { username: profileTarget, currentUser: currentUser, titles: published, onOpen: openTitle, onOpenAuth: setAuthModal, onOpenProfile: openProfile })) : view === 'admin' ? (React.createElement(AdminPanel, { currentUser: currentUser, titles: titles, onOpenAuth: setAuthModal, moderators: moderators })) : null)),
         React.createElement(MobileBottomNav, { view: view, setView: setView }),
         React.createElement(ToastHost, null),
         activeTitle && (React.createElement(TitleModal, { title: activeTitle, allTitles: published, currentUser: currentUser, liked: likedIds.includes(activeTitle.id), getRole: getRole, onLike: () => toggleLike(activeTitle), onClose: () => { setActiveTitle(null); if (new URLSearchParams(location.search).get('t'))
-                history.replaceState(null, '', location.pathname); }, onOpenAuth: setAuthModal, onOpenProfile: openProfile, onOpen: setActiveTitle, watched: watched, onMarkEpisodeWatched: markEpisodeWatched, onMarkMovieWatched: markMovieWatched, isEpisodeWatched: isEpisodeWatched, watchProgress: watchProgress, onSaveWatchProgress: saveWatchProgress })),
+                history.replaceState(null, '', location.pathname); }, onOpenAuth: setAuthModal, onOpenProfile: openProfile, onOpen: openTitle, watched: watched, onMarkEpisodeWatched: markEpisodeWatched, onMarkMovieWatched: markMovieWatched, isEpisodeWatched: isEpisodeWatched, watchProgress: watchProgress, onSaveWatchProgress: saveWatchProgress })),
         authModal && React.createElement(AuthModal, { tab: authModal, onClose: () => setAuthModal(null), onSuccess: handleAuthSuccess }),
         accountSheet && (React.createElement(AccountSheet, { currentUser: currentUser, onClose: () => setAccountSheet(false), onLogin: () => { setAccountSheet(false); setAuthModal('login'); }, onRegister: () => { setAccountSheet(false); setAuthModal('register'); }, onLogout: handleLogout, onNavigate: (v) => { if (v === 'profile')
                 setProfileTarget(null); setView(v); setAccountSheet(false); } })),
