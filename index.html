@@ -8409,31 +8409,25 @@ function App() {
     const [booted, setBooted] = useState(() => readTitleCache().some(t => t && t.status === 'published'));
     useEffect(() => {
         let cancelled = false;
-        // افتح الواجهة حتى لو كانت Firebase بطيئة أو محجوبة على شبكة معينة.
-        // إذا وصلت لقطة Firebase لاحقًا، سيُحدَّث الكتالوج تلقائيًا.
+        let hasFirebaseSnapshot = false;
+        let restInFlight = null;
         const isAdmin = !!(currentUser && (currentUser.username === 'mavilovelife' || currentUser.isModerator));
         const ref = db.ref('titles');
-        const startupTimer = setTimeout(() => {
-            if (!cancelled) setBooted(true);
-        }, 12000);
 
-        const cb = snap => {
+        const applyCatalog = data => {
             if (cancelled) return;
-            clearTimeout(startupTimer);
-            const data = snap.val();
             const list = data && typeof data === 'object'
                 ? Object.keys(data)
                     .map(k => normalizeTitlePlaybackData({ id: k, ...data[k] }))
                     .filter(Boolean)
                     .filter(t => isAdmin || t.status === 'published')
                 : [];
-
             list.sort((a, b) =>
                 ((b.publishedAt || b.createdAt || b.updatedAt || 0) -
                  (a.publishedAt || a.createdAt || a.updatedAt || 0))
             );
-
-            setTitles(list);
+            // لا تمسح كتالوجًا مخزّنًا عند وصول رد احتياطي فارغ أثناء انقطاع الشبكة.
+            setTitles(previous => list.length || !previous.length ? list : previous);
             if (!isAdmin && list.length) writeTitleCache(list);
             setActiveTitle(prev => {
                 if (!prev) return prev;
@@ -8443,10 +8437,53 @@ function App() {
             setBooted(true);
         };
 
-        ref.on('value', cb, () => {
-            // لا تترك شاشة التحميل معلقة إذا فشل الاتصال بقاعدة البيانات.
+        // Firebase Realtime listeners may fail on networks that interfere with
+        // persistent connections. Try the database's ordinary HTTPS REST endpoint too.
+        const loadViaRest = () => {
+            if (restInFlight) return restInFlight;
+            restInFlight = (async () => {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 10000);
+                try {
+                    const url = `${String(firebaseConfig.databaseURL).replace(/\/+$/, '')}/titles.json?cv_cb=${Date.now()}`;
+                    const response = await fetch(url, {
+                        method: 'GET',
+                        cache: 'no-store',
+                        headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
+                        signal: controller.signal
+                    });
+                    if (!response.ok) throw new Error('Firebase REST HTTP ' + response.status);
+                    const data = await response.json();
+                    if (!data || typeof data !== 'object' || !Object.keys(data).length) return false;
+                    applyCatalog(data);
+                    return true;
+                } catch (_) {
+                    return false;
+                } finally {
+                    clearTimeout(timeout);
+                    restInFlight = null;
+                }
+            })();
+            return restInFlight;
+        };
+
+        const startupTimer = setTimeout(async () => {
+            if (cancelled || hasFirebaseSnapshot) return;
+            const loaded = await loadViaRest();
+            if (!cancelled && !loaded) setBooted(true);
+        }, 7000);
+
+        const cb = snap => {
+            if (cancelled) return;
+            hasFirebaseSnapshot = true;
             clearTimeout(startupTimer);
-            if (!cancelled) setBooted(true);
+            applyCatalog(snap.val());
+        };
+
+        ref.on('value', cb, async () => {
+            // If the live connection is unavailable, try HTTPS REST before giving up.
+            const loaded = await loadViaRest();
+            if (!cancelled && !loaded) setBooted(true);
         });
 
         return () => {
