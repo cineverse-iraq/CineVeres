@@ -1212,74 +1212,6 @@ const SUBTITLE_PUBLIC_BASE = (() => {
         (typeof localStorage !== 'undefined' ? localStorage.getItem('subtitle_public_base_url') : '') || '';
     return String(configured || '').trim().replace(/\/+$/, '');
 })();
-// CineVeres relay: مؤقتًا يستخدم Quick Tunnel أثناء اختبار التشغيل من الشبكات الأخرى.
-// يمكن تبديل القيم من window.CINADAM_RELAY_CONFIG أو localStorage دون تغيير بقية الموقع.
-const CINADAM_RELAY_CONFIG = (() => {
-    const w = (typeof window !== 'undefined' && window.CINADAM_RELAY_CONFIG) || {};
-    const base = String(w.url || (typeof localStorage !== 'undefined' && localStorage.getItem('cinadam_relay_url')) || 'https://lightning-shoppers-causing-governance.trycloudflare.com').trim().replace(/\/+$/, '');
-    const key = String(w.key || (typeof localStorage !== 'undefined' && localStorage.getItem('cinadam_relay_key')) || 'DhUbScpXYavmx5hjGX1MzJNe4Akx6M-blJZZTTMsPRI').trim();
-    return { base, key };
-})();
-async function cinemanaRelayVideoSources(id) {
-    const cfg = CINADAM_RELAY_CONFIG;
-    if (!cfg || !cfg.base || !cfg.key || !String(id || '').trim()) return [];
-    const endpoint = `${cfg.base}/api/streams/${encodeURIComponent(String(id).trim())}?key=${encodeURIComponent(cfg.key)}`;
-    const response = await fetch(endpoint, {
-        method: 'GET', cache: 'no-store',
-        headers: { 'Accept': 'application/json', 'Cache-Control': 'no-cache' }
-    });
-    if (!response.ok) throw new Error(`Relay HTTP ${response.status}`);
-    const payload = await response.json();
-    if (payload && payload.ok === false) throw new Error(payload.error || payload.message || 'Relay لم يُرجع مصادر');
-    let entries = [];
-    if (Array.isArray(payload)) entries = payload;
-    else if (payload && typeof payload === 'object') {
-        for (const k of ['sources', 'streams', 'videos', 'items', 'results', 'data']) {
-            if (Array.isArray(payload[k])) { entries = payload[k]; break; }
-        }
-    }
-    const out = [];
-    const seen = new Set();
-    for (let i = 0; i < entries.length; i++) {
-        const item = entries[i] || {};
-        const rawQuality = item.quality ?? item.resolution ?? item.label ?? item.name ?? '';
-        let quality = String(rawQuality || '').trim();
-        if (/^\d{3,4}$/.test(quality)) quality += 'p';
-        if (!quality) quality = `${i + 1}p`;
-        let streamUrl = String(item.url || item.videoUrl || item.video_url || item.streamUrl || item.stream_url || item.src || '').trim();
-        try {
-            // إذا أعاد السيرفر رابط localhost، نحوله إلى عنوان الـ tunnel العام.
-            if (streamUrl) {
-                const parsed = new URL(streamUrl, cfg.base);
-                if (/^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/i.test(parsed.hostname)) {
-                    streamUrl = new URL(parsed.pathname + parsed.search + parsed.hash, cfg.base).toString();
-                } else {
-                    streamUrl = parsed.toString();
-                }
-                // لا نمرر رابط CDN خام إلى مشغّل المتصفح؛ نستخدم مسار البث عبر الـ Relay.
-                if (!/\/stream\//i.test(new URL(streamUrl).pathname)) streamUrl = '';
-            } else {
-                streamUrl = '';
-            }
-            if (!streamUrl) {
-                const stream = new URL(`/stream/${encodeURIComponent(String(id).trim())}`, cfg.base);
-                stream.searchParams.set('quality', quality);
-                stream.searchParams.set('key', cfg.key);
-                streamUrl = stream.toString();
-            } else {
-                const parsedStream = new URL(streamUrl);
-                if (!parsedStream.searchParams.has('quality')) parsedStream.searchParams.set('quality', quality);
-                if (!parsedStream.searchParams.has('key')) parsedStream.searchParams.set('key', cfg.key);
-                streamUrl = parsedStream.toString();
-            }
-        } catch (_) { continue; }
-        if (seen.has(streamUrl)) continue;
-        seen.add(streamUrl);
-        out.push({ url: streamUrl, videoUrl: streamUrl, quality, resolution: quality, label: quality, subtitleUrl: item.subtitleUrl || item.subtitle_url || item.subtitle || '' });
-    }
-    out.sort((a, b) => (parseInt(String(b.quality).match(/\d{3,4}/)?.[0] || '0', 10) - parseInt(String(a.quality).match(/\d{3,4}/)?.[0] || '0', 10)));
-    return normalizeVideoSources(out);
-}
 async function cinemanaFetch(path) {
     if (!CINEMANA_PROXY)
         throw new Error('لم يتم ضبط رابط بروكسي سينمانا. استخدم window.CINEMANA_PROXY_URL أو المسار /api/cinemana.');
@@ -5006,15 +4938,6 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         const savedSources = normalizeVideoSources((meta && meta.videoSources) || []);
         try {
             if (savedId) {
-                // للمشاهدة على الشبكات الأخرى: جرّب الـ Relay أولًا ليصل الفيديو عبر عنوان عام.
-                // إذا لم يكن متاحًا، نتابع مسار سينمانا السابق كما هو.
-                try {
-                    const relayedSources = await cinemanaRelayVideoSources(savedId);
-                    if (relayedSources.length)
-                        return { url: relayedSources[0].url, sources: relayedSources, sourceId: savedId, relay: true };
-                } catch (relayError) {
-                    console.warn('[Cinadam Relay] تعذّر جلب مصادر الـ Relay، تتم تجربة المسار السابق:', relayError && relayError.message ? relayError.message : relayError);
-                }
                 const sources = cinemanaVideoSources(await cinemanaVideos(savedId, kind === 'movie' ? 'movie' : 'tv'));
                 if (sources.length)
                     return { url: sources[0].url, sources, sourceId: savedId };
@@ -8263,7 +8186,8 @@ function saveWatchedToStorage(data, username) {
     catch (e) { }
 }
 function App() {
-    const [titles, setTitles] = useState([]);
+    // ابدأ فورًا بالكتالوج المحفوظ إن وُجد، ولا تجعل فتح الواجهة متوقفًا على Firebase.
+    const [titles, setTitles] = useState(() => readTitleCache().filter(t => t && t.status === 'published'));
     const [currentUser, setCurrentUser] = useState(() => { try {
         return JSON.parse(localStorage.getItem('cv_user') || 'null');
     }
@@ -8482,18 +8406,20 @@ function App() {
         setSearch('');
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
-    const [booted, setBooted] = useState(false);
+    const [booted, setBooted] = useState(() => readTitleCache().some(t => t && t.status === 'published'));
     useEffect(() => {
         let cancelled = false;
-        // Catalog startup intentionally uses the same direct Firebase realtime
-        // path as the older working version. No localStorage catalog and no
-        // separate REST request are used here, so an old catalog cannot flash
-        // before the current Firebase snapshot arrives.
+        // افتح الواجهة حتى لو كانت Firebase بطيئة أو محجوبة على شبكة معينة.
+        // إذا وصلت لقطة Firebase لاحقًا، سيُحدَّث الكتالوج تلقائيًا.
         const isAdmin = !!(currentUser && (currentUser.username === 'mavilovelife' || currentUser.isModerator));
         const ref = db.ref('titles');
+        const startupTimer = setTimeout(() => {
+            if (!cancelled) setBooted(true);
+        }, 12000);
 
         const cb = snap => {
             if (cancelled) return;
+            clearTimeout(startupTimer);
             const data = snap.val();
             const list = data && typeof data === 'object'
                 ? Object.keys(data)
@@ -8517,10 +8443,15 @@ function App() {
             setBooted(true);
         };
 
-        ref.on('value', cb);
+        ref.on('value', cb, () => {
+            // لا تترك شاشة التحميل معلقة إذا فشل الاتصال بقاعدة البيانات.
+            clearTimeout(startupTimer);
+            if (!cancelled) setBooted(true);
+        });
 
         return () => {
             cancelled = true;
+            clearTimeout(startupTimer);
             ref.off('value', cb);
         };
     }, [currentUser && currentUser.id, currentUser && currentUser.username, currentUser && currentUser.isModerator]);
