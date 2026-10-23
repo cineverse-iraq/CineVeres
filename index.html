@@ -7319,8 +7319,12 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.cinemanaId = String(form.cinemanaId || '').trim();
             payload.playbackProvider = payload.cinemanaId ? 'cinemana' : (isVidApiUrl(form.videoUrl) ? 'vidapi' : (form.playbackProvider || ''));
             if (payload.cinemanaId) {
-                payload.videoUrl = '';
-                payload.videoSources = [];
+                // احتفظ بالرابط والجودات اللذين جُلبا أثناء الاستيراد.
+                // كان مسح الحقول هنا يجعل الرابط يظهر في لوحة الإدارة لكنه لا يُحفظ في Firebase.
+                payload.playbackProvider = 'cinemana';
+                if (!payload.videoUrl && payload.videoSources.length) {
+                    payload.videoUrl = payload.videoSources[0].url;
+                }
             }
             payload.trimStart = Number(form.trimStart) || 0;
             payload.trimEnd = Number(form.trimEnd) || 0;
@@ -7345,9 +7349,11 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.seasons.forEach(s => {
                 (s.episodes || []).forEach(e => {
                     if (e.cinemanaId) {
-                        e.videoUrl = '';
-                        e.videoSources = [];
+                        // لا تمسح رابط الحلقة والجودات بعد جلبها؛ احفظهما ليستطيع الهاتف التشغيل دون localhost.
                         e.playbackProvider = 'cinemana';
+                        if (!e.videoUrl && e.videoSources.length) {
+                            e.videoUrl = e.videoSources[0].url;
+                        }
                     }
                 });
             });
