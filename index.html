@@ -4920,7 +4920,24 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         }
         return null;
     };
-    const getSavedVideoUrl = (item) => normalizeVideoUrl((item && item.videoUrl) || (((item && item.videoSources) || [])[0] || {}).url || '');
+    // استخدم الروابط التي حُفظت مع العمل أولًا. بعض السجلات القديمة تحفظ المصدر البديل
+    // داخل cinemaBoxSources/cinemaBoxUrl بدل videoSources/videoUrl.
+    const getSavedVideoSources = (item) => {
+        if (!item || typeof item !== 'object') return [];
+        const primary = normalizeVideoSources(item.videoSources || []);
+        if (primary.length) return primary;
+        const alternate = normalizeVideoSources(item.cinemaBoxSources || []);
+        if (alternate.length) return alternate;
+        const single = normalizeVideoUrl(item.videoUrl || item.cinemaBoxUrl || '');
+        return single ? [{ url: single, videoUrl: single, label: 'مصدر محفوظ', resolution: 'مصدر محفوظ' }] : [];
+    };
+    const getSavedVideoUrl = (item) => normalizeVideoUrl(
+        (item && item.videoUrl) ||
+        ((((item && item.videoSources) || [])[0] || {}).url) ||
+        (item && item.cinemaBoxUrl) ||
+        ((((item && item.cinemaBoxSources) || [])[0] || {}).url) ||
+        ''
+    );
     const recoverMovieVideo = async () => {
         // إذا كان الفيلم محفوظًا ومعه cinemanaId فلا داعي للبحث بالعنوان.
         // البحث كان سبب المشكلة الجديدة: الهاتف/الموقع يحاول أولًا /search ثم يفشل
@@ -4964,12 +4981,15 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             throw new Error('سينمانا ما رجّعت روابط فيديو لهذه الحلقة.');
         return { url: sources[0].url, sources, sourceId: String(match.nb) };
     };
-    const resolveFreshCinemanaVideo = async (meta, kind, seasonNumber) => {
+    const resolveFreshCinemanaVideo = async (meta, kind, seasonNumber, forceRefresh = false) => {
         const savedId = String((meta && meta.cinemanaId) || '').trim();
-        // الهاتف لا يصل لبروكسي سينمانا (localhost = الهاتف نفسه)، فإذا فشل تجديد الرابط
-        // نرجع للرابط المحفوظ في قاعدة البيانات بدل إظهار "تعذر" مباشرة.
+        // اعتمد الروابط المحفوظة أولًا حتى يشتغل الموقع من دون server.js عند وجود رابط صالح.
+        // لا نطلب رابطًا جديدًا من البروكسي إلا عند غياب الروابط المحفوظة أو بعد فشل التشغيل.
         const savedUrl = getSavedVideoUrl(meta);
-        const savedSources = normalizeVideoSources((meta && meta.videoSources) || []);
+        const savedSources = getSavedVideoSources(meta);
+        if (!forceRefresh && savedUrl) {
+            return { url: savedUrl, sources: savedSources.length ? savedSources : [{ url: savedUrl }], sourceId: savedId, cached: true };
+        }
         try {
             if (savedId) {
                 const sources = cinemanaVideoSources(await cinemanaVideos(savedId, kind === 'movie' ? 'movie' : 'tv'));
@@ -4981,7 +5001,8 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             return await recoverEpisodeVideo(meta, seasonNumber);
         }
         catch (e) {
-            if (savedUrl)
+            // لا نعتبر الرابط القديم الذي فشل تشغيله رابطًا جديدًا بعد طلب التجديد.
+            if (savedUrl && !forceRefresh)
                 return { url: savedUrl, sources: savedSources.length ? savedSources : [{ url: savedUrl }], sourceId: savedId };
             throw e;
         }
@@ -5013,7 +5034,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 }
                 else {
                     url = getSavedVideoUrl(title);
-                    sources = normalizeVideoSources(title.videoSources);
+                    sources = getSavedVideoSources(title);
                     if (!url) {
                         const recovered = await recoverMovieVideo();
                         if (requestId !== playRequestRef.current) return;
@@ -5068,7 +5089,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             }
             else {
                 url = getSavedVideoUrl(ep);
-                sources = normalizeVideoSources(ep.videoSources);
+                sources = getSavedVideoSources(ep);
                 if (!url) {
                     const recovered = await recoverEpisodeVideo(ep, seasonNumber);
                     if (requestId !== playRequestRef.current) return;
@@ -5152,7 +5173,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         cinemanaRefreshingRef.current = true;
         try {
             const kind = title.type === 'movie' ? 'movie' : 'tv';
-            const recovered = await resolveFreshCinemanaVideo(meta, kind, playingSeasonNumber);
+            const recovered = await resolveFreshCinemanaVideo(meta, kind, playingSeasonNumber, true);
             if (!recovered || !recovered.url) throw new Error('سينمانا لم تُرجع رابط تشغيل جديد.');
             setPlayingMeta(prev => ({ ...prev, videoUrl: recovered.url, videoSources: recovered.sources, playbackProvider: 'cinemana', cinemanaId: recovered.sourceId || prev.cinemanaId }));
             setPlayingUrl(normalizeVideoUrl(recovered.url));
