@@ -1241,9 +1241,23 @@ const CINEMANA_PROXY = (() => {
     if (isLanPage) return `http://${host}:8787`;
     return isLocalPage ? 'http://localhost:8787' : 'https://api.cinadam.xyz';
 })();
-// يمرّر روابط سينمانا (cdn.shabakaty.com) عبر سيرفرك حتى تشتغل على كل الشبكات
+// وضع هجين: إذا المشاهد يوصل لسينمانا مباشرة (ايرثلنك) نشغّل الرابط المباشر،
+// وإلا نمرّر الفيديو عبر سيرفرك (/stream). للتجربة: localStorage.setItem('force_proxy','1')
+let CDN_DIRECT_OK = null; // null = لم يُفحص بعد (نستخدم البروكسي احتياطًا)
+(function probeCinemanaCdn() {
+    try {
+        if (typeof localStorage !== 'undefined' && localStorage.getItem('force_proxy') === '1') { CDN_DIRECT_OK = false; return; }
+        const ac = new AbortController();
+        const t = setTimeout(() => ac.abort(), 4000);
+        fetch('https://cdn.shabakaty.com/', { mode: 'no-cors', cache: 'no-store', signal: ac.signal })
+            .then(() => { CDN_DIRECT_OK = true; })
+            .catch(() => { CDN_DIRECT_OK = false; })
+            .finally(() => clearTimeout(t));
+    } catch (e) { CDN_DIRECT_OK = false; }
+})();
 function viaStream(u) {
     try {
+        if (CDN_DIRECT_OK === true) return u;
         if (/^https?:\/\/([^/]+\.)?shabakaty\.com\//i.test(String(u || '')))
             return `${CINEMANA_PROXY}/stream?url=${encodeURIComponent(u)}`;
     } catch (e) { }
