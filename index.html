@@ -1241,9 +1241,9 @@ const CINEMANA_PROXY = (() => {
     if (isLanPage) return `http://${host}:8787`;
     return isLocalPage ? 'http://localhost:8787' : 'https://api.cinadam.xyz';
 })();
-// روابط cdn.shabakaty.com تُشغَّل مباشرة أولًا، ثم تُجرّب بوابة /stream التي اختُبرت.
-// رابط trycloudflare مؤقت بطبيعته؛ يمكن تغييره عبر window.CINEMANA_STREAM_PROXY_URL
-// أو حفظ قاعدة جديدة في localStorage.cinemana_stream_proxy_url دون تعديل بقية الموقع.
+// روابط Shabakaty تُحوَّل إلى /stream قبل حفظها، وتُجرَّب بوابة البروكسي أولًا أثناء التشغيل.
+// رابط trycloudflare مؤقت بطبيعته؛ يمكن تحديد عنوان ثابت عبر window.CINEMANA_STREAM_PROXY_URL
+// أو localStorage.cinemana_stream_proxy_url إذا كان متوفرًا.
 const CINEMANA_STREAM_PROXY_BASES = (() => {
     let explicit = '', stored = '';
     try {
@@ -1264,24 +1264,74 @@ function isShabakatyMp4Url(rawUrl) {
             (/\.(?:mp4|m4v)(?:$|[?#])/i.test(u.pathname + u.search) || /-mp4\//i.test(u.pathname));
     } catch (_) { return false; }
 }
-function getVideoPlaybackCandidates(rawUrl) {
+function getShabakatyOriginalFromProxy(rawUrl) {
+    try {
+        const u = new URL(String(rawUrl || ''), window.location.href);
+        if (!/\/stream\/?$/i.test(u.pathname)) return '';
+        const original = u.searchParams.get('url') || '';
+        return isShabakatyMp4Url(original) ? normalizeVideoUrl(original) : '';
+    } catch (_) { return ''; }
+}
+function makeShabakatyProxyUrl(rawUrl, base) {
     const directUrl = normalizeVideoUrl(rawUrl || '');
-    if (!directUrl || !isShabakatyMp4Url(directUrl)) return [{ url: directUrl, mode: '' }];
-    const candidates = [{ url: directUrl, mode: 'direct' }];
-    for (const base of CINEMANA_STREAM_PROXY_BASES) {
-        // قبول إعداد يحتوي أصلًا على مسار /stream، أو قاعدة البروكسي فقط.
-        const proxyUrl = /\/stream$/i.test(base)
-            ? `${base}?url=${encodeURIComponent(directUrl)}`
-            : `${base}/stream?url=${encodeURIComponent(directUrl)}`;
-        if (proxyUrl !== directUrl && !candidates.some(c => c.url === proxyUrl))
-            candidates.push({ url: proxyUrl, mode: `proxy:${base}` });
+    if (!directUrl || !isShabakatyMp4Url(directUrl) || !base) return directUrl;
+    try {
+        const u = new URL(String(base), window.location.href);
+        u.pathname = /\/stream\/?$/i.test(u.pathname)
+            ? u.pathname.replace(/\/+$/, '')
+            : u.pathname.replace(/\/+$/, '') + '/stream';
+        u.search = '';
+        u.hash = '';
+        u.searchParams.set('url', directUrl);
+        return u.toString();
+    } catch (_) { return directUrl; }
+}
+function toStoredPlaybackUrl(rawUrl) {
+    const normalized = normalizeVideoUrl(rawUrl || '');
+    if (!normalized) return normalized;
+    // لا نعيد تغليف رابط /stream إذا كان قد حُوّل سابقًا.
+    if (getShabakatyOriginalFromProxy(normalized)) return normalized;
+    if (!isShabakatyMp4Url(normalized)) return normalized;
+    return makeShabakatyProxyUrl(normalized, CINEMANA_STREAM_PROXY_BASES[0] || CINEMANA_PROXY);
+}
+function toStoredPlaybackSources(value) {
+    return normalizeVideoSources(value).map(source => ({
+        ...source,
+        url: toStoredPlaybackUrl(source.url)
+    }));
+}
+function getVideoPlaybackCandidates(rawUrl) {
+    const normalized = normalizeVideoUrl(rawUrl || '');
+    if (!normalized) return [{ url: normalized, mode: '' }];
+    const originalFromProxy = getShabakatyOriginalFromProxy(normalized);
+    const directUrl = originalFromProxy || normalized;
+    if (!isShabakatyMp4Url(directUrl)) return [{ url: normalized, mode: '' }];
+    const candidates = [];
+    const add = (url, mode) => {
+        if (url && !candidates.some(c => c.url === url)) candidates.push({ url, mode });
+    };
+    // الرابط المحفوظ عبر البروكسي يُستخدم كما هو أولًا، حتى لا نغلفه مرتين.
+    if (originalFromProxy) {
+        let mode = 'proxy';
+        try { mode = `proxy:${new URL(normalized).origin}`; } catch (_) {}
+        add(normalized, mode);
     }
+    for (const base of CINEMANA_STREAM_PROXY_BASES) {
+        const proxyUrl = makeShabakatyProxyUrl(directUrl, base);
+        if (proxyUrl && proxyUrl !== directUrl) add(proxyUrl, `proxy:${base}`);
+    }
+    // الرابط المباشر آخر احتياط فقط إذا فشلت جميع بوابات البروكسي.
+    add(directUrl, 'direct');
     try {
         const preferred = localStorage.getItem('cinadam_shabakaty_playback_mode') || '';
-        // نتذكر الرابط/البوابة التي نجحت تحديدًا، وليس مجرد كلمة "proxy".
-        let preferredIndex = candidates.findIndex(c => c.mode === preferred);
-        if (preferred === 'proxy') preferredIndex = candidates.findIndex(c => String(c.mode).startsWith('proxy:')); // توافق مع تفضيل قديم
-        if (preferredIndex > 0) candidates.unshift(candidates.splice(preferredIndex, 1)[0]);
+        // نتذكر بوابة البروكسي التي نجحت، لكن الرابط المباشر يبقى احتياطًا لا يتجاوز البروكسي.
+        if (String(preferred).startsWith('proxy:')) {
+            const preferredIndex = candidates.findIndex(c => c.mode === preferred);
+            if (preferredIndex > 0) candidates.unshift(candidates.splice(preferredIndex, 1)[0]);
+        } else if (preferred === 'proxy') {
+            const preferredIndex = candidates.findIndex(c => String(c.mode).startsWith('proxy:'));
+            if (preferredIndex > 0) candidates.unshift(candidates.splice(preferredIndex, 1)[0]);
+        }
     } catch (_) {}
     return candidates;
 }
@@ -7365,11 +7415,9 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.videoUrl = normalizeVideoUrl(form.videoUrl.trim());
             payload.videoSources = normalizeVideoSources(form.videoSources);
 
-            // مهم جدًا للأفلام: لا نحفظ cinemanaId وحده ونترك videoUrl/videoSources فارغة.
-            // الهاتف لا يستطيع الوصول إلى Node المحلي حتى يسترجع الرابط، بينما الحلقات
-            // التي يكون رابطها محفوظًا تعمل طبيعيًا. إذا كان الفيلم مرتبطًا بـ Cinemana
-            // ولم يُحفظ المصدر بعد، نجلبه الآن من نفس البروكسي الموجود على جهاز الإدارة
-            // ونحفظ الرابط/الجودات داخل Firebase، حتى يعمل الهاتف مباشرة بدون بروكسي.
+            // مهم للأفلام: لا نحفظ cinemanaId وحده ونترك videoUrl/videoSources فارغة.
+            // إذا لم يكن المصدر قد حُفظ بعد، نجلبه من Cinemana، ثم نحوّل روابط Shabakaty
+            // إلى روابط /stream عامة قبل الحفظ في Firebase حتى تستخدمها الهواتف عبر البروكسي.
             if (form.cinemanaId && !payload.videoUrl && !payload.videoSources.length) {
                 try {
                     const fetched = cinemanaVideoSources(await cinemanaVideos(String(form.cinemanaId).trim(), 'movie'));
@@ -7407,6 +7455,11 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.fitDesktop = form.fitDesktop || 'contain';
             payload.crop = form.crop || {};
             payload.seasons = [];
+            // خزّن روابط Shabakaty كرابط بروكسي، وليس كرابط CDN مباشر.
+            // يشمل الرابط الأساسي وكل الجودات/المصادر البديلة للفيلم.
+            payload.videoUrl = toStoredPlaybackUrl(payload.videoUrl);
+            payload.videoSources = toStoredPlaybackSources(payload.videoSources);
+            if (!payload.videoUrl && payload.videoSources.length) payload.videoUrl = payload.videoSources[0].url;
         }
         else {
             payload.seasons = form.seasons.map(s => ({
@@ -7422,12 +7475,16 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.seasons.forEach(s => {
                 (s.episodes || []).forEach(e => {
                     if (e.cinemanaId) {
-                        // لا تمسح رابط الحلقة والجودات بعد جلبها؛ احفظهما ليستطيع الهاتف التشغيل دون localhost.
+                        // لا تمسح رابط الحلقة والجودات بعد جلبها؛ ستُحوّل روابط Shabakaty إلى /stream أدناه.
                         e.playbackProvider = 'cinemana';
                         if (!e.videoUrl && e.videoSources.length) {
                             e.videoUrl = e.videoSources[0].url;
                         }
                     }
+                    // التحويل نفسه للحلقات: الرابط الأساسي وكل المصادر البديلة تُحفظ عبر /stream.
+                    e.videoUrl = toStoredPlaybackUrl(e.videoUrl);
+                    e.videoSources = toStoredPlaybackSources(e.videoSources);
+                    if (!e.videoUrl && e.videoSources.length) e.videoUrl = e.videoSources[0].url;
                 });
             });
             payload.videoUrl = '';
@@ -7447,7 +7504,18 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 await db.ref(`titles/${initial.id}`).set(payload);
             else
                 await db.ref('titles').push(payload);
-            showToast(initial && initial.id ? 'تم حفظ التعديلات بنجاح' : 'تم إضافة العمل بنجاح');
+            const savedProxyCount = (item) => {
+                let n = getShabakatyOriginalFromProxy(item && item.videoUrl) ? 1 : 0;
+                (item && item.videoSources || []).forEach(src => { if (getShabakatyOriginalFromProxy(src && src.url)) n++; });
+                (item && item.seasons || []).forEach(season => (season.episodes || []).forEach(ep => {
+                    if (getShabakatyOriginalFromProxy(ep && ep.videoUrl)) n++;
+                    (ep && ep.videoSources || []).forEach(src => { if (getShabakatyOriginalFromProxy(src && src.url)) n++; });
+                }));
+                return n;
+            };
+            const savedProxyLinks = savedProxyCount(payload);
+            const savedMessage = initial && initial.id ? 'تم حفظ التعديلات بنجاح' : 'تم إضافة العمل بنجاح';
+            showToast(savedProxyLinks ? `${savedMessage} — حُفظ ${savedProxyLinks} رابط Shabakaty عبر البروكسي` : savedMessage);
             onDone();
         }
         catch (e) {
