@@ -209,20 +209,6 @@
     .cv-skip-circle svg { width:25px; height:25px; }
     .cv-skip-circle span { font-size:11px; font-weight:900; line-height:1; margin-top:3px; direction:ltr; }
     @keyframes cvSkipPop { 0% { opacity:0; transform:scale(.65); } 25% { opacity:1; transform:scale(1.08); } 100% { opacity:0; transform:scale(1); } }
-
-    /* Cinadam Plus: additive theme tokens and motion accessibility. */
-    #root .text-accent-cyan { color: var(--cv-plus-primary, #00F0FF) !important; }
-    #root .border-accent-cyan { border-color: color-mix(in srgb, var(--cv-plus-primary, #00F0FF) 42%, transparent) !important; }
-    #root .bg-accent-cyan { background-color: var(--cv-plus-primary, #00F0FF) !important; }
-    #root .text-accent-red { color: var(--cv-plus-secondary, #FF334B) !important; }
-    #root .bg-accent-red { background-color: var(--cv-plus-secondary, #FF334B) !important; }
-    #root .border-accent-red { border-color: color-mix(in srgb, var(--cv-plus-secondary, #FF334B) 42%, transparent) !important; }
-    html.cv-plus-reduce-motion *, html.cv-plus-reduce-motion *::before, html.cv-plus-reduce-motion *::after { scroll-behavior: auto !important; animation-duration: .08ms !important; animation-iteration-count: 1 !important; transition-duration: .08ms !important; }
-    html.cv-plus-no-motion *, html.cv-plus-no-motion *::before, html.cv-plus-no-motion *::after { animation: none !important; transition: none !important; }
-    .cv-plus-studio input[type="color"] { cursor: pointer; border-radius: 10px; }
-    .cv-plus-studio input[type="checkbox"] { accent-color: var(--cv-plus-primary, #00F0FF); width: 15px; height: 15px; }
-    .cv-plus-studio button:focus-visible, .cv-plus-studio input:focus-visible, .cv-plus-studio select:focus-visible, .cv-plus-studio textarea:focus-visible { outline: 2px solid var(--cv-plus-primary, #00F0FF); outline-offset: 2px; }
-    @media (prefers-reduced-motion: reduce) { .cv-plus-studio *, .cv-plus-studio *::before, .cv-plus-studio *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
   </style>
   <style>
     .cv-nocursor, .cv-nocursor * { cursor: none !important; }
@@ -3119,9 +3105,6 @@ function AccountSheet({ currentUser, onClose, onLogin, onRegister, onLogout, onN
                 React.createElement("button", { onClick: () => navigate('settings'), className: "w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold" },
                     React.createElement(Icon, { name: "settings", className: "w-4 h-4 text-accent-cyan" }),
                     "\u0627\u0644\u0625\u0639\u062F\u0627\u062F\u0627\u062A"),
-                React.createElement("button", { onClick: () => navigate('studio'), className: "w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold" },
-                    React.createElement(Icon, { name: "layers", className: "w-4 h-4 text-accent-cyan" }),
-                    "استوديو Cinadam · مكتبتي وثيماتي"),
                 React.createElement("button", { onClick: () => navigate('requests'), className: "w-full flex items-center gap-3 px-4 py-3 rounded-2xl glass-card hover:bg-white/5 text-sm font-semibold" },
                     React.createElement(Icon, { name: "flag", className: "w-4 h-4 text-accent-cyan" }),
                     "\u0637\u0644\u0628\u0627\u062A\u064A \u0648\u0634\u0643\u0627\u0648\u0627\u064A"),
@@ -6365,14 +6348,6 @@ function ProfileView({ username, currentUser, titles, onOpen, onOpenAuth, onOpen
     const [shareCopied, setShareCopied] = useState(false);
     const targetUsername = username || (currentUser && currentUser.username);
     const isOwn = currentUser && targetUsername === currentUser.username;
-    const [studioProfile, setStudioProfile] = useState(null);
-    useEffect(() => {
-        if (!isOwn) { setStudioProfile(null); return; }
-        const load = () => setStudioProfile(readCinadamPlusData(currentUser).profile);
-        load();
-        window.addEventListener('cinadam-plus-updated', load);
-        return () => window.removeEventListener('cinadam-plus-updated', load);
-    }, [targetUsername, currentUser && currentUser.id, isOwn]);
     useEffect(() => {
         setLoading(true);
         if (!targetUsername) {
@@ -6460,9 +6435,6 @@ function ProfileView({ username, currentUser, titles, onOpen, onOpenAuth, onOpen
         }
     };
     return (React.createElement("div", null,
-        isOwn && studioProfile && (studioProfile.cover || studioProfile.bio || studioProfile.status) && React.createElement("section", { className: "rounded-3xl overflow-hidden border border-white/10 mb-4", style: { background: studioProfile.background === 'plain' ? '#0E131F' : ({ aurora: 'radial-gradient(circle at 15% 15%,rgba(0,240,255,.2),transparent 38%),linear-gradient(130deg,#091521,#15112d)', ruby: 'radial-gradient(circle at 15% 15%,rgba(255,93,122,.2),transparent 38%),linear-gradient(130deg,#1d0b16,#1d122c)', forest: 'radial-gradient(circle at 15% 15%,rgba(74,222,128,.16),transparent 38%),linear-gradient(130deg,#071c18,#14251e)', violet: 'radial-gradient(circle at 15% 15%,rgba(192,132,252,.2),transparent 38%),linear-gradient(130deg,#161027,#101a30)', gold: 'radial-gradient(circle at 15% 15%,rgba(251,191,36,.16),transparent 38%),linear-gradient(130deg,#19140a,#27171e)', ice: 'radial-gradient(circle at 15% 15%,rgba(147,197,253,.18),transparent 38%),linear-gradient(130deg,#081927,#111827)' }[studioProfile.background] || 'linear-gradient(130deg,#091521,#15112d)') } },
-            studioProfile.cover && React.createElement("img", { src: studioProfile.cover, alt: "غلاف الملف الشخصي", className: "w-full max-h-64 object-cover", loading: "lazy" }),
-            React.createElement("div", { className: "p-5 md:p-6" }, studioProfile.status && React.createElement("p", { className: "font-bold mb-2", style: { color: studioProfile.secondary } }, studioProfile.status), studioProfile.bio && React.createElement("p", { className: `leading-7 whitespace-pre-wrap ${studioProfile.fontSize === 'large' ? 'text-base' : studioProfile.fontSize === 'small' ? 'text-xs' : 'text-sm'}` }, studioProfile.bio))),
         React.createElement("div", { className: "glass-panel rounded-3xl p-6 md:p-8 mb-8 border border-white/10 shadow-xl flex items-center gap-5 flex-wrap" },
             React.createElement("div", { className: "w-20 h-20 rounded-2xl bg-gradient-to-tr from-accent-cyan to-blue-600 flex items-center justify-center font-black text-2xl text-glass-950 overflow-hidden shrink-0" }, profileUser.avatar ? React.createElement("img", { src: profileUser.avatar, alt: "", className: "w-full h-full object-cover" }) : (profileUser.name || '?').charAt(0)),
             React.createElement("div", { className: "min-w-0" },
@@ -6492,14 +6464,14 @@ function ProfileView({ username, currentUser, titles, onOpen, onOpenAuth, onOpen
                         React.createElement(Icon, { name: "star", className: "w-4 h-4 text-amber-400" })),
                     React.createElement("p", { className: "text-[11px] text-slate-400 font-bold" }, "\u0645\u062A\u0648\u0633\u0637 \u062A\u0642\u064A\u064A\u0645\u0627\u062A\u0647"))),
             !isOwn && (React.createElement("button", { onClick: toggleFollow, disabled: followBusy, className: `w-full md:w-auto px-6 py-2.5 rounded-2xl text-sm font-bold border transition disabled:opacity-50 ${iAmFollowing ? 'glass-card border-white/10 text-slate-200 hover:border-rose-400 hover:text-rose-400' : 'bg-accent-cyan text-glass-950 border-accent-cyan shadow-[0_0_15px_rgba(0,240,255,0.4)]'}` }, iAmFollowing ? 'إلغاء المتابعة' : 'متابعة'))),
-        watchedPosters.length > 0 && !(isOwn && studioProfile && studioProfile.hiddenSections.includes('rated')) && (React.createElement("section", { className: "mb-10" },
+        watchedPosters.length > 0 && (React.createElement("section", { className: "mb-10" },
             React.createElement("h2", { className: "text-lg font-black text-slate-100 mb-4" }, "\u0623\u0639\u0645\u0627\u0644 \u0634\u0627\u0647\u062F\u0647\u0627 \u0648\u0642\u064A\u0651\u0645\u0647\u0627"),
             React.createElement("div", { className: "profile-poster-grid" }, watchedPosters.map(r => (React.createElement("button", { key: r.titleId, onClick: () => onOpen(r.title), className: "relative aspect-[2/3] rounded-lg overflow-hidden glass-card" },
                 React.createElement("img", { src: r.title.poster, alt: r.title.name, className: "w-full h-full object-cover" }),
                 React.createElement("div", { className: "absolute inset-x-0 bottom-0 bg-black/70 py-0.5 flex justify-center" },
                     React.createElement(StarRatingDisplay, { value: r.stars, size: "w-2 h-2" })))))))),
-        !(isOwn && studioProfile && studioProfile.hiddenSections.includes('lists')) && React.createElement(ProfileLists, { username: targetUsername, isOwn: isOwn, onOpen: onOpen }),
-        !(isOwn && studioProfile && studioProfile.hiddenSections.includes('reviews')) && React.createElement("section", null,
+        React.createElement(ProfileLists, { username: targetUsername, isOwn: isOwn, onOpen: onOpen }),
+        React.createElement("section", null,
             React.createElement("h2", { className: "text-lg font-black text-slate-100 mb-4" }, "\u0627\u0644\u0645\u0631\u0627\u062C\u0639\u0627\u062A"),
             withTitles.length === 0 ? (React.createElement("p", { className: "text-sm text-slate-500 font-medium" }, "\u0644\u0627 \u062A\u0648\u062C\u062F \u0645\u0631\u0627\u062C\u0639\u0627\u062A \u0628\u0639\u062F.")) : (React.createElement("div", { className: "space-y-3" }, withTitles.map(r => (React.createElement("button", { key: r.titleId, onClick: () => onOpen(r.title), className: "w-full text-right glass-card rounded-2xl p-4 border border-white/5 hover:border-white/10 transition flex gap-3" },
                 React.createElement("div", { className: "w-10 h-14 rounded-lg overflow-hidden bg-glass-900 shrink-0" }, r.title.poster && React.createElement("img", { src: r.title.poster, className: "w-full h-full object-cover" })),
@@ -8274,351 +8246,6 @@ function saveWatchedToStorage(data, username) {
     }
     catch (e) { }
 }
-/* Cinadam Plus — additive personal library tools. No player or existing Firebase paths are replaced. */
-const CINADAM_PLUS_VERSION = 1;
-const CINADAM_PLUS_THEMES = {
-    aurora: { label: 'الشفق', primary: '#00F0FF', secondary: '#FF334B' },
-    ruby: { label: 'ياقوت', primary: '#FF5D7A', secondary: '#B99BFF' },
-    forest: { label: 'غابة', primary: '#4ADE80', secondary: '#FBBF24' },
-    violet: { label: 'بنفسجي', primary: '#C084FC', secondary: '#22D3EE' },
-    gold: { label: 'ذهبي', primary: '#FBBF24', secondary: '#FB7185' },
-    ice: { label: 'جليد', primary: '#93C5FD', secondary: '#67E8F9' }
-};
-function cinadamPlusDefaults() {
-    return { schema: CINADAM_PLUS_VERSION, profile: { theme: 'aurora', primary: '#00F0FF', secondary: '#FF334B', bio: '', status: '', cover: '', background: 'aurora', layout: 'grid', density: 'comfortable', fontSize: 'normal', motion: 'full', hiddenSections: [], showActivity: true }, entries: [], collections: [{ id: 'watchlist', name: 'قائمة المشاهدة', items: [], createdAt: 0 }], savedThemes: [], importedAt: null };
-}
-function cinadamPlusKey(user) {
-    const raw = user && (user.id || user.username) ? String(user.id || user.username) : 'guest';
-    return 'cinadam_plus_v1_' + (typeof sanitizeKey === 'function' ? sanitizeKey(raw) : raw.replace(/[^a-zA-Z0-9_-]/g, '_'));
-}
-function normalizeCinadamPlusData(raw) {
-    const defaults = cinadamPlusDefaults();
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return defaults;
-    const profile = raw.profile && typeof raw.profile === 'object' ? raw.profile : {};
-    const allowedLayouts = ['grid', 'list', 'rows'];
-    const allowedMotion = ['full', 'reduced', 'off'];
-    const entries = Array.isArray(raw.entries) ? raw.entries.filter(e => e && typeof e === 'object').slice(-10000).map(e => ({
-        id: String(e.id || ''), title: String(e.title || '').slice(0, 240), year: String(e.year || '').slice(0, 8), matchedId: e.matchedId == null ? '' : String(e.matchedId),
-        tmdbID: String(e.tmdbID || '').slice(0, 40), imdbID: String(e.imdbID || '').slice(0, 40), letterboxdURI: String(e.letterboxdURI || '').slice(0, 500),
-        watchedDate: /^\d{4}-\d{2}-\d{2}$/.test(String(e.watchedDate || '')) ? String(e.watchedDate) : '', rating: e.rating == null ? null : Math.max(0, Math.min(5, Number(e.rating) || 0)),
-        rewatch: !!e.rewatch, tags: Array.isArray(e.tags) ? e.tags.map(x => String(x).slice(0, 60)).slice(0, 20) : [], review: String(e.review || '').slice(0, 1200), note: String(e.note || '').slice(0, 1000),
-        status: ['watched', 'rated', 'watchlist', 'partial'].includes(e.status) ? e.status : (e.watchedDate ? 'watched' : 'watchlist'), source: String(e.source || 'manual').slice(0, 40), createdAt: Number(e.createdAt) || 0
-    })) : [];
-    const collections = Array.isArray(raw.collections) ? raw.collections.filter(c => c && typeof c === 'object').slice(0, 300).map((c, i) => ({ id: String(c.id || `collection-${i}`).slice(0, 80), name: String(c.name || 'مجموعة').slice(0, 80), description: String(c.description || '').slice(0, 300), items: Array.isArray(c.items) ? [...new Set(c.items.map(String))].slice(0, 5000) : [], createdAt: Number(c.createdAt) || 0 })) : defaults.collections;
-    const savedThemes = Array.isArray(raw.savedThemes) ? raw.savedThemes.filter(t => t && typeof t === 'object').slice(0, 30).map(t => ({ name: String(t.name || 'ثيم').slice(0, 50), profile: { primary: safeHexColor(t.profile && t.profile.primary, '#00F0FF'), secondary: safeHexColor(t.profile && t.profile.secondary, '#FF334B'), theme: String(t.profile && t.profile.theme || 'custom') } })) : [];
-    return {
-        schema: CINADAM_PLUS_VERSION,
-        profile: {
-            ...defaults.profile, ...profile,
-            theme: String(profile.theme || defaults.profile.theme), primary: safeHexColor(profile.primary, defaults.profile.primary), secondary: safeHexColor(profile.secondary, defaults.profile.secondary),
-            bio: String(profile.bio || '').slice(0, 300), status: String(profile.status || '').slice(0, 80),
-            cover: typeof profile.cover === 'string' && profile.cover.length <= 520000 ? profile.cover : '',
-            background: ['aurora', 'ruby', 'forest', 'violet', 'gold', 'ice', 'plain'].includes(profile.background) ? profile.background : 'aurora',
-            layout: allowedLayouts.includes(profile.layout) ? profile.layout : 'grid', density: profile.density === 'compact' ? 'compact' : 'comfortable',
-            fontSize: ['small', 'normal', 'large'].includes(profile.fontSize) ? profile.fontSize : 'normal', motion: allowedMotion.includes(profile.motion) ? profile.motion : 'full',
-            hiddenSections: Array.isArray(profile.hiddenSections) ? profile.hiddenSections.filter(x => ['rated', 'reviews', 'lists', 'activity'].includes(x)) : [], showActivity: profile.showActivity !== false
-        }, entries, collections, savedThemes: savedThemes, importedAt: Number(raw.importedAt) || null
-    };
-}
-function safeHexColor(value, fallback) {
-    const v = String(value || '').trim();
-    return /^#[0-9a-fA-F]{6}$/.test(v) ? v : fallback;
-}
-function readCinadamPlusData(user) {
-    try { return normalizeCinadamPlusData(JSON.parse(localStorage.getItem(cinadamPlusKey(user)) || 'null')); }
-    catch (_) { return cinadamPlusDefaults(); }
-}
-function writeCinadamPlusData(user, data) {
-    const clean = normalizeCinadamPlusData(data);
-    localStorage.setItem(cinadamPlusKey(user), JSON.stringify(clean));
-    try { window.dispatchEvent(new CustomEvent('cinadam-plus-updated', { detail: { userKey: cinadamPlusKey(user) } })); } catch (_) {}
-    return clean;
-}
-function applyCinadamPlusTheme(profile) {
-    const p = profile || cinadamPlusDefaults().profile;
-    const root = document.documentElement;
-    root.style.setProperty('--cv-plus-primary', safeHexColor(p.primary, '#00F0FF'));
-    root.style.setProperty('--cv-plus-secondary', safeHexColor(p.secondary, '#FF334B'));
-    root.classList.toggle('cv-plus-reduce-motion', p.motion === 'reduced' || p.motion === 'off');
-    root.classList.toggle('cv-plus-no-motion', p.motion === 'off');
-}
-function parseCinadamCsv(text) {
-    const input = String(text || '').replace(/^\uFEFF/, '');
-    const rows = [];
-    let row = [], cell = '', quoted = false;
-    for (let i = 0; i < input.length; i++) {
-        const c = input[i];
-        if (quoted) {
-            if (c === '"' && input[i + 1] === '"') { cell += '"'; i++; }
-            else if (c === '"') quoted = false;
-            else cell += c;
-        } else if (c === '"' && cell.length === 0) quoted = true;
-        else if (c === ',') { row.push(cell); cell = ''; }
-        else if (c === '\n' || c === '\r') {
-            if (c === '\r' && input[i + 1] === '\n') i++;
-            row.push(cell); cell = '';
-            if (row.some(v => String(v).trim() !== '')) rows.push(row);
-            row = [];
-        } else cell += c;
-    }
-    row.push(cell);
-    if (row.some(v => String(v).trim() !== '')) rows.push(row);
-    if (!rows.length) throw new Error('ملف CSV فارغ.');
-    const normalizeHeader = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const headers = rows.shift().map(normalizeHeader);
-    const accepted = ['title', 'name', 'letterboxduri', 'url', 'tmdbid', 'imdbid'];
-    if (!headers.some(h => accepted.includes(h))) throw new Error('لم أجد أعمدة Letterboxd المعروفة مثل Title أو Name أو tmdbID أو LetterboxdURI.');
-    const get = (cells, aliases) => {
-        const ix = headers.findIndex(h => aliases.includes(h));
-        return ix < 0 ? '' : String(cells[ix] == null ? '' : cells[ix]).trim();
-    };
-    return rows.map((cells, index) => {
-        const title = get(cells, ['title', 'name', 'film']);
-        const yearText = get(cells, ['year', 'releasedate']);
-        const year = /^\d{4}$/.test(yearText) ? yearText : '';
-        const uri = get(cells, ['letterboxduri', 'url']);
-        const tmdbID = get(cells, ['tmdbid']);
-        const imdbID = get(cells, ['imdbid']);
-        const dateRaw = get(cells, ['watcheddate', 'date']);
-        const watchedDate = /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) && !Number.isNaN(Date.parse(dateRaw + 'T00:00:00Z')) ? dateRaw : '';
-        const rating = get(cells, ['rating']);
-        const rating10 = get(cells, ['rating10']);
-        let stars = null;
-        if (rating !== '' && Number.isFinite(Number(rating)) && Number(rating) >= 0.5 && Number(rating) <= 5) stars = Math.round(Number(rating) * 2) / 2;
-        else if (rating10 !== '' && Number.isFinite(Number(rating10)) && Number(rating10) >= 1 && Number(rating10) <= 10) stars = Math.max(0.5, Math.min(5, Math.round(Number(rating10) / 2 * 2) / 2));
-        const rewatchText = get(cells, ['rewatch']).toLowerCase();
-        const tags = get(cells, ['tags']).split(',').map(v => v.trim()).filter(Boolean).slice(0, 20);
-        const review = get(cells, ['review']).replace(/<\/?[a-z][^>]*>/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 1200);
-        return { rowNumber: index + 2, title: title.slice(0, 240), year, tmdbID, imdbID, letterboxdURI: uri.slice(0, 500), watchedDate, rating: stars, rewatch: ['true', 'yes', '1'].includes(rewatchText), tags, review, matchedId: '', matchLabel: '', duplicate: false, status: watchedDate ? 'watched' : stars != null ? 'rated' : 'watchlist' };
-    }).filter(r => r.title || r.tmdbID || r.imdbID || r.letterboxdURI);
-}
-function cinadamTitleKey(value) { return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); }
-function matchCinadamTitle(row, titles) {
-    const list = Array.isArray(titles) ? titles : [];
-    if (row.letterboxdURI) {
-        const targetUri = String(row.letterboxdURI).replace(/\/$/, '').toLowerCase();
-        const found = list.find(t => String(t.letterboxdURI || t.letterboxdUri || t.uri || (t.links && t.links.letterboxd) || '').replace(/\/$/, '').toLowerCase() === targetUri);
-        if (found) return found;
-    }
-    if (row.tmdbID) {
-        const found = list.find(t => String(t.tmdbId || t.tmdbID || t.tmdb_id || t.id || '') === String(row.tmdbID));
-        if (found) return found;
-    }
-    if (row.imdbID) {
-        const found = list.find(t => String(t.imdbId || t.imdbID || t.imdb_id || '') === String(row.imdbID));
-        if (found) return found;
-    }
-    const wanted = cinadamTitleKey(row.title);
-    if (!wanted) return null;
-    let matches = list.filter(t => cinadamTitleKey(t.name || t.title) === wanted && (!row.year || String(t.year || '') === row.year));
-    if (matches.length === 1) return matches[0];
-    if (!matches.length && !row.year) {
-        matches = list.filter(t => cinadamTitleKey(t.name || t.title) === wanted);
-        if (matches.length === 1) return matches[0];
-    }
-    return null;
-}
-function cinadamEntryDedupeKey(entry) {
-    const matched = entry.matchedId || entry.tmdbID || entry.imdbID || entry.letterboxdURI || cinadamTitleKey(entry.title) + '|' + String(entry.year || '');
-    return [matched, entry.watchedDate || '', entry.status || '', entry.rating == null ? '' : String(entry.rating)].join('|').toLowerCase();
-}
-function downloadCinadamFile(filename, content, mime) {
-    const blob = new Blob([content], { type: mime || 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1500);
-}
-function csvEscapeCell(value) { const s = String(value == null ? '' : value); return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
-function CinadamStudio({ currentUser, titles, onOpen, onOpenAuth }) {
-    const h = React.createElement;
-    const [data, setData] = useState(() => readCinadamPlusData(currentUser));
-    const [draftProfile, setDraftProfile] = useState(() => readCinadamPlusData(currentUser).profile);
-    const [tab, setTab] = useState('profile');
-    const [notice, setNotice] = useState('');
-    const [csvRows, setCsvRows] = useState(null);
-    const [importMeta, setImportMeta] = useState(null);
-    const [selectedTitleId, setSelectedTitleId] = useState('');
-    const [manualDate, setManualDate] = useState(new Date().toISOString().slice(0, 10));
-    const [manualNote, setManualNote] = useState('');
-    const [newCollectionName, setNewCollectionName] = useState('');
-    const [collectionSelect, setCollectionSelect] = useState('watchlist');
-    const [coverBusy, setCoverBusy] = useState(false);
-    const [titleFilter, setTitleFilter] = useState('');
-    const [backupBusy, setBackupBusy] = useState(false);
-    const [appearanceBusy, setAppearanceBusy] = useState(false);
-    const titlesById = React.useMemo(() => { const m = {}; (titles || []).forEach(t => { m[String(t.id)] = t; }); return m; }, [titles]);
-    useEffect(() => {
-        const next = readCinadamPlusData(currentUser);
-        setData(next); setDraftProfile(next.profile); applyCinadamPlusTheme(next.profile);
-    }, [currentUser && currentUser.id]);
-    useEffect(() => { const fn = e => { if (!e || !e.detail || e.detail.userKey === cinadamPlusKey(currentUser)) { const next = readCinadamPlusData(currentUser); setData(next); setDraftProfile(next.profile); } }; window.addEventListener('cinadam-plus-updated', fn); return () => window.removeEventListener('cinadam-plus-updated', fn); }, [currentUser && currentUser.id]);
-    const persist = (next, message) => {
-        try { const clean = writeCinadamPlusData(currentUser, next); setData(clean); setDraftProfile(clean.profile); applyCinadamPlusTheme(clean.profile); setNotice(message || 'تم الحفظ على هذا الجهاز.'); }
-        catch (e) { setNotice('تعذّر الحفظ المحلي. قد تكون مساحة تخزين المتصفح ممتلئة.'); }
-    };
-    const changeProfile = patch => { const next = { ...draftProfile, ...patch }; setDraftProfile(next); applyCinadamPlusTheme(next); };
-    const chooseTheme = name => { const p = CINADAM_PLUS_THEMES[name]; if (p) changeProfile({ theme: name, primary: p.primary, secondary: p.secondary, background: name }); };
-    const handleCover = async e => {
-        const file = e.target.files && e.target.files[0]; e.target.value = ''; if (!file) return;
-        if (!/^image\//.test(file.type)) { setNotice('اختر ملف صورة صالحًا.'); return; }
-        if (file.size > 8 * 1024 * 1024) { setNotice('حجم الصورة الأصلية يجب ألا يتجاوز 8 ميغابايت.'); return; }
-        setCoverBusy(true);
-        try { const image = await compressImageToDataUrl(file, 1400, 350000); changeProfile({ cover: image }); setNotice('تم تجهيز الغلاف للمعاينة؛ اضغط «حفظ المظهر» لتثبيته.'); }
-        catch (_) { setNotice('تعذرت معالجة صورة الغلاف. جرّب صورة أصغر.'); }
-        finally { setCoverBusy(false); }
-    };
-    const parseImportFile = async e => {
-        const file = e.target.files && e.target.files[0]; e.target.value = ''; if (!file) return;
-        if (!/\.csv$/i.test(file.name) && file.type !== 'text/csv' && file.type !== 'application/vnd.ms-excel') { setNotice('استيراد Letterboxd هنا يقبل CSV فقط.'); return; }
-        if (file.size > 1000000) { setNotice('الملف أكبر من 1 ميغابايت؛ قسّمه إلى ملفات CSV أصغر كما توصي Letterboxd.'); return; }
-        try {
-            const parsed = parseCinadamCsv(await file.text());
-            if (!parsed.length) throw new Error('لم يحتوِ الملف على صفوف بيانات.');
-            if (parsed.length > 10000) throw new Error('عدد الصفوف يتجاوز الحد الوقائي البالغ 10,000 صف.');
-            const existingKeys = new Set(data.entries.map(cinadamEntryDedupeKey));
-            const stagedKeys = new Set();
-            const staged = parsed.map(r => {
-                const match = matchCinadamTitle(r, titles || []);
-                const item = { ...r, matchedId: match ? String(match.id) : '', matchLabel: match ? `${match.name || match.title || 'عمل'}${match.year ? ' (' + match.year + ')' : ''}` : '' };
-                const key = cinadamEntryDedupeKey({ ...item, status: item.status });
-                item.duplicate = existingKeys.has(key) || stagedKeys.has(key); stagedKeys.add(key); return item;
-            });
-            setCsvRows(staged); setImportMeta({ fileName: file.name, total: staged.length, matched: staged.filter(r => r.matchedId).length, duplicates: staged.filter(r => r.duplicate).length }); setNotice(`تمت قراءة ${staged.length} صفًا. راجع المطابقات والتكرارات قبل الحفظ.`);
-        } catch (err) { setCsvRows(null); setImportMeta(null); setNotice(err && err.message ? err.message : 'تعذر قراءة CSV.'); }
-    };
-    const correctMatch = (rowNumber, matchedId) => {
-        const t = (titles || []).find(x => String(x.id) === String(matchedId));
-        setCsvRows(prev => (prev || []).map(r => r.rowNumber === rowNumber ? { ...r, matchedId: t ? String(t.id) : '', matchLabel: t ? `${t.name || t.title}${t.year ? ' (' + t.year + ')' : ''}` : '' } : r));
-    };
-    const commitImport = () => {
-        if (!csvRows || !csvRows.length) return;
-        const next = normalizeCinadamPlusData(data);
-        const keys = new Set(next.entries.map(cinadamEntryDedupeKey));
-        let added = 0, skipped = 0;
-        const addToCollection = new Set();
-        const addToWatchlist = new Set();
-        csvRows.forEach(r => {
-            const record = { id: 'lb-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9), title: r.title || r.matchLabel, year: r.year, matchedId: r.matchedId, tmdbID: r.tmdbID, imdbID: r.imdbID, letterboxdURI: r.letterboxdURI, watchedDate: r.watchedDate, rating: r.rating, rewatch: r.rewatch, tags: r.tags, review: r.review, note: '', status: r.status, source: 'Letterboxd CSV', createdAt: Date.now() };
-            const key = cinadamEntryDedupeKey(record);
-            if (keys.has(key)) { skipped++; return; }
-            keys.add(key); next.entries.push(record); added++;
-            if (record.matchedId && record.status === 'watchlist') addToWatchlist.add(record.matchedId);
-            else if (record.matchedId) addToCollection.add(record.matchedId);
-        });
-        let lb = next.collections.find(c => c.id === 'letterboxd-import');
-        if (!lb) { lb = { id: 'letterboxd-import', name: 'استيراد Letterboxd', description: 'الأعمال المطابقة التي جرى استيرادها من ملف CSV', items: [], createdAt: Date.now() }; next.collections.unshift(lb); }
-        lb.items = [...new Set([...(lb.items || []), ...addToCollection])].slice(0, 5000);
-        const watchlist = next.collections.find(c => c.id === 'watchlist');
-        if (watchlist) watchlist.items = [...new Set([...(watchlist.items || []), ...addToWatchlist])].slice(0, 5000);
-        next.importedAt = Date.now();
-        persist(next, `تم حفظ ${added} سجلًا محليًا وتجاوز ${skipped} سجلًا مكررًا. لم تُرسل بياناتك إلى Letterboxd أو خادم خارجي.`);
-        setCsvRows(null); setImportMeta(null);
-    };
-    const addManualEntry = () => {
-        const t = (titles || []).find(x => String(x.id) === String(selectedTitleId));
-        if (!t) { setNotice('اختر عملًا من الكتالوج أولًا.'); return; }
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(manualDate)) { setNotice('أدخل تاريخًا صحيحًا.'); return; }
-        const entry = { id: 'manual-' + Date.now().toString(36), title: t.name || t.title || '', year: String(t.year || ''), matchedId: String(t.id), tmdbID: String(t.tmdbId || t.tmdbID || ''), imdbID: String(t.imdbId || t.imdbID || ''), watchedDate: manualDate, rating: null, rewatch: false, tags: [], review: '', note: manualNote.slice(0, 1000), status: 'watched', source: 'manual', createdAt: Date.now() };
-        const next = { ...data, entries: [...data.entries, entry].slice(-10000) };
-        persist(next, 'أُضيف سجل المشاهدة.'); setManualNote('');
-    };
-    const createCollection = () => {
-        const name = newCollectionName.trim().slice(0, 80); if (!name) { setNotice('اكتب اسمًا للمجموعة.'); return; }
-        const id = 'collection-' + Date.now().toString(36);
-        persist({ ...data, collections: [...data.collections, { id, name, description: '', items: [], createdAt: Date.now() }].slice(0, 300) }, 'تم إنشاء مجموعة مكتبة محلية.'); setNewCollectionName(''); setCollectionSelect(id);
-    };
-    const addTitleToCollection = () => {
-        const collection = data.collections.find(c => c.id === collectionSelect);
-        if (!collection || !selectedTitleId) { setNotice('اختر المجموعة والعمل أولًا.'); return; }
-        if (collection.items.includes(String(selectedTitleId))) { setNotice('العمل موجود أصلًا في هذه المجموعة.'); return; }
-        persist({ ...data, collections: data.collections.map(c => c.id === collection.id ? { ...c, items: [...c.items, String(selectedTitleId)].slice(0, 5000) } : c) }, 'تمت إضافة العمل إلى المجموعة.');
-    };
-    const removeCollectionTitle = (collectionId, titleId) => persist({ ...data, collections: data.collections.map(c => c.id === collectionId ? { ...c, items: c.items.filter(id => String(id) !== String(titleId)) } : c) }, 'أزيل العمل من المجموعة.');
-    const deleteCollection = collection => { if (collection.id === 'watchlist') { setNotice('مجموعة قائمة المشاهدة الافتراضية لا يمكن حذفها.'); return; } if (!window.confirm(`حذف مجموعة «${collection.name}»؟ لن تُحذف سجلات المشاهدة.`)) return; persist({ ...data, collections: data.collections.filter(c => c.id !== collection.id) }, 'تم حذف المجموعة فقط.'); };
-    const removeEntry = entry => { if (!window.confirm(`حذف سجل «${entry.title}» من دفتر Cinadam المحلي؟`)) return; persist({ ...data, entries: data.entries.filter(e => e.id !== entry.id) }, 'حُذف السجل المحلي دون حذف تقييمات الموقع الأصلية.'); };
-    const exportBackup = () => downloadCinadamFile('cinadam-personal-backup.json', JSON.stringify({ app: 'Cinadam Plus', version: CINADAM_PLUS_VERSION, exportedAt: new Date().toISOString(), data }, null, 2), 'application/json;charset=utf-8');
-    const exportDiaryCsv = () => {
-        const header = ['Title', 'Year', 'WatchedDate', 'Rating', 'Rewatch', 'Tags', 'Review', 'Note', 'MatchedId', 'Source'];
-        const lines = [header, ...data.entries.map(e => [e.title, e.year, e.watchedDate, e.rating == null ? '' : e.rating, e.rewatch ? 'true' : 'false', (e.tags || []).join(','), e.review, e.note, e.matchedId, e.source])].map(row => row.map(csvEscapeCell).join(','));
-        downloadCinadamFile('cinadam-watch-diary.csv', '\uFEFF' + lines.join('\r\n'), 'text/csv;charset=utf-8');
-    };
-    const importBackup = async e => {
-        const file = e.target.files && e.target.files[0]; e.target.value = ''; if (!file) return;
-        if (file.size > 5 * 1024 * 1024) { setNotice('النسخة الاحتياطية أكبر من 5 ميغابايت.'); return; }
-        setBackupBusy(true);
-        try {
-            const raw = JSON.parse(await file.text());
-            const candidate = raw && raw.data ? raw.data : raw;
-            if (!candidate || typeof candidate !== 'object' || (!Array.isArray(candidate.entries) && !Array.isArray(candidate.collections) && !candidate.profile)) throw new Error('ملف النسخة لا يبدو من صيغة Cinadam Plus.');
-            if (!window.confirm('سيتم استبدال دفتر ومجموعات وإعدادات Cinadam Plus المحلية الحالية بالنسخة المستوردة. هل تريد المتابعة؟')) return;
-            persist(normalizeCinadamPlusData(candidate), 'تم استيراد النسخة الاحتياطية إلى هذا الجهاز.');
-        } catch (err) { setNotice(err && err.message ? err.message : 'ملف النسخة غير صالح.'); }
-        finally { setBackupBusy(false); }
-    };
-    const saveThemePreset = () => {
-        const name = (window.prompt('اسم الثيم الذي تريد حفظه') || '').trim().slice(0, 50); if (!name) return;
-        const theme = { name, profile: { primary: draftProfile.primary, secondary: draftProfile.secondary, theme: draftProfile.theme } };
-        persist({ ...data, savedThemes: [...data.savedThemes.filter(t => t.name !== name), theme].slice(-30) }, 'تم حفظ الثيم ضمن قوالبك المحلية.');
-    };
-    const exportAppearance = () => downloadCinadamFile('cinadam-appearance.json', JSON.stringify({ app: 'CinadamAppearance', version: 1, exportedAt: new Date().toISOString(), profile: draftProfile, savedThemes: data.savedThemes }, null, 2), 'application/json;charset=utf-8');
-    const importAppearance = async e => {
-        const file = e.target.files && e.target.files[0]; e.target.value = ''; if (!file) return;
-        if (file.size > 600000) { setNotice('ملف المظهر أكبر من 600 كيلوبايت.'); return; }
-        setAppearanceBusy(true);
-        try {
-            const raw = JSON.parse(await file.text());
-            if (!raw || typeof raw !== 'object' || (!raw.profile && !raw.primary && !raw.bio && !raw.theme)) throw new Error('ملف المظهر لا يحتوي على إعدادات معروفة.');
-            if (!window.confirm('استبدال إعدادات المظهر والنبذة الحالية بالإعدادات الموجودة في الملف؟ لن تتغير المكتبة أو سجلات المشاهدة.')) return;
-            const candidate = normalizeCinadamPlusData({ profile: raw.profile || raw, savedThemes: Array.isArray(raw.savedThemes) ? raw.savedThemes : data.savedThemes });
-            persist({ ...data, profile: candidate.profile, savedThemes: candidate.savedThemes }, 'تم استيراد إعدادات المظهر فقط.');
-        } catch (err) { setNotice(err && err.message ? err.message : 'ملف المظهر غير صالح.'); }
-        finally { setAppearanceBusy(false); }
-    };
-    const applySavedTheme = theme => { changeProfile({ primary: safeHexColor(theme.profile.primary, '#00F0FF'), secondary: safeHexColor(theme.profile.secondary, '#FF334B'), theme: theme.profile.theme || 'custom' }); };
-    const titleOptions = (titles || []).filter(t => !titleFilter || String(t.name || '').toLowerCase().includes(titleFilter.toLowerCase())).slice(0, 400);
-    const watchedEntries = data.entries.filter(e => e.status === 'watched' || (e.watchedDate && e.status !== 'watchlist'));
-    const days = [...new Set(watchedEntries.map(e => e.watchedDate).filter(Boolean))].sort();
-    const years = [...new Set(watchedEntries.map(e => (e.watchedDate || '').slice(0, 4)).filter(Boolean))].sort().reverse();
-    const maxYearCount = Math.max(1, ...years.map(yy => watchedEntries.filter(e => (e.watchedDate || '').startsWith(yy)).length));
-    const uniqueWorks = new Set(watchedEntries.map(e => e.matchedId || (cinadamTitleKey(e.title) + '|' + e.year))).size;
-    const ratings = data.entries.filter(e => e.rating != null);
-    const avgRating = ratings.length ? ratings.reduce((sum, e) => sum + Number(e.rating || 0), 0) / ratings.length : 0;
-    const estimatedMinutes = watchedEntries.reduce((sum, e) => { const t = titlesById[e.matchedId]; const runtime = Number(t && (t.runtimeMinutes || t.runtime || t.duration)) || 0; return sum + (runtime > 0 && runtime < 1000 ? runtime : 0); }, 0);
-    let longestStreak = 0, currentStreak = 0, lastDay = null;
-    days.forEach(day => { const time = Date.parse(day + 'T00:00:00Z'); if (lastDay !== null && time - lastDay === 86400000) currentStreak++; else currentStreak = 1; longestStreak = Math.max(longestStreak, currentStreak); lastDay = time; });
-    const bgPresets = { aurora: 'radial-gradient(circle at 15% 15%,rgba(0,240,255,.23),transparent 38%),linear-gradient(130deg,#091521,#15112d)', ruby: 'radial-gradient(circle at 15% 15%,rgba(255,93,122,.27),transparent 38%),linear-gradient(130deg,#1d0b16,#1d122c)', forest: 'radial-gradient(circle at 15% 15%,rgba(74,222,128,.20),transparent 38%),linear-gradient(130deg,#071c18,#14251e)', violet: 'radial-gradient(circle at 15% 15%,rgba(192,132,252,.24),transparent 38%),linear-gradient(130deg,#161027,#101a30)', gold: 'radial-gradient(circle at 15% 15%,rgba(251,191,36,.18),transparent 38%),linear-gradient(130deg,#19140a,#27171e)', ice: 'radial-gradient(circle at 15% 15%,rgba(147,197,253,.22),transparent 38%),linear-gradient(130deg,#081927,#111827)', plain: 'linear-gradient(135deg,#101521,#080a10)' };
-    const tabs = [['profile', 'المظهر والملف', 'palette'], ['import', 'استيراد Letterboxd', 'file-up'], ['library', 'مجموعات مكتبتي', 'library'], ['diary', 'دفتر المشاهدة', 'calendar-days'], ['stats', 'الإحصائيات', 'chart-no-axes-combined'], ['backup', 'التصدير والنسخ', 'download']];
-    const panelClass = 'glass-panel border border-white/10 rounded-3xl p-4 md:p-6';
-    const fieldClass = 'w-full bg-glass-900 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-accent-cyan';
-    const primaryBtn = 'px-4 py-2.5 rounded-xl bg-accent-cyan text-glass-950 font-black text-sm disabled:opacity-40';
-    const secondaryBtn = 'px-4 py-2.5 rounded-xl glass-card border border-white/10 text-slate-200 font-bold text-sm disabled:opacity-40';
-    const titleSelect = h('select', { className: fieldClass, value: selectedTitleId, onChange: e => setSelectedTitleId(e.target.value) }, h('option', { value: '' }, 'اختر عملًا من كتالوج Cinadam'), titleOptions.map(t => h('option', { key: t.id, value: String(t.id) }, `${t.name || t.title || 'عمل'}${t.year ? ' (' + t.year + ')' : ''}`)));
-    if (!currentUser) return h('div', { className: 'max-w-xl mx-auto py-16 text-center' }, h('div', { className: 'text-4xl mb-4' }, '🎞️'), h('h1', { className: 'text-2xl font-black mb-3' }, 'استوديو Cinadam الشخصي'), h('p', { className: 'text-slate-400 mb-5' }, 'سجّل الدخول لإدارة المظهر والمكتبة ودفتر المشاهدة.'), h('button', { className: 'px-5 py-3 rounded-xl bg-accent-red font-bold', onClick: () => onOpenAuth('login') }, 'تسجيل الدخول'));
-    return h('section', { className: 'cv-plus-studio page-fade-in max-w-6xl mx-auto space-y-5' },
-        h('div', { className: 'flex flex-wrap items-start justify-between gap-3' }, h('div', null, h('p', { className: 'text-xs uppercase tracking-[.18em] text-accent-cyan font-black mb-2' }, 'CINADAM PERSONAL SPACE'), h('h1', { className: 'text-2xl md:text-3xl font-black' }, 'استوديو Cinadam'), h('p', { className: 'text-sm text-slate-400 mt-2 max-w-2xl leading-7' }, 'خصّص ملفك، استورد تاريخك من CSV، نظّم مكتبتك واحسب إحصائياتك. بيانات الاستوديو محلية على هذا الجهاز حاليًا؛ المزامنة الاجتماعية الآمنة تحتاج تهيئة الخادم وقواعد Firebase أولًا.')), h('div', { className: 'flex gap-2 flex-wrap' }, h('button', { className: secondaryBtn, onClick: exportBackup }, 'تصدير نسخة كاملة'), h('button', { className: secondaryBtn, onClick: exportDiaryCsv }, 'تصدير CSV'))),
-        notice && h('div', { role: 'status', className: 'rounded-2xl border border-accent-cyan/20 bg-accent-cyan/5 text-sm text-slate-200 px-4 py-3' }, notice),
-        h('div', { className: 'flex gap-2 overflow-x-auto scrollbar-hide pb-1' }, tabs.map(([key, label, icon]) => h('button', { key, onClick: () => setTab(key), className: `shrink-0 flex items-center gap-2 px-4 py-3 rounded-xl border text-sm font-bold ${tab === key ? 'bg-accent-cyan/15 border-accent-cyan/35 text-accent-cyan' : 'glass-card border-white/10 text-slate-300'}` }, h(Icon, { name: icon, className: 'w-4 h-4' }), label))),
-        tab === 'profile' && h('div', { className: 'grid lg:grid-cols-[1fr_.85fr] gap-4' },
-            h('div', { className: panelClass + ' space-y-5' },
-                h('div', null, h('h2', { className: 'font-black text-lg mb-1' }, 'تخصيص المظهر'), h('p', { className: 'text-xs text-slate-400' }, 'تغييرات تجريبية مباشرة؛ الحفظ يثبتها محليًا لهذا الحساب وهذا المتصفح.')),
-                h('div', { className: 'grid sm:grid-cols-2 gap-3' }, h('label', { className: 'text-xs text-slate-300 space-y-2' }, h('span', null, 'اللون الأساسي'), h('div', { className: 'flex gap-2 items-center' }, h('input', { type: 'color', value: draftProfile.primary, onChange: e => changeProfile({ primary: e.target.value, theme: 'custom' }), className: 'w-12 h-10 bg-transparent border-0' }), h('input', { value: draftProfile.primary, onChange: e => changeProfile({ primary: safeHexColor(e.target.value, draftProfile.primary), theme: 'custom' }), className: fieldClass }))), h('label', { className: 'text-xs text-slate-300 space-y-2' }, h('span', null, 'اللون الثانوي'), h('div', { className: 'flex gap-2 items-center' }, h('input', { type: 'color', value: draftProfile.secondary, onChange: e => changeProfile({ secondary: e.target.value, theme: 'custom' }), className: 'w-12 h-10 bg-transparent border-0' }), h('input', { value: draftProfile.secondary, onChange: e => changeProfile({ secondary: safeHexColor(e.target.value, draftProfile.secondary), theme: 'custom' }), className: fieldClass })))),
-                h('div', { className: 'grid grid-cols-2 sm:grid-cols-3 gap-2' }, Object.entries(CINADAM_PLUS_THEMES).map(([key, theme]) => h('button', { key, onClick: () => chooseTheme(key), className: `rounded-xl border p-3 text-right ${draftProfile.theme === key ? 'border-accent-cyan bg-white/5' : 'border-white/10 glass-card'}` }, h('div', { className: 'flex gap-1.5 mb-2' }, h('span', { className: 'w-5 h-5 rounded-full', style: { backgroundColor: theme.primary } }), h('span', { className: 'w-5 h-5 rounded-full', style: { backgroundColor: theme.secondary } })), h('span', { className: 'text-xs font-bold' }, theme.label)))),
-                data.savedThemes.length > 0 && h('div', { className: 'flex flex-wrap gap-2' }, data.savedThemes.map((t, i) => h('button', { key: t.name + i, className: secondaryBtn, onClick: () => applySavedTheme(t) }, 'تطبيق: ' + t.name))),
-                h('div', { className: 'grid sm:grid-cols-2 gap-3' }, h('label', { className: 'text-xs text-slate-300 space-y-2' }, h('span', null, 'خلفية المعاينة'), h('select', { className: fieldClass, value: draftProfile.background, onChange: e => changeProfile({ background: e.target.value }) }, [['aurora','الشفق'],['ruby','ياقوت'],['forest','الغابة'],['violet','البنفسجي'],['gold','الذهبي'],['ice','الجليد'],['plain','داكن بسيط']].map(x => h('option', { key: x[0], value: x[0] }, x[1])))), h('label', { className: 'text-xs text-slate-300 space-y-2' }, h('span', null, 'حجم النص الشخصي'), h('select', { className: fieldClass, value: draftProfile.fontSize, onChange: e => changeProfile({ fontSize: e.target.value }) }, [['small','صغير'],['normal','عادي'],['large','كبير']].map(x => h('option', { key: x[0], value: x[0] }, x[1]))))),
-                h('label', { className: 'block text-xs text-slate-300 space-y-2' }, h('span', null, 'نبذة شخصية (حتى 300 حرف)'), h('textarea', { className: fieldClass + ' min-h-24 resize-y', maxLength: 300, value: draftProfile.bio, onChange: e => changeProfile({ bio: e.target.value }), placeholder: 'اكتب نبذة عن ذوقك السينمائي…' }), h('span', { className: 'text-slate-500' }, `${draftProfile.bio.length}/300`)),
-                h('label', { className: 'block text-xs text-slate-300 space-y-2' }, h('span', null, 'حالة قصيرة (حتى 80 حرفًا)'), h('input', { className: fieldClass, maxLength: 80, value: draftProfile.status, onChange: e => changeProfile({ status: e.target.value }), placeholder: 'مثلاً: أعيش موسم أفلام الخيال العلمي' })),
-                h('div', { className: 'space-y-2' }, h('label', { className: 'text-xs text-slate-300 block' }, 'غلاف الملف الشخصي'), h('div', { className: 'flex gap-2 flex-wrap' }, h('label', { className: secondaryBtn }, coverBusy ? 'جارٍ تجهيز الصورة…' : 'اختيار صورة غلاف', h('input', { type: 'file', accept: 'image/*', className: 'hidden', onChange: handleCover, disabled: coverBusy })), draftProfile.cover && h('button', { className: secondaryBtn, onClick: () => changeProfile({ cover: '' }) }, 'إزالة الغلاف')), h('p', { className: 'text-[11px] text-slate-500' }, 'تُضغط الصورة وتُحفظ محليًا؛ لا تُرفع إلى Firebase.')),
-                h('div', { className: 'grid sm:grid-cols-2 gap-3' }, h('label', { className: 'text-xs text-slate-300 space-y-2' }, h('span', null, 'عرض البطاقات'), h('select', { className: fieldClass, value: draftProfile.layout, onChange: e => changeProfile({ layout: e.target.value }) }, [['grid','شبكة'],['list','قائمة'],['rows','صفوف أفقية']].map(x => h('option', { key: x[0], value: x[0] }, x[1])))), h('label', { className: 'text-xs text-slate-300 space-y-2' }, h('span', null, 'كثافة العرض'), h('select', { className: fieldClass, value: draftProfile.density, onChange: e => changeProfile({ density: e.target.value }) }, [['comfortable','مريح'],['compact','مضغوط']].map(x => h('option', { key: x[0], value: x[0] }, x[1])))), h('label', { className: 'text-xs text-slate-300 space-y-2' }, h('span', null, 'الحركة'), h('select', { className: fieldClass, value: draftProfile.motion, onChange: e => changeProfile({ motion: e.target.value }) }, [['full','كاملة'],['reduced','مخففة'],['off','متوقفة']].map(x => h('option', { key: x[0], value: x[0] }, x[1]))))),
-                h('div', null, h('p', { className: 'text-xs font-bold mb-2' }, 'إخفاء أقسام من ملفك على هذا الجهاز'), h('div', { className: 'flex flex-wrap gap-3' }, [['rated','الأعمال المقيّمة'],['reviews','المراجعات'],['lists','القوائم'],['activity','النشاط']].map(([key, label]) => h('label', { key, className: 'flex items-center gap-2 text-xs text-slate-300' }, h('input', { type: 'checkbox', checked: draftProfile.hiddenSections.includes(key), onChange: e => changeProfile({ hiddenSections: e.target.checked ? [...draftProfile.hiddenSections, key] : draftProfile.hiddenSections.filter(x => x !== key) }) }), label)))),
-                h('div', { className: 'flex flex-wrap gap-2 pt-2' }, h('button', { className: primaryBtn, onClick: () => persist({ ...data, profile: draftProfile }, 'تم حفظ المظهر والنبذة محليًا.') }, 'حفظ المظهر'), h('button', { className: secondaryBtn, onClick: saveThemePreset }, 'حفظ كقالب ثيم'), h('button', { className: secondaryBtn, onClick: exportAppearance }, 'تصدير المظهر'), h('label', { className: secondaryBtn + ' cursor-pointer inline-flex items-center gap-2' }, appearanceBusy ? 'جارٍ الفحص…' : 'استيراد المظهر', h('input', { type: 'file', accept: '.json,application/json', className: 'hidden', onChange: importAppearance, disabled: appearanceBusy })), h('button', { className: secondaryBtn, onClick: () => { const reset = cinadamPlusDefaults().profile; setDraftProfile(reset); applyCinadamPlusTheme(reset); persist({ ...data, profile: reset }, 'أُعيد المظهر الافتراضي دون حذف المكتبة.'); } }, 'إعادة الافتراضي'))),
-            h('div', { className: panelClass + ' self-start' }, h('div', { className: 'flex items-center justify-between gap-2 mb-3' }, h('h2', { className: 'font-black text-lg' }, 'معاينة مباشرة'), h('span', { className: 'text-[10px] text-slate-500' }, 'خاصة بهذا الجهاز')), h('div', { className: 'rounded-3xl overflow-hidden border border-white/10', style: { background: bgPresets[draftProfile.background] || bgPresets.aurora } }, draftProfile.cover && h('img', { src: draftProfile.cover, alt: 'غلاف الملف', className: 'w-full h-32 object-cover opacity-90' }), h('div', { className: 'p-5' }, h('div', { className: 'w-16 h-16 rounded-2xl mb-3 flex items-center justify-center font-black text-xl', style: { color: '#07111a', background: draftProfile.primary, boxShadow: `0 0 26px ${draftProfile.primary}35` } }, String(currentUser.name || currentUser.username || 'C').slice(0, 1)), h('div', { className: 'text-xl font-black' }, currentUser.name || currentUser.username), h('div', { className: 'text-xs mt-1 opacity-70' }, '@' + currentUser.username), draftProfile.status && h('p', { className: 'text-sm mt-3 font-bold', style: { color: draftProfile.secondary } }, draftProfile.status), h('p', { className: `mt-3 leading-7 ${draftProfile.fontSize === 'large' ? 'text-base' : draftProfile.fontSize === 'small' ? 'text-xs' : 'text-sm'}` }, draftProfile.bio || 'ستظهر نبذتك الشخصية هنا بعد كتابتها.'), h('div', { className: 'mt-5 flex gap-2 flex-wrap' }, h('span', { className: 'px-3 py-1.5 rounded-full text-xs font-bold', style: { background: draftProfile.primary + '20', color: draftProfile.primary } }, 'مكتبتي'), h('span', { className: 'px-3 py-1.5 rounded-full text-xs font-bold', style: { background: draftProfile.secondary + '20', color: draftProfile.secondary } }, 'ذوقي السينمائي')))), h('p', { className: 'text-[11px] text-slate-500 leading-6 mt-3' }, 'المعاينة لا تغيّر اسم الدخول ولا تنشر معلوماتك للعامة. الغلاف والنبذة والإعدادات محفوظة داخل مخزن هذا المتصفح.'))),
-        tab === 'import' && h('div', { className: 'space-y-4' }, h('div', { className: panelClass }, h('h2', { className: 'font-black text-lg mb-2' }, 'استيراد Letterboxd CSV'), h('p', { className: 'text-sm text-slate-400 leading-7 mb-4' }, 'ارفع ملف التصدير الذي نزّلته بنفسك من Letterboxd. تتم القراءة والمطابقة محليًا؛ لا نطلب كلمة مرور Letterboxd ولا نتصل بحسابه. حدّ أقصى للملف 1 ميغابايت لكل دفعة.'), h('label', { className: 'inline-flex cursor-pointer items-center gap-2 rounded-xl bg-accent-cyan px-4 py-3 font-black text-glass-950 text-sm' }, h(Icon, { name: 'file-up', className: 'w-4 h-4' }), 'اختيار ملف CSV', h('input', { type: 'file', accept: '.csv,text/csv', className: 'hidden', onChange: parseImportFile })), importMeta && h('div', { className: 'grid grid-cols-3 gap-2 mt-4' }, [['صفوف', importMeta.total], ['مطابقات آلية', csvRows.filter(r => r.matchedId).length], ['مكررات محتملة', csvRows.filter(r => r.duplicate).length]].map(([label, value]) => h('div', { key: label, className: 'rounded-xl border border-white/10 bg-white/5 p-3' }, h('p', { className: 'text-xs text-slate-500' }, label), h('p', { className: 'font-black text-xl mt-1' }, value)))), csvRows && h('div', { className: 'mt-4' }, h('div', { className: 'flex items-center justify-between gap-2 mb-3' }, h('h3', { className: 'font-bold' }, 'المعاينة وتصحيح المطابقة'), h('span', { className: 'text-xs text-slate-500' }, `عرض ${Math.min(25, csvRows.length)} من ${csvRows.length}`)), h('div', { className: 'space-y-2' }, csvRows.slice(0, 25).map(r => h('div', { key: r.rowNumber, className: 'rounded-xl border border-white/10 bg-glass-900/70 p-3 grid lg:grid-cols-[1fr_1fr] gap-3' }, h('div', { className: 'min-w-0' }, h('p', { className: 'text-sm font-bold truncate' }, r.title || r.tmdbID || r.imdbID || 'عنوان غير معروف'), h('p', { className: 'text-[11px] text-slate-500 mt-1' }, [r.year, r.watchedDate, r.rating == null ? '' : '★ ' + r.rating, r.rewatch ? 'إعادة مشاهدة' : ''].filter(Boolean).join(' · ')), r.duplicate && h('span', { className: 'inline-block mt-1 text-[10px] text-amber-400' }, 'مكرر محتمل؛ سيُتجاوز عند الحفظ')), h('label', { className: 'text-[11px] text-slate-400 space-y-1' }, h('span', null, r.matchLabel || 'لا توجد مطابقة تلقائية — اختر يدويًا'), h('select', { className: fieldClass, value: r.matchedId, onChange: e => correctMatch(r.rowNumber, e.target.value) }, h('option', { value: '' }, 'بدون ربط بعمل'), (titles || []).filter(t => !r.title || cinadamTitleKey(t.name || t.title).includes(cinadamTitleKey(r.title)) || cinadamTitleKey(r.title).includes(cinadamTitleKey(t.name || t.title))).slice(0, 20).map(t => h('option', { key: t.id, value: String(t.id) }, `${t.name || t.title}${t.year ? ' (' + t.year + ')' : ''}`))))))), h('div', { className: 'flex flex-wrap gap-2 mt-4' }, h('button', { className: primaryBtn, onClick: commitImport }, 'اعتماد الاستيراد محليًا'), h('button', { className: secondaryBtn, onClick: () => { setCsvRows(null); setImportMeta(null); setNotice('أُلغيت المعاينة دون حفظ أي صف.'); } }, 'إلغاء المعاينة'))), h('p', { className: 'text-xs text-slate-500 leading-6 px-1' }, 'تُحفظ السجلات محليًا فقط. لا يُكتب شيء في قاعدة Firebase، ولا تُعدّ المطابقات غير المؤكدة صحيحة تلقائيًا؛ يمكنك تركها «بدون ربط».'))),
-        tab === 'library' && h('div', { className: 'space-y-4' }, h('div', { className: panelClass }, h('h2', { className: 'font-black text-lg mb-3' }, 'مجموعات مكتبتي'), h('div', { className: 'flex flex-col sm:flex-row gap-2' }, h('input', { className: fieldClass, maxLength: 80, value: newCollectionName, onChange: e => setNewCollectionName(e.target.value), placeholder: 'اسم المجموعة الجديدة: سهرة رعب، سينما عراقية…' }), h('button', { className: primaryBtn, onClick: createCollection }, 'إنشاء مجموعة')), h('p', { className: 'text-xs text-slate-500 mt-2' }, 'هذه مجموعات شخصية محلية مستقلة عن قوائم الموقع الأصلية، كي لا تمسّ بيانات Firebase القائمة.')), h('div', { className: panelClass + ' space-y-4' }, h('div', { className: 'grid md:grid-cols-[1fr_1fr_auto] gap-2' }, h('select', { className: fieldClass, value: collectionSelect, onChange: e => setCollectionSelect(e.target.value) }, data.collections.map(c => h('option', { key: c.id, value: c.id }, c.name))), h('div', { className: 'min-w-0' }, h('input', { className: fieldClass + ' mb-2', value: titleFilter, onChange: e => setTitleFilter(e.target.value), placeholder: 'ابحث عن عمل من الكتالوج' }), titleSelect), h('button', { className: primaryBtn, onClick: addTitleToCollection }, 'إضافة عمل')), h('div', { className: 'grid sm:grid-cols-2 xl:grid-cols-3 gap-3' }, data.collections.map(c => h('div', { key: c.id, className: 'rounded-2xl border border-white/10 bg-white/[.025] p-3' }, h('div', { className: 'flex items-start justify-between gap-2 mb-3' }, h('div', null, h('p', { className: 'font-black' }, c.name), h('p', { className: 'text-[11px] text-slate-500 mt-1' }, `${c.items.length} عمل`)), c.id !== 'watchlist' && h('button', { className: 'text-xs text-rose-400', onClick: () => deleteCollection(c) }, 'حذف المجموعة')), c.items.length ? h('div', { className: 'space-y-2' }, c.items.slice(0, 12).map(id => { const t = titlesById[id]; return h('div', { key: id, className: 'flex gap-2 items-center' }, t && h('button', { className: 'flex-1 min-w-0 text-right text-xs truncate hover:text-accent-cyan', onClick: () => onOpen(t) }, `${t.name || t.title}${t.year ? ' (' + t.year + ')' : ''}`), !t && h('span', { className: 'flex-1 min-w-0 text-xs text-slate-500 truncate' }, 'عمل مستورد غير مطابق: ' + id), h('button', { className: 'text-[10px] text-slate-500 hover:text-rose-400', onClick: () => removeCollectionTitle(c.id, id), title: 'إزالة من المجموعة' }, 'إزالة')); })) : h('p', { className: 'text-xs text-slate-500 py-3' }, 'لا توجد أعمال في هذه المجموعة بعد.'))))),
-        tab === 'diary' && h('div', { className: 'grid lg:grid-cols-[.75fr_1.25fr] gap-4' }, h('div', { className: panelClass + ' h-fit space-y-3' }, h('h2', { className: 'font-black text-lg' }, 'إضافة مشاهدة يدويًا'), titleSelect, h('label', { className: 'text-xs text-slate-400 block' }, 'تاريخ المشاهدة', h('input', { type: 'date', className: fieldClass + ' mt-1', value: manualDate, onChange: e => setManualDate(e.target.value) })), h('label', { className: 'text-xs text-slate-400 block' }, 'ملاحظة خاصة بهذا الجهاز', h('textarea', { className: fieldClass + ' mt-1 min-h-20', maxLength: 1000, value: manualNote, onChange: e => setManualNote(e.target.value), placeholder: 'اختياري؛ لا تُشارك علنًا' })), h('button', { className: primaryBtn + ' w-full', onClick: addManualEntry }, 'إضافة إلى الدفتر'), h('p', { className: 'text-[11px] text-slate-500 leading-6' }, 'السجلات هنا منفصلة عن تقدم المشاهدة الأصلي للمشغّل ولا تغيّره.')), h('div', { className: panelClass }, h('div', { className: 'flex items-center justify-between gap-2 mb-4' }, h('h2', { className: 'font-black text-lg' }, 'دفتر المشاهدة'), h('span', { className: 'text-xs text-slate-500' }, `${watchedEntries.length} سجل`)), data.entries.length ? h('div', { className: 'space-y-2' }, [...data.entries].sort((a, b) => (b.watchedDate || '').localeCompare(a.watchedDate || '') || b.createdAt - a.createdAt).slice(0, 100).map(entry => { const t = titlesById[entry.matchedId]; return h('div', { key: entry.id, className: 'flex items-start gap-3 border-b border-white/5 pb-3 last:border-0' }, t && t.poster ? h('img', { src: t.poster, alt: '', loading: 'lazy', className: 'w-10 h-14 object-cover rounded-lg shrink-0' }) : h('div', { className: 'w-10 h-14 rounded-lg bg-white/5 shrink-0 flex items-center justify-center' }, '🎬'), h('div', { className: 'flex-1 min-w-0' }, h('p', { className: 'font-bold text-sm truncate' }, entry.title || (t && t.name) || 'عمل مستورد'), h('p', { className: 'text-[11px] text-slate-500 mt-1' }, [entry.watchedDate || 'بدون تاريخ', entry.year, entry.rating == null ? '' : '★ ' + entry.rating, entry.rewatch ? 'إعادة مشاهدة' : '', entry.source].filter(Boolean).join(' · ')), entry.note && h('p', { className: 'text-xs text-slate-400 mt-1 line-clamp-2' }, entry.note), entry.review && h('p', { className: 'text-xs text-slate-400 mt-1 line-clamp-2' }, entry.review)), h('div', { className: 'flex flex-col gap-2 shrink-0' }, t && h('button', { className: 'text-[10px] text-accent-cyan', onClick: () => onOpen(t) }, 'فتح العمل'), h('button', { className: 'text-[10px] text-rose-400', onClick: () => removeEntry(entry) }, 'حذف'))); })) : h('p', { className: 'text-sm text-slate-500 py-8 text-center' }, 'دفترك فارغ. استورد CSV أو أضف مشاهدة يدويًا.'))),
-        tab === 'stats' && h('div', { className: 'space-y-4' }, h('div', { className: 'grid grid-cols-2 md:grid-cols-4 gap-3' }, [['مشاهدات مسجلة', watchedEntries.length], ['أعمال مختلفة', uniqueWorks], ['تقييمات مستوردة', ratings.length], ['أطول سلسلة أيام', longestStreak]].map(([label, value]) => h('div', { key: label, className: panelClass }, h('p', { className: 'text-xs text-slate-500' }, label), h('p', { className: 'text-2xl md:text-3xl font-black mt-2' }, value)))), h('div', { className: 'grid md:grid-cols-2 gap-4' }, h('div', { className: panelClass }, h('h2', { className: 'font-black mb-3' }, 'ملخص حسب السنة'), years.length ? years.map(y => h('div', { key: y, className: 'flex items-center gap-3 mb-3' }, h('span', { className: 'text-xs text-slate-400 w-12' }, y), h('div', { className: 'h-2 bg-white/5 rounded-full flex-1 overflow-hidden' }, h('div', { className: 'h-full rounded-full', style: { width: `${Math.max(3, (watchedEntries.filter(e => (e.watchedDate || '').startsWith(y)).length / maxYearCount) * 100)}%`, background: draftProfile.primary } })), h('span', { className: 'text-xs font-bold' }, watchedEntries.filter(e => (e.watchedDate || '').startsWith(y)).length))) : h('p', { className: 'text-xs text-slate-500' }, 'أضف أو استورد سجلات تحمل تاريخ مشاهدة لإظهار إحصائيات السنوات.')), h('div', { className: panelClass }, h('h2', { className: 'font-black mb-3' }, 'ملخص التقييم والوقت'), h('p', { className: 'text-3xl font-black', style: { color: draftProfile.primary } }, ratings.length ? avgRating.toFixed(2) + ' / 5' : '—'), h('p', { className: 'text-xs text-slate-500 mb-4' }, 'متوسط تقييمات CSV المستوردة فقط، وليس كل تقييمات حسابك الحالية.'), h('p', { className: 'text-xl font-black' }, estimatedMinutes ? `${Math.floor(estimatedMinutes / 60)} ساعة و${estimatedMinutes % 60} دقيقة تقريبًا` : 'الوقت غير متاح'), h('p', { className: 'text-[11px] text-slate-500 mt-1 leading-6' }, 'تقدير الوقت يستخدم مدة الأعمال المطابقة المتاحة داخل الكتالوج؛ أي عمل بلا مدة لا يدخل في الحساب.')))),
-        tab === 'backup' && h('div', { className: 'grid md:grid-cols-2 gap-4' }, h('div', { className: panelClass + ' space-y-3' }, h('h2', { className: 'font-black text-lg' }, 'تصدير بياناتك'), h('p', { className: 'text-sm text-slate-400 leading-7' }, 'صدّر المظهر والمجموعات والسجلات المستوردة/اليدوية في ملف JSON قابل للاستعادة. يمكن أيضًا تصدير دفتر المشاهدة بصيغة CSV.'), h('button', { className: primaryBtn, onClick: exportBackup }, 'تنزيل نسخة JSON'), h('button', { className: secondaryBtn, onClick: exportDiaryCsv }, 'تنزيل دفتر المشاهدة CSV')), h('div', { className: panelClass + ' space-y-3' }, h('h2', { className: 'font-black text-lg' }, 'استعادة نسخة'), h('p', { className: 'text-sm text-slate-400 leading-7' }, 'اقبل فقط نسخة JSON أنشأتها بنفسك أو تثق بمصدرها. الاستيراد يستبدل بيانات الاستوديو المحلية بعد موافقتك، ولا يغيّر Firebase أو الحساب أو المشغّل.'), h('label', { className: secondaryBtn + ' inline-flex cursor-pointer items-center gap-2' }, h(Icon, { name: 'file-up', className: 'w-4 h-4' }), backupBusy ? 'جارٍ الفحص…' : 'اختيار نسخة JSON', h('input', { type: 'file', accept: '.json,application/json', className: 'hidden', onChange: importBackup, disabled: backupBusy })), h('p', { className: 'text-[11px] text-slate-500' }, `المجموعات: ${data.collections.length} · السجلات: ${data.entries.length} · قوالب الثيم: ${data.savedThemes.length}`))),
-        h('p', { className: 'text-[11px] text-slate-500 leading-6 px-1' }, 'حالة المزامنة: محلية فقط. لم تُفعّل مزامنة Firebase لدفتر أو مظهر الاستوديو لأن ملف الواجهة لا يتضمن قواعد Firebase Security Rules أو جلسة Firebase Authentication موثوقة تسمح بإثبات ملكية المستخدم.')));
-}
 function App() {
     // ابدأ فورًا بالكتالوج المحفوظ إن وُجد، ولا تجعل فتح الواجهة متوقفًا على Firebase.
     const [titles, setTitles] = useState(() => readTitleCache().filter(t => t && t.status === 'published'));
@@ -8645,7 +8272,6 @@ function App() {
     const [watched, setWatched] = useState(() => loadWatched(currentUser && currentUser.username));
     const [watchProgress, setWatchProgress] = useState(() => loadWatchProgressCache(currentUser && currentUser.id));
     const [watchProgressReady, setWatchProgressReady] = useState(false);
-    useEffect(() => { applyCinadamPlusTheme(readCinadamPlusData(currentUser).profile); }, [currentUser && currentUser.id]);
     useEffect(() => { setWatched(loadWatched(currentUser && currentUser.username)); }, [currentUser && currentUser.username]);
     useEffect(() => {
         const uid = currentUser && currentUser.id;
@@ -8863,7 +8489,7 @@ function App() {
         });
     }, []);
     const setView = (v) => {
-        const allowedViews = new Set(['home','movie','series','anime','lists','requests','settings','profile','studio','admin']);
+        const allowedViews = new Set(['home','movie','series','anime','lists','requests','settings','profile','admin']);
         if (!allowedViews.has(v)) v = 'home';
         if (v === 'admin') {
             if (!currentUser || !(currentUser.username === 'mavilovelife' || currentUser.isModerator)) {
@@ -9065,7 +8691,7 @@ function App() {
         React.createElement(Header, { currentUser: currentUser, view: view, setView: setView, search: search, setSearch: setSearch, onOpenAccount: () => setAccountSheet(true), onOpenProfile: openProfile, onOpenTitleFromNotif: (id) => { const t = titles.find(x => x.id === id && x.status === 'published'); if (t)
                 openTitle(t); } }),
         React.createElement("main", { className: "flex-1 max-w-7xl w-full mx-auto px-4 py-6 md:py-8" },
-            React.createElement("div", { key: searching ? 'search' : view, className: "page-fade-in" }, searching ? (React.createElement(TypeGrid, { title: `نتائج البحث عن "${search}"`, items: mainList, onOpen: openTitle, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0646\u062A\u0627\u0626\u062C \u0645\u0637\u0627\u0628\u0642\u0629.", watchedMap: watched })) : view === 'home' ? (React.createElement(HomeView, { items: published, onOpen: openTitleFromContinue, watchedMap: watched, watchProgress: watchProgress })) : (view === 'movie' || view === 'series' || view === 'anime') ? (React.createElement(TypeGrid, { title: TYPE_PLURAL[view], items: published.filter(t => t.type === view), onOpen: openTitle, showGenreFilter: true, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u0628\u0639\u062F.", watchedMap: watched })) : view === 'lists' ? (React.createElement(ListsView, { currentUser: currentUser, titles: published, onOpen: openTitle, onOpenAuth: setAuthModal })) : view === 'requests' ? (React.createElement(RequestsView, { currentUser: currentUser, onOpenAuth: setAuthModal })) : view === 'settings' ? (React.createElement(SettingsView, { currentUser: currentUser, onUpdateName: handleUpdateName, onUpdateAvatar: handleUpdateAvatar, onOpenAuth: setAuthModal })) : view === 'studio' ? (React.createElement(CinadamStudio, { currentUser: currentUser, titles: published, onOpen: openTitle, onOpenAuth: setAuthModal })) : view === 'profile' ? (React.createElement(ProfileView, { username: profileTarget, currentUser: currentUser, titles: published, onOpen: openTitle, onOpenAuth: setAuthModal, onOpenProfile: openProfile })) : view === 'admin' ? (React.createElement(AdminPanel, { currentUser: currentUser, titles: titles, onOpenAuth: setAuthModal, moderators: moderators })) : null)),
+            React.createElement("div", { key: searching ? 'search' : view, className: "page-fade-in" }, searching ? (React.createElement(TypeGrid, { title: `نتائج البحث عن "${search}"`, items: mainList, onOpen: openTitle, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0646\u062A\u0627\u0626\u062C \u0645\u0637\u0627\u0628\u0642\u0629.", watchedMap: watched })) : view === 'home' ? (React.createElement(HomeView, { items: published, onOpen: openTitleFromContinue, watchedMap: watched, watchProgress: watchProgress })) : (view === 'movie' || view === 'series' || view === 'anime') ? (React.createElement(TypeGrid, { title: TYPE_PLURAL[view], items: published.filter(t => t.type === view), onOpen: openTitle, showGenreFilter: true, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u0628\u0639\u062F.", watchedMap: watched })) : view === 'lists' ? (React.createElement(ListsView, { currentUser: currentUser, titles: published, onOpen: openTitle, onOpenAuth: setAuthModal })) : view === 'requests' ? (React.createElement(RequestsView, { currentUser: currentUser, onOpenAuth: setAuthModal })) : view === 'settings' ? (React.createElement(SettingsView, { currentUser: currentUser, onUpdateName: handleUpdateName, onUpdateAvatar: handleUpdateAvatar, onOpenAuth: setAuthModal })) : view === 'profile' ? (React.createElement(ProfileView, { username: profileTarget, currentUser: currentUser, titles: published, onOpen: openTitle, onOpenAuth: setAuthModal, onOpenProfile: openProfile })) : view === 'admin' ? (React.createElement(AdminPanel, { currentUser: currentUser, titles: titles, onOpenAuth: setAuthModal, moderators: moderators })) : null)),
         React.createElement(MobileBottomNav, { view: view, setView: setView }),
         React.createElement(ToastHost, null),
         activeTitle && (React.createElement(TitleModal, { title: activeTitle, allTitles: published, currentUser: currentUser, liked: likedIds.includes(activeTitle.id), getRole: getRole, onLike: () => toggleLike(activeTitle), onClose: () => { setActiveTitle(null); if (new URLSearchParams(location.search).get('t'))
