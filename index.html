@@ -717,8 +717,8 @@ function normalizeTitlePlaybackData(title) {
     clean.updatedAt = Number(clean.updatedAt) || 0;
     clean.publishedAt = Number(clean.publishedAt) || 0;
     clean.genres = normalizeGenresValue(clean.genres);
-    clean.videoUrl = normalizeVideoUrl(clean.videoUrl || '');
-    clean.videoSources = normalizeVideoSources(clean.videoSources);
+    clean.videoUrl = toStoredPlaybackUrl(normalizeVideoUrl(clean.videoUrl || ''));
+    clean.videoSources = toStoredPlaybackSources(clean.videoSources);
     clean.subtitleUrl = normalizeSubtitleUrl(clean.subtitleUrl || clean.subtitleURL || '');
     clean.subtitleOffset = Number(clean.subtitleOffset) || 0;
     clean.seasons = normalizeSeasonsValue(clean.seasons).map(season => ({
@@ -727,8 +727,8 @@ function normalizeTitlePlaybackData(title) {
             ...ep,
             title: String(ep.title || ep.name || '').trim(),
             runtimeMinutes: Number(ep.runtimeMinutes ?? ep.runtime) || 0,
-            videoUrl: normalizeVideoUrl(ep.videoUrl || ''),
-            videoSources: normalizeVideoSources(ep.videoSources),
+            videoUrl: toStoredPlaybackUrl(normalizeVideoUrl(ep.videoUrl || '')),
+            videoSources: toStoredPlaybackSources(ep.videoSources),
             subtitleUrl: normalizeSubtitleUrl(ep.subtitleUrl || ep.subtitleURL || ''),
             subtitleOffset: Number(ep.subtitleOffset) || 0,
             number: Number(ep.number) || 1
@@ -1252,8 +1252,8 @@ const CINEMANA_STREAM_PROXY_BASES = (() => {
     } catch (_) {}
     return [...new Set([
         explicit,
-        stored,
         'https://improvements-photography-oaks-consistently.trycloudflare.com',
+        stored,
         CINEMANA_PROXY
     ].map(v => String(v || '').trim().replace(/\/+$/, '')).filter(Boolean))];
 })();
@@ -1711,7 +1711,7 @@ async function enrichTmdbSeasonsWithCinemana(seasons, cinEpisodes, onProgress) {
         if (cinEp && cinEp.nb != null)
             tasks.push({ si, ei, id: String(cinEp.nb) });
     }));
-    const out = (seasons || []).map(s => ({ ...s, episodes: (s.episodes || []).map(e => ({ ...e, videoUrl: normalizeVideoUrl(e.videoUrl || ''), videoSources: normalizeVideoSources(e.videoSources) })) }));
+    const out = (seasons || []).map(s => ({ ...s, episodes: (s.episodes || []).map(e => ({ ...e, videoUrl: toStoredPlaybackUrl(normalizeVideoUrl(e.videoUrl || '')), videoSources: toStoredPlaybackSources(e.videoSources) })) }));
     const chunkSize = 5;
     for (let i = 0; i < tasks.length; i += chunkSize) {
         const chunk = tasks.slice(i, i + chunkSize);
@@ -1729,8 +1729,8 @@ async function enrichTmdbSeasonsWithCinemana(seasons, cinEpisodes, onProgress) {
                 ep.cinemanaId = String(r.id);
             if (!ep || !r.sources.length)
                 return;
-            ep.videoSources = r.sources;
-            ep.videoUrl = r.sources[0].url;
+            ep.videoSources = toStoredPlaybackSources(r.sources);
+            ep.videoUrl = toStoredPlaybackUrl(r.sources[0].url);
             ep.subtitleUrl = r.sources[0].subtitleUrl || ep.subtitleUrl || '';
         });
         if (onProgress)
@@ -3490,6 +3490,8 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
     const playbackAttempt = playbackAttemptState.src === src ? playbackAttemptState.index : 0;
     const activePlaybackCandidate = playbackCandidates[Math.min(playbackAttempt, playbackCandidates.length - 1)] || { url: normalizeVideoUrl(src || ''), mode: '' };
     const activePlaybackSrc = activePlaybackCandidate.url;
+    // src قد يكون رابط البروكسي مسبقًا؛ تعرّف على الرابط الأصلي حتى لا يتعطل fallback.
+    const isShabakatyPlayback = isShabakatyMp4Url(src) || !!getShabakatyOriginalFromProxy(src);
     const failedPlaybackAttemptRef = useRef('');
     const tryPlaybackFallback = () => {
         const key = `${src}|${playbackAttempt}`;
@@ -3756,13 +3758,13 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         };
         setup();
         const markPlaybackSuccess = () => {
-            if (!isShabakatyMp4Url(src) || !activePlaybackCandidate.mode) return;
+            if (!isShabakatyPlayback || !activePlaybackCandidate.mode) return;
             try { localStorage.setItem('cinadam_shabakaty_playback_mode', activePlaybackCandidate.mode); } catch (_) {}
         };
         videoEl.addEventListener('playing', markPlaybackSuccess);
         const stuckTimer = setTimeout(() => {
             if (cancelled || videoEl.readyState >= 2) return;
-            if (isShabakatyMp4Url(src)) tryPlaybackFallback();
+            if (isShabakatyPlayback) tryPlaybackFallback();
             else setLoading(false);
         }, CV_LOW_POWER ? 22000 : 18000);
         return () => {
@@ -7073,8 +7075,8 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
                 episodeAutoLabel(e),
                 "\u00BB")),
         React.createElement("div", { className: "mt-3.5" },
-            React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u062D\u0644\u0642\u0629 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: e.videoUrl, onChange: v => set('videoUrl', v), folder: "episodes", accept: "video/*" })),
-        React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb) }),
+            React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u062D\u0644\u0642\u0629 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: e.videoUrl, onChange: v => set('videoUrl', toStoredPlaybackUrl(v)), folder: "episodes", accept: "video/*" })),
+        React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', toStoredPlaybackUrl(url)), onGenerateQualities: sources => set('videoSources', toStoredPlaybackSources(sources)), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb) }),
         React.createElement(SubtitleHelper, { cinemanaId: e.cinemanaId, value: e.subtitleUrl || '', onChange: v => set('subtitleUrl', v), sourceId: sourceId, title: seriesName, year: new Date().getFullYear(), type: "series", season: seasonNumber, episode: e.number, folder: "subtitles", offset: e.subtitleOffset || 0, onOffsetChange: v => set('subtitleOffset', v) }),
         React.createElement("div", { className: "grid sm:grid-cols-3 gap-3.5 mt-3.5" },
             React.createElement("div", null,
@@ -7566,8 +7568,8 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             React.createElement("textarea", { value: form.description, onChange: e => set('description', e.target.value), rows: 3, className: inputCls })),
         form.type === 'movie' ? (React.createElement("div", null,
             React.createElement("div", { className: "mt-5" },
-                React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u0644\u0645 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: form.videoUrl, onChange: v => set('videoUrl', v), folder: "videos", accept: "video/*" })),
-            React.createElement(CinemanaHelper, { kind: form.type === 'anime' ? 'anime' : 'movie', defaultTitle: form.name, defaultYear: form.year, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb), onImportTmdb: async (item) => {
+                React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u0644\u0645 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: form.videoUrl, onChange: v => set('videoUrl', toStoredPlaybackUrl(v)), folder: "videos", accept: "video/*" })),
+            React.createElement(CinemanaHelper, { kind: form.type === 'anime' ? 'anime' : 'movie', defaultTitle: form.name, defaultYear: form.year, onGenerate: (url) => set('videoUrl', toStoredPlaybackUrl(url)), onGenerateQualities: sources => set('videoSources', toStoredPlaybackSources(sources)), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb), onImportTmdb: async (item) => {
                     if (sourceId) return { patch: {}, sourceId, imdbId: '', tmdbId: '' };
                     const r = await importFromTmdbTitle(cinemanaTitle(item), form.type, cinemanaYear(item) || form.year, { withEpisodes: false });
                     setSourceId(r.sourceId || '');
