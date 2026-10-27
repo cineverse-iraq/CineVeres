@@ -3435,7 +3435,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
     };
     const [loading, setLoading] = useState(true);
     const [playbackAttemptState, setPlaybackAttemptState] = useState({ src: '', index: 0 });
-    const playbackCandidates = useMemo(() => getVideoPlaybackCandidates(src), [src]);
+    const playbackCandidates = React.useMemo(() => getVideoPlaybackCandidates(src), [src]);
     // نربط المحاولة بعنوان src حتى لا ينتقل رقم المحاولة من فيلم/حلقة إلى غيره.
     const playbackAttempt = playbackAttemptState.src === src ? playbackAttemptState.index : 0;
     const activePlaybackCandidate = playbackCandidates[Math.min(playbackAttempt, playbackCandidates.length - 1)] || { url: normalizeVideoUrl(src || ''), mode: '' };
