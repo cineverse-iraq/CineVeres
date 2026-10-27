@@ -1310,15 +1310,16 @@ function getVideoPlaybackCandidates(rawUrl) {
     const add = (url, mode) => {
         if (url && !candidates.some(c => c.url === url)) candidates.push({ url, mode });
     };
-    // الرابط المحفوظ عبر البروكسي يُستخدم كما هو أولًا، حتى لا نغلفه مرتين.
+    // جرّب بوابات البروكسي الحالية أولًا؛ الرابط المحفوظ قد يشير إلى نفق قديم تغيّر عنوانه.
+    for (const base of CINEMANA_STREAM_PROXY_BASES) {
+        const proxyUrl = makeShabakatyProxyUrl(directUrl, base);
+        if (proxyUrl && proxyUrl !== directUrl) add(proxyUrl, `proxy:${base}`);
+    }
+    // إن كان الرابط المحفوظ يستخدم بوابة مختلفة، نجربه بعد البوابات المهيأة الحالية.
     if (originalFromProxy) {
         let mode = 'proxy';
         try { mode = `proxy:${new URL(normalized).origin}`; } catch (_) {}
         add(normalized, mode);
-    }
-    for (const base of CINEMANA_STREAM_PROXY_BASES) {
-        const proxyUrl = makeShabakatyProxyUrl(directUrl, base);
-        if (proxyUrl && proxyUrl !== directUrl) add(proxyUrl, `proxy:${base}`);
     }
     // الرابط المباشر آخر احتياط فقط إذا فشلت جميع بوابات البروكسي.
     add(directUrl, 'direct');
@@ -4324,7 +4325,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
     return (React.createElement("div", { ref: wrapRef, className: `video-crop-wrap cv-player-stage ${fakeFullscreen ? 'ios-fake-fullscreen' : ''}${!barVisible ? ' cv-nocursor' : ''}`, style: fakeFullscreen ? undefined : playerStageStyle, onMouseMove: showBarTemporarily, onPointerDown: onPlayerPointerDown, onPointerMove: onPlayerPointerMove, onPointerUp: onPlayerPointerUp, onPointerCancel: onPlayerPointerUp, onClick: onStageClick },
         loading && (React.createElement("div", { className: "absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none z-10" },
             React.createElement("div", { className: "w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan yt-spinner" }))),
-        React.createElement("video", { ref: videoRef, controls: false, autoPlay: true, playsInline: true, "webkit-playsinline": "true", "x5-playsinline": "true", preload: "metadata", onCanPlay: () => setLoading(false), onPlaying: () => setLoading(false), onLoadedData: () => setLoading(false), onError: () => { tryPlaybackFallback(); }, style: videoStyle }, subtitleSrc && React.createElement("track", { key: subtitleSrc, kind: "subtitles", src: subtitleSrc, srcLang: "ar", label: "\u0627\u0644\u0639\u0631\u0628\u064A\u0629", default: true, ref: node => { if (node && node.track)
+        React.createElement("video", { key: activePlaybackSrc, ref: videoRef, controls: false, autoPlay: true, playsInline: true, "webkit-playsinline": "true", "x5-playsinline": "true", preload: "metadata", onCanPlay: () => setLoading(false), onPlaying: () => setLoading(false), onLoadedData: () => setLoading(false), onError: e => { const el = e && e.currentTarget; if (el && el.dataset && el.dataset.playbackCandidate && el.dataset.playbackCandidate !== activePlaybackSrc) return; tryPlaybackFallback(); }, "data-playback-candidate": activePlaybackSrc, style: videoStyle }, subtitleSrc && React.createElement("track", { key: subtitleSrc, kind: "subtitles", src: subtitleSrc, srcLang: "ar", label: "\u0627\u0644\u0639\u0631\u0628\u064A\u0629", default: true, ref: node => { if (node && node.track)
                 node.track.mode = subtitleOn ? 'showing' : 'hidden'; } })),
         !isIOS && subtitleOn && activeCues.length > 0 && React.createElement(SubtitleOverlay, { videoRef: videoRef, cues: activeCues, shiftMs: subtitleShift, prefs: subPrefs, lifted: barVisible }),
         episodeLabel && (React.createElement("div", { className: `absolute inset-x-0 top-0 z-20 p-3 md:p-4 bg-gradient-to-b from-black/80 to-transparent transition-opacity duration-300 ${barVisible ? 'opacity-100' : 'opacity-0'}` },
@@ -5168,6 +5169,9 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                     }
                 }
                 if (requestId !== playRequestRef.current) return;
+                // طبّق تحويل Shabakaty عند نقطة التشغيل أيضًا، حتى لو كانت بيانات Firebase قديمة أو رجع رابط جديد مباشر.
+                url = toStoredPlaybackUrl(url);
+                sources = toStoredPlaybackSources(sources);
                 setPlayingUrl(url);
                 setPlayingMeta({ ...title, videoUrl: url, videoSources: sources, playbackProvider: cinemanaId ? 'cinemana' : (title.playbackProvider || ''), subtitleUrl: title.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: title.subtitlePublicUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
                 setPlayingLabel(title.name);
@@ -5223,6 +5227,9 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 }
             }
             if (requestId !== playRequestRef.current) return;
+            // نفس التحويل ينطبق على كل حلقة عند بدء التشغيل، وليس الأفلام فقط.
+            url = toStoredPlaybackUrl(url);
+            sources = toStoredPlaybackSources(sources);
             setPlayingUrl(url);
             setPlayingMeta({ ...ep, videoUrl: url, videoSources: sources, playbackProvider: cinemanaId ? 'cinemana' : (ep.playbackProvider || ''), subtitleUrl: ep.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: ep.subtitlePublicUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
             setPlayingSeasonNumber(seasonNumber != null ? seasonNumber : null);
@@ -5321,8 +5328,9 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         else if (onSaveWatchProgress && title.type !== 'movie' && playingSeasonNumber != null && playingMeta && playingMeta.number != null) onSaveWatchProgress(title.id, { kind: 'episode', season: playingSeasonNumber, episode: playingMeta.number, position: Number(at)||0, duration: Number(playingDurationSec)||0, completed: false, updatedAt: Date.now(), titleName: title.name, poster: title.poster, label: playingLabel });
         setVideoError(false);
         setResumeAt(Number(at) || 0);
-        setPlayingMeta(prev => ({ ...prev, videoUrl: url, subtitleUrl: normalizeSubtitleUrl((quality && quality.subtitleUrl) || prev.subtitleUrl || '') }));
-        setPlayingUrl(normalizeVideoUrl(url));
+        const playbackUrl = toStoredPlaybackUrl(url);
+        setPlayingMeta(prev => ({ ...prev, videoUrl: playbackUrl, subtitleUrl: normalizeSubtitleUrl((quality && quality.subtitleUrl) || prev.subtitleUrl || '') }));
+        setPlayingUrl(playbackUrl);
     };
     const shareLink = () => {
         const url = `${location.origin}${location.pathname}?t=${title.id}`;
