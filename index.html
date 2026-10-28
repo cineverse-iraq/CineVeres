@@ -1241,7 +1241,7 @@ const CINEMANA_PROXY = (() => {
     if (isLanPage) return `http://${host}:8787`;
     return isLocalPage ? 'http://localhost:8787' : 'https://api.cinadam.xyz';
 })();
-// روابط Shabakaty تُحوَّل إلى /stream قبل حفظها، وتُجرَّب بوابة البروكسي أولًا أثناء التشغيل.
+// روابط Shabakaty تُحفظ بصيغة proxy؛ التشغيل يجرب CDN المباشر أولًا ثم البروكسي عند الفشل/التقطّع.
 // رابط trycloudflare مؤقت بطبيعته؛ يمكن تحديد عنوان ثابت عبر window.CINEMANA_STREAM_PROXY_URL
 // أو localStorage.cinemana_stream_proxy_url إذا كان متوفرًا.
 const CINEMANA_STREAM_PROXY_BASES = (() => {
@@ -1310,30 +1310,20 @@ function getVideoPlaybackCandidates(rawUrl) {
     const add = (url, mode) => {
         if (url && !candidates.some(c => c.url === url)) candidates.push({ url, mode });
     };
-    // جرّب بوابات البروكسي الحالية أولًا؛ الرابط المحفوظ قد يشير إلى نفق قديم تغيّر عنوانه.
+    // مهم: جرّب رابط CDN المباشر أولًا؛ على Earthlink غالبًا هو الأسرع.
+    // إذا فشل أو بدأ يتوقف بسبب حجب الشبكة/ضعف الوصول، ينتقل المشغّل إلى البروكسي.
+    add(directUrl, 'direct');
     for (const base of CINEMANA_STREAM_PROXY_BASES) {
         const proxyUrl = makeShabakatyProxyUrl(directUrl, base);
         if (proxyUrl && proxyUrl !== directUrl) add(proxyUrl, `proxy:${base}`);
     }
-    // إن كان الرابط المحفوظ يستخدم بوابة مختلفة، نجربه بعد البوابات المهيأة الحالية.
+    // إذا كان الرابط المخزن يستخدم نفقًا مختلفًا عن الإعدادات الحالية، نجرّبه كبديل إضافي.
     if (originalFromProxy) {
         let mode = 'proxy';
         try { mode = `proxy:${new URL(normalized).origin}`; } catch (_) {}
         add(normalized, mode);
     }
-    // الرابط المباشر آخر احتياط فقط إذا فشلت جميع بوابات البروكسي.
-    add(directUrl, 'direct');
-    try {
-        const preferred = localStorage.getItem('cinadam_shabakaty_playback_mode_v2') || '';
-        // نتذكر بوابة البروكسي التي نجحت، لكن الرابط المباشر يبقى احتياطًا لا يتجاوز البروكسي.
-        if (String(preferred).startsWith('proxy:')) {
-            const preferredIndex = candidates.findIndex(c => c.mode === preferred);
-            if (preferredIndex > 0) candidates.unshift(candidates.splice(preferredIndex, 1)[0]);
-        } else if (preferred === 'proxy') {
-            const preferredIndex = candidates.findIndex(c => String(c.mode).startsWith('proxy:'));
-            if (preferredIndex > 0) candidates.unshift(candidates.splice(preferredIndex, 1)[0]);
-        }
-    } catch (_) {}
+    // لا نستخدم تفضيل proxy محفوظًا بين الشبكات: الجهاز نفسه قد ينتقل بين Earthlink وشبكة أخرى.
     return candidates;
 }
 const SUBTITLE_PUBLIC_BASE = (() => {
@@ -3762,9 +3752,6 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         // HAVE_CURRENT_DATA ثم تتوقف، وكان هذا يترك علامة التحميل تدور بلا نهاية.
         let candidateHasPlayed = false;
         let lastProgressPosition = Number(videoEl.currentTime) || 0;
-        let stableProgressSeconds = 0;
-        let lastProgressWallClock = 0;
-        let stableModeSaved = false;
         let sourceStallTimer = null;
         let startupTimer = null;
         const clearSourceStallTimer = () => {
@@ -3782,49 +3769,46 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         };
         const observePlaybackProgress = () => {
             const now = Number(videoEl.currentTime) || 0;
-            const wallNow = Date.now();
             if (videoEl.paused || now <= lastProgressPosition + 0.12) return;
-            const mediaDelta = now - lastProgressPosition;
-            const wallDelta = lastProgressWallClock ? wallNow - lastProgressWallClock : 0;
-            // لا نعتبر قفزة seek/استئناف المشاهدة تقدمًا مستقرًا؛ يجب أن يتحرك الفيديو فعليًا لعدة ثوانٍ.
-            if (mediaDelta > 0.1 && mediaDelta <= 2.5 && (!wallDelta || wallDelta <= 2500)) {
-                stableProgressSeconds += mediaDelta;
-            } else {
-                stableProgressSeconds = 0;
-            }
             lastProgressPosition = now;
-            lastProgressWallClock = wallNow;
             markPlaybackSuccess();
-            // لا نحفظ مزودًا مفضّلًا لمجرد بدء لحظي قد يتبعه تقطيع؛ احفظه بعد 12 ثانية من التقدم الفعلي.
-            if (!stableModeSaved && isShabakatyPlayback && String(activePlaybackCandidate.mode || '').startsWith('proxy:') && stableProgressSeconds >= 12) {
-                try { localStorage.setItem('cinadam_shabakaty_playback_mode_v2', activePlaybackCandidate.mode); } catch (_) {}
-                stableModeSaved = true;
-            }
+        };
+        const getBufferedAheadSeconds = () => {
+            const t = Math.max(0, Number(videoEl.currentTime) || 0);
+            try {
+                const ranges = videoEl.buffered;
+                for (let i = 0; ranges && i < ranges.length; i++) {
+                    const start = ranges.start(i);
+                    const end = ranges.end(i);
+                    // تجاهل البيانات المحمّلة خلف موضع المشاهدة؛ المهم ما تبقى أمام المشاهد.
+                    if (start <= t + 0.15 && end >= t) return Math.max(0, end - t);
+                }
+            } catch (_) {}
+            return 0;
         };
         const watchSourceStall = () => {
             clearSourceStallTimer();
-            if (cancelled || !isShabakatyPlayback || videoEl.ended) return;
+            if (cancelled || !isShabakatyPlayback || videoEl.ended || videoEl.paused) return;
             const positionAtStall = Number(videoEl.currentTime) || 0;
             sourceStallTimer = setTimeout(() => {
                 sourceStallTimer = null;
                 if (cancelled || videoEl.paused || videoEl.ended) return;
                 const current = Number(videoEl.currentTime) || 0;
-                // لا نبدّل المصدر إذا كان الفيديو ما زال يتقدم فعلًا.
+                // إذا استمر التقدم فلا تبدّل المصدر، حتى لا نقطع تشغيلًا سليمًا.
                 if (current > positionAtStall + 0.12) return;
-                stableProgressSeconds = 0;
-                lastProgressWallClock = 0;
-                // انتظر أكثر قبل تبديل المصدر؛ نقص الـbuffer وحده لا يعني أن الرابط معطوب.
-                // جرّب مصدرًا بديلًا فقط عند خطأ وسائط حقيقي أو عندما لا يملك المتصفح أي مصدر صالح.
                 const noSource = videoEl.networkState === videoEl.NETWORK_NO_SOURCE;
-                const noBufferedData = !videoEl.buffered || videoEl.buffered.length === 0;
-                if (videoEl.error || noSource || (noBufferedData && videoEl.readyState < 2)) {
+                const ahead = getBufferedAheadSeconds();
+                const starving = videoEl.readyState < 3 && ahead < (CV_LOW_POWER ? 1.0 : 1.5);
+                // فشل المصدر أو نفاد الـbuffer أمام موضع التشغيل يعني أن الرابط الحالي لا يواكب القراءة.
+                // عندها انتقل إلى البروكسي التالي؛ على Earthlink سيبقى الرابط المباشر أول خيار.
+                if (videoEl.error || noSource || starving) {
                     setLoading(false);
                     tryPlaybackFallback();
                     return;
                 }
-                // إذا كان المصدر ما زال يجيب بيانات ببطء، لا نبدله تلقائيًا ولا نترك الدوّار يغطي الشاشة.
+                // لا يوجد خطأ مؤكد؛ لا تترك الدوّارة تغطي الفيديو لمجرد حدث stalled قصير.
                 setLoading(false);
-            }, CV_LOW_POWER ? 20000 : 16000);
+            }, CV_LOW_POWER ? 9500 : 7000);
         };
         videoEl.addEventListener('playing', markPlaybackSuccess);
         videoEl.addEventListener('timeupdate', observePlaybackProgress);
@@ -3844,7 +3828,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
                 return;
             }
             setLoading(false);
-        }, CV_LOW_POWER ? 30000 : 25000);
+        }, CV_LOW_POWER ? 15000 : 12000);
         return () => {
             cancelled = true;
             videoEl.removeEventListener('canplay', onReady);
@@ -3992,7 +3976,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         const onLoadedMeta = () => { const d = videoEl.duration || 0; setCtrl(c2 => ({ ...c2, duration: d })); onDuration && onDuration(d); };
         const onTimeUpdate = () => {
             const now = performance.now();
-            if (now - lastUiTickRef.current < 250)
+            if (now - lastUiTickRef.current < (CV_LOW_POWER ? 900 : 500))
                 return;
             lastUiTickRef.current = now;
             if (!videoEl.paused && videoEl.readyState >= 2)
@@ -4003,7 +3987,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         };
         const onProgress = () => {
             const now = performance.now();
-            if (now - lastProgressTickRef.current < 650)
+            if (now - lastProgressTickRef.current < 1400)
                 return;
             lastProgressTickRef.current = now;
             try {
@@ -4405,7 +4389,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
     return (React.createElement("div", { ref: wrapRef, className: `video-crop-wrap cv-player-stage ${fakeFullscreen ? 'ios-fake-fullscreen' : ''}${!barVisible ? ' cv-nocursor' : ''}`, style: fakeFullscreen ? undefined : playerStageStyle, onMouseMove: showBarTemporarily, onPointerDown: onPlayerPointerDown, onPointerMove: onPlayerPointerMove, onPointerUp: onPlayerPointerUp, onPointerCancel: onPlayerPointerUp, onClick: onStageClick },
         loading && (React.createElement("div", { className: "absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none z-10" },
             React.createElement("div", { className: "w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan yt-spinner" }))),
-        React.createElement("video", { key: activePlaybackSrc, ref: videoRef, controls: false, autoPlay: true, playsInline: true, "webkit-playsinline": "true", "x5-playsinline": "true", preload: "auto", onCanPlay: () => setLoading(false), onPlaying: () => setLoading(false), onLoadedData: () => setLoading(false), onError: e => { const el = e && e.currentTarget; if (el && el.dataset && el.dataset.playbackCandidate && el.dataset.playbackCandidate !== activePlaybackSrc) return; setLoading(false); tryPlaybackFallback(); }, "data-playback-candidate": activePlaybackSrc, style: videoStyle }, subtitleSrc && React.createElement("track", { key: subtitleSrc, kind: "subtitles", src: subtitleSrc, srcLang: "ar", label: "\u0627\u0644\u0639\u0631\u0628\u064A\u0629", default: true, ref: node => { if (node && node.track)
+        React.createElement("video", { key: activePlaybackSrc, ref: videoRef, controls: false, autoPlay: true, playsInline: true, "webkit-playsinline": "true", "x5-playsinline": "true", preload: "metadata", onCanPlay: () => setLoading(false), onPlaying: () => setLoading(false), onLoadedData: () => setLoading(false), onError: e => { const el = e && e.currentTarget; if (el && el.dataset && el.dataset.playbackCandidate && el.dataset.playbackCandidate !== activePlaybackSrc) return; setLoading(false); tryPlaybackFallback(); }, "data-playback-candidate": activePlaybackSrc, style: videoStyle }, subtitleSrc && React.createElement("track", { key: subtitleSrc, kind: "subtitles", src: subtitleSrc, srcLang: "ar", label: "\u0627\u0644\u0639\u0631\u0628\u064A\u0629", default: true, ref: node => { if (node && node.track)
                 node.track.mode = subtitleOn ? 'showing' : 'hidden'; } })),
         !isIOS && subtitleOn && activeCues.length > 0 && React.createElement(SubtitleOverlay, { videoRef: videoRef, cues: activeCues, shiftMs: subtitleShift, prefs: subPrefs, lifted: barVisible }),
         episodeLabel && (React.createElement("div", { className: `absolute inset-x-0 top-0 z-20 p-3 md:p-4 bg-gradient-to-b from-black/80 to-transparent transition-opacity duration-300 ${barVisible ? 'opacity-100' : 'opacity-0'}` },
