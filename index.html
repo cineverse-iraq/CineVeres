@@ -1324,7 +1324,7 @@ function getVideoPlaybackCandidates(rawUrl) {
     // الرابط المباشر آخر احتياط فقط إذا فشلت جميع بوابات البروكسي.
     add(directUrl, 'direct');
     try {
-        const preferred = localStorage.getItem('cinadam_shabakaty_playback_mode') || '';
+        const preferred = localStorage.getItem('cinadam_shabakaty_playback_mode_v2') || '';
         // نتذكر بوابة البروكسي التي نجحت، لكن الرابط المباشر يبقى احتياطًا لا يتجاوز البروكسي.
         if (String(preferred).startsWith('proxy:')) {
             const preferredIndex = candidates.findIndex(c => c.mode === preferred);
@@ -3762,6 +3762,9 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         // HAVE_CURRENT_DATA ثم تتوقف، وكان هذا يترك علامة التحميل تدور بلا نهاية.
         let candidateHasPlayed = false;
         let lastProgressPosition = Number(videoEl.currentTime) || 0;
+        let stableProgressSeconds = 0;
+        let lastProgressWallClock = 0;
+        let stableModeSaved = false;
         let sourceStallTimer = null;
         let startupTimer = null;
         const clearSourceStallTimer = () => {
@@ -3772,20 +3775,30 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         };
         const markPlaybackSuccess = () => {
             candidateHasPlayed = true;
-            lastProgressPosition = Number(videoEl.currentTime) || lastProgressPosition;
             clearSourceStallTimer();
             if (startupTimer) { clearTimeout(startupTimer); startupTimer = null; }
             clearBufferingTimer();
             setLoading(false);
-            if (isShabakatyPlayback && activePlaybackCandidate.mode) {
-                try { localStorage.setItem('cinadam_shabakaty_playback_mode', activePlaybackCandidate.mode); } catch (_) {}
-            }
         };
         const observePlaybackProgress = () => {
             const now = Number(videoEl.currentTime) || 0;
-            if (!videoEl.paused && now > lastProgressPosition + 0.12) {
-                lastProgressPosition = now;
-                markPlaybackSuccess();
+            const wallNow = Date.now();
+            if (videoEl.paused || now <= lastProgressPosition + 0.12) return;
+            const mediaDelta = now - lastProgressPosition;
+            const wallDelta = lastProgressWallClock ? wallNow - lastProgressWallClock : 0;
+            // لا نعتبر قفزة seek/استئناف المشاهدة تقدمًا مستقرًا؛ يجب أن يتحرك الفيديو فعليًا لعدة ثوانٍ.
+            if (mediaDelta > 0.1 && mediaDelta <= 2.5 && (!wallDelta || wallDelta <= 2500)) {
+                stableProgressSeconds += mediaDelta;
+            } else {
+                stableProgressSeconds = 0;
+            }
+            lastProgressPosition = now;
+            lastProgressWallClock = wallNow;
+            markPlaybackSuccess();
+            // لا نحفظ مزودًا مفضّلًا لمجرد بدء لحظي قد يتبعه تقطيع؛ احفظه بعد 12 ثانية من التقدم الفعلي.
+            if (!stableModeSaved && isShabakatyPlayback && String(activePlaybackCandidate.mode || '').startsWith('proxy:') && stableProgressSeconds >= 12) {
+                try { localStorage.setItem('cinadam_shabakaty_playback_mode_v2', activePlaybackCandidate.mode); } catch (_) {}
+                stableModeSaved = true;
             }
         };
         const watchSourceStall = () => {
@@ -3798,11 +3811,20 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
                 const current = Number(videoEl.currentTime) || 0;
                 // لا نبدّل المصدر إذا كان الفيديو ما زال يتقدم فعلًا.
                 if (current > positionAtStall + 0.12) return;
-                if (videoEl.readyState < 3 || videoEl.error) {
+                stableProgressSeconds = 0;
+                lastProgressWallClock = 0;
+                // انتظر أكثر قبل تبديل المصدر؛ نقص الـbuffer وحده لا يعني أن الرابط معطوب.
+                // جرّب مصدرًا بديلًا فقط عند خطأ وسائط حقيقي أو عندما لا يملك المتصفح أي مصدر صالح.
+                const noSource = videoEl.networkState === videoEl.NETWORK_NO_SOURCE;
+                const noBufferedData = !videoEl.buffered || videoEl.buffered.length === 0;
+                if (videoEl.error || noSource || (noBufferedData && videoEl.readyState < 2)) {
                     setLoading(false);
                     tryPlaybackFallback();
+                    return;
                 }
-            }, CV_LOW_POWER ? 12000 : 9000);
+                // إذا كان المصدر ما زال يجيب بيانات ببطء، لا نبدله تلقائيًا ولا نترك الدوّار يغطي الشاشة.
+                setLoading(false);
+            }, CV_LOW_POWER ? 20000 : 16000);
         };
         videoEl.addEventListener('playing', markPlaybackSuccess);
         videoEl.addEventListener('timeupdate', observePlaybackProgress);
@@ -3822,7 +3844,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
                 return;
             }
             setLoading(false);
-        }, CV_LOW_POWER ? 22000 : 18000);
+        }, CV_LOW_POWER ? 30000 : 25000);
         return () => {
             cancelled = true;
             videoEl.removeEventListener('canplay', onReady);
@@ -3999,7 +4021,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
             bufferingTimerRef.current = setTimeout(() => {
                 if (!videoEl.paused && videoEl.readyState < 3)
                     setLoading(true);
-            }, CV_LOW_POWER ? 850 : 650);
+            }, CV_LOW_POWER ? 2200 : 1800);
         };
         const onStalled = () => {
             if (videoEl.paused || videoEl.ended)
@@ -4008,7 +4030,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
             bufferingTimerRef.current = setTimeout(() => {
                 if (!videoEl.paused && videoEl.readyState < 3)
                     setLoading(true);
-            }, CV_LOW_POWER ? 1000 : 700);
+            }, CV_LOW_POWER ? 2400 : 2000);
         };
         const onPlaying = () => { clearBufferingTimer(); setLoading(false); };
         const onLoadedData = () => { clearBufferingTimer(); setLoading(false); };
@@ -4383,7 +4405,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
     return (React.createElement("div", { ref: wrapRef, className: `video-crop-wrap cv-player-stage ${fakeFullscreen ? 'ios-fake-fullscreen' : ''}${!barVisible ? ' cv-nocursor' : ''}`, style: fakeFullscreen ? undefined : playerStageStyle, onMouseMove: showBarTemporarily, onPointerDown: onPlayerPointerDown, onPointerMove: onPlayerPointerMove, onPointerUp: onPlayerPointerUp, onPointerCancel: onPlayerPointerUp, onClick: onStageClick },
         loading && (React.createElement("div", { className: "absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none z-10" },
             React.createElement("div", { className: "w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan yt-spinner" }))),
-        React.createElement("video", { key: activePlaybackSrc, ref: videoRef, controls: false, autoPlay: true, playsInline: true, "webkit-playsinline": "true", "x5-playsinline": "true", preload: "metadata", onCanPlay: () => setLoading(false), onPlaying: () => setLoading(false), onLoadedData: () => setLoading(false), onError: e => { const el = e && e.currentTarget; if (el && el.dataset && el.dataset.playbackCandidate && el.dataset.playbackCandidate !== activePlaybackSrc) return; setLoading(false); tryPlaybackFallback(); }, "data-playback-candidate": activePlaybackSrc, style: videoStyle }, subtitleSrc && React.createElement("track", { key: subtitleSrc, kind: "subtitles", src: subtitleSrc, srcLang: "ar", label: "\u0627\u0644\u0639\u0631\u0628\u064A\u0629", default: true, ref: node => { if (node && node.track)
+        React.createElement("video", { key: activePlaybackSrc, ref: videoRef, controls: false, autoPlay: true, playsInline: true, "webkit-playsinline": "true", "x5-playsinline": "true", preload: "auto", onCanPlay: () => setLoading(false), onPlaying: () => setLoading(false), onLoadedData: () => setLoading(false), onError: e => { const el = e && e.currentTarget; if (el && el.dataset && el.dataset.playbackCandidate && el.dataset.playbackCandidate !== activePlaybackSrc) return; setLoading(false); tryPlaybackFallback(); }, "data-playback-candidate": activePlaybackSrc, style: videoStyle }, subtitleSrc && React.createElement("track", { key: subtitleSrc, kind: "subtitles", src: subtitleSrc, srcLang: "ar", label: "\u0627\u0644\u0639\u0631\u0628\u064A\u0629", default: true, ref: node => { if (node && node.track)
                 node.track.mode = subtitleOn ? 'showing' : 'hidden'; } })),
         !isIOS && subtitleOn && activeCues.length > 0 && React.createElement(SubtitleOverlay, { videoRef: videoRef, cues: activeCues, shiftMs: subtitleShift, prefs: subPrefs, lifted: barVisible }),
         episodeLabel && (React.createElement("div", { className: `absolute inset-x-0 top-0 z-20 p-3 md:p-4 bg-gradient-to-b from-black/80 to-transparent transition-opacity duration-300 ${barVisible ? 'opacity-100' : 'opacity-0'}` },
