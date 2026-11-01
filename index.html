@@ -354,14 +354,8 @@
 
   <script>const { useState, useEffect, useRef, useLayoutEffect } = React;
 const firebaseConfig = {
-    apiKey: "AIzaSyBvA99K7rQXD94eQy8Yfjn3YWXX8h90Al4",
-    authDomain: "cinadam-de117.firebaseapp.com",
-    databaseURL: "https://cinadam-de117-default-rtdb.europe-west1.firebasedatabase.app",
-    projectId: "cinadam-de117",
-    storageBucket: "cinadam-de117.firebasestorage.app",
-    messagingSenderId: "312221486131",
-    appId: "1:312221486131:web:77fd2fc897b9d7caa52746",
-    measurementId: "G-R7QBQ6BCEM"
+        databaseURL: "https://cinadam-de117-default-rtdb.europe-west1.firebasedatabase.app",
+    storageBucket: "cinadam-de117.firebasestorage.app"
 };
 if (!firebase.apps.length)
     firebase.initializeApp(firebaseConfig);
@@ -574,50 +568,22 @@ function readTitleCache() {
         return [];
     }
 }
-function compactCatalogEntry(title) {
-    if (!title || typeof title !== 'object') return null;
-    const clean = {
-        id: String(title.id || '').trim(),
-        name: String(title.name || 'بدون اسم').trim(),
-        status: title.status || 'draft',
-        type: ['movie','series','anime'].includes(title.type) ? title.type : 'movie',
-        year: Number(title.year) || 0,
-        createdAt: Number(title.createdAt) || 0,
-        updatedAt: Number(title.updatedAt) || 0,
-        publishedAt: Number(title.publishedAt) || 0,
-        poster: String(title.poster || ''),
-        backdrop: String(title.backdrop || ''),
-        description: String(title.description || '').slice(0, 1800),
-        genres: normalizeGenresValue(title.genres),
-        featured: title.featured === true,
-        imdbRating: title.imdbRating || '',
-        rtRating: title.rtRating || '',
-        likes: Number(title.likes) || 0,
-        views: Number(title.views) || 0,
-        runtimeMinutes: Number(title.runtimeMinutes || title.runtime) || 0,
-        runtimeSeconds: Number(title.runtimeSeconds) || 0,
-        seasons: normalizeSeasonsValue(title.seasons).map(season => ({
-            number: Number(season.number) || 1,
-            episodes: season.episodes.map(ep => ({
-                number: Number(ep.number) || 1,
-                title: String(ep.title || ep.name || '').slice(0, 120),
-                runtimeMinutes: Number(ep.runtimeMinutes || ep.runtime) || 0
-            }))
-        })),
-        __catalogOnly: true
-    };
-    return clean;
-}
 function writeTitleCache(list) {
     try {
-        const published = (list || []).filter(t => t && t.status === 'published')
-            .map(compactCatalogEntry).filter(Boolean);
+        const published = (list || []).filter(t => t && t.status === 'published');
         const payload = JSON.stringify({ time: Date.now(), items: published });
-        if (payload.length > 3000000) return;
-        const save = () => { try { localStorage.setItem(CV_TITLE_CACHE_KEY, payload); } catch (e) { } };
-        if (window.requestIdleCallback) window.requestIdleCallback(save, { timeout: 1500 });
-        else setTimeout(save, 0);
-    } catch (e) { }
+        if (payload.length > 3000000)
+            return;
+        const save = () => { try {
+            localStorage.setItem(CV_TITLE_CACHE_KEY, payload);
+        }
+        catch (e) { } };
+        if (window.requestIdleCallback)
+            window.requestIdleCallback(save, { timeout: 1500 });
+        else
+            setTimeout(save, 0);
+    }
+    catch (e) { }
 }
 let toastListeners = [];
 let toastIdCounter = 0;
@@ -717,8 +683,8 @@ function normalizeTitlePlaybackData(title) {
     clean.updatedAt = Number(clean.updatedAt) || 0;
     clean.publishedAt = Number(clean.publishedAt) || 0;
     clean.genres = normalizeGenresValue(clean.genres);
-    clean.videoUrl = toStoredPlaybackUrl(normalizeVideoUrl(clean.videoUrl || ''));
-    clean.videoSources = toStoredPlaybackSources(clean.videoSources);
+    clean.videoUrl = normalizeVideoUrl(clean.videoUrl || '');
+    clean.videoSources = normalizeVideoSources(clean.videoSources);
     clean.subtitleUrl = normalizeSubtitleUrl(clean.subtitleUrl || clean.subtitleURL || '');
     clean.subtitleOffset = Number(clean.subtitleOffset) || 0;
     clean.seasons = normalizeSeasonsValue(clean.seasons).map(season => ({
@@ -727,8 +693,8 @@ function normalizeTitlePlaybackData(title) {
             ...ep,
             title: String(ep.title || ep.name || '').trim(),
             runtimeMinutes: Number(ep.runtimeMinutes ?? ep.runtime) || 0,
-            videoUrl: toStoredPlaybackUrl(normalizeVideoUrl(ep.videoUrl || '')),
-            videoSources: toStoredPlaybackSources(ep.videoSources),
+            videoUrl: normalizeVideoUrl(ep.videoUrl || ''),
+            videoSources: normalizeVideoSources(ep.videoSources),
             subtitleUrl: normalizeSubtitleUrl(ep.subtitleUrl || ep.subtitleURL || ''),
             subtitleOffset: Number(ep.subtitleOffset) || 0,
             number: Number(ep.number) || 1
@@ -1241,91 +1207,6 @@ const CINEMANA_PROXY = (() => {
     if (isLanPage) return `http://${host}:8787`;
     return isLocalPage ? 'http://localhost:8787' : 'https://api.cinadam.xyz';
 })();
-// روابط Shabakaty تُحفظ بصيغة proxy؛ التشغيل يجرب CDN المباشر أولًا ثم البروكسي عند الفشل/التقطّع.
-// رابط trycloudflare مؤقت بطبيعته؛ يمكن تحديد عنوان ثابت عبر window.CINEMANA_STREAM_PROXY_URL
-// أو localStorage.cinemana_stream_proxy_url إذا كان متوفرًا.
-const CINEMANA_STREAM_PROXY_BASES = (() => {
-    let explicit = '', stored = '';
-    try {
-        explicit = (typeof window !== 'undefined' && window.CINEMANA_STREAM_PROXY_URL) || '';
-        stored = (typeof localStorage !== 'undefined' && localStorage.getItem('cinemana_stream_proxy_url')) || '';
-    } catch (_) {}
-    return [...new Set([
-        explicit,
-        'https://improvements-photography-oaks-consistently.trycloudflare.com',
-        stored,
-        CINEMANA_PROXY
-    ].map(v => String(v || '').trim().replace(/\/+$/, '')).filter(Boolean))];
-})();
-function isShabakatyMp4Url(rawUrl) {
-    try {
-        const u = new URL(String(rawUrl || ''), window.location.href);
-        return u.protocol === 'https:' && /(^|\.)shabakaty\.com$/i.test(u.hostname) &&
-            (/\.(?:mp4|m4v)(?:$|[?#])/i.test(u.pathname + u.search) || /-mp4\//i.test(u.pathname));
-    } catch (_) { return false; }
-}
-function getShabakatyOriginalFromProxy(rawUrl) {
-    try {
-        const u = new URL(String(rawUrl || ''), window.location.href);
-        if (!/\/stream\/?$/i.test(u.pathname)) return '';
-        const original = u.searchParams.get('url') || '';
-        return isShabakatyMp4Url(original) ? normalizeVideoUrl(original) : '';
-    } catch (_) { return ''; }
-}
-function makeShabakatyProxyUrl(rawUrl, base) {
-    const directUrl = normalizeVideoUrl(rawUrl || '');
-    if (!directUrl || !isShabakatyMp4Url(directUrl) || !base) return directUrl;
-    try {
-        const u = new URL(String(base), window.location.href);
-        u.pathname = /\/stream\/?$/i.test(u.pathname)
-            ? u.pathname.replace(/\/+$/, '')
-            : u.pathname.replace(/\/+$/, '') + '/stream';
-        u.search = '';
-        u.hash = '';
-        u.searchParams.set('url', directUrl);
-        return u.toString();
-    } catch (_) { return directUrl; }
-}
-function toStoredPlaybackUrl(rawUrl) {
-    const normalized = normalizeVideoUrl(rawUrl || '');
-    if (!normalized) return normalized;
-    // لا نعيد تغليف رابط /stream إذا كان قد حُوّل سابقًا.
-    if (getShabakatyOriginalFromProxy(normalized)) return normalized;
-    if (!isShabakatyMp4Url(normalized)) return normalized;
-    return makeShabakatyProxyUrl(normalized, CINEMANA_STREAM_PROXY_BASES[0] || CINEMANA_PROXY);
-}
-function toStoredPlaybackSources(value) {
-    return normalizeVideoSources(value).map(source => ({
-        ...source,
-        url: toStoredPlaybackUrl(source.url)
-    }));
-}
-function getVideoPlaybackCandidates(rawUrl) {
-    const normalized = normalizeVideoUrl(rawUrl || '');
-    if (!normalized) return [{ url: normalized, mode: '' }];
-    const originalFromProxy = getShabakatyOriginalFromProxy(normalized);
-    const directUrl = originalFromProxy || normalized;
-    if (!isShabakatyMp4Url(directUrl)) return [{ url: normalized, mode: '' }];
-    const candidates = [];
-    const add = (url, mode) => {
-        if (url && !candidates.some(c => c.url === url)) candidates.push({ url, mode });
-    };
-    // مهم: جرّب رابط CDN المباشر أولًا؛ على Earthlink غالبًا هو الأسرع.
-    // إذا فشل أو بدأ يتوقف بسبب حجب الشبكة/ضعف الوصول، ينتقل المشغّل إلى البروكسي.
-    add(directUrl, 'direct');
-    for (const base of CINEMANA_STREAM_PROXY_BASES) {
-        const proxyUrl = makeShabakatyProxyUrl(directUrl, base);
-        if (proxyUrl && proxyUrl !== directUrl) add(proxyUrl, `proxy:${base}`);
-    }
-    // إذا كان الرابط المخزن يستخدم نفقًا مختلفًا عن الإعدادات الحالية، نجرّبه كبديل إضافي.
-    if (originalFromProxy) {
-        let mode = 'proxy';
-        try { mode = `proxy:${new URL(normalized).origin}`; } catch (_) {}
-        add(normalized, mode);
-    }
-    // لا نستخدم تفضيل proxy محفوظًا بين الشبكات: الجهاز نفسه قد ينتقل بين Earthlink وشبكة أخرى.
-    return candidates;
-}
 const SUBTITLE_PUBLIC_BASE = (() => {
     const configured = (typeof window !== 'undefined' && (window.SUBTITLE_PUBLIC_BASE_URL || window.CINEMANA_SUBTITLE_PUBLIC_BASE)) ||
         (typeof localStorage !== 'undefined' ? localStorage.getItem('subtitle_public_base_url') : '') || '';
@@ -1702,7 +1583,7 @@ async function enrichTmdbSeasonsWithCinemana(seasons, cinEpisodes, onProgress) {
         if (cinEp && cinEp.nb != null)
             tasks.push({ si, ei, id: String(cinEp.nb) });
     }));
-    const out = (seasons || []).map(s => ({ ...s, episodes: (s.episodes || []).map(e => ({ ...e, videoUrl: toStoredPlaybackUrl(normalizeVideoUrl(e.videoUrl || '')), videoSources: toStoredPlaybackSources(e.videoSources) })) }));
+    const out = (seasons || []).map(s => ({ ...s, episodes: (s.episodes || []).map(e => ({ ...e, videoUrl: normalizeVideoUrl(e.videoUrl || ''), videoSources: normalizeVideoSources(e.videoSources) })) }));
     const chunkSize = 5;
     for (let i = 0; i < tasks.length; i += chunkSize) {
         const chunk = tasks.slice(i, i + chunkSize);
@@ -1720,8 +1601,8 @@ async function enrichTmdbSeasonsWithCinemana(seasons, cinEpisodes, onProgress) {
                 ep.cinemanaId = String(r.id);
             if (!ep || !r.sources.length)
                 return;
-            ep.videoSources = toStoredPlaybackSources(r.sources);
-            ep.videoUrl = toStoredPlaybackUrl(r.sources[0].url);
+            ep.videoSources = r.sources;
+            ep.videoUrl = r.sources[0].url;
             ep.subtitleUrl = r.sources[0].subtitleUrl || ep.subtitleUrl || '';
         });
         if (onProgress)
@@ -3475,28 +3356,6 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         try { progressSaveRef.current({ position, duration, completed: false, updatedAt: now }); } catch (e) {}
     };
     const [loading, setLoading] = useState(true);
-    const [playbackAttemptState, setPlaybackAttemptState] = useState({ src: '', index: 0 });
-    const playbackCandidates = React.useMemo(() => getVideoPlaybackCandidates(src), [src]);
-    // نربط المحاولة بعنوان src حتى لا ينتقل رقم المحاولة من فيلم/حلقة إلى غيره.
-    const playbackAttempt = playbackAttemptState.src === src ? playbackAttemptState.index : 0;
-    const activePlaybackCandidate = playbackCandidates[Math.min(playbackAttempt, playbackCandidates.length - 1)] || { url: normalizeVideoUrl(src || ''), mode: '' };
-    const activePlaybackSrc = activePlaybackCandidate.url;
-    // src قد يكون رابط البروكسي مسبقًا؛ تعرّف على الرابط الأصلي حتى لا يتعطل fallback.
-    const isShabakatyPlayback = isShabakatyMp4Url(src) || !!getShabakatyOriginalFromProxy(src);
-    const failedPlaybackAttemptRef = useRef('');
-    const tryPlaybackFallback = () => {
-        const key = `${src}|${playbackAttempt}`;
-        if (failedPlaybackAttemptRef.current === key) return true;
-        failedPlaybackAttemptRef.current = key;
-        if (playbackAttempt < playbackCandidates.length - 1) {
-            setPlaybackAttemptState({ src, index: playbackAttempt + 1 });
-            setLoading(true);
-            return true;
-        }
-        setLoading(false);
-        onError && onError();
-        return false;
-    };
     const [subtitleSrc, setSubtitleSrc] = useState(''); // لمسار iOS الأصلي فقط
     const [subtitleLoading, setSubtitleLoading] = useState(false);
     const [subtitleOn, setSubtitleOn] = useState(true);
@@ -3568,7 +3427,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
     const c = crop || {};
     const fit = (isMobile ? fitMobile : fitDesktop) || 'contain';
     const cropReady = fit === 'crop' && c.active && c.width > 0 && c.height > 0 && stage.w > 0 && stage.h > 0 && natural.w > 0 && natural.h > 0;
-    useEffect(() => { completedRef.current = false; outroTriggeredRef.current = false; lastSavedProgressRef.current = 0; latestProgressRef.current = { position: 0, duration: 0 }; }, [src]);
+    useEffect(() => { completedRef.current = false; outroTriggeredRef.current = false; }, [src]);
     useEffect(() => {
         let cancelled = false;
         setSubError('');
@@ -3645,7 +3504,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         let hls = null;
         let fatalRetries = 0;
         let cancelled = false;
-        const isM3u8 = /\.m3u8(\?.*)?$/i.test(activePlaybackSrc);
+        const isM3u8 = /\.m3u8(\?.*)?$/i.test(src);
         const hlsConfig = {
             enableWorker: !CV_VERY_LOW_POWER,
             capLevelToPlayerSize: true,
@@ -3694,7 +3553,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
                     catch (e) {
                         if (!cancelled) {
                             setLoading(false);
-                            tryPlaybackFallback();
+                            onError && onError();
                         }
                         return;
                     }
@@ -3705,7 +3564,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
                     hls = new HlsClass(hlsConfig);
                     hls.attachMedia(videoEl);
                     hls.once(HlsClass.Events.MEDIA_ATTACHED, () => { if (!cancelled && hls)
-                        hls.loadSource(activePlaybackSrc); });
+                        hls.loadSource(src); });
                     hls.on(HlsClass.Events.ERROR, (_e, data) => {
                         if (!data || !data.fatal || cancelled)
                             return;
@@ -3726,127 +3585,44 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
                             }
                             else {
                                 setLoading(false);
-                                tryPlaybackFallback();
+                                onError && onError();
                             }
                             return;
                         }
                         setLoading(false);
-                        tryPlaybackFallback();
+                        onError && onError();
                     });
                     return;
                 }
                 if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-                    videoEl.src = activePlaybackSrc;
+                    videoEl.src = src;
                     videoEl.load();
                     return;
                 }
                 setLoading(false);
-                tryPlaybackFallback();
+                onError && onError();
                 return;
             }
-            videoEl.src = activePlaybackSrc;
+            videoEl.src = src;
             videoEl.load();
         };
         setup();
-        // راقب بدء التشغيل الفعلي، لا readyState وحده: بعض المتصفحات تصل إلى
-        // HAVE_CURRENT_DATA ثم تتوقف، وكان هذا يترك علامة التحميل تدور بلا نهاية.
-        let candidateHasPlayed = false;
-        let lastProgressPosition = Number(videoEl.currentTime) || 0;
-        let sourceStallTimer = null;
-        let startupTimer = null;
-        const clearSourceStallTimer = () => {
-            if (sourceStallTimer) {
-                clearTimeout(sourceStallTimer);
-                sourceStallTimer = null;
-            }
-        };
-        const markPlaybackSuccess = () => {
-            candidateHasPlayed = true;
-            clearSourceStallTimer();
-            if (startupTimer) { clearTimeout(startupTimer); startupTimer = null; }
-            clearBufferingTimer();
-            setLoading(false);
-        };
-        const observePlaybackProgress = () => {
-            const now = Number(videoEl.currentTime) || 0;
-            if (videoEl.paused || now <= lastProgressPosition + 0.12) return;
-            lastProgressPosition = now;
-            markPlaybackSuccess();
-        };
-        const getBufferedAheadSeconds = () => {
-            const t = Math.max(0, Number(videoEl.currentTime) || 0);
-            try {
-                const ranges = videoEl.buffered;
-                for (let i = 0; ranges && i < ranges.length; i++) {
-                    const start = ranges.start(i);
-                    const end = ranges.end(i);
-                    // تجاهل البيانات المحمّلة خلف موضع المشاهدة؛ المهم ما تبقى أمام المشاهد.
-                    if (start <= t + 0.15 && end >= t) return Math.max(0, end - t);
-                }
-            } catch (_) {}
-            return 0;
-        };
-        const watchSourceStall = () => {
-            clearSourceStallTimer();
-            if (cancelled || !isShabakatyPlayback || videoEl.ended || videoEl.paused) return;
-            const positionAtStall = Number(videoEl.currentTime) || 0;
-            sourceStallTimer = setTimeout(() => {
-                sourceStallTimer = null;
-                if (cancelled || videoEl.paused || videoEl.ended) return;
-                const current = Number(videoEl.currentTime) || 0;
-                // إذا استمر التقدم فلا تبدّل المصدر، حتى لا نقطع تشغيلًا سليمًا.
-                if (current > positionAtStall + 0.12) return;
-                const noSource = videoEl.networkState === videoEl.NETWORK_NO_SOURCE;
-                const ahead = getBufferedAheadSeconds();
-                const starving = videoEl.readyState < 3 && ahead < (CV_LOW_POWER ? 1.0 : 1.5);
-                // فشل المصدر أو نفاد الـbuffer أمام موضع التشغيل يعني أن الرابط الحالي لا يواكب القراءة.
-                // عندها انتقل إلى البروكسي التالي؛ على Earthlink سيبقى الرابط المباشر أول خيار.
-                if (videoEl.error || noSource || starving) {
-                    setLoading(false);
-                    tryPlaybackFallback();
-                    return;
-                }
-                // لا يوجد خطأ مؤكد؛ لا تترك الدوّارة تغطي الفيديو لمجرد حدث stalled قصير.
-                setLoading(false);
-            }, CV_LOW_POWER ? 9500 : 7000);
-        };
-        videoEl.addEventListener('playing', markPlaybackSuccess);
-        videoEl.addEventListener('timeupdate', observePlaybackProgress);
-        videoEl.addEventListener('waiting', watchSourceStall);
-        videoEl.addEventListener('stalled', watchSourceStall);
-        // مهلة لكل مصدر. إذا لم تصل بيانات الفيديو، جرّب عنوان البروكسي التالي؛
-        // إذا كانت البيانات جاهزة لكن التشغيل التلقائي ممنوعًا، أخفِ الدوّار وأظهر زر التشغيل.
-        startupTimer = setTimeout(() => {
-            startupTimer = null;
-            if (cancelled || candidateHasPlayed) return;
-            const hasMediaError = !!videoEl.error;
-            const hasCurrentData = videoEl.readyState >= 2;
-            const playWasAttempted = !videoEl.paused;
-            if (isShabakatyPlayback && (hasMediaError || !hasCurrentData || (playWasAttempted && videoEl.readyState < 3))) {
-                setLoading(false);
-                tryPlaybackFallback();
-                return;
-            }
-            setLoading(false);
-        }, CV_LOW_POWER ? 15000 : 12000);
+        const stuckTimer = setTimeout(() => { if (videoEl.readyState < 2)
+            setLoading(false); }, CV_LOW_POWER ? 20000 : 14000);
         return () => {
             cancelled = true;
             videoEl.removeEventListener('canplay', onReady);
             videoEl.removeEventListener('loadeddata', onReady);
-            videoEl.removeEventListener('playing', markPlaybackSuccess);
-            videoEl.removeEventListener('timeupdate', observePlaybackProgress);
-            videoEl.removeEventListener('waiting', watchSourceStall);
-            videoEl.removeEventListener('stalled', watchSourceStall);
             if (hls)
                 hls.destroy();
-            if (startupTimer) clearTimeout(startupTimer);
-            clearSourceStallTimer();
+            clearTimeout(stuckTimer);
             clearBufferingTimer();
         };
-    }, [src, activePlaybackSrc, playbackAttempt]);
+    }, [src]);
     useEffect(() => {
-        // عنصر <video> يعاد إنشاؤه بمفتاح activePlaybackSrc عند فشل مصدر والانتقال لبديله.
-        // لذلك يجب فك الأحداث عن العنصر القديم وربطها بالجديد عند كل محاولة، لا عند src فقط.
+        outroTriggeredRef.current = false;
+        lastSavedProgressRef.current = 0;
+        latestProgressRef.current = { position: 0, duration: 0 };
         const videoEl = videoRef.current;
         if (!videoEl)
             return;
@@ -3976,7 +3752,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         const onLoadedMeta = () => { const d = videoEl.duration || 0; setCtrl(c2 => ({ ...c2, duration: d })); onDuration && onDuration(d); };
         const onTimeUpdate = () => {
             const now = performance.now();
-            if (now - lastUiTickRef.current < (CV_LOW_POWER ? 900 : 500))
+            if (now - lastUiTickRef.current < 250)
                 return;
             lastUiTickRef.current = now;
             if (!videoEl.paused && videoEl.readyState >= 2)
@@ -3987,7 +3763,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
         };
         const onProgress = () => {
             const now = performance.now();
-            if (now - lastProgressTickRef.current < 1400)
+            if (now - lastProgressTickRef.current < 650)
                 return;
             lastProgressTickRef.current = now;
             try {
@@ -4005,7 +3781,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
             bufferingTimerRef.current = setTimeout(() => {
                 if (!videoEl.paused && videoEl.readyState < 3)
                     setLoading(true);
-            }, CV_LOW_POWER ? 2200 : 1800);
+            }, CV_LOW_POWER ? 850 : 650);
         };
         const onStalled = () => {
             if (videoEl.paused || videoEl.ended)
@@ -4014,7 +3790,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
             bufferingTimerRef.current = setTimeout(() => {
                 if (!videoEl.paused && videoEl.readyState < 3)
                     setLoading(true);
-            }, CV_LOW_POWER ? 2400 : 2000);
+            }, CV_LOW_POWER ? 1000 : 700);
         };
         const onPlaying = () => { clearBufferingTimer(); setLoading(false); };
         const onLoadedData = () => { clearBufferingTimer(); setLoading(false); };
@@ -4046,7 +3822,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
             videoEl.removeEventListener('ended', onEnded);
             clearBufferingTimer();
         };
-    }, [activePlaybackSrc]);
+    }, [src]);
     useEffect(() => {
         const saveNow = () => persistCurrentProgress(true);
         const onVis = () => { if (document.visibilityState === 'hidden') saveNow(); };
@@ -4389,7 +4165,7 @@ function VideoPlayer({ src, subtitleUrl, subtitleOffset = 0, onError, onDuration
     return (React.createElement("div", { ref: wrapRef, className: `video-crop-wrap cv-player-stage ${fakeFullscreen ? 'ios-fake-fullscreen' : ''}${!barVisible ? ' cv-nocursor' : ''}`, style: fakeFullscreen ? undefined : playerStageStyle, onMouseMove: showBarTemporarily, onPointerDown: onPlayerPointerDown, onPointerMove: onPlayerPointerMove, onPointerUp: onPlayerPointerUp, onPointerCancel: onPlayerPointerUp, onClick: onStageClick },
         loading && (React.createElement("div", { className: "absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none z-10" },
             React.createElement("div", { className: "w-10 h-10 rounded-full border-2 border-white/20 border-t-accent-cyan yt-spinner" }))),
-        React.createElement("video", { key: activePlaybackSrc, ref: videoRef, controls: false, autoPlay: true, playsInline: true, "webkit-playsinline": "true", "x5-playsinline": "true", preload: "metadata", onCanPlay: () => setLoading(false), onPlaying: () => setLoading(false), onLoadedData: () => setLoading(false), onError: e => { const el = e && e.currentTarget; if (el && el.dataset && el.dataset.playbackCandidate && el.dataset.playbackCandidate !== activePlaybackSrc) return; setLoading(false); tryPlaybackFallback(); }, "data-playback-candidate": activePlaybackSrc, style: videoStyle }, subtitleSrc && React.createElement("track", { key: subtitleSrc, kind: "subtitles", src: subtitleSrc, srcLang: "ar", label: "\u0627\u0644\u0639\u0631\u0628\u064A\u0629", default: true, ref: node => { if (node && node.track)
+        React.createElement("video", { ref: videoRef, controls: false, autoPlay: true, playsInline: true, "webkit-playsinline": "true", "x5-playsinline": "true", preload: "metadata", onCanPlay: () => setLoading(false), onPlaying: () => setLoading(false), onLoadedData: () => setLoading(false), onError: () => { setLoading(false); onError && onError(); }, style: videoStyle }, subtitleSrc && React.createElement("track", { key: subtitleSrc, kind: "subtitles", src: subtitleSrc, srcLang: "ar", label: "\u0627\u0644\u0639\u0631\u0628\u064A\u0629", default: true, ref: node => { if (node && node.track)
                 node.track.mode = subtitleOn ? 'showing' : 'hidden'; } })),
         !isIOS && subtitleOn && activeCues.length > 0 && React.createElement(SubtitleOverlay, { videoRef: videoRef, cues: activeCues, shiftMs: subtitleShift, prefs: subPrefs, lifted: barVisible }),
         episodeLabel && (React.createElement("div", { className: `absolute inset-x-0 top-0 z-20 p-3 md:p-4 bg-gradient-to-b from-black/80 to-transparent transition-opacity duration-300 ${barVisible ? 'opacity-100' : 'opacity-0'}` },
@@ -5110,24 +4886,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         }
         return null;
     };
-    // استخدم الروابط التي حُفظت مع العمل أولًا. بعض السجلات القديمة تحفظ المصدر البديل
-    // داخل cinemaBoxSources/cinemaBoxUrl بدل videoSources/videoUrl.
-    const getSavedVideoSources = (item) => {
-        if (!item || typeof item !== 'object') return [];
-        const primary = normalizeVideoSources(item.videoSources || []);
-        if (primary.length) return primary;
-        const alternate = normalizeVideoSources(item.cinemaBoxSources || []);
-        if (alternate.length) return alternate;
-        const single = normalizeVideoUrl(item.videoUrl || item.cinemaBoxUrl || '');
-        return single ? [{ url: single, videoUrl: single, label: 'مصدر محفوظ', resolution: 'مصدر محفوظ' }] : [];
-    };
-    const getSavedVideoUrl = (item) => normalizeVideoUrl(
-        (item && item.videoUrl) ||
-        ((((item && item.videoSources) || [])[0] || {}).url) ||
-        (item && item.cinemaBoxUrl) ||
-        ((((item && item.cinemaBoxSources) || [])[0] || {}).url) ||
-        ''
-    );
+    const getSavedVideoUrl = (item) => normalizeVideoUrl((item && item.videoUrl) || (((item && item.videoSources) || [])[0] || {}).url || '');
     const recoverMovieVideo = async () => {
         // إذا كان الفيلم محفوظًا ومعه cinemanaId فلا داعي للبحث بالعنوان.
         // البحث كان سبب المشكلة الجديدة: الهاتف/الموقع يحاول أولًا /search ثم يفشل
@@ -5171,15 +4930,12 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             throw new Error('سينمانا ما رجّعت روابط فيديو لهذه الحلقة.');
         return { url: sources[0].url, sources, sourceId: String(match.nb) };
     };
-    const resolveFreshCinemanaVideo = async (meta, kind, seasonNumber, forceRefresh = false) => {
+    const resolveFreshCinemanaVideo = async (meta, kind, seasonNumber) => {
         const savedId = String((meta && meta.cinemanaId) || '').trim();
-        // اعتمد الروابط المحفوظة أولًا حتى يشتغل الموقع من دون server.js عند وجود رابط صالح.
-        // لا نطلب رابطًا جديدًا من البروكسي إلا عند غياب الروابط المحفوظة أو بعد فشل التشغيل.
+        // الهاتف لا يصل لبروكسي سينمانا (localhost = الهاتف نفسه)، فإذا فشل تجديد الرابط
+        // نرجع للرابط المحفوظ في قاعدة البيانات بدل إظهار "تعذر" مباشرة.
         const savedUrl = getSavedVideoUrl(meta);
-        const savedSources = getSavedVideoSources(meta);
-        if (!forceRefresh && savedUrl) {
-            return { url: savedUrl, sources: savedSources.length ? savedSources : [{ url: savedUrl }], sourceId: savedId, cached: true };
-        }
+        const savedSources = normalizeVideoSources((meta && meta.videoSources) || []);
         try {
             if (savedId) {
                 const sources = cinemanaVideoSources(await cinemanaVideos(savedId, kind === 'movie' ? 'movie' : 'tv'));
@@ -5191,8 +4947,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             return await recoverEpisodeVideo(meta, seasonNumber);
         }
         catch (e) {
-            // لا نعتبر الرابط القديم الذي فشل تشغيله رابطًا جديدًا بعد طلب التجديد.
-            if (savedUrl && !forceRefresh)
+            if (savedUrl)
                 return { url: savedUrl, sources: savedSources.length ? savedSources : [{ url: savedUrl }], sourceId: savedId };
             throw e;
         }
@@ -5224,7 +4979,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 }
                 else {
                     url = getSavedVideoUrl(title);
-                    sources = getSavedVideoSources(title);
+                    sources = normalizeVideoSources(title.videoSources);
                     if (!url) {
                         const recovered = await recoverMovieVideo();
                         if (requestId !== playRequestRef.current) return;
@@ -5233,9 +4988,6 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                     }
                 }
                 if (requestId !== playRequestRef.current) return;
-                // طبّق تحويل Shabakaty عند نقطة التشغيل أيضًا، حتى لو كانت بيانات Firebase قديمة أو رجع رابط جديد مباشر.
-                url = toStoredPlaybackUrl(url);
-                sources = toStoredPlaybackSources(sources);
                 setPlayingUrl(url);
                 setPlayingMeta({ ...title, videoUrl: url, videoSources: sources, playbackProvider: cinemanaId ? 'cinemana' : (title.playbackProvider || ''), subtitleUrl: title.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: title.subtitlePublicUrl || '', subtitleOffset: Number(title.subtitleOffset) || 0 });
                 setPlayingLabel(title.name);
@@ -5282,7 +5034,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
             }
             else {
                 url = getSavedVideoUrl(ep);
-                sources = getSavedVideoSources(ep);
+                sources = normalizeVideoSources(ep.videoSources);
                 if (!url) {
                     const recovered = await recoverEpisodeVideo(ep, seasonNumber);
                     if (requestId !== playRequestRef.current) return;
@@ -5291,9 +5043,6 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                 }
             }
             if (requestId !== playRequestRef.current) return;
-            // نفس التحويل ينطبق على كل حلقة عند بدء التشغيل، وليس الأفلام فقط.
-            url = toStoredPlaybackUrl(url);
-            sources = toStoredPlaybackSources(sources);
             setPlayingUrl(url);
             setPlayingMeta({ ...ep, videoUrl: url, videoSources: sources, playbackProvider: cinemanaId ? 'cinemana' : (ep.playbackProvider || ''), subtitleUrl: ep.subtitleUrl || ((sources || [])[0] || {}).subtitleUrl || '', subtitlePublicUrl: ep.subtitlePublicUrl || '', subtitleOffset: Number(ep.subtitleOffset) || 0 });
             setPlayingSeasonNumber(seasonNumber != null ? seasonNumber : null);
@@ -5369,7 +5118,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         cinemanaRefreshingRef.current = true;
         try {
             const kind = title.type === 'movie' ? 'movie' : 'tv';
-            const recovered = await resolveFreshCinemanaVideo(meta, kind, playingSeasonNumber, true);
+            const recovered = await resolveFreshCinemanaVideo(meta, kind, playingSeasonNumber);
             if (!recovered || !recovered.url) throw new Error('سينمانا لم تُرجع رابط تشغيل جديد.');
             setPlayingMeta(prev => ({ ...prev, videoUrl: recovered.url, videoSources: recovered.sources, playbackProvider: 'cinemana', cinemanaId: recovered.sourceId || prev.cinemanaId }));
             setPlayingUrl(normalizeVideoUrl(recovered.url));
@@ -5392,9 +5141,8 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
         else if (onSaveWatchProgress && title.type !== 'movie' && playingSeasonNumber != null && playingMeta && playingMeta.number != null) onSaveWatchProgress(title.id, { kind: 'episode', season: playingSeasonNumber, episode: playingMeta.number, position: Number(at)||0, duration: Number(playingDurationSec)||0, completed: false, updatedAt: Date.now(), titleName: title.name, poster: title.poster, label: playingLabel });
         setVideoError(false);
         setResumeAt(Number(at) || 0);
-        const playbackUrl = toStoredPlaybackUrl(url);
-        setPlayingMeta(prev => ({ ...prev, videoUrl: playbackUrl, subtitleUrl: normalizeSubtitleUrl((quality && quality.subtitleUrl) || prev.subtitleUrl || '') }));
-        setPlayingUrl(playbackUrl);
+        setPlayingMeta(prev => ({ ...prev, videoUrl: url, subtitleUrl: normalizeSubtitleUrl((quality && quality.subtitleUrl) || prev.subtitleUrl || '') }));
+        setPlayingUrl(normalizeVideoUrl(url));
     };
     const shareLink = () => {
         const url = `${location.origin}${location.pathname}?t=${title.id}`;
@@ -7147,8 +6895,8 @@ function EpisodeEditor({ episode, seasonNumber, onChange, onBack, onDelete, sour
                 episodeAutoLabel(e),
                 "\u00BB")),
         React.createElement("div", { className: "mt-3.5" },
-            React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u062D\u0644\u0642\u0629 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: e.videoUrl, onChange: v => set('videoUrl', toStoredPlaybackUrl(v)), folder: "episodes", accept: "video/*" })),
-        React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', toStoredPlaybackUrl(url)), onGenerateQualities: sources => set('videoSources', toStoredPlaybackSources(sources)), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb) }),
+            React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u062D\u0644\u0642\u0629 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: e.videoUrl, onChange: v => set('videoUrl', v), folder: "episodes", accept: "video/*" })),
+        React.createElement(CinemanaHelper, { kind: "tv", season: seasonNumber, episode: e.number, defaultTitle: seriesName, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb) }),
         React.createElement(SubtitleHelper, { cinemanaId: e.cinemanaId, value: e.subtitleUrl || '', onChange: v => set('subtitleUrl', v), sourceId: sourceId, title: seriesName, year: new Date().getFullYear(), type: "series", season: seasonNumber, episode: e.number, folder: "subtitles", offset: e.subtitleOffset || 0, onOffsetChange: v => set('subtitleOffset', v) }),
         React.createElement("div", { className: "grid sm:grid-cols-3 gap-3.5 mt-3.5" },
             React.createElement("div", null,
@@ -7489,9 +7237,11 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.videoUrl = normalizeVideoUrl(form.videoUrl.trim());
             payload.videoSources = normalizeVideoSources(form.videoSources);
 
-            // مهم للأفلام: لا نحفظ cinemanaId وحده ونترك videoUrl/videoSources فارغة.
-            // إذا لم يكن المصدر قد حُفظ بعد، نجلبه من Cinemana، ثم نحوّل روابط Shabakaty
-            // إلى روابط /stream عامة قبل الحفظ في Firebase حتى تستخدمها الهواتف عبر البروكسي.
+            // مهم جدًا للأفلام: لا نحفظ cinemanaId وحده ونترك videoUrl/videoSources فارغة.
+            // الهاتف لا يستطيع الوصول إلى Node المحلي حتى يسترجع الرابط، بينما الحلقات
+            // التي يكون رابطها محفوظًا تعمل طبيعيًا. إذا كان الفيلم مرتبطًا بـ Cinemana
+            // ولم يُحفظ المصدر بعد، نجلبه الآن من نفس البروكسي الموجود على جهاز الإدارة
+            // ونحفظ الرابط/الجودات داخل Firebase، حتى يعمل الهاتف مباشرة بدون بروكسي.
             if (form.cinemanaId && !payload.videoUrl && !payload.videoSources.length) {
                 try {
                     const fetched = cinemanaVideoSources(await cinemanaVideos(String(form.cinemanaId).trim(), 'movie'));
@@ -7514,12 +7264,8 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.cinemanaId = String(form.cinemanaId || '').trim();
             payload.playbackProvider = payload.cinemanaId ? 'cinemana' : (isVidApiUrl(form.videoUrl) ? 'vidapi' : (form.playbackProvider || ''));
             if (payload.cinemanaId) {
-                // احتفظ بالرابط والجودات اللذين جُلبا أثناء الاستيراد.
-                // كان مسح الحقول هنا يجعل الرابط يظهر في لوحة الإدارة لكنه لا يُحفظ في Firebase.
-                payload.playbackProvider = 'cinemana';
-                if (!payload.videoUrl && payload.videoSources.length) {
-                    payload.videoUrl = payload.videoSources[0].url;
-                }
+                payload.videoUrl = '';
+                payload.videoSources = [];
             }
             payload.trimStart = Number(form.trimStart) || 0;
             payload.trimEnd = Number(form.trimEnd) || 0;
@@ -7529,11 +7275,6 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.fitDesktop = form.fitDesktop || 'contain';
             payload.crop = form.crop || {};
             payload.seasons = [];
-            // خزّن روابط Shabakaty كرابط بروكسي، وليس كرابط CDN مباشر.
-            // يشمل الرابط الأساسي وكل الجودات/المصادر البديلة للفيلم.
-            payload.videoUrl = toStoredPlaybackUrl(payload.videoUrl);
-            payload.videoSources = toStoredPlaybackSources(payload.videoSources);
-            if (!payload.videoUrl && payload.videoSources.length) payload.videoUrl = payload.videoSources[0].url;
         }
         else {
             payload.seasons = form.seasons.map(s => ({
@@ -7549,16 +7290,10 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             payload.seasons.forEach(s => {
                 (s.episodes || []).forEach(e => {
                     if (e.cinemanaId) {
-                        // لا تمسح رابط الحلقة والجودات بعد جلبها؛ ستُحوّل روابط Shabakaty إلى /stream أدناه.
+                        e.videoUrl = '';
+                        e.videoSources = [];
                         e.playbackProvider = 'cinemana';
-                        if (!e.videoUrl && e.videoSources.length) {
-                            e.videoUrl = e.videoSources[0].url;
-                        }
                     }
-                    // التحويل نفسه للحلقات: الرابط الأساسي وكل المصادر البديلة تُحفظ عبر /stream.
-                    e.videoUrl = toStoredPlaybackUrl(e.videoUrl);
-                    e.videoSources = toStoredPlaybackSources(e.videoSources);
-                    if (!e.videoUrl && e.videoSources.length) e.videoUrl = e.videoSources[0].url;
                 });
             });
             payload.videoUrl = '';
@@ -7578,18 +7313,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
                 await db.ref(`titles/${initial.id}`).set(payload);
             else
                 await db.ref('titles').push(payload);
-            const savedProxyCount = (item) => {
-                let n = getShabakatyOriginalFromProxy(item && item.videoUrl) ? 1 : 0;
-                (item && item.videoSources || []).forEach(src => { if (getShabakatyOriginalFromProxy(src && src.url)) n++; });
-                (item && item.seasons || []).forEach(season => (season.episodes || []).forEach(ep => {
-                    if (getShabakatyOriginalFromProxy(ep && ep.videoUrl)) n++;
-                    (ep && ep.videoSources || []).forEach(src => { if (getShabakatyOriginalFromProxy(src && src.url)) n++; });
-                }));
-                return n;
-            };
-            const savedProxyLinks = savedProxyCount(payload);
-            const savedMessage = initial && initial.id ? 'تم حفظ التعديلات بنجاح' : 'تم إضافة العمل بنجاح';
-            showToast(savedProxyLinks ? `${savedMessage} — حُفظ ${savedProxyLinks} رابط Shabakaty عبر البروكسي` : savedMessage);
+            showToast(initial && initial.id ? 'تم حفظ التعديلات بنجاح' : 'تم إضافة العمل بنجاح');
             onDone();
         }
         catch (e) {
@@ -7640,8 +7364,8 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             React.createElement("textarea", { value: form.description, onChange: e => set('description', e.target.value), rows: 3, className: inputCls })),
         form.type === 'movie' ? (React.createElement("div", null,
             React.createElement("div", { className: "mt-5" },
-                React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u0644\u0645 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: form.videoUrl, onChange: v => set('videoUrl', toStoredPlaybackUrl(v)), folder: "videos", accept: "video/*" })),
-            React.createElement(CinemanaHelper, { kind: form.type === 'anime' ? 'anime' : 'movie', defaultTitle: form.name, defaultYear: form.year, onGenerate: (url) => set('videoUrl', toStoredPlaybackUrl(url)), onGenerateQualities: sources => set('videoSources', toStoredPlaybackSources(sources)), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb), onImportTmdb: async (item) => {
+                React.createElement(FileUploadField, { label: "\u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u0644\u0645 (\u0641\u064A\u062F\u064A\u0648 \u0645\u0628\u0627\u0634\u0631 \u0623\u0648 \u0631\u0627\u0628\u0637/iframe)", value: form.videoUrl, onChange: v => set('videoUrl', v), folder: "videos", accept: "video/*" })),
+            React.createElement(CinemanaHelper, { kind: form.type === 'anime' ? 'anime' : 'movie', defaultTitle: form.name, defaultYear: form.year, onGenerate: (url) => set('videoUrl', url), onGenerateQualities: sources => set('videoSources', sources), onGenerateSubtitle: url => set('subtitleUrl', url), onPickedNb: nb => set('cinemanaId', nb), onImportTmdb: async (item) => {
                     if (sourceId) return { patch: {}, sourceId, imdbId: '', tmdbId: '' };
                     const r = await importFromTmdbTitle(cinemanaTitle(item), form.type, cinemanaYear(item) || form.year, { withEpisodes: false });
                     setSourceId(r.sourceId || '');
@@ -8462,8 +8186,7 @@ function saveWatchedToStorage(data, username) {
     catch (e) { }
 }
 function App() {
-    // ابدأ فورًا بالكتالوج المحفوظ إن وُجد، ولا تجعل فتح الواجهة متوقفًا على Firebase.
-    const [titles, setTitles] = useState(() => readTitleCache().filter(t => t && t.status === 'published'));
+    const [titles, setTitles] = useState([]);
     const [currentUser, setCurrentUser] = useState(() => { try {
         return JSON.parse(localStorage.getItem('cv_user') || 'null');
     }
@@ -8548,51 +8271,13 @@ function App() {
         })).catch(() => {});
     };
 
-    const loadFullTitleForCatalog = async (title) => {
-        if (!title || !title.__catalogOnly) return title;
-        const id = String(title.id || '').trim();
-        if (!id) throw new Error('معرّف العمل غير موجود');
-        let lastError = null;
-        // A single title is much smaller than downloading the whole catalog with every episode.
-        try {
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 22000);
-            try {
-                const base = String(firebaseConfig.databaseURL || '').replace(/\/+$/, '');
-                const response = await fetch(`${base}/titles/${encodeURIComponent(id)}.json?cv_cb=${Date.now()}`, {
-                    method: 'GET', cache: 'no-store', headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' }, signal: controller.signal
-                });
-                if (!response.ok) throw new Error('HTTP ' + response.status);
-                const data = await response.json();
-                if (data && typeof data === 'object') return normalizeTitlePlaybackData({ id, ...data });
-                throw new Error('تفاصيل العمل غير موجودة في قاعدة البيانات');
-            } finally { clearTimeout(timer); }
-        } catch (e) { lastError = e; }
-        try {
-            const pending = db.ref(`titles/${id}`).once('value').then(snap => snap.val());
-            const data = await Promise.race([pending, new Promise((_, reject) => setTimeout(() => reject(new Error('انتهت مهلة قراءة تفاصيل العمل')), 18000))]);
-            if (data && typeof data === 'object') return normalizeTitlePlaybackData({ id, ...data });
-        } catch (e) { lastError = e; }
-        throw lastError || new Error('تعذر تحميل تفاصيل العمل');
-    };
-    const openTitle = async (title, extra = null) => {
-        if (!title) return;
-        let full = title;
-        if (title.__catalogOnly) {
-            try {
-                full = await loadFullTitleForCatalog(title);
-            } catch (e) {
-                showToast('ظهرت الأعمال، لكن تعذر تحميل تفاصيل هذا العمل من قاعدة البيانات.', 'error');
-                return;
-            }
-        }
-        setActiveTitle({ ...full, ...(extra || {}) });
-    };
     const openTitleFromContinue = (title, nextTarget = null) => {
-        const extra = nextTarget && nextTarget.season != null && nextTarget.episode != null
-            ? { __continueTarget: { season: Number(nextTarget.season), episode: Number(nextTarget.episode) } }
-            : null;
-        return openTitle(title, extra);
+        if (!title) return;
+        if (nextTarget && nextTarget.season != null && nextTarget.episode != null) {
+            setActiveTitle({ ...title, __continueTarget: { season: Number(nextTarget.season), episode: Number(nextTarget.episode) } });
+        } else {
+            setActiveTitle(title);
+        }
     };
     const openProfile = (uname) => { setProfileTarget(uname || null); setActiveTitle(null); setAccountSheet(false); setViewRaw('profile'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
     const markEpisodeWatched = (titleId, seasonNumber, episodeNumber) => {
@@ -8720,128 +8405,47 @@ function App() {
         setSearch('');
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
-    const [booted, setBooted] = useState(() => readTitleCache().some(t => t && t.status === 'published'));
+    const [booted, setBooted] = useState(false);
     useEffect(() => {
         let cancelled = false;
-        let hasCatalog = false;
-        let fullFallbackStarted = false;
+        // Catalog startup intentionally uses the same direct Firebase realtime
+        // path as the older working version. No localStorage catalog and no
+        // separate REST request are used here, so an old catalog cannot flash
+        // before the current Firebase snapshot arrives.
         const isAdmin = !!(currentUser && (currentUser.username === 'mavilovelife' || currentUser.isModerator));
-        const databaseBase = String(firebaseConfig.databaseURL || '').replace(/\/+$/, '');
-
-        const rawToList = (data, compact) => {
-            if (!data || typeof data !== 'object') return [];
-            return Object.keys(data).map(k => {
-                const normalized = normalizeTitlePlaybackData({ id: k, ...data[k] });
-                return compact ? compactCatalogEntry(normalized) : normalized;
-            }).filter(Boolean).filter(t => isAdmin || t.status === 'published');
-        };
-        const sortList = list => list.sort((a, b) =>
-            ((b.publishedAt || b.createdAt || b.updatedAt || 0) - (a.publishedAt || a.createdAt || a.updatedAt || 0))
-        );
-        const applyPublicCatalog = data => {
-            if (cancelled) return false;
-            const list = sortList(rawToList(data, true));
-            if (!list.length) return false;
-            hasCatalog = true;
-            setTitles(previous => list.length || !previous.length ? list : previous);
-            writeTitleCache(list);
-            setBooted(true);
-            return true;
-        };
-        const fetchWithTimeout = async (url, ms) => {
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), ms);
-            try {
-                const response = await fetch(url, {
-                    method: 'GET', cache: 'no-store',
-                    headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
-                    signal: controller.signal
-                });
-                if (!response.ok) throw new Error('HTTP ' + response.status);
-                return await response.json();
-            } finally { clearTimeout(timer); }
-        };
-        const loadStaticCatalog = async () => {
-            if (cancelled || hasCatalog) return hasCatalog;
-            for (let attempt = 0; attempt < 3 && !cancelled && !hasCatalog; attempt++) {
-                try {
-                    const staticUrl = new URL('./catalog.json?cv_cb=' + Date.now(), window.location.href).toString();
-                    const data = await fetchWithTimeout(staticUrl, 12000);
-                    if (applyPublicCatalog(data)) return true;
-                } catch (_) { }
-                if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 700 * (attempt + 1)));
-            }
-            return false;
-        };
-        const loadPublicCatalogRest = async () => {
-            if (cancelled || hasCatalog) return hasCatalog;
-            try {
-                const data = await fetchWithTimeout(`${databaseBase}/publicCatalog.json?cv_cb=${Date.now()}`, 9000);
-                if (applyPublicCatalog(data)) return true;
-            } catch (_) { }
-            return false;
-        };
-        const loadLegacyFullCatalogRest = async () => {
-            if (cancelled || hasCatalog || fullFallbackStarted || isAdmin) return;
-            fullFallbackStarted = true;
-            try {
-                // Last resort only: this is much larger than catalog.json.
-                const data = await fetchWithTimeout(`${databaseBase}/titles.json?cv_cb=${Date.now()}`, 40000);
-                if (!data || typeof data !== 'object') return;
-                const list = sortList(rawToList(data, true));
-                if (!list.length || cancelled) return;
-                hasCatalog = true;
-                setTitles(previous => list.length || !previous.length ? list : previous);
-                writeTitleCache(list);
-                setBooted(true);
-            } catch (_) {
-                if (!cancelled && !hasCatalog) setBooted(true);
-            }
-        };
-
-        if (!isAdmin) {
-            const publicRef = db.ref('publicCatalog');
-            const publicCb = snap => {
-                if (!applyPublicCatalog(snap.val())) void loadStaticCatalog();
-            };
-            const publicErr = () => { void loadStaticCatalog(); };
-            publicRef.on('value', publicCb, publicErr);
-            // Parallel HTTPS reads work even where persistent Firebase connections are blocked.
-            void loadPublicCatalogRest();
-            void loadStaticCatalog();
-            const fallbackTimer = setTimeout(() => { if (!hasCatalog) void loadLegacyFullCatalogRest(); }, 9000);
-            return () => {
-                cancelled = true;
-                clearTimeout(fallbackTimer);
-                publicRef.off('value', publicCb);
-            };
-        }
-
         const ref = db.ref('titles');
-        const applyAdminCatalog = data => {
+
+        const cb = snap => {
             if (cancelled) return;
-            const list = sortList(rawToList(data, false));
-            setTitles(previous => list.length || !previous.length ? list : previous);
+            const data = snap.val();
+            const list = data && typeof data === 'object'
+                ? Object.keys(data)
+                    .map(k => normalizeTitlePlaybackData({ id: k, ...data[k] }))
+                    .filter(Boolean)
+                    .filter(t => isAdmin || t.status === 'published')
+                : [];
+
+            list.sort((a, b) =>
+                ((b.publishedAt || b.createdAt || b.updatedAt || 0) -
+                 (a.publishedAt || a.createdAt || a.updatedAt || 0))
+            );
+
+            setTitles(list);
+            if (!isAdmin && list.length) writeTitleCache(list);
+            setActiveTitle(prev => {
+                if (!prev) return prev;
+                const updated = list.find(x => x.id === prev.id);
+                return updated || prev;
+            });
             setBooted(true);
-            if (list.length) {
-                // Keep a lightweight public mirror so visitors don't need to download all episode links at startup.
-                const catalog = {};
-                list.filter(t => t.status === 'published').forEach(t => {
-                    const entry = compactCatalogEntry(t);
-                    if (entry) { delete entry.__catalogOnly; catalog[t.id] = entry; }
-                });
-                db.ref('publicCatalog').set(catalog).catch(() => {});
-            }
         };
-        const cb = snap => applyAdminCatalog(snap.val());
-        ref.on('value', cb, async () => {
-            try {
-                const data = await fetchWithTimeout(`${databaseBase}/titles.json?cv_cb=${Date.now()}`, 40000);
-                if (!cancelled && data) applyAdminCatalog(data);
-                else if (!cancelled) setBooted(true);
-            } catch (_) { if (!cancelled) setBooted(true); }
-        });
-        return () => { cancelled = true; ref.off('value', cb); };
+
+        ref.on('value', cb);
+
+        return () => {
+            cancelled = true;
+            ref.off('value', cb);
+        };
     }, [currentUser && currentUser.id, currentUser && currentUser.username, currentUser && currentUser.isModerator]);
     useEffect(() => {
         if (!booted)
@@ -8858,8 +8462,8 @@ function App() {
         const t = new URLSearchParams(location.search).get('t');
         if (t) {
             const found = titles.find(x => x.id === t && x.status === 'published');
-            if (found && (!activeTitle || activeTitle.id !== found.id))
-                openTitle(found);
+            if (found)
+                setActiveTitle(found);
         }
         const u = new URLSearchParams(location.search).get('u');
         if (u)
@@ -8904,13 +8508,13 @@ function App() {
     }
     return (React.createElement("div", { className: "min-h-screen flex flex-col mobile-safe-bottom md:pb-0" },
         React.createElement(Header, { currentUser: currentUser, view: view, setView: setView, search: search, setSearch: setSearch, onOpenAccount: () => setAccountSheet(true), onOpenProfile: openProfile, onOpenTitleFromNotif: (id) => { const t = titles.find(x => x.id === id && x.status === 'published'); if (t)
-                openTitle(t); } }),
+                setActiveTitle(t); } }),
         React.createElement("main", { className: "flex-1 max-w-7xl w-full mx-auto px-4 py-6 md:py-8" },
-            React.createElement("div", { key: searching ? 'search' : view, className: "page-fade-in" }, searching ? (React.createElement(TypeGrid, { title: `نتائج البحث عن "${search}"`, items: mainList, onOpen: openTitle, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0646\u062A\u0627\u0626\u062C \u0645\u0637\u0627\u0628\u0642\u0629.", watchedMap: watched })) : view === 'home' ? (React.createElement(HomeView, { items: published, onOpen: openTitleFromContinue, watchedMap: watched, watchProgress: watchProgress })) : (view === 'movie' || view === 'series' || view === 'anime') ? (React.createElement(TypeGrid, { title: TYPE_PLURAL[view], items: published.filter(t => t.type === view), onOpen: openTitle, showGenreFilter: true, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u0628\u0639\u062F.", watchedMap: watched })) : view === 'lists' ? (React.createElement(ListsView, { currentUser: currentUser, titles: published, onOpen: openTitle, onOpenAuth: setAuthModal })) : view === 'requests' ? (React.createElement(RequestsView, { currentUser: currentUser, onOpenAuth: setAuthModal })) : view === 'settings' ? (React.createElement(SettingsView, { currentUser: currentUser, onUpdateName: handleUpdateName, onUpdateAvatar: handleUpdateAvatar, onOpenAuth: setAuthModal })) : view === 'profile' ? (React.createElement(ProfileView, { username: profileTarget, currentUser: currentUser, titles: published, onOpen: openTitle, onOpenAuth: setAuthModal, onOpenProfile: openProfile })) : view === 'admin' ? (React.createElement(AdminPanel, { currentUser: currentUser, titles: titles, onOpenAuth: setAuthModal, moderators: moderators })) : null)),
+            React.createElement("div", { key: searching ? 'search' : view, className: "page-fade-in" }, searching ? (React.createElement(TypeGrid, { title: `نتائج البحث عن "${search}"`, items: mainList, onOpen: setActiveTitle, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0646\u062A\u0627\u0626\u062C \u0645\u0637\u0627\u0628\u0642\u0629.", watchedMap: watched })) : view === 'home' ? (React.createElement(HomeView, { items: published, onOpen: openTitleFromContinue, watchedMap: watched, watchProgress: watchProgress })) : (view === 'movie' || view === 'series' || view === 'anime') ? (React.createElement(TypeGrid, { title: TYPE_PLURAL[view], items: published.filter(t => t.type === view), onOpen: setActiveTitle, showGenreFilter: true, emptyText: "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0639\u0645\u0627\u0644 \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645 \u0628\u0639\u062F.", watchedMap: watched })) : view === 'lists' ? (React.createElement(ListsView, { currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal })) : view === 'requests' ? (React.createElement(RequestsView, { currentUser: currentUser, onOpenAuth: setAuthModal })) : view === 'settings' ? (React.createElement(SettingsView, { currentUser: currentUser, onUpdateName: handleUpdateName, onUpdateAvatar: handleUpdateAvatar, onOpenAuth: setAuthModal })) : view === 'profile' ? (React.createElement(ProfileView, { username: profileTarget, currentUser: currentUser, titles: published, onOpen: setActiveTitle, onOpenAuth: setAuthModal, onOpenProfile: openProfile })) : view === 'admin' ? (React.createElement(AdminPanel, { currentUser: currentUser, titles: titles, onOpenAuth: setAuthModal, moderators: moderators })) : null)),
         React.createElement(MobileBottomNav, { view: view, setView: setView }),
         React.createElement(ToastHost, null),
         activeTitle && (React.createElement(TitleModal, { title: activeTitle, allTitles: published, currentUser: currentUser, liked: likedIds.includes(activeTitle.id), getRole: getRole, onLike: () => toggleLike(activeTitle), onClose: () => { setActiveTitle(null); if (new URLSearchParams(location.search).get('t'))
-                history.replaceState(null, '', location.pathname); }, onOpenAuth: setAuthModal, onOpenProfile: openProfile, onOpen: openTitle, watched: watched, onMarkEpisodeWatched: markEpisodeWatched, onMarkMovieWatched: markMovieWatched, isEpisodeWatched: isEpisodeWatched, watchProgress: watchProgress, onSaveWatchProgress: saveWatchProgress })),
+                history.replaceState(null, '', location.pathname); }, onOpenAuth: setAuthModal, onOpenProfile: openProfile, onOpen: setActiveTitle, watched: watched, onMarkEpisodeWatched: markEpisodeWatched, onMarkMovieWatched: markMovieWatched, isEpisodeWatched: isEpisodeWatched, watchProgress: watchProgress, onSaveWatchProgress: saveWatchProgress })),
         authModal && React.createElement(AuthModal, { tab: authModal, onClose: () => setAuthModal(null), onSuccess: handleAuthSuccess }),
         accountSheet && (React.createElement(AccountSheet, { currentUser: currentUser, onClose: () => setAccountSheet(false), onLogin: () => { setAccountSheet(false); setAuthModal('login'); }, onRegister: () => { setAccountSheet(false); setAuthModal('register'); }, onLogout: handleLogout, onNavigate: (v) => { if (v === 'profile')
                 setProfileTarget(null); setView(v); setAccountSheet(false); } })),
@@ -8933,8 +8537,7 @@ class AppErrorBoundary extends React.Component {
             React.createElement('div', { className: 'glass-panel max-w-md w-full rounded-3xl p-7 text-center border border-white/10' },
                 React.createElement('div', { className: 'w-14 h-14 mx-auto mb-4 rounded-2xl bg-accent-red/15 border border-accent-red/30 flex items-center justify-center text-accent-red font-black' }, '!'),
                 React.createElement('h1', { className: 'text-xl font-black mb-2' }, 'تعذر عرض هذا القسم مؤقتًا'),
-                React.createElement('p', { className: 'text-sm text-slate-400 leading-relaxed mb-5' }, 'حدث خطأ في بيانات العرض أو في واجهة هذا القسم. تفاصيل الخطأ ظاهرة أدناه حتى نحدد السبب بدل التخمين.'),
-                React.createElement('pre', { dir: 'ltr', className: 'text-left text-xs text-red-200 bg-black/40 border border-red-400/20 rounded-xl p-3 mb-5 whitespace-pre-wrap break-words', style: { maxHeight: '180px', overflow: 'auto', userSelect: 'text' } }, this.state.message || 'React لم يوفّر رسالة خطأ نصية. افتح Console وابحث عن [Cinadam] UI error.'),
+                React.createElement('p', { className: 'text-sm text-slate-400 leading-relaxed mb-5' }, 'حدث خطأ في بيانات العرض أو في واجهة هذا القسم. أعد المحاولة لإعادة بناء الواجهة بدون فقدان بيانات حسابك.'),
                 React.createElement('button', { type: 'button', onClick: () => location.reload(), className: 'w-full py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover text-white font-bold' }, 'إعادة المحاولة')
             )
         );
