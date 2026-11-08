@@ -1961,27 +1961,18 @@ function tmdbAdaptive(url, kind) {
     const wanted = kind === 'poster' ? 'w500' : (typeof CV_VERY_LOW_POWER !== 'undefined' && CV_VERY_LOW_POWER) ? 'w780' : (typeof CV_LOW_POWER !== 'undefined' && CV_LOW_POWER) ? 'w1280' : 'w1280';
     return u.replace(/\/t\/p\/(original|w\d+)\//, `/t/p/${wanted}/`);
 }
-const TMDB_API_KEY = 'a1ab2b7d22e16c6c20e9e419b8f1c098';
-function getTmdbKey() { return TMDB_API_KEY; }
+// TMDB client adapter: يتصل بسيرفر Cinadam فقط، ولا يحمل أي مفتاح داخل المتصفح.
 async function tmdbFetch(path, params) {
-    const key = getTmdbKey();
-    if (!key)
-        throw new Error('الرجاء إدخال مفتاح TMDB أولًا');
-    const usp = new URLSearchParams(Object.assign({ api_key: key }, params || {}));
-    let res;
+    const usp = new URLSearchParams(Object.assign({ path: String(path || '') }, params || {}));
     try {
-        res = await fetch(`https://api.themoviedb.org/3/${path}?${usp.toString()}`);
+        return await cinemanaFetch(`/meta/tmdb?${usp.toString()}`);
     }
     catch (e) {
-        throw new Error('تعذر الاتصال بـ TMDB — تحقق من الإنترنت');
+        const msg = e && e.message ? e.message : '';
+        if (/401|unauthor/i.test(msg)) throw new Error('مفتاح TMDB غير صحيح على السيرفر');
+        if (/404|not found/i.test(msg)) throw new Error('لم يتم العثور على هذا المعرف في TMDB');
+        throw new Error('تعذر جلب بيانات TMDB: ' + (msg || 'تحقق من إعداد السيرفر'));
     }
-    if (res.status === 401)
-        throw new Error('مفتاح TMDB غير صحيح');
-    if (res.status === 404)
-        throw new Error('لم يتم العثور على هذا المعرف في TMDB');
-    if (!res.ok)
-        throw new Error('خطأ من TMDB (رمز ' + res.status + ')');
-    return res.json();
 }
 async function fetchTmdbEpisodeRating(sourceId, seasonNumber, episodeNumber) {
     let id = String(sourceId || '').trim();
@@ -1996,43 +1987,50 @@ async function fetchTmdbEpisodeRating(sourceId, seasonNumber, episodeNumber) {
     if (!Number.isFinite(rating) || rating <= 0) return '';
     return rating.toFixed(1);
 }
-const OMDB_API_KEY = '52191abb';
+// OMDb client adapter: التقييمات وبيانات IMDb المكملة تأتي من نقطة مستقلة.
 async function omdbFetch(params) {
-    const usp = new URLSearchParams(Object.assign({ apikey: OMDB_API_KEY }, params || {}));
-    let res;
+    const usp = new URLSearchParams(params || {});
     try {
-        res = await fetch(`https://www.omdbapi.com/?${usp.toString()}`);
+        return await cinemanaFetch(`/meta/omdb?${usp.toString()}`);
     }
     catch (e) {
-        throw new Error('تعذر الاتصال بـ OMDb');
+        throw new Error('تعذر جلب بيانات OMDb: ' + (e && e.message ? e.message : 'تحقق من إعداد السيرفر'));
     }
-    if (!res.ok)
-        throw new Error('خطأ من OMDb (رمز ' + res.status + ')');
-    return res.json();
 }
-const FANART_API_KEY = '4c496b546faecfec345fe324b30456c6';
+// Fanart.tv client adapter: الشعارات والخلفيات والبوسترات تُجلب منفصلة عن TMDB.
+function rankFanartImages(arr) {
+    const score = img => (parseInt(img && img.likes, 10) || 0) + ((img && ['en', '', '00'].includes(String(img.lang || '').toLowerCase())) ? 1000 : 0);
+    return (arr || []).filter(i => i && i.url).slice().sort((a, b) => score(b) - score(a));
+}
 async function fetchFanartData(tvdbId) {
-    const out = { tv: [], seasons: {} };
-    if (!FANART_API_KEY || !tvdbId)
-        return out;
+    const out = { tv: [], seasons: {}, backgrounds: [], logos: [], posters: [] };
+    if (!tvdbId) return out;
     try {
-        const res = await fetch(`https://webservice.fanart.tv/v3/tv/${tvdbId}?api_key=${FANART_API_KEY}`);
-        if (!res.ok)
-            return out;
-        const d = await res.json();
-        const score = (img) => (parseInt(img.likes, 10) || 0) + ((img.lang === 'en' || img.lang === '' || img.lang === '00') ? 1000 : 0);
-        const rank = (arr) => (arr || []).filter(i => i && i.url).sort((x, y) => score(y) - score(x));
-        out.tv = rank(d.tvthumb).map(i => i.url);
+        const d = await cinemanaFetch(`/meta/fanart/tv/${encodeURIComponent(tvdbId)}?source=tvdb`);
+        out.tv = rankFanartImages([...(d.showbackground || []), ...(d.tvthumb || [])]).map(i => i.url);
+        out.backgrounds = rankFanartImages(d.showbackground).map(i => i.url);
+        out.logos = rankFanartImages([...(d.hdtvlogo || []), ...(d.clearlogo || []), ...(d.clearart || [])]).map(i => i.url);
+        out.posters = rankFanartImages(d.tvposter || []).map(i => i.url);
         const bySeason = {};
-        (d.seasonthumb || []).forEach(img => {
+        [...(d.seasonthumb || []), ...(d.seasonposter || [])].forEach(img => {
             const n = String(img.season);
-            if (!/^\d+$/.test(n) || !img.url)
-                return;
+            if (!/^\d+$/.test(n) || !img.url) return;
             (bySeason[n] = bySeason[n] || []).push(img);
         });
-        Object.keys(bySeason).forEach(n => { out.seasons[n] = rank(bySeason[n]).map(i => i.url); });
-    }
-    catch (e) { }
+        Object.keys(bySeason).forEach(n => { out.seasons[n] = rankFanartImages(bySeason[n]).map(i => i.url); });
+    } catch (_) { }
+    return out;
+}
+async function fetchFanartMovieData(tmdbId) {
+    const out = { backgrounds: [], posters: [], logos: [], banners: [] };
+    if (!tmdbId) return out;
+    try {
+        const d = await cinemanaFetch(`/meta/fanart/movie/${encodeURIComponent(tmdbId)}?source=tmdb`);
+        out.backgrounds = rankFanartImages(d.moviebackground || []).map(i => i.url);
+        out.posters = rankFanartImages(d.movieposter || []).map(i => i.url);
+        out.logos = rankFanartImages([...(d.hdmovielogo || []), ...(d.movielogo || [])]).map(i => i.url);
+        out.banners = rankFanartImages(d.moviebanner || []).map(i => i.url);
+    } catch (_) { }
     return out;
 }
 function guessTvSourceId(seasons) {
@@ -2145,17 +2143,25 @@ async function importFromTmdb(rawInput, currentType, opts) {
     const dateStr = data.release_date || data.first_air_date || (en && (en.release_date || en.first_air_date)) || foundDate || '';
     const sourceId = imdbId || String(tmdbId);
     const parsedYear = dateStr ? parseInt(dateStr.slice(0, 4), 10) : NaN;
+    const tmdbPoster = data.poster_path ? TMDB_IMG + 'w500' + data.poster_path : '';
+    const tmdbBackdrop = data.backdrop_path ? TMDB_IMG + 'original' + data.backdrop_path : '';
+    const fanartMovie = media === 'movie' ? await fetchFanartMovieData(tmdbId) : { backgrounds: [], posters: [], logos: [], banners: [] };
     const patch = {
         name: name,
         year: Number.isFinite(parsedYear) ? parsedYear : new Date().getFullYear(),
         genresText: genres.join(', '),
-        poster: data.poster_path ? TMDB_IMG + 'w500' + data.poster_path : '',
-        backdrop: data.backdrop_path ? TMDB_IMG + 'original' + data.backdrop_path : '',
+        poster: tmdbPoster || fanartMovie.posters[0] || '',
+        backdrop: tmdbBackdrop || fanartMovie.backgrounds[0] || fanartMovie.banners[0] || '',
         description: overview,
         director: director,
         writer: writer,
         imdbRating: '',
         runtimeMinutes: parseRuntimeSeconds(media === 'movie' ? (data.runtime || 0) : ((Array.isArray(data.episode_run_time) && data.episode_run_time[0]) || 0), true) / 60,
+        metadataSources: {
+            tmdb: { id: String(tmdbId), imdbId: imdbId || '', poster: tmdbPoster, backdrop: tmdbBackdrop },
+            fanart: media === 'movie' ? fanartMovie : {},
+            omdb: {},
+        },
     };
     const notes = [];
     let omdbBroken = false;
@@ -2169,8 +2175,23 @@ async function importFromTmdb(rawInput, currentType, opts) {
         try {
             const od = await omdbFetch({ i: imdbId });
             if (od && od.Response === 'True') {
-                if (od.imdbRating && od.imdbRating !== 'N/A')
-                    patch.imdbRating = od.imdbRating;
+                patch.metadataSources.omdb = {
+                    imdbId: od.imdbID || imdbId,
+                    poster: od.Poster && od.Poster !== 'N/A' ? od.Poster : '',
+                    rating: od.imdbRating && od.imdbRating !== 'N/A' ? od.imdbRating : '',
+                    metascore: od.Metascore && od.Metascore !== 'N/A' ? od.Metascore : '',
+                    rated: od.Rated && od.Rated !== 'N/A' ? od.Rated : '',
+                    released: od.Released && od.Released !== 'N/A' ? od.Released : '',
+                    runtime: od.Runtime && od.Runtime !== 'N/A' ? od.Runtime : '',
+                    awards: od.Awards && od.Awards !== 'N/A' ? od.Awards : '',
+                    ratings: Array.isArray(od.Ratings) ? od.Ratings : [],
+                };
+                if (od.imdbRating && od.imdbRating !== 'N/A') patch.imdbRating = od.imdbRating;
+                if (!patch.poster && patch.metadataSources.omdb.poster) patch.poster = patch.metadataSources.omdb.poster;
+                if (!patch.description && od.Plot && od.Plot !== 'N/A') patch.description = od.Plot;
+                if (!patch.year && od.Year && /^\d{4}$/.test(od.Year)) patch.year = Number(od.Year);
+                const rtScore = (Array.isArray(od.Ratings) ? od.Ratings : []).find(x => /rotten tomatoes/i.test(x.Source || ''));
+                if (rtScore && rtScore.Value && rtScore.Value !== 'N/A') patch.rtRating = rtScore.Value;
             }
             else
                 noteOmdb(od);
@@ -2199,7 +2220,10 @@ async function importFromTmdb(rawInput, currentType, opts) {
             options.onProgress('جاري جلب البنرات من Fanart...');
         const fanart = await fetchFanartData(data.external_ids && data.external_ids.tvdb_id);
         const tmdbBackdrops = await fetchTmdbBackdrops(tmdbId);
-        bannerData = { tv: fanart.tv, seasons: fanart.seasons, tmdb: tmdbBackdrops, tmdbId: tmdbId };
+        bannerData = { tv: fanart.tv, seasons: fanart.seasons, tmdb: tmdbBackdrops, tmdbId: tmdbId, fanartBackgrounds: fanart.backgrounds || [], fanartLogos: fanart.logos || [], fanartPosters: fanart.posters || [] };
+        patch.metadataSources = patch.metadataSources || { tmdb: {}, fanart: {}, omdb: {} };
+        patch.metadataSources.tmdb = { ...(patch.metadataSources.tmdb || {}), id: String(tmdbId), imdbId: imdbId || '', poster: tmdbPoster, backdrop: tmdbBackdrop, backdrops: tmdbBackdrops };
+        patch.metadataSources.fanart = { tv: fanart.tv, seasons: fanart.seasons, backgrounds: fanart.backgrounds || [], logos: fanart.logos || [], posters: fanart.posters || [] };
         for (let i = 0; i < list.length; i++) {
             const s = list[i];
             if (options.onProgress)
@@ -7103,7 +7127,7 @@ function VideoDisplaySettings({ value, onChange }) {
         showCropStudio && (React.createElement(CropStudioModal, { videoUrl: normalizeVideoUrl(v.videoUrl), initial: crop, onCancel: () => setShowCropStudio(false), onSave: (newCrop) => { set('crop', newCrop); setShowCropStudio(false); } }))));
 }
 function emptyForm(type) {
-    return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', runtimeMinutes: 0, rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
+    return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', runtimeMinutes: 0, rtRating: '', metadataSources: { tmdb: {}, fanart: {}, omdb: {} }, videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
 }
 function emptyEpisode(num) {
     return { number: num, title: '', runtimeMinutes: 0, videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, imdb: '', tmdbRating: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
@@ -7437,6 +7461,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
         if (bannerSource === 'fanart') {
             ((bannerData.seasons || {})[String(seasonNumber)] || []).forEach(u => add(u, 'season'));
             (bannerData.tv || []).forEach(u => add(u, 'tv'));
+            (bannerData.fanartBackgrounds || []).forEach(u => add(u, 'fanart-background')); 
         }
         else if (bannerSource === 'stills') {
             (seasonStills[String(seasonNumber)] || []).forEach(u => add(u, 'still'));
@@ -7558,6 +7583,7 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             writer: form.writer.trim(),
             imdbRating: form.imdbRating.trim(),
             rtRating: form.rtRating.trim(),
+            metadataSources: form.metadataSources || { tmdb: {}, fanart: {}, omdb: {} },
             featured: form.featured === true,
             status: form.status === 'published' ? 'published' : 'draft',
             sourceId: sourceId || '',
