@@ -54,11 +54,6 @@
     html { scroll-behavior: smooth; }
     body { font-family: 'Cairo', sans-serif; background-color: #07090E; color: #F8FAFC; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
     * { -webkit-tap-highlight-color: transparent; }
-    /* سحب الصفوف الأفقية بالماوس */
-    .drag-scroll-ready { cursor: grab; }
-    .drag-scroll-active, .drag-scroll-active * { cursor: grabbing !important; user-select: none !important; -webkit-user-select: none !important; }
-    .drag-scroll-active { scroll-snap-type: none !important; scroll-behavior: auto !important; }
-    .drag-scroll-ready img { -webkit-user-drag: none; }
     .scrollbar-hide::-webkit-scrollbar { display: none; }
     .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
     .line-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
@@ -214,48 +209,6 @@
     .cv-skip-circle svg { width:25px; height:25px; }
     .cv-skip-circle span { font-size:11px; font-weight:900; line-height:1; margin-top:3px; direction:ltr; }
     @keyframes cvSkipPop { 0% { opacity:0; transform:scale(.65); } 25% { opacity:1; transform:scale(1.08); } 100% { opacity:0; transform:scale(1); } }
-  
-    /* ===== صفحة تفاصيل العمل (صفحة كاملة) ===== */
-    .dp-in { animation: dpIn .44s cubic-bezier(.2,.8,.2,1); }
-    .dp-out { animation: dpOut .22s cubic-bezier(.4,0,.7,.2) forwards; }
-    @keyframes dpIn { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
-    @keyframes dpOut { to { opacity: 0; transform: translateY(16px); } }
-    @media (prefers-reduced-motion: reduce) { .dp-in, .dp-out { animation: none; } }
-    .dp-title { font-family: 'Noto Kufi Arabic','Cairo',sans-serif; font-weight: 900; line-height: 1.25; text-wrap: balance; }
-    .dp-h { font-family: 'Noto Kufi Arabic','Cairo',sans-serif; font-weight: 800; font-size: 1.15rem; display: flex; align-items: center; gap: .65rem; color: #fff; }
-    .dp-h::before { content: ''; width: 4px; height: 1.15em; border-radius: 3px; background: #FF334B; }
-    .dp-block > h3 { font-family: 'Noto Kufi Arabic','Cairo',sans-serif; }
-    .dp-roundbtn { display: inline-flex; align-items: center; justify-content: center; gap: .45rem; min-width: 2.5rem; height: 2.5rem; padding-inline: .8rem; border-radius: 999px; background: rgba(7,9,14,.62); border: 1px solid rgba(255,255,255,.12); color: #fff; transition: background .2s, border-color .2s; }
-    .dp-roundbtn:hover { background: rgba(7,9,14,.9); border-color: rgba(255,255,255,.28); }
-    .dp-primary { display: inline-flex; align-items: center; gap: .8rem; padding: .65rem 1.5rem .65rem 1.7rem; border-radius: 1rem; background: #FF334B; color: #fff; box-shadow: 0 14px 34px -12px rgba(255,51,75,.8); transition: transform .2s, background .2s; }
-    .dp-primary:hover { background: #FF1F38; transform: translateY(-1px); }
-    .dp-primary:active { transform: scale(.98); }
-    .dp-primary-icon { width: 2.1rem; height: 2.1rem; border-radius: 999px; background: rgba(0,0,0,.22); display: grid; place-items: center; flex-shrink: 0; }
-    .dp-ghost { display: inline-flex; align-items: center; gap: .55rem; padding: .8rem 1.15rem; border-radius: 1rem; font-weight: 800; font-size: .9rem; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.1); color: #e2e8f0; transition: border-color .2s, color .2s, background .2s; }
-    .dp-ghost:hover { border-color: rgba(0,240,255,.5); color: #fff; }
-    .dp-ghost.on { background: #f43f5e; border-color: #f43f5e; color: #fff; }
-    .dp-mact { display: flex; flex-direction: column; align-items: center; gap: .35rem; padding: .7rem .25rem; border-radius: 1rem; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08); font-size: .72rem; font-weight: 800; color: #cbd5e1; }
-    .dp-mact.on { color: #fb7185; border-color: rgba(251,113,133,.45); }
-    .dp-rail { display: flex; align-items: center; gap: .7rem; width: 100%; padding: .7rem .15rem; font-weight: 700; font-size: .9rem; color: #cbd5e1; text-align: start; border-bottom: 1px solid rgba(255,255,255,.07); transition: color .2s; }
-    .dp-rail:hover { color: #fff; }
-    @keyframes dpPosterIn { from { opacity: 0; transform: scale(1.04); } to { opacity: 1; transform: none; } }
-    .dp-poster-swap { animation: dpPosterIn .35s ease-out; }
-    @media (prefers-reduced-motion: reduce) { .dp-poster-swap { animation: none; } }
-    .dp-tag { display: inline-block; padding: .3rem .85rem .3rem .75rem; font-size: .78rem; font-weight: 800; color: #e2e8f0; background: rgba(255,255,255,.1); clip-path: polygon(12px 0, 100% 0, 100% 100%, 12px 100%, 0 50%); padding-inline-start: 1.1rem; }
-    .dp-score { display: inline-flex; align-items: center; gap: .45rem; padding: .35rem .75rem; border-radius: .75rem; font-weight: 800; font-size: .82rem; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); }
-    .dp-imdb { background: #F5C518; color: #111; border-radius: .3rem; padding: 0 .35rem; font-weight: 900; font-size: .7rem; line-height: 1.35rem; }
-    .dp-chip { display: inline-flex; flex-shrink: 0; align-items: center; gap: .55rem; padding: .5rem 1rem; border-radius: .85rem; font-weight: 800; font-size: .85rem; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); color: #cbd5e1; transition: background .2s, color .2s; }
-    .dp-chip:hover { color: #fff; }
-    .dp-chip.on { background: #fff; color: #07090E; border-color: #fff; }
-    .dp-chip-n { font-size: .7rem; opacity: .6; }
-    .dp-tab { position: relative; flex: 1; padding: .9rem .25rem; font-weight: 800; font-size: .85rem; color: #94a3b8; }
-    .dp-tab.on { color: #fff; }
-    .dp-tab.on::after { content: ''; position: absolute; inset-inline: 22%; bottom: -1px; height: 3px; border-radius: 3px; background: #FF334B; }
-    .dp-ep { display: flex; align-items: center; gap: .9rem; padding: .55rem; border-radius: 1rem; border: 1px solid rgba(255,255,255,.07); background: rgba(255,255,255,.03); cursor: pointer; transition: border-color .2s, background .2s; }
-    .dp-ep:hover { border-color: rgba(255,255,255,.18); background: rgba(255,255,255,.055); }
-    .dp-ep:focus-visible, .dp-primary:focus-visible, .dp-ghost:focus-visible, .dp-chip:focus-visible, .dp-roundbtn:focus-visible { outline: 2px solid #00F0FF; outline-offset: 2px; }
-    .dp-ep.is-current { border-color: rgba(0,240,255,.55); background: rgba(0,240,255,.07); }
-    .dp-watchpill { display: inline-flex; align-items: center; gap: .4rem; padding: .4rem 1rem; border-radius: 999px; background: #FF334B; color: #fff; font-weight: 800; font-size: .8rem; }
   </style>
   <style>
     .cv-nocursor, .cv-nocursor * { cursor: none !important; }
@@ -401,7 +354,7 @@
 
   <script>const { useState, useEffect, useRef, useLayoutEffect } = React;
 const firebaseConfig = {
-    databaseURL: "https://cinadam-4c88f-default-rtdb.firebaseio.com",
+    databaseURL: "https://mnste-36ca4-default-rtdb.europe-west1.firebasedatabase.app",
     storageBucket: "mnste-36ca4.firebasestorage.app"
 };
 if (!firebase.apps.length)
@@ -1147,7 +1100,6 @@ async function persistSubtitleToFirebase(url, folder = 'subtitles') {
 const TYPE_LABELS = { movie: 'فيلم', series: 'مسلسل', anime: 'أنمي' };
 const TYPE_PLURAL = { movie: 'الأفلام', series: 'المسلسلات', anime: 'الأنميات' };
 const COMPLAINT_TYPES = { add: 'طلب إضافة عمل', problem: 'مشكلة في التشغيل أو التحميل', suggestion: 'اقتراح عام' };
-const COMPLAINT_LABELS = Object.assign({}, COMPLAINT_TYPES, { report: 'بلاغ عن مشكلة' });
 const ORDINAL_ONES_F = ['', 'الأولى', 'الثانية', 'الثالثة', 'الرابعة', 'الخامسة', 'السادسة', 'السابعة', 'الثامنة', 'التاسعة'];
 const ORDINAL_TEENS_F = ['العاشرة', 'الحادية عشرة', 'الثانية عشرة', 'الثالثة عشرة', 'الرابعة عشرة', 'الخامسة عشرة', 'السادسة عشرة', 'السابعة عشرة', 'الثامنة عشرة', 'التاسعة عشرة'];
 const ORDINAL_TENS_F = ['', '', 'العشرون', 'الثلاثون', 'الأربعون', 'الخمسون', 'الستون', 'السبعون', 'الثمانون', 'التسعون'];
@@ -1961,18 +1913,33 @@ function tmdbAdaptive(url, kind) {
     const wanted = kind === 'poster' ? 'w500' : (typeof CV_VERY_LOW_POWER !== 'undefined' && CV_VERY_LOW_POWER) ? 'w780' : (typeof CV_LOW_POWER !== 'undefined' && CV_LOW_POWER) ? 'w1280' : 'w1280';
     return u.replace(/\/t\/p\/(original|w\d+)\//, `/t/p/${wanted}/`);
 }
-// TMDB client adapter: يتصل بسيرفر Cinadam فقط، ولا يحمل أي مفتاح داخل المتصفح.
+// مفاتيح TMDB وOMDb وFanart لا تُضمّن في HTML المنشور. الطلبات تمر عبر واجهة خلفية.
+// يمكن للمشرف تغيير عنوانها من window.CINADAM_METADATA_API أو localStorage دون تعديل الكود.
+const CINADAM_METADATA_API = String(
+    (typeof window !== 'undefined' && window.CINADAM_METADATA_API) ||
+    (typeof localStorage !== 'undefined' && localStorage.getItem('cinadam_metadata_api')) ||
+    'https://europe-west1-mnste-36ca4.cloudfunctions.net/metadataApi'
+).trim().replace(/\/+$/, '');
+function metadataApiUrl(path, params) {
+    const cleanPath = String(path || '').split('/').filter(Boolean).map(encodeURIComponent).join('/');
+    const usp = new URLSearchParams(params || {});
+    return `${CINADAM_METADATA_API}/${cleanPath}${usp.toString() ? '?' + usp.toString() : ''}`;
+}
 async function tmdbFetch(path, params) {
-    const usp = new URLSearchParams(Object.assign({ path: String(path || '') }, params || {}));
+    let res;
     try {
-        return await cinemanaFetch(`/meta/tmdb?${usp.toString()}`);
+        res = await fetch(metadataApiUrl(`tmdb/${path}`, params), { headers: { Accept: 'application/json' } });
     }
     catch (e) {
-        const msg = e && e.message ? e.message : '';
-        if (/401|unauthor/i.test(msg)) throw new Error('مفتاح TMDB غير صحيح على السيرفر');
-        if (/404|not found/i.test(msg)) throw new Error('لم يتم العثور على هذا المعرف في TMDB');
-        throw new Error('تعذر جلب بيانات TMDB: ' + (msg || 'تحقق من إعداد السيرفر'));
+        throw new Error('تعذر الاتصال بخدمة بيانات TMDB — تحقق من اتصال الإنترنت');
     }
+    if (res.status === 401 || res.status === 403)
+        throw new Error('تعذّر التحقق من خدمة TMDB الخلفية');
+    if (res.status === 404)
+        throw new Error('لم يتم العثور على هذا المعرف في TMDB');
+    if (!res.ok)
+        throw new Error('خطأ من TMDB (رمز ' + res.status + ')');
+    return res.json();
 }
 async function fetchTmdbEpisodeRating(sourceId, seasonNumber, episodeNumber) {
     let id = String(sourceId || '').trim();
@@ -1987,50 +1954,40 @@ async function fetchTmdbEpisodeRating(sourceId, seasonNumber, episodeNumber) {
     if (!Number.isFinite(rating) || rating <= 0) return '';
     return rating.toFixed(1);
 }
-// OMDb client adapter: التقييمات وبيانات IMDb المكملة تأتي من نقطة مستقلة.
 async function omdbFetch(params) {
-    const usp = new URLSearchParams(params || {});
+    let res;
     try {
-        return await cinemanaFetch(`/meta/omdb?${usp.toString()}`);
+        res = await fetch(metadataApiUrl('omdb', params || {}), { headers: { Accept: 'application/json' } });
     }
     catch (e) {
-        throw new Error('تعذر جلب بيانات OMDb: ' + (e && e.message ? e.message : 'تحقق من إعداد السيرفر'));
+        throw new Error('تعذر الاتصال بخدمة OMDb الخلفية');
     }
-}
-// Fanart.tv client adapter: الشعارات والخلفيات والبوسترات تُجلب منفصلة عن TMDB.
-function rankFanartImages(arr) {
-    const score = img => (parseInt(img && img.likes, 10) || 0) + ((img && ['en', '', '00'].includes(String(img.lang || '').toLowerCase())) ? 1000 : 0);
-    return (arr || []).filter(i => i && i.url).slice().sort((a, b) => score(b) - score(a));
+    if (!res.ok)
+        throw new Error('خطأ من OMDb (رمز ' + res.status + ')');
+    return res.json();
 }
 async function fetchFanartData(tvdbId) {
-    const out = { tv: [], seasons: {}, backgrounds: [], logos: [], posters: [] };
-    if (!tvdbId) return out;
+    const out = { tv: [], seasons: {} };
+    if (!tvdbId)
+        return out;
     try {
-        const d = await cinemanaFetch(`/meta/fanart/tv/${encodeURIComponent(tvdbId)}?source=tvdb`);
-        out.tv = rankFanartImages([...(d.showbackground || []), ...(d.tvthumb || [])]).map(i => i.url);
-        out.backgrounds = rankFanartImages(d.showbackground).map(i => i.url);
-        out.logos = rankFanartImages([...(d.hdtvlogo || []), ...(d.clearlogo || []), ...(d.clearart || [])]).map(i => i.url);
-        out.posters = rankFanartImages(d.tvposter || []).map(i => i.url);
+        const res = await fetch(metadataApiUrl(`fanart/tv/${tvdbId}`), { headers: { Accept: 'application/json' } });
+        if (!res.ok)
+            return out;
+        const d = await res.json();
+        const score = (img) => (parseInt(img.likes, 10) || 0) + ((img.lang === 'en' || img.lang === '' || img.lang === '00') ? 1000 : 0);
+        const rank = (arr) => (arr || []).filter(i => i && i.url).sort((x, y) => score(y) - score(x));
+        out.tv = rank(d.tvthumb).map(i => i.url);
         const bySeason = {};
-        [...(d.seasonthumb || []), ...(d.seasonposter || [])].forEach(img => {
+        (d.seasonthumb || []).forEach(img => {
             const n = String(img.season);
-            if (!/^\d+$/.test(n) || !img.url) return;
+            if (!/^\d+$/.test(n) || !img.url)
+                return;
             (bySeason[n] = bySeason[n] || []).push(img);
         });
-        Object.keys(bySeason).forEach(n => { out.seasons[n] = rankFanartImages(bySeason[n]).map(i => i.url); });
-    } catch (_) { }
-    return out;
-}
-async function fetchFanartMovieData(tmdbId) {
-    const out = { backgrounds: [], posters: [], logos: [], banners: [] };
-    if (!tmdbId) return out;
-    try {
-        const d = await cinemanaFetch(`/meta/fanart/movie/${encodeURIComponent(tmdbId)}?source=tmdb`);
-        out.backgrounds = rankFanartImages(d.moviebackground || []).map(i => i.url);
-        out.posters = rankFanartImages(d.movieposter || []).map(i => i.url);
-        out.logos = rankFanartImages([...(d.hdmovielogo || []), ...(d.movielogo || [])]).map(i => i.url);
-        out.banners = rankFanartImages(d.moviebanner || []).map(i => i.url);
-    } catch (_) { }
+        Object.keys(bySeason).forEach(n => { out.seasons[n] = rank(bySeason[n]).map(i => i.url); });
+    }
+    catch (e) { }
     return out;
 }
 function guessTvSourceId(seasons) {
@@ -2143,25 +2100,17 @@ async function importFromTmdb(rawInput, currentType, opts) {
     const dateStr = data.release_date || data.first_air_date || (en && (en.release_date || en.first_air_date)) || foundDate || '';
     const sourceId = imdbId || String(tmdbId);
     const parsedYear = dateStr ? parseInt(dateStr.slice(0, 4), 10) : NaN;
-    const tmdbPoster = data.poster_path ? TMDB_IMG + 'w500' + data.poster_path : '';
-    const tmdbBackdrop = data.backdrop_path ? TMDB_IMG + 'original' + data.backdrop_path : '';
-    const fanartMovie = media === 'movie' ? await fetchFanartMovieData(tmdbId) : { backgrounds: [], posters: [], logos: [], banners: [] };
     const patch = {
         name: name,
         year: Number.isFinite(parsedYear) ? parsedYear : new Date().getFullYear(),
         genresText: genres.join(', '),
-        poster: tmdbPoster || fanartMovie.posters[0] || '',
-        backdrop: tmdbBackdrop || fanartMovie.backgrounds[0] || fanartMovie.banners[0] || '',
+        poster: data.poster_path ? TMDB_IMG + 'w500' + data.poster_path : '',
+        backdrop: data.backdrop_path ? TMDB_IMG + 'original' + data.backdrop_path : '',
         description: overview,
         director: director,
         writer: writer,
         imdbRating: '',
         runtimeMinutes: parseRuntimeSeconds(media === 'movie' ? (data.runtime || 0) : ((Array.isArray(data.episode_run_time) && data.episode_run_time[0]) || 0), true) / 60,
-        metadataSources: {
-            tmdb: { id: String(tmdbId), imdbId: imdbId || '', poster: tmdbPoster, backdrop: tmdbBackdrop },
-            fanart: media === 'movie' ? fanartMovie : {},
-            omdb: {},
-        },
     };
     const notes = [];
     let omdbBroken = false;
@@ -2175,23 +2124,8 @@ async function importFromTmdb(rawInput, currentType, opts) {
         try {
             const od = await omdbFetch({ i: imdbId });
             if (od && od.Response === 'True') {
-                patch.metadataSources.omdb = {
-                    imdbId: od.imdbID || imdbId,
-                    poster: od.Poster && od.Poster !== 'N/A' ? od.Poster : '',
-                    rating: od.imdbRating && od.imdbRating !== 'N/A' ? od.imdbRating : '',
-                    metascore: od.Metascore && od.Metascore !== 'N/A' ? od.Metascore : '',
-                    rated: od.Rated && od.Rated !== 'N/A' ? od.Rated : '',
-                    released: od.Released && od.Released !== 'N/A' ? od.Released : '',
-                    runtime: od.Runtime && od.Runtime !== 'N/A' ? od.Runtime : '',
-                    awards: od.Awards && od.Awards !== 'N/A' ? od.Awards : '',
-                    ratings: Array.isArray(od.Ratings) ? od.Ratings : [],
-                };
-                if (od.imdbRating && od.imdbRating !== 'N/A') patch.imdbRating = od.imdbRating;
-                if (!patch.poster && patch.metadataSources.omdb.poster) patch.poster = patch.metadataSources.omdb.poster;
-                if (!patch.description && od.Plot && od.Plot !== 'N/A') patch.description = od.Plot;
-                if (!patch.year && od.Year && /^\d{4}$/.test(od.Year)) patch.year = Number(od.Year);
-                const rtScore = (Array.isArray(od.Ratings) ? od.Ratings : []).find(x => /rotten tomatoes/i.test(x.Source || ''));
-                if (rtScore && rtScore.Value && rtScore.Value !== 'N/A') patch.rtRating = rtScore.Value;
+                if (od.imdbRating && od.imdbRating !== 'N/A')
+                    patch.imdbRating = od.imdbRating;
             }
             else
                 noteOmdb(od);
@@ -2220,10 +2154,7 @@ async function importFromTmdb(rawInput, currentType, opts) {
             options.onProgress('جاري جلب البنرات من Fanart...');
         const fanart = await fetchFanartData(data.external_ids && data.external_ids.tvdb_id);
         const tmdbBackdrops = await fetchTmdbBackdrops(tmdbId);
-        bannerData = { tv: fanart.tv, seasons: fanart.seasons, tmdb: tmdbBackdrops, tmdbId: tmdbId, fanartBackgrounds: fanart.backgrounds || [], fanartLogos: fanart.logos || [], fanartPosters: fanart.posters || [] };
-        patch.metadataSources = patch.metadataSources || { tmdb: {}, fanart: {}, omdb: {} };
-        patch.metadataSources.tmdb = { ...(patch.metadataSources.tmdb || {}), id: String(tmdbId), imdbId: imdbId || '', poster: tmdbPoster, backdrop: tmdbBackdrop, backdrops: tmdbBackdrops };
-        patch.metadataSources.fanart = { tv: fanart.tv, seasons: fanart.seasons, backgrounds: fanart.backgrounds || [], logos: fanart.logos || [], posters: fanart.posters || [] };
+        bannerData = { tv: fanart.tv, seasons: fanart.seasons, tmdb: tmdbBackdrops, tmdbId: tmdbId };
         for (let i = 0; i < list.length; i++) {
             const s = list[i];
             if (options.onProgress)
@@ -3321,99 +3252,6 @@ function ConfirmDialog({ title, body, confirmLabel, cancelLabel, onCancel, onCon
             React.createElement("div", { className: "flex gap-3 mt-6" },
                 React.createElement("button", { onClick: requestClose, className: "flex-1 py-2.5 rounded-xl glass-card border border-white/10 text-sm font-bold text-slate-300 hover:bg-white/5 transition" }, cancelLabel),
                 React.createElement("button", { onClick: doConfirm, className: "flex-1 py-2.5 rounded-xl bg-accent-red hover:bg-accent-redHover text-sm font-bold text-white shadow-[0_0_15px_rgba(255,51,75,0.4)] transition" }, confirmLabel)))));
-}
-// ---------- نافذة البلاغ عن مشكلة: نوع المشكلة + تفاصيل + وصف، مع إرفاق سياق التشغيل تلقائيًا
-const REPORT_TYPES = [
-    { id: 'audio', label: 'مشكلة في الصوت', icon: 'volumeX', subs: ['لا يوجد صوت', 'الصوت غير متزامن مع الصورة', 'الصوت منخفض أو مشوّش', 'اللغة غير صحيحة'] },
-    { id: 'subtitle', label: 'مشكلة في الترجمة', icon: 'captions', subs: ['لا تظهر الترجمة', 'الترجمة غير متزامنة', 'ترجمة خاطئة أو ناقصة', 'حجم أو شكل الترجمة سيئ'] },
-    { id: 'link', label: 'الرابط لا يعمل', icon: 'link', subs: ['الفيديو لا يعمل نهائيًا', 'يتوقف أو يعلق باستمرار', 'تحميل بطيء جدًا', 'يظهر خطأ عند التشغيل'] },
-    { id: 'quality', label: 'مشكلة في الجودة', icon: 'film', subs: ['الصورة ضبابية', 'الجودة لا تطابق المختار', 'ألوان أو سطوع غير طبيعي'] },
-    { id: 'content', label: 'محتوى خاطئ', icon: 'list', subs: ['الحلقة أو الفيلم غير المقصود', 'ترتيب الحلقات خاطئ', 'معلومات العمل غير صحيحة', 'البوستر أو الوصف خاطئ'] },
-    { id: 'other', label: 'مشكلة أخرى', icon: 'flag', subs: [] }
-];
-function ReportProblemModal({ title, currentUser, context, onClose }) {
-    const [closing, requestClose] = useClosable(onClose, 240);
-    const [type, setType] = useState('');
-    const [sub, setSub] = useState('');
-    const [desc, setDesc] = useState('');
-    const [sending, setSending] = useState(false);
-    const cur = REPORT_TYPES.find(t => t.id === type);
-    const needsDesc = type === 'other';
-    const canSend = !!type && (!needsDesc || desc.trim().length >= 5) && !sending;
-    const send = async () => {
-        if (!canSend) return;
-        setSending(true);
-        try {
-            const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
-            const msg = cur.label + (sub ? ` — ${sub}` : '') + (desc.trim() ? `\n${desc.trim().slice(0, 600)}` : '');
-            await db.ref('complaints').push({
-                username: currentUser.username, name: currentUser.name, type: 'report',
-                titleName: title.name, message: msg, status: 'open', date: Date.now(),
-                report: {
-                    titleId: title.id, kind: type, kindLabel: cur.label, detail: sub || '', description: desc.trim().slice(0, 600),
-                    where: context.label || '', season: context.season == null ? null : context.season, episode: context.episode == null ? null : context.episode,
-                    url: context.url || '', subtitleUrl: context.subtitleUrl || '', quality: context.quality || '', device: ua.slice(0, 160)
-                }
-            });
-            showToast('وصلنا بلاغك، شكرًا لك.');
-            requestClose();
-        } catch (e) {
-            showToast('تعذّر إرسال البلاغ.', 'error');
-            setSending(false);
-        }
-    };
-    const chip = (on) => `px-3 py-2 rounded-xl text-[13px] font-bold border transition ${on ? 'bg-accent-cyan/15 border-accent-cyan text-accent-cyan' : 'bg-white/5 border-white/10 text-slate-300 hover:border-white/30'}`;
-    return React.createElement("div", { className: `${closing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4`, onClick: requestClose },
-        React.createElement("div", { onClick: e => e.stopPropagation(), role: "dialog", "aria-modal": "true", "aria-label": "الإبلاغ عن مشكلة", className: `${closing ? 'modal-panel-out' : 'modal-panel'} glass-panel border border-white/10 rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl` },
-            React.createElement("h3", { className: "font-black text-lg text-white" }, "الإبلاغ عن مشكلة"),
-            React.createElement("p", { className: "text-[13px] text-slate-400 mt-1 leading-relaxed" },
-                React.createElement("bdi", null, title.name), context.label && context.label !== title.name ? ` — ${context.label.split(' · ').slice(1).join(' · ') || context.label}` : ''),
-            React.createElement("p", { className: "text-xs font-bold text-slate-500 mt-5 mb-2" }, "ما نوع المشكلة؟"),
-            React.createElement("div", { className: "grid grid-cols-2 gap-2" }, REPORT_TYPES.map(t => React.createElement("button", { key: t.id, type: "button", onClick: () => { setType(t.id); setSub(''); }, "aria-pressed": type === t.id, className: `flex items-center gap-2 px-3 py-3 rounded-2xl border text-start text-[13px] font-extrabold transition ${type === t.id ? 'bg-accent-red/15 border-accent-red text-white' : 'bg-white/5 border-white/10 text-slate-300 hover:border-white/30'}` },
-                React.createElement(Icon, { name: t.icon, className: "w-4 h-4 shrink-0" }), React.createElement("span", null, t.label)))),
-            cur && cur.subs.length ? React.createElement("div", { className: "mt-4 page-fade-in" },
-                React.createElement("p", { className: "text-xs font-bold text-slate-500 mb-2" }, "تفاصيل أكثر (اختياري)"),
-                React.createElement("div", { className: "flex flex-wrap gap-2" }, cur.subs.map(x => React.createElement("button", { key: x, type: "button", onClick: () => setSub(sub === x ? '' : x), "aria-pressed": sub === x, className: chip(sub === x) }, x)))) : null,
-            type ? React.createElement("div", { className: "mt-4 page-fade-in" },
-                React.createElement("label", { className: "text-xs font-bold text-slate-500 mb-2 block", htmlFor: "report-desc" }, needsDesc ? "صف المشكلة" : "وصف المشكلة (اختياري)"),
-                React.createElement("textarea", { id: "report-desc", value: desc, onChange: e => setDesc(e.target.value), maxLength: 600, rows: 4, placeholder: "مثال: عند الدقيقة 12 يختفي الصوت ثم يرجع بعد ثوانٍ", className: "w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-accent-cyan resize-none" }),
-                React.createElement("p", { className: "text-[11px] text-slate-500 mt-2 leading-relaxed" }, "نرفق تلقائيًا اسم الحلقة والجودة ونوع جهازك ليسهل علينا الإصلاح.")) : null,
-            React.createElement("div", { className: "flex gap-3 mt-6" },
-                React.createElement("button", { type: "button", onClick: requestClose, className: "flex-1 py-2.5 rounded-xl glass-card border border-white/10 text-sm font-bold text-slate-300 hover:bg-white/5 transition" }, "إلغاء"),
-                React.createElement("button", { type: "button", onClick: send, disabled: !canSend, className: "flex-1 py-2.5 rounded-xl bg-accent-red hover:bg-accent-redHover text-sm font-bold text-white shadow-[0_0_15px_rgba(255,51,75,0.4)] transition disabled:opacity-40 disabled:shadow-none" }, sending ? 'جارٍ الإرسال…' : 'إرسال البلاغ'))));
-}
-function arEpisodes(n) { return n === 1 ? 'حلقة واحدة' : n === 2 ? 'حلقتان' : (n >= 3 && n <= 10) ? `${n} حلقات` : `${n} حلقة`; }
-function CastAllModal({ title, cast, onClose }) {
-    const [closing, requestClose] = useClosable(onClose, 240);
-    const [q, setQ] = useState('');
-    const qq = q.trim().toLowerCase();
-    const list = qq ? cast.filter(c => c.name.toLowerCase().indexOf(qq) >= 0 || c.roles.some(r => (r.character || '').toLowerCase().indexOf(qq) >= 0)) : cast;
-    useEffect(() => {
-        const k = e => { if (e.key === 'Escape') requestClose(); };
-        document.addEventListener('keydown', k);
-        return () => document.removeEventListener('keydown', k);
-    }, []);
-    return React.createElement("div", { className: `${closing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-3 sm:p-6`, onClick: requestClose },
-        React.createElement("div", { onClick: e => e.stopPropagation(), role: "dialog", "aria-modal": "true", "aria-label": "طاقم التمثيل", className: `${closing ? 'modal-panel-out' : 'modal-panel'} glass-panel border border-white/10 rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden` },
-            React.createElement("div", { className: "flex items-center justify-between gap-3 px-5 pt-5 pb-3" },
-                React.createElement("div", { className: "min-w-0" },
-                    React.createElement("h3", { className: "font-black text-lg text-white" }, "طاقم التمثيل"),
-                    React.createElement("p", { className: "text-xs text-slate-400 mt-0.5 truncate" }, React.createElement("bdi", null, title.name), ` · ${cast.length} ممثل`)),
-                React.createElement("button", { type: "button", onClick: requestClose, "aria-label": "إغلاق", className: "w-9 h-9 rounded-xl glass-card border border-white/10 grid place-items-center text-slate-300 hover:text-white shrink-0" }, React.createElement(Icon, { name: "x", className: "w-4 h-4" }))),
-            React.createElement("div", { className: "px-5 pb-3" },
-                React.createElement("input", { value: q, onChange: e => setQ(e.target.value), placeholder: "ابحث باسم الممثل أو الشخصية", className: "w-full bg-glass-900 border border-white/10 rounded-2xl px-4 py-2.5 text-sm text-slate-100 outline-none focus:border-accent-cyan placeholder-slate-600" })),
-            React.createElement("div", { className: "overflow-y-auto px-5 pb-6" },
-                list.length === 0 ? React.createElement("p", { className: "text-sm text-slate-500 text-center py-10" }, "لا توجد نتائج.") :
-                React.createElement("div", { className: "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-x-3 gap-y-5" }, list.map((c, i) => {
-                    const roles = c.roles.filter(r => r.character);
-                    const shownRoles = roles.slice(0, 2);
-                    return React.createElement("div", { key: i, className: "text-center min-w-0" },
-                        React.createElement("div", { className: "relative w-full aspect-[2/3] rounded-xl overflow-hidden bg-glass-800 ring-1 ring-white/10 grid place-items-center text-2xl font-black text-slate-500" },
-                            c.photo ? React.createElement("img", { src: c.photo, alt: c.name, loading: "lazy", decoding: "async", draggable: false, className: "w-full h-full object-cover object-top" }) : c.name.charAt(0)),
-                        React.createElement("p", { className: "mt-2 text-[12px] md:text-[13px] font-extrabold leading-tight", dir: "ltr" }, c.name),
-                        shownRoles.length ? React.createElement("p", { className: "mt-0.5 text-[11px] text-accent-cyan/90 font-bold leading-tight line-clamp-2", dir: "ltr" }, shownRoles.map(r => r.character).join(' / ') + (roles.length > 2 ? ` +${roles.length - 2}` : '')) : null,
-                        c.episodes ? React.createElement("p", { className: "mt-0.5 text-[10.5px] text-slate-400 font-semibold" }, arEpisodes(c.episodes)) : null);
-                })))));
 }
 function SubtitleOverlay({ videoRef, cues, shiftMs, prefs, lifted }) {
     const [text, setText] = useState('');
@@ -4702,76 +4540,6 @@ async function fetchSkipDbSegments(title, season, episode, durationSec) {
     SKIPDB_SEGMENT_CACHE.set(key, result);
     return result;
 }
-
-// ===================== صفحة التفاصيل الجديدة: دوال مساعدة =====================
-function useMediaQuery(query) {
-    const read = () => (typeof window !== 'undefined' && window.matchMedia) ? window.matchMedia(query).matches : false;
-    const [matches, setMatches] = useState(read);
-    useEffect(() => {
-        if (!window.matchMedia) return;
-        const mq = window.matchMedia(query);
-        const on = () => setMatches(mq.matches);
-        on();
-        if (mq.addEventListener) mq.addEventListener('change', on); else mq.addListener(on);
-        return () => { if (mq.removeEventListener) mq.removeEventListener('change', on); else mq.removeListener(on); };
-    }, [query]);
-    return matches;
-}
-const TITLE_EXTRAS_CACHE = {};
-async function resolveTmdbRef(title) {
-    const series = title.type !== 'movie';
-    let id = String(title.tmdbId || title.sourceId || title.imdbId || title.imdb || '').trim();
-    if (!id) {
-        const src = guessTitleSource(title);
-        id = String((src && src.id) || '').trim();
-    }
-    if (!id) return null;
-    const kind = series ? 'tv' : 'movie';
-    if (/^tt\d+$/i.test(id)) {
-        const found = await tmdbFetch(`find/${id.toLowerCase()}`, { external_source: 'imdb_id' });
-        const list = series ? (found.tv_results || []) : (found.movie_results || []);
-        if (!list.length) return null;
-        return { kind, id: String(list[0].id) };
-    }
-    return { kind, id };
-}
-// طاقم التمثيل + المخرج/الكاتب + العرض التشويقي من TMDB (يُحفظ بالذاكرة حتى لا يُعاد الطلب)
-async function fetchTitleExtras(title) {
-    if (TITLE_EXTRAS_CACHE[title.id]) return TITLE_EXTRAS_CACHE[title.id];
-    const out = { cast: [], castAll: [], director: '', writer: '', trailerKey: '' };
-    const ref = await resolveTmdbRef(title);
-    if (ref) {
-        const [credits, videos, aggr] = await Promise.all([
-            tmdbFetch(`${ref.kind}/${ref.id}/credits`, { language: 'en-US' }).catch(() => null),
-            tmdbFetch(`${ref.kind}/${ref.id}/videos`, { language: 'en-US' }).catch(() => null),
-            ref.kind === 'tv' ? tmdbFetch(`tv/${ref.id}/aggregate_credits`, { language: 'en-US' }).catch(() => null) : Promise.resolve(null),
-        ]);
-        // القائمة الكاملة: للمسلسلات aggregate_credits (فيها عدد الحلقات لكل ممثل وأدواره)، وللأفلام credits
-        if (aggr && (aggr.cast || []).length) {
-            out.castAll = aggr.cast.filter(c => c.name).map(c => ({ name: c.name, photo: c.profile_path ? `${TMDB_IMG}w342${c.profile_path}` : '',
-                roles: (c.roles || []).map(r => ({ character: r.character || '', episodes: r.episode_count || 0 })).filter(r => r.character || r.episodes),
-                episodes: c.total_episode_count || 0 }));
-        } else if (credits && (credits.cast || []).length) {
-            out.castAll = credits.cast.filter(c => c.name).map(c => ({ name: c.name, photo: c.profile_path ? `${TMDB_IMG}w342${c.profile_path}` : '', roles: c.character ? [{ character: c.character, episodes: 0 }] : [], episodes: 0 }));
-        }
-        if (credits) {
-            out.cast = (credits.cast || []).filter(c => c.name).slice(0, 18).map(c => ({ name: c.name, role: c.character || '', photo: c.profile_path ? `${TMDB_IMG}w342${c.profile_path}` : '' }));
-            if (ref.kind === 'movie') {
-                const crew = credits.crew || [];
-                const pick = jobs => crew.filter(c => jobs.indexOf(c.job) >= 0).map(c => c.name).filter((n, i, a) => a.indexOf(n) === i).slice(0, 3).join(', ');
-                out.director = pick(['Director']);
-                out.writer = pick(['Screenplay', 'Writer', 'Story']);
-            }
-        }
-        if (videos) {
-            const yt = (videos.results || []).filter(v => v.site === 'YouTube');
-            const best = yt.find(v => v.type === 'Trailer' && v.official) || yt.find(v => v.type === 'Trailer') || yt.find(v => v.type === 'Teaser') || yt[0];
-            out.trailerKey = best ? best.key : '';
-        }
-    }
-    TITLE_EXTRAS_CACHE[title.id] = out;
-    return out;
-}
 function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onOpenAuth, getRole, onOpenProfile, onOpen, watched, onMarkEpisodeWatched, onMarkMovieWatched, isEpisodeWatched, watchProgress, onSaveWatchProgress }) {
     const [closing, requestClose] = useClosable(onClose);
     const [playingUrl, setPlayingUrl] = useState(null);
@@ -4923,10 +4691,9 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     // يبقى فتح العمل من أعلى التفاصيل (البانر/المعلومات)، بدون قفزة تلقائية للمواسم.
     const seasonsSectionRef = useRef(null);
     const titleModalScrollRef = useRef(null);
-    const keepScrollRef = useRef(false);
     const scrollTitleModalToTop = () => {
         const el = titleModalScrollRef.current;
-        if (!el || keepScrollRef.current) return;
+        if (!el) return;
         try { el.scrollTo({ top: 0, behavior: 'smooth' }); } catch (_) { el.scrollTop = 0; }
     };
 
@@ -5497,186 +5264,168 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
     ].filter(Boolean);
     const centerButton = React.createElement("button", { onClick: () => handlePlay(false), className: `max-w-[88%] rounded-3xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center gap-2.5 px-5 py-3.5 shadow-[0_0_30px_rgba(255,51,75,0.6)] transform hover:scale-105 transition text-white ${centerResumeMode ? 'min-w-[235px]' : 'w-[72px] h-[72px] px-0'}` }, ...centerButtonChildren);
     const centerOverlay = React.createElement("div", { className: "absolute inset-0 bg-gradient-to-t from-glass-950 via-black/40 to-transparent flex items-center justify-center px-4" }, centerButton);
-    // ======================= التصميم الجديد: صفحة كاملة =======================
-    // ديسكتوب: مشغّل كبير + ملصق معلّق + طاقم + مشابه | موبايل: مشغّل ثابت + تبويبات | مسلسل: الحلقات أولًا
-    const _h = React.createElement;
-    const isMobile = useMediaQuery('(max-width: 767px), (pointer: coarse) and (max-width: 1024px)');
-    keepScrollRef.current = isMobile && !!playingUrl;
-    const [scrolled, setScrolled] = useState(false);
-    const [tab, setTab] = useState(isSeries ? 'episodes' : 'about');
-    const [trailerOpen, setTrailerOpen] = useState(false);
-    const [extras, setExtras] = useState(TITLE_EXTRAS_CACHE[title.id] || null);
-    useEffect(() => {
-        let off = false;
-        setExtras(TITLE_EXTRAS_CACHE[title.id] || null);
-        setTab(isSeries ? 'episodes' : 'about');
-        setTrailerOpen(false);
-        setScrolled(false);
-        const root = titleModalScrollRef.current;
-        if (root) { try { root.scrollTo({ top: 0 }); } catch (_) { root.scrollTop = 0; } }
-        fetchTitleExtras(title).then(x => { if (!off) setExtras(x); }).catch(() => { });
-        return () => { off = true; };
-    }, [title.id]);
-    // يفتح على موسم المتابعة، ويتبع الموسم الجاري تشغيله
-    useEffect(() => {
-        const t = resumeUi.targetEp;
-        if (!isSeries || !t) return;
-        const i = seasons.findIndex(s => Number(s.number) === Number(t.seasonNumber));
-        if (i >= 0) setActiveSeason(i);
-    }, [title.id]);
-    useEffect(() => {
-        if (!isSeries || playingSeasonNumber == null) return;
-        const i = seasons.findIndex(s => Number(s.number) === Number(playingSeasonNumber));
-        if (i >= 0) setActiveSeason(i);
-    }, [playingSeasonNumber]);
-    useEffect(() => {
-        const prev = document.body.style.overflow;
-        document.body.style.overflow = 'hidden';
-        return () => { document.body.style.overflow = prev; };
-    }, []);
-    const [showReport, setShowReport] = useState(false);
-    const [showCastAll, setShowCastAll] = useState(false);
-    const reportProblem = () => {
-        if (!currentUser) { onOpenAuth('login'); return; }
-        setShowReport(true);
-    };
-
-    // ---------- قيم مشتقة
-    // بوستر الموسم المحدد (عند عرض موسم واحد فقط)، وإلا بوستر العمل
-    const activeSeasonPoster = (isSeries && !showAllEpisodes && seasons[activeSeason] && seasons[activeSeason].poster) || '';
-    const posterSrc = (activeSeasonPoster || title.poster) ? tmdbAdaptive(activeSeasonPoster || title.poster, 'poster') : '';
-    const bdSrc = title.backdrop ? tmdbAdaptive(title.backdrop) : '';
-    const shownRuntime = playingDurationSec || getRuntimeSeconds(playingMeta) || titleDisplayRuntime;
-    const nextEp = (isSeries && playingUrl) ? getNextEpisodeInfo() : null;
-    const directorName = title.director || (extras && extras.director) || '';
-    const writerName = title.writer || (extras && extras.writer) || '';
-    const plural = (n, one, two, few, many) => n === 1 ? one : n === 2 ? two : (n >= 3 && n <= 10) ? `${n} ${few}` : `${n} ${many}`;
-    const seasonsLabel = plural(seasons.length, 'موسم واحد', 'موسمان', 'مواسم', 'موسمًا');
-    const episodesLabel = plural(allEpisodesFlat.length, 'حلقة واحدة', 'حلقتان', 'حلقات', 'حلقة');
-    const hasTrailer = !!(extras && extras.trailerKey);
-
-    // ---------- الزر الرئيسي
-    const primaryLabel = nextEp ? 'الحلقة التالية' : playingUrl ? (isSeries ? 'من أول حلقة' : 'من البداية') : (resumeUi.hasResume ? 'متابعة المشاهدة' : 'تشغيل');
-    const primarySub = (() => {
-        if (nextEp) return `الحلقة ${nextEp.number}`;
-        if (playingUrl) return '';
-        let s = '';
-        if (isSeries && resumeUi.targetEp) s = `الموسم ${resumeUi.targetEp.seasonNumber} الحلقة ${resumeUi.targetEp.number}`;
-        if (resumeUi.hasResume && resumeUi.detail) s = s ? `${s}   ${resumeUi.detail}` : resumeUi.detail;
-        return s;
-    })();
-    const onPrimary = () => nextEp ? playNextEpisode() : (playingUrl ? handlePlay(true) : handlePlay(false));
-    const primaryBtn = (full) => _h("button", { type: "button", onClick: onPrimary, className: `dp-primary ${full ? 'w-full justify-center' : ''}` },
-        _h("span", { className: "dp-primary-icon" }, _h(Icon, { name: nextEp ? 'skipForward' : 'play', className: "w-4 h-4 fill-current" })),
-        _h("span", { className: "flex flex-col items-start leading-tight text-start" },
-            _h("span", { className: "font-black text-[15px]" }, primaryLabel),
-            primarySub ? _h("span", { className: "text-[11px] font-semibold text-white/85 mt-0.5" }, primarySub) : null));
-    const likeBtn = _h("button", { type: "button", onClick: onLike, className: `dp-ghost ${liked ? 'on' : ''}` },
-        _h(Icon, { name: "heart", className: `w-4 h-4 ${liked ? 'fill-current' : ''}` }),
-        _h("span", null, title.likes || 0));
-    const openList = () => { if (!currentUser) { onOpenAuth('login'); return; } setShowAddToList(true); };
-    const listBtn = _h("button", { type: "button", onClick: openList, className: "dp-ghost" },
-        _h(Icon, { name: "list", className: "w-4 h-4 text-accent-cyan" }),
-        _h("span", null, "أضف لقائمتي"));
-    const railBtn = (icon, label, onClick) => _h("button", { type: "button", onClick: onClick, className: "dp-rail" },
-        _h(Icon, { name: icon, className: "w-[18px] h-[18px] shrink-0" }), _h("span", null, label));
-    const mAct = (icon, label, onClick, active) => _h("button", { type: "button", onClick: onClick, className: `dp-mact ${active ? 'on' : ''}` },
-        _h(Icon, { name: icon, className: `w-5 h-5 ${active ? 'fill-current' : ''}` }), _h("span", null, label));
-
-    // ---------- معلومات العمل
-    const rtNum = title.rtRating ? parseInt(String(title.rtRating).replace('%', '')) : NaN;
-    const scoreChips = (title.imdbRating || title.rtRating || ratingList.length > 0 || titleWatched) ? _h("div", { className: "flex items-center gap-2 flex-wrap" },
-        title.imdbRating ? _h("span", { className: "dp-score", dir: "ltr", title: "تقييم IMDb" }, _h("b", { className: "dp-imdb" }, "IMDb"), _h("span", null, title.imdbRating)) : null,
-        title.rtRating ? _h("span", { className: `dp-score ${(!isNaN(rtNum) && rtNum >= 60) ? 'text-emerald-400' : 'text-rose-400'}`, dir: "ltr", title: "Rotten Tomatoes" }, _h("span", { className: "text-slate-400 text-[11px]" }, "RT"), _h("span", null, String(title.rtRating).includes('%') ? title.rtRating : title.rtRating + '%')) : null,
-        ratingList.length > 0 ? _h("span", { className: "dp-score", dir: "ltr", title: "تقييم أعضاء Cinadam" }, _h(Icon, { name: "star", className: "w-3.5 h-3.5 fill-current text-accent-red" }), _h("span", null, avgRating.toFixed(1)), _h("span", { className: "text-slate-400 text-[11px]" }, `/5 (${ratingList.length})`)) : null,
-        titleWatched ? _h("span", { className: "dp-score text-emerald-400" }, _h(Icon, { name: "check", className: "w-3.5 h-3.5" }), "تمت المشاهدة") : null) : null;
-    const factsRow = _h("div", { className: "flex items-center gap-x-4 gap-y-2 flex-wrap text-[13px] font-bold text-slate-300" },
-        _h("span", { className: "px-3 py-1 rounded-full bg-accent-red text-white text-xs font-black" }, TYPE_LABELS[title.type]),
-        title.year ? _h("span", null, title.year) : null,
-        (isSeries && seasons.length) ? _h("span", null, seasonsLabel) : null,
-        (isSeries && allEpisodesFlat.length) ? _h("span", null, episodesLabel) : null,
-        ((!isSeries || playingDurationSec) && shownRuntime) ? _h("span", { className: "inline-flex items-center gap-1.5", dir: "ltr" }, _h(Icon, { name: "clock", className: "w-3.5 h-3.5 text-slate-400" }), `${formatRuntimeMinutesSeconds(shownRuntime)} دقيقة`) : null);
-    const nowPlayingLine = (playingLabel && playingLabel !== title.name) ? _h("p", { className: "text-sm font-bold text-accent-cyan flex items-center gap-1.5" },
-        _h(Icon, { name: "play", className: "w-3.5 h-3.5 fill-current" }),
-        _h(BidiJoined, { text: playingLabel.split(' · ').slice(1).join(' · ') })) : null;
-    const genreTags = (title.genres && title.genres.length) ? _h("div", { className: "flex gap-2 flex-wrap" }, title.genres.map(g => _h("span", { key: g, className: "dp-tag" }, g))) : null;
-    const synopsis = title.description ? _h("p", { className: "text-[15px] md:text-base text-slate-300 leading-8 max-w-[66ch]" }, title.description) : null;
-    const crewItem = (label, value) => _h("div", null,
-        _h("p", { className: "text-xs font-bold text-slate-500 mb-0.5" }, label),
-        _h("p", { className: "text-sm font-bold text-slate-100" }, _h("bdi", null, value)));
-    const crewRow = (directorName || writerName) ? _h("div", { className: "flex gap-x-10 gap-y-3 flex-wrap" },
-        directorName ? crewItem('الإخراج', directorName) : null,
-        writerName ? crewItem('الكتابة', writerName) : null) : null;
-    const posterBox = (cls) => _h("div", { className: `rounded-2xl overflow-hidden ring-1 ring-white/15 shadow-[0_24px_60px_-18px_rgba(0,0,0,.9)] bg-glass-900 aspect-[2/3] ${cls || ''}` },
-        posterSrc ? _h("img", { key: posterSrc, src: posterSrc, alt: title.name, decoding: "async", className: "w-full h-full object-cover dp-poster-swap" }) : _h("div", { className: "w-full h-full grid place-items-center text-slate-600" }, _h(Icon, { name: "film", className: "w-10 h-10" })));
-
-    // ---------- الطاقم والمشابه
-    const castRail = (extras && extras.cast && extras.cast.length) ? _h("section", null,
-        _h("div", { className: "flex items-center justify-between gap-3 mb-5" },
-            _h("h2", { className: "dp-h" }, "طاقم التمثيل"),
-            (extras.castAll && extras.castAll.length) ? _h("button", { type: "button", onClick: () => setShowCastAll(true), className: "text-[13px] font-extrabold text-accent-cyan hover:underline shrink-0" }, `عرض الكل (${extras.castAll.length})`) : null),
-        _h("div", { className: "flex gap-4 md:gap-6 overflow-x-auto scrollbar-hide pb-2 -mx-4 px-4 md:mx-0 md:px-0" }, extras.cast.map((c, i) => _h("div", { key: i, className: "shrink-0 w-[96px] md:w-[124px] text-center" },
-            _h("div", { className: "relative w-full aspect-[2/3] rounded-xl overflow-hidden bg-glass-800 ring-1 ring-white/10 grid place-items-center text-2xl font-black text-slate-500" },
-                c.photo ? _h("img", { src: c.photo, alt: c.name, loading: "lazy", decoding: "async", draggable: false, className: "w-full h-full object-cover object-top" }) : c.name.charAt(0)),
-            _h("p", { className: "mt-2 text-[12px] md:text-[13px] font-extrabold leading-tight", dir: "ltr" }, c.name),
-            c.role ? _h("p", { className: "mt-0.5 text-[10.5px] md:text-[11.5px] text-slate-500 font-semibold leading-tight line-clamp-2", dir: "ltr" }, c.role) : null)))) : null;
-    const similarRail = (similarTitles.length > 0 && onOpen) ? _h("section", null,
-        _h("h2", { className: "dp-h mb-4" }, "أعمال مشابهة"),
-        _h("div", { className: "flex gap-3.5 overflow-x-auto scrollbar-hide pb-2 snap-x -mx-4 px-4 md:mx-0 md:px-0" }, similarTitles.map(({ t, why }) => _h("button", { key: t.id, type: "button", onClick: () => onOpen(t), className: "group shrink-0 snap-start w-[124px] sm:w-[150px] lg:w-[172px] text-start" },
-            _h("div", { className: "relative aspect-[2/3] rounded-xl overflow-hidden bg-glass-900 ring-1 ring-white/10 transition duration-300 group-hover:ring-accent-red/60" },
-                t.poster ? _h("img", { src: t.poster, alt: t.name, loading: "lazy", decoding: "async", className: "w-full h-full object-cover" }) : _h("div", { className: "w-full h-full grid place-items-center text-slate-600" }, _h(Icon, { name: "film", className: "w-8 h-8" })),
-                t.imdbRating ? _h("span", { className: "absolute top-1.5 start-1.5 inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-black/70 text-amber-400 font-black", dir: "ltr" }, _h(Icon, { name: "star", className: "w-2.5 h-2.5 fill-current" }), t.imdbRating) : null,
-                _h("div", { className: "absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent opacity-0 md:group-hover:opacity-100 transition flex items-end justify-center pb-3" },
-                    _h("span", { className: "dp-watchpill" }, _h(Icon, { name: "play", className: "w-3.5 h-3.5 fill-current" }), "شاهد"))),
-            _h("p", { className: "mt-2 text-[13px] font-bold line-clamp-1 text-slate-100" }, _h("bdi", null, t.name)),
-            _h("p", { className: "flex gap-2 text-[11px] text-slate-400 font-semibold" }, t.year ? _h("span", null, t.year) : null, _h("span", null, TYPE_LABELS[t.type])),
-            why ? _h("p", { className: "text-[10px] text-accent-cyan/80 mt-0.5 leading-tight" }, why) : null)))) : null;
-
-    // ---------- المسلسل: المواسم والحلقات
-    const episodesToShow = showAllEpisodes
-        ? allEpisodesFlat.map(ep => ({ ep, sn: ep.seasonNumber }))
-        : (((seasons[activeSeason] && seasons[activeSeason].episodes) || []).map(ep => ({ ep, sn: seasons[activeSeason].number })));
-    const seasonChips = _h("div", { className: "flex items-center gap-2 overflow-x-auto scrollbar-hide py-1 -mx-1 px-1" },
-        seasons.map((s, i) => _h("button", { key: i, type: "button", onClick: () => { setActiveSeason(i); setShowAllEpisodes(false); setSeasonView(true); }, className: `dp-chip ${(!showAllEpisodes && activeSeason === i) ? 'on' : ''}` },
-            `الموسم ${s.number || i + 1}`, _h("span", { className: "dp-chip-n" }, (s.episodes || []).length))),
-        seasons.length > 1 ? _h("button", { key: "all", type: "button", onClick: openAllEpisodes, className: `dp-chip ${showAllEpisodes ? 'on' : ''}` },
-            "كل الحلقات", _h("span", { className: "dp-chip-n" }, allEpisodesFlat.length)) : null);
-    const renderEpisode = (ep, seasonNumber, idx, showSeasonTag, compact) => {
-        const num = ep.number != null ? ep.number : idx + 1;
-        const seasonObj = seasons.find(s => Number(s.number) === Number(seasonNumber));
-        const thumb = (seasonObj && seasonObj.episodeThumbnail) || ep.episodeThumbnail || ep.thumbnail || '';
-        const wp = currentEpisodeProgress(seasonNumber, ep.number);
-        const isCurrent = !!playingUrl && !!playingMeta && Number(playingMeta.number) === Number(ep.number) && Number(playingSeasonNumber) === Number(seasonNumber);
-        const done = !!((isEpisodeWatched && isEpisodeWatched(title.id, seasonNumber, ep.number)) || (wp && wp.completed) || locallyCompletedEpisodeKey === `s${seasonNumber}e${ep.number}`);
-        const pct = done ? 100 : ((wp && !wp.completed) ? Math.max(0, Math.min(100, Math.round(Number(wp.percent) || 0))) : 0);
-        const rt = getDisplayRuntime(ep, `${title.id}:${seasonNumber}:${ep.number}`);
-        const blurb = ep.overview || ep.description || '';
-        const play = () => { scrollTitleModalToTop(); playEpisode(ep, seasonNumber); };
-        return _h("div", { key: `${seasonNumber}-${num}-${idx}`, role: "button", tabIndex: 0, onClick: play, onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); play(); } }, className: `dp-ep group ${isCurrent ? 'is-current' : ''}` },
-            _h("div", { className: `relative shrink-0 overflow-hidden rounded-xl bg-glass-900 ${compact ? 'w-[118px] h-[66px]' : 'w-[168px] h-[94px] lg:w-[200px] lg:h-[112px]'}` },
-                thumb ? _h("img", { src: thumb, alt: "", loading: "lazy", decoding: "async", className: "w-full h-full object-cover transition duration-500 group-hover:scale-105" }) : _h("div", { className: "w-full h-full grid place-items-center text-xl font-black text-slate-600" }, num),
-                _h("div", { className: "absolute inset-0 bg-black/25 group-hover:bg-black/40 transition grid place-items-center" },
-                    _h("span", { className: `grid place-items-center rounded-full backdrop-blur-sm ${isCurrent ? 'bg-accent-cyan text-glass-950' : 'bg-black/55 text-white'} ${compact ? 'w-8 h-8' : 'w-10 h-10'}` },
-                        _h(Icon, { name: isCurrent ? 'volume2' : 'play', className: `${compact ? 'w-3.5 h-3.5' : 'w-4 h-4'} fill-current` }))),
-                done ? _h("span", { className: "absolute top-1 start-1 w-5 h-5 rounded-full bg-emerald-500 grid place-items-center shadow" }, _h(Icon, { name: "check", className: "w-3 h-3 text-white" })) : null,
-                (pct > 0 && !done) ? _h("div", { className: "absolute inset-x-0 bottom-0 h-1 bg-white/25" }, _h("div", { className: "h-full bg-accent-cyan", style: { width: `${pct}%` } })) : null),
-            _h("div", { className: "min-w-0 flex-1" },
-                _h("p", { className: `text-[11px] font-extrabold mb-0.5 ${isCurrent ? 'text-accent-cyan' : 'text-slate-500'}` }, showSeasonTag ? `الموسم ${seasonNumber} الحلقة ${num}` : `الحلقة ${num}`, isCurrent ? '   قيد التشغيل' : ''),
-                _h("p", { className: `font-bold leading-snug text-slate-100 ${compact ? 'text-[13.5px] line-clamp-2' : 'text-[15px] line-clamp-1'}` }, ep.title ? _h(BidiText, null, ep.title) : episodeAutoLabel(ep)),
-                (!compact && blurb) ? _h("p", { className: "mt-1 text-[12.5px] text-slate-400 leading-6 line-clamp-2" }, blurb) : null,
-                _h("div", { className: "flex items-center gap-1.5 flex-wrap mt-1.5" },
-                    ep.imdb ? _h("span", { className: "inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-black/60 text-amber-400 font-bold border border-amber-400/20", dir: "ltr" }, _h(Icon, { name: "star", className: "w-2.5 h-2.5" }), ep.imdb) : null,
-                    ep.tmdbRating ? _h("span", { className: "inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-black/60 text-cyan-300 font-bold border border-cyan-400/20", dir: "ltr", title: "تقييم TMDB" }, _h(Icon, { name: "star", className: "w-2.5 h-2.5" }), ep.tmdbRating) : null,
-                    rt > 0 ? _h("span", { className: "inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-black/60 text-slate-300 font-bold border border-white/10", dir: "ltr" }, `${formatRuntimeMinutesSeconds(rt)} دقيقة`) : null)));
-    };
-    const seasonYearLine = (!showAllEpisodes && seasons[activeSeason] && seasons[activeSeason].year) ? _h("p", { className: "text-xs text-slate-500 font-bold mt-2" }, `سنة إصدار الموسم ${seasons[activeSeason].year}`) : null;
-    const episodesBody = (compact) => _h("div", { className: compact ? 'space-y-2.5' : 'grid xl:grid-cols-2 gap-3' },
-        episodesToShow.length
-            ? episodesToShow.map(({ ep, sn }, i) => renderEpisode(ep, sn, i, showAllEpisodes, compact))
-            : _h("p", { className: "text-sm text-slate-500 font-medium" }, showAllEpisodes ? 'لا توجد حلقات بعد.' : 'لا توجد حلقات في هذا الموسم بعد.'));
-
-    // ---------- التقييمات والتعليقات (نفس المنطق القديم دون تغيير)
-    const ratingsNode =                 React.createElement("div", { className: "dp-block" },
+    return (React.createElement("div", { className: `${closing ? 'modal-backdrop-out' : 'modal-backdrop'} fixed inset-0 z-50 bg-black/90 md:p-6 md:flex md:items-center md:justify-center overflow-y-auto`, onClick: requestClose },
+        React.createElement("div", { ref: titleModalScrollRef, onClick: e => e.stopPropagation(), className: `${closing ? 'sheet-panel-out' : 'sheet-panel'} glass-panel w-full min-h-screen md:min-h-0 md:max-h-[92vh] md:max-w-3xl md:rounded-3xl overflow-y-auto border border-white/10 shadow-2xl` },
+            React.createElement("div", { className: "relative" },
+                playingUrl ? (React.createElement("div", { className: "relative" },
+                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: 'cinadam-player-' + title.id + '-' + playerRetryCount, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: handleCinemanaPlaybackError, onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : Number(playingMeta.introStart) || 0, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : Number(playingMeta.introEnd) || 0, recapStart: skipDbSegments.recap ? Number(skipDbSegments.recap.start_ms) / 1000 : Number(playingMeta.recapStart) || 0, recapEnd: skipDbSegments.recap ? Number(skipDbSegments.recap.end_ms) / 1000 : Number(playingMeta.recapEnd) || 0, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : Number(playingMeta.outroStart) || 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : Number(playingMeta.outroEnd) || 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onOutroStart: handleEpisodeComplete, onPreviousEpisode: playPreviousEpisode, onNextEpisode: playNextEpisode, hasPreviousEpisode: !!getPreviousEpisodeInfo(), hasNextEpisode: !!getNextEpisodeInfo(), previousEpisodeLabel: (() => { const p = getPreviousEpisodeInfo(); return p ? `الحلقة السابقة · ${p.title || `الحلقة ${p.number}`}` : 'الحلقة السابقة'; })(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete, onProgressSave: onSaveWatchProgress ? (r => onSaveWatchProgress(title.id, title.type === 'movie' ? { kind: 'movie', ...r, titleName: title.name, poster: title.poster } : { kind: 'episode', season: playingSeasonNumber, episode: playingMeta && playingMeta.number, ...r, titleName: title.name, poster: title.poster, label: playingLabel })) : null })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
+                    videoError && (React.createElement("div", { className: "absolute inset-0 bg-black/90 flex flex-col items-center justify-center gap-3 p-6 text-center" },
+                        React.createElement("p", { className: "text-sm text-slate-200 font-bold" }, "\u062A\u0639\u0630\u0651\u0631 \u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u0639\u0644\u0649 \u0647\u0630\u0627 \u0627\u0644\u062C\u0647\u0627\u0632."),
+                        isIOS && (React.createElement("p", { className: "text-xs text-slate-400 max-w-xs leading-relaxed" }, "\u063A\u0627\u0644\u0628\u064B\u0627 \u0627\u0644\u0633\u0628\u0628 \u0623\u0646 \u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u063A\u064A\u0631 \u0645\u0631\u0641\u0648\u0639 \u0628\u0635\u064A\u063A\u0629 \u064A\u062F\u0639\u0645\u0647\u0627 \u0627\u0644\u0622\u064A\u0641\u0648\u0646 \u0645\u0628\u0627\u0634\u0631\u0629. \u0627\u0644\u0623\u0639\u0645\u0627\u0644 \u0627\u0644\u062A\u064A \u062A\u064F\u0631\u0641\u0639 \u0645\u0646 \u0644\u0648\u062D\u0629 \u0627\u0644\u062A\u062D\u0643\u0645 \u0639\u0628\u0631 \u0632\u0631 \"\u0631\u0641\u0639 \u0645\u0646 \u0627\u0644\u062C\u0647\u0627\u0632\" \u062A\u0639\u0645\u0644 \u0628\u0634\u0643\u0644 \u0635\u062D\u064A\u062D \u0639\u0644\u0649 \u0643\u0644 \u0627\u0644\u0623\u062C\u0647\u0632\u0629.")),
+                        React.createElement("button", { onClick: retryPlayback, className: "flex items-center gap-2 px-5 py-2.5 rounded-xl bg-accent-red hover:bg-accent-redHover text-xs font-bold text-white transition" },
+                            React.createElement(Icon, { name: "rotateCcw5", className: "w-3.5 h-3.5" }),
+                            "\u0625\u0639\u0627\u062F\u0629 \u0627\u0644\u0645\u062D\u0627\u0648\u0644\u0629"))))) : (React.createElement("div", { className: "relative w-full aspect-video bg-glass-900" },
+                    title.backdrop && React.createElement("img", { src: tmdbAdaptive(title.backdrop), alt: "", decoding: "async", className: "w-full h-full object-cover" }),
+                    centerOverlay)),
+                React.createElement("button", { onClick: requestClose, className: "absolute top-4 left-4 z-30 w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black transition" },
+                    React.createElement(Icon, { name: "x", className: "w-5 h-5" })),
+                React.createElement("button", { onClick: shareLink, title: "\u0646\u0633\u062E \u0631\u0627\u0628\u0637 \u0627\u0644\u0645\u0634\u0627\u0631\u0643\u0629", className: "absolute top-4 right-4 z-30 w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black transition" },
+                    React.createElement(Icon, { name: copied ? 'check' : 'link', className: `w-4 h-4 ${copied ? 'text-emerald-400' : ''}` }))),
+            React.createElement("div", { className: "p-5 md:p-8" },
+                React.createElement("div", { className: "flex items-center gap-2.5 flex-wrap mb-3" },
+                    React.createElement("span", { className: "text-xs px-3 py-1 rounded-full bg-accent-red text-white font-bold shadow-[0_0_12px_rgba(255,51,75,0.4)]" }, TYPE_LABELS[title.type]),
+                    React.createElement("span", { className: "text-xs text-slate-300 font-semibold" }, title.year),
+                    React.createElement(RatingBadges, { imdb: title.imdbRating, rt: title.rtRating }),
+                    titleWatched ? React.createElement("span", { className: "inline-flex shrink-0 items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-emerald-500/15 backdrop-blur-md text-emerald-400 font-bold border border-emerald-500/30 shadow-sm" }, React.createElement(Icon, { name: "check", className: "w-3 h-3" }), "تمت المشاهدة بالكامل") : null,
+                    (playingDurationSec || getRuntimeSeconds(playingMeta) || titleDisplayRuntime) ? (React.createElement("span", { className: "inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-black/60 text-slate-200 font-bold border border-white/10", dir: "ltr", title: "مدة العمل" },
+                        formatRuntimeMinutesSeconds(playingDurationSec || getRuntimeSeconds(playingMeta) || titleDisplayRuntime),
+                        " دقيقة")) : null,
+                    ratingList.length > 0 && (React.createElement("span", { className: "inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-md bg-black/60 backdrop-blur-md text-amber-400 font-bold border border-amber-400/20 shadow-sm" },
+                        React.createElement(Icon, { name: "star", className: "w-3 h-3" }),
+                        avgRating.toFixed(1),
+                        " (",
+                        ratingList.length,
+                        ")"))),
+                React.createElement("h2", { className: "text-2xl md:text-3xl font-black mb-1 text-white" },
+                    React.createElement("bdi", null, title.name)),
+                playingLabel && playingLabel !== title.name && (React.createElement("p", { className: "text-sm text-accent-cyan font-bold mb-3 flex items-center gap-1.5" },
+                    React.createElement(Icon, { name: "play", className: "w-3.5 h-3.5 fill-current" }),
+                    React.createElement(BidiJoined, { text: playingLabel.split(' · ').slice(1).join(' · ') }))),
+                title.genres && title.genres.length > 0 && (React.createElement("div", { className: "flex gap-2 flex-wrap mb-4 mt-2" }, title.genres.map(g => React.createElement("span", { key: g, className: "text-xs px-3 py-1 rounded-xl glass-card text-slate-300 border border-white/5 font-semibold" }, g)))),
+                title.description && React.createElement("p", { className: "text-sm md:text-base text-slate-300 leading-relaxed mb-6 font-medium" }, title.description),
+                (title.director || title.writer) && (React.createElement("div", { className: "flex items-center gap-4 flex-wrap mb-6 -mt-3 text-xs text-slate-400 font-semibold" },
+                    title.director && React.createElement("span", null,
+                        "\u0627\u0644\u0625\u062E\u0631\u0627\u062C: ",
+                        React.createElement("span", { className: "text-slate-200" }, title.director)),
+                    title.writer && React.createElement("span", null,
+                        "\u0627\u0644\u0643\u062A\u0627\u0628\u0629: ",
+                        React.createElement("span", { className: "text-slate-200" }, title.writer)))),
+                React.createElement("div", { className: "flex items-center gap-3 flex-wrap mb-6" },
+                    React.createElement("button", { onClick: () => (isSeries && playingUrl && getNextEpisodeInfo()) ? playNextEpisode() : handlePlay(!!continueTarget), className: "flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-accent-red hover:bg-accent-redHover text-sm font-bold text-white shadow-[0_0_20px_rgba(255,51,75,0.4)] transition" },
+                        React.createElement(Icon, { name: (isSeries && playingUrl && getNextEpisodeInfo()) ? 'skipForward' : 'play', className: "w-4 h-4 fill-current" }),
+                        (isSeries && playingUrl && getNextEpisodeInfo()) ? 'الحلقة التالية' : (continueTarget && resumeUi.hasResume ? 'متابعة المشاهدة' : 'تشغيل')),
+                    React.createElement("button", { onClick: onLike, className: `flex items-center gap-2.5 px-5 py-3 rounded-2xl text-sm font-bold border transition ${liked ? 'bg-rose-500 text-white border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.4)]' : 'glass-card border-white/10 text-slate-200 hover:border-white/20'}` },
+                        React.createElement(Icon, { name: "heart", className: "w-4 h-4" }),
+                        title.likes || 0),
+                    React.createElement("button", { onClick: () => { if (!currentUser) {
+                            onOpenAuth('login');
+                            return;
+                        } setShowAddToList(true); }, className: "flex items-center gap-2.5 px-6 py-3 rounded-2xl glass-card border border-white/10 hover:border-accent-cyan text-sm font-bold text-slate-200 transition" },
+                        React.createElement(Icon, { name: "list", className: "w-4 h-4 text-accent-cyan" }),
+                        "\u0623\u0636\u0641 \u0644\u0642\u0627\u0626\u0645\u062A\u064A")),
+                showAddToList && React.createElement(AddToListModal, { currentUser: currentUser, title: title, onClose: () => setShowAddToList(false) }),
+                isSeries && seasons.length > 0 && (React.createElement("div", { ref: seasonsSectionRef, className: "mt-8 border-t border-white/10 pt-6 scroll-mt-4" },
+                    React.createElement("div", { className: "flex items-center gap-2.5 mb-4 flex-wrap" },
+                        (seasonView || showAllEpisodes) && (React.createElement("button", { onClick: () => { setSeasonView(false); setShowAllEpisodes(false); }, title: "\u0627\u0644\u0631\u062C\u0648\u0639 \u0644\u062C\u0645\u064A\u0639 \u0627\u0644\u0645\u0648\u0627\u0633\u0645", className: "w-8 h-8 shrink-0 rounded-xl glass-card border border-white/10 hover:border-accent-cyan flex items-center justify-center text-accent-cyan transition" },
+                            React.createElement(Icon, { name: "chevronRight", className: "w-4 h-4" }))),
+                        React.createElement(Icon, { name: "tv", className: "w-5 h-5 text-accent-cyan" }),
+                        React.createElement("h3", { className: "font-black text-lg text-white" }, showAllEpisodes ? 'كل الحلقات' : !seasonView ? 'المواسم' : `الموسم ${seasons[activeSeason] ? (seasons[activeSeason].number || activeSeason + 1) : ''}`),
+                        React.createElement("div", { className: "flex items-center gap-2 mr-auto flex-wrap" }, !showAllEpisodes && seasons.length > 1 && (React.createElement("button", { onClick: openAllEpisodes, className: "flex items-center gap-1.5 text-xs font-bold text-accent-cyan hover:text-white glass-card px-3 py-1.5 rounded-xl border border-white/10 transition" },
+                            React.createElement(Icon, { name: "list", className: "w-3.5 h-3.5" }),
+                            "\u0643\u0644 \u0627\u0644\u062D\u0644\u0642\u0627\u062A")))),
+                    showAllEpisodes ? (React.createElement("div", { className: "space-y-2 md:space-y-2.5" },
+                        allEpisodesFlat.map((ep, idx) => {
+                            const isCurrent = playingMeta && playingMeta.videoUrl === ep.videoUrl && playingMeta.number === ep.number && playingSeasonNumber === ep.seasonNumber;
+                            const done = (isEpisodeWatched && isEpisodeWatched(title.id, ep.seasonNumber, ep.number)) || (currentEpisodeProgress(ep.seasonNumber, ep.number) && currentEpisodeProgress(ep.seasonNumber, ep.number).completed) || locallyCompletedEpisodeKey === `s${ep.seasonNumber}e${ep.number}`;
+                            return (React.createElement("div", { key: `${ep.seasonNumber}-${ep.number}-${idx}`, className: `flex items-center gap-2.5 md:gap-3 glass-card rounded-2xl p-2.5 md:p-3.5 border transition ${isCurrent ? 'border-accent-cyan/50 shadow-[0_0_15px_rgba(0,240,255,0.15)]' : 'border-white/5 hover:border-white/10'}` },
+                                ep.episodeThumbnail ? (React.createElement("div", { className: "relative w-14 h-9 sm:w-20 sm:h-12 shrink-0 rounded-lg overflow-hidden bg-glass-950" },
+                                    React.createElement("img", { src: ep.episodeThumbnail, alt: "", className: "w-full h-full object-cover" }),
+                                    done && (React.createElement("span", { className: "absolute -top-1 -left-1 w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center shadow-md" },
+                                        React.createElement(Icon, { name: "check", className: "w-2.5 h-2.5 text-white" }))))) : (React.createElement("span", { className: "relative w-8 h-8 shrink-0 rounded-xl bg-glass-700 flex items-center justify-center text-xs font-black text-accent-cyan" },
+                                    ep.number,
+                                    done && (React.createElement("span", { className: "absolute -top-1 -left-1 w-3.5 h-3.5 rounded-full bg-emerald-500 flex items-center justify-center shadow-md" },
+                                        React.createElement(Icon, { name: "check", className: "w-2 h-2 text-white" }))))),
+                                React.createElement("div", { className: "flex-1 min-w-0" },
+                                    React.createElement("p", { className: "text-[10px] font-bold text-accent-cyan mb-0.5" },
+                                        "\u0627\u0644\u0645\u0648\u0633\u0645 ",
+                                        ep.seasonNumber,
+                                        " \u00B7 \u0627\u0644\u062D\u0644\u0642\u0629 ",
+                                        ep.number),
+                                    React.createElement("p", { className: `text-sm font-bold truncate ${isCurrent ? 'text-accent-cyan' : 'text-slate-100'}` }, ep.title ? (React.createElement(React.Fragment, null,
+                                        React.createElement(BidiText, null, ep.title),
+                                        " ",
+                                        React.createElement("span", { className: "font-normal opacity-60" },
+                                            React.createElement("bdi", { dir: "rtl" },
+                                                "(",
+                                                episodeAutoLabel(ep),
+                                                ")")))) : episodeAutoLabel(ep)),
+                                    React.createElement("div", { className: "flex items-center gap-1.5 flex-wrap mt-1" },
+                                        ep.imdb && React.createElement("span", { className: "inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-black/60 text-amber-400 font-bold border border-amber-400/20", dir: "ltr" },
+                                            React.createElement(Icon, { name: "star", className: "w-2.5 h-2.5" }), ep.imdb),
+                                        ep.tmdbRating && React.createElement("span", { className: "inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-black/60 text-cyan-300 font-bold border border-cyan-400/20", dir: "ltr", title: "تقييم TMDB" }, React.createElement(Icon, { name: "star", className: "w-2.5 h-2.5" }), ep.tmdbRating),
+                                        getDisplayRuntime(ep, `${title.id}:${ep.seasonNumber}:${ep.number}`) > 0 && React.createElement("span", { className: "inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-black/60 text-slate-300 font-bold border border-white/10", dir: "ltr", title: "مدة الحلقة" },
+                                            formatRuntimeMinutesSeconds(getDisplayRuntime(ep, `${title.id}:${ep.seasonNumber}:${ep.number}`)), " دقيقة"))),
+                                done && React.createElement(Icon, { name: "check", className: "w-4 h-4 text-emerald-400 shrink-0 hidden xs:block" }),
+                                isCurrent && React.createElement("span", { className: "text-[10px] px-2 py-1 rounded-lg bg-accent-cyan/15 text-accent-cyan font-bold shrink-0 hidden sm:inline" }, "\u0642\u064A\u062F \u0627\u0644\u062A\u0634\u063A\u064A\u0644"),
+                                React.createElement("button", { onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); scrollTitleModalToTop(); playEpisode(ep, ep.seasonNumber); }, className: "w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition" },
+                                    React.createElement(Icon, { name: "play", className: "w-4 h-4 text-white fill-current translate-x-0.5" }))));
+                        }),
+                        allEpisodesFlat.length === 0 && React.createElement("p", { className: "text-sm text-slate-500 font-medium" }, "\u0644\u0627 \u062A\u0648\u062C\u062F \u062D\u0644\u0642\u0627\u062A \u0628\u0639\u062F."))) : !seasonView ? (React.createElement("div", { className: "grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3.5" }, seasons.map((s, i) => {
+                        const seasonImg = s.poster || title.backdrop || title.poster;
+                        return (React.createElement("button", { key: i, onClick: () => openSeason(i), className: "group text-right" },
+                            React.createElement("div", { className: "relative aspect-[2/3] rounded-xl overflow-hidden glass-card border border-white/10 group-hover:border-accent-cyan/50 shadow-lg group-hover:scale-[1.02] transition duration-300" },
+                                seasonImg ? (React.createElement("img", { src: seasonImg, alt: "", className: "w-full h-full object-cover" })) : (React.createElement("div", { className: "w-full h-full bg-glass-800 flex items-center justify-center" },
+                                    React.createElement(Icon, { name: "tv", className: "w-8 h-8 text-slate-600" }))),
+                                React.createElement("div", { className: "absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent flex items-end justify-center pb-3" },
+                                    React.createElement("div", { className: "w-11 h-11 rounded-2xl bg-accent-red/90 flex items-center justify-center shadow-[0_0_15px_rgba(255,51,75,0.5)] group-hover:scale-110 transition" },
+                                        React.createElement(Icon, { name: "play", className: "w-4 h-4 text-white fill-current translate-x-0.5" }))),
+                                React.createElement("span", { className: "absolute top-2 right-2 text-[10px] px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-accent-cyan font-bold border border-accent-cyan/20" },
+                                    (s.episodes || []).length,
+                                    " \u062D\u0644\u0642\u0629")),
+                            React.createElement("p", { className: "mt-2 text-sm font-bold text-slate-100 group-hover:text-accent-cyan transition" },
+                                "\u0627\u0644\u0645\u0648\u0633\u0645 ",
+                                s.number || i + 1),
+                            s.year && React.createElement("p", { className: "text-xs text-slate-400 font-medium" }, s.year)));
+                    }))) : (React.createElement("div", null,
+                        seasons[activeSeason] && seasons[activeSeason].year && (React.createElement("p", { className: "text-xs text-slate-400 font-bold mb-3" },
+                            "\u0633\u0646\u0629 \u0627\u0644\u0625\u0635\u062F\u0627\u0631: ",
+                            seasons[activeSeason].year)),
+                        React.createElement("div", { className: "space-y-2.5" },
+                            (seasons[activeSeason] && seasons[activeSeason].episodes || []).map((ep, ei) => {
+                                const isCurrent = playingMeta && playingMeta.videoUrl === ep.videoUrl && playingMeta.number === ep.number;
+                                const epThumb = (seasons[activeSeason] && seasons[activeSeason].episodeThumbnail) || ep.thumbnail;
+                                const done = (isEpisodeWatched && isEpisodeWatched(title.id, seasons[activeSeason].number, ep.number)) || locallyCompletedEpisodeKey === `s${seasons[activeSeason].number}e${ep.number}`;
+                                return (React.createElement("div", { key: ei, className: `flex items-center gap-3 glass-card rounded-2xl p-3.5 border transition ${isCurrent ? 'border-accent-cyan/50 shadow-[0_0_15px_rgba(0,240,255,0.15)]' : 'border-white/5 hover:border-white/10'}` },
+                                    epThumb ? (React.createElement("div", { className: "relative w-16 h-11 sm:w-20 sm:h-12 shrink-0 rounded-lg overflow-hidden bg-glass-950" },
+                                        React.createElement("img", { src: epThumb, alt: "", className: "w-full h-full object-cover" }),
+                                        React.createElement("span", { className: "absolute bottom-0.5 right-1 text-[10px] font-black text-white drop-shadow" }, ep.number != null ? ep.number : ei + 1),
+                                        done && (React.createElement("span", { className: "absolute -top-1 -left-1 w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center shadow-md" },
+                                            React.createElement(Icon, { name: "check", className: "w-2.5 h-2.5 text-white" }))))) : (React.createElement("span", { className: "relative w-8 h-8 shrink-0 rounded-xl bg-glass-700 flex items-center justify-center text-xs font-black text-accent-cyan" },
+                                        ep.number != null ? ep.number : ei + 1,
+                                        done && (React.createElement("span", { className: "absolute -top-1 -left-1 w-3.5 h-3.5 rounded-full bg-emerald-500 flex items-center justify-center shadow-md" },
+                                            React.createElement(Icon, { name: "check", className: "w-2 h-2 text-white" }))))),
+                                    React.createElement("div", { className: "flex-1 min-w-0" },
+                                        React.createElement("p", { className: `text-sm font-bold truncate mb-1 ${isCurrent ? 'text-accent-cyan' : 'text-slate-100'}` }, ep.title ? (React.createElement(React.Fragment, null,
+                                            React.createElement(BidiText, null, ep.title),
+                                            " ",
+                                            React.createElement("span", { className: "font-normal opacity-60" },
+                                                React.createElement("bdi", { dir: "rtl" },
+                                                    "(",
+                                                    episodeAutoLabel(ep),
+                                                    ")")))) : episodeAutoLabel(ep)),
+                                        React.createElement("div", { className: "flex items-center gap-1.5 flex-wrap" },
+                                            React.createElement(RatingBadges, { imdb: ep.imdb, rt: ep.rt, size: "xs", flat: true }),
+                                            ep.tmdbRating && React.createElement("span", { className: "inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-black/60 text-cyan-300 font-bold border border-cyan-400/20", dir: "ltr", title: "تقييم TMDB" }, React.createElement(Icon, { name: "star", className: "w-2.5 h-2.5" }), ep.tmdbRating),
+                                            getDisplayRuntime(ep, `${title.id}:${seasons[activeSeason].number}:${ep.number}`) > 0 && React.createElement("span", { className: "inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-black/60 text-slate-300 font-bold border border-white/10", dir: "ltr", title: "مدة الحلقة" },
+                                                formatRuntimeMinutesSeconds(getDisplayRuntime(ep, `${title.id}:${seasons[activeSeason].number}:${ep.number}`)),
+                                                " دقيقة"))),
+                                    done && React.createElement(Icon, { name: "check", className: "w-4 h-4 text-emerald-400 shrink-0 hidden xs:block" }),
+                                    isCurrent && React.createElement("span", { className: "text-[10px] px-2 py-1 rounded-lg bg-accent-cyan/15 text-accent-cyan font-bold shrink-0" }, "\u0642\u064A\u062F \u0627\u0644\u062A\u0634\u063A\u064A\u0644"),
+                                    React.createElement("button", { onPointerDown: e => e.stopPropagation(), onClick: e => { e.stopPropagation(); scrollTitleModalToTop(); playEpisode(ep, seasons[activeSeason].number); }, className: "w-9 h-9 rounded-xl bg-accent-red hover:bg-accent-redHover flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,51,75,0.4)] transition" },
+                                        React.createElement(Icon, { name: "play", className: "w-4 h-4 text-white fill-current translate-x-0.5" }))));
+                            }),
+                            (!seasons[activeSeason] || !seasons[activeSeason].episodes || !seasons[activeSeason].episodes.length) && (React.createElement("p", { className: "text-sm text-slate-500 font-medium" }, "\u0644\u0627 \u062A\u0648\u062C\u062F \u062D\u0644\u0642\u0627\u062A \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0645\u0648\u0633\u0645 \u0628\u0639\u062F."))))))),
+                React.createElement("div", { className: "mt-8 border-t border-white/10 pt-6" },
                     React.createElement("h3", { className: "font-black text-lg text-white flex items-center gap-2 mb-4" },
                         React.createElement(Icon, { name: "star", className: "w-5 h-5 text-amber-400" }),
                         "\u0627\u0644\u062A\u0642\u064A\u064A\u0645 \u0648\u0627\u0644\u0645\u0631\u0627\u062C\u0639\u0627\u062A (",
@@ -5724,8 +5473,8 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                                 isReplyingHere && (React.createElement("div", { className: "flex gap-2 mt-2.5" },
                                     React.createElement("input", { value: reviewReplyText, onChange: e => setReviewReplyText(e.target.value), onKeyDown: e => e.key === 'Enter' && submitReviewReply(r.uid), placeholder: "\u0627\u0643\u062A\u0628 \u0631\u062F\u0643 \u0639\u0644\u0649 \u0647\u0630\u064A \u0627\u0644\u0645\u0631\u0627\u062C\u0639\u0629...", autoFocus: true, className: "flex-1 bg-glass-950 border border-white/10 rounded-xl px-4 py-2 text-xs text-slate-100 outline-none focus:border-accent-cyan" }),
                                     React.createElement("button", { onClick: () => submitReviewReply(r.uid), className: "px-4 py-2 rounded-xl bg-accent-red text-xs font-bold text-white" }, "\u0646\u0634\u0631"))))));
-                    }))));
-    const commentsNode =                 React.createElement("div", { className: "dp-block" },
+                    })))),
+                React.createElement("div", { className: "mt-8 border-t border-white/10 pt-6" },
                     React.createElement("h3", { className: "font-black text-lg text-white flex items-center gap-2 mb-4" },
                         React.createElement(Icon, { name: "messageCircle", className: "w-5 h-5 text-accent-cyan" }),
                         "\u0627\u0644\u062A\u0639\u0644\u064A\u0642\u0627\u062A (",
@@ -5792,115 +5541,15 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                                     React.createElement("div", { className: "flex gap-2" },
                                         React.createElement("input", { value: replyText, onChange: e => setReplyText(e.target.value), onKeyDown: e => e.key === 'Enter' && submitReply(c.id), placeholder: "\u0627\u0643\u062A\u0628 \u0631\u062F\u0643...", autoFocus: true, className: "flex-1 bg-glass-950 border border-white/10 rounded-xl px-4 py-2 text-xs text-slate-100 outline-none focus:border-accent-cyan" }),
                                         React.createElement("button", { onClick: () => submitReply(c.id), className: "px-4 py-2 rounded-xl bg-accent-red text-xs font-bold text-white" }, "\u0646\u0634\u0631")))))));
-                    }))));
-
-    // ---------- الخلفية والمشغّل
-    const backdropLayer = _h("div", { className: "absolute inset-x-0 top-0 h-[88vh] pointer-events-none overflow-hidden" },
-        bdSrc ? _h("img", { src: bdSrc, alt: "", decoding: "async", className: "w-full h-full object-cover object-top opacity-30 scale-105" }) : null,
-        _h("div", { className: "absolute inset-0 bg-gradient-to-b from-glass-950/30 via-glass-950/80 to-glass-950" }));
-    const playerNode = playingUrl ? (React.createElement("div", { className: "relative" },
-                    (isDirectVideo(playingUrl) || isCinemanaPlayback(playingMeta, playingUrl)) ? (React.createElement(VideoPlayer, { key: 'cinadam-player-' + title.id + '-' + playerRetryCount, src: normalizeVideoUrl(playingUrl), subtitleUrl: activeSubtitleUrl || '', subtitleOffset: activeSubtitleOffset, onError: handleCinemanaPlaybackError, onDuration: d => setPlayingDurationSec(d), trimStart: playingMeta.trimStart, trimEnd: playingMeta.trimEnd, introStart: skipDbSegments.intro ? Number(skipDbSegments.intro.start_ms) / 1000 : Number(playingMeta.introStart) || 0, introEnd: skipDbSegments.intro ? Number(skipDbSegments.intro.end_ms) / 1000 : Number(playingMeta.introEnd) || 0, recapStart: skipDbSegments.recap ? Number(skipDbSegments.recap.start_ms) / 1000 : Number(playingMeta.recapStart) || 0, recapEnd: skipDbSegments.recap ? Number(skipDbSegments.recap.end_ms) / 1000 : Number(playingMeta.recapEnd) || 0, outroStart: skipDbSegments.outro ? Number(skipDbSegments.outro.start_ms) / 1000 : Number(playingMeta.outroStart) || 0, outroEnd: skipDbSegments.outro ? Number(skipDbSegments.outro.end_ms) / 1000 : Number(playingMeta.outroEnd) || 0, fitMobile: playingMeta.fitMobile, fitDesktop: playingMeta.fitDesktop, crop: playingMeta.crop, episodeLabel: playingLabel, qualities: playingQualities, startAt: resumeAt, onQualityChange: handleQualityChange, onOutroStart: handleEpisodeComplete, onPreviousEpisode: playPreviousEpisode, onNextEpisode: playNextEpisode, hasPreviousEpisode: !!getPreviousEpisodeInfo(), hasNextEpisode: !!getNextEpisodeInfo(), previousEpisodeLabel: (() => { const p = getPreviousEpisodeInfo(); return p ? `الحلقة السابقة · ${p.title || `الحلقة ${p.number}`}` : 'الحلقة السابقة'; })(), nextEpisodeLabel: (() => { const n = getNextEpisodeInfo(); return n ? `الحلقة التالية · ${n.title || `الحلقة ${n.number}`}` : 'الحلقة التالية'; })(), onComplete: title.type === 'movie' ? handleMovieComplete : null, onEnded: title.type === 'movie' ? handleMovieComplete : handleEpisodeComplete, onProgressSave: onSaveWatchProgress ? (r => onSaveWatchProgress(title.id, title.type === 'movie' ? { kind: 'movie', ...r, titleName: title.name, poster: title.poster } : { kind: 'episode', season: playingSeasonNumber, episode: playingMeta && playingMeta.number, ...r, titleName: title.name, poster: title.poster, label: playingLabel })) : null })) : (React.createElement("iframe", { key: playingUrl + '|' + (activeSubtitlePublicUrl || ''), src: isVidApiUrl(playingUrl) ? buildVidApiPlaybackUrl(playingUrl, activeSubtitlePublicUrl) : normalizeVideoUrl(playingUrl), allow: "autoplay; encrypted-media; fullscreen; picture-in-picture", allowFullScreen: true, referrerPolicy: "no-referrer-when-downgrade", className: "w-full aspect-video bg-black" })),
-                    videoError && (React.createElement("div", { className: "absolute inset-0 bg-black/90 flex flex-col items-center justify-center gap-3 p-6 text-center" },
-                        React.createElement("p", { className: "text-sm text-slate-200 font-bold" }, "\u062A\u0639\u0630\u0651\u0631 \u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u0639\u0644\u0649 \u0647\u0630\u0627 \u0627\u0644\u062C\u0647\u0627\u0632."),
-                        isIOS && (React.createElement("p", { className: "text-xs text-slate-400 max-w-xs leading-relaxed" }, "\u063A\u0627\u0644\u0628\u064B\u0627 \u0627\u0644\u0633\u0628\u0628 \u0623\u0646 \u0645\u0644\u0641 \u0627\u0644\u0641\u064A\u062F\u064A\u0648 \u063A\u064A\u0631 \u0645\u0631\u0641\u0648\u0639 \u0628\u0635\u064A\u063A\u0629 \u064A\u062F\u0639\u0645\u0647\u0627 \u0627\u0644\u0622\u064A\u0641\u0648\u0646 \u0645\u0628\u0627\u0634\u0631\u0629. \u0627\u0644\u0623\u0639\u0645\u0627\u0644 \u0627\u0644\u062A\u064A \u062A\u064F\u0631\u0641\u0639 \u0645\u0646 \u0644\u0648\u062D\u0629 \u0627\u0644\u062A\u062D\u0643\u0645 \u0639\u0628\u0631 \u0632\u0631 \"\u0631\u0641\u0639 \u0645\u0646 \u0627\u0644\u062C\u0647\u0627\u0632\" \u062A\u0639\u0645\u0644 \u0628\u0634\u0643\u0644 \u0635\u062D\u064A\u062D \u0639\u0644\u0649 \u0643\u0644 \u0627\u0644\u0623\u062C\u0647\u0632\u0629.")),
-                        React.createElement("button", { onClick: retryPlayback, className: "flex items-center gap-2 px-5 py-2.5 rounded-xl bg-accent-red hover:bg-accent-redHover text-xs font-bold text-white transition" },
-                            React.createElement(Icon, { name: "rotateCcw5", className: "w-3.5 h-3.5" }),
-                            "\u0625\u0639\u0627\u062F\u0629 \u0627\u0644\u0645\u062D\u0627\u0648\u0644\u0629"))))) : null;
-    const idleStageInner = _h("div", { className: "relative w-full h-full bg-glass-900" },
-        bdSrc ? _h("img", { src: bdSrc, alt: "", decoding: "async", className: "absolute inset-0 w-full h-full object-cover" }) : null,
-        centerOverlay);
-    const backBtn = (compact) => _h("button", { type: "button", onClick: requestClose, className: "dp-roundbtn", "aria-label": "رجوع" },
-        _h(Icon, { name: "chevronRight", className: "w-5 h-5" }),
-        compact ? null : _h("span", { className: "hidden md:inline text-sm font-bold" }, "رجوع"));
-    const shareBtn = (compact) => _h("button", { type: "button", onClick: shareLink, className: "dp-roundbtn", title: "نسخ رابط المشاركة", "aria-label": "نسخ رابط المشاركة" },
-        _h(Icon, { name: copied ? 'check' : 'link', className: `w-4 h-4 ${copied ? 'text-emerald-400' : ''}` }),
-        compact ? null : _h("span", { className: "hidden md:inline text-sm font-bold" }, copied ? 'تم النسخ' : 'مشاركة'));
-
-    // ---------- ديسكتوب
-    const desktopTopBar = _h("div", { className: `sticky top-0 z-40 transition-colors duration-300 ${scrolled ? 'bg-glass-950/90 backdrop-blur-xl border-b border-white/5' : ''}` },
-        _h("div", { className: "max-w-[1360px] mx-auto px-8 h-14 flex items-center gap-3" },
-            backBtn(false),
-            _h("p", { className: `flex-1 min-w-0 truncate font-bold text-sm text-center transition-opacity duration-300 ${scrolled ? 'opacity-100' : 'opacity-0'}` }, _h("bdi", null, title.name)),
-            shareBtn(false)));
-    const desktopInfo = _h("div", { className: "min-w-0 flex-1 space-y-5 pt-1" },
-        factsRow,
-        _h("h1", { className: "dp-title text-4xl lg:text-5xl" }, _h("bdi", null, title.name)),
-        nowPlayingLine,
-        scoreChips,
-        genreTags,
-        _h("div", { className: "flex items-center gap-3 flex-wrap pt-1" }, primaryBtn(false), likeBtn, listBtn),
-        synopsis,
-        crewRow);
-    const desktopPoster = _h("aside", { className: `relative z-10 w-[210px] lg:w-[270px] shrink-0 ${playingUrl ? '' : '-mt-28 lg:-mt-36'}` },
-        posterBox(),
-        _h("div", { className: "mt-3" },
-            hasTrailer ? railBtn('film', 'العرض التشويقي', () => setTrailerOpen(true)) : null,
-            railBtn('flag', 'الإبلاغ عن مشكلة', reportProblem)));
-    const desktopLayout = _h(React.Fragment, null,
-        desktopTopBar,
-        _h("div", { className: "relative max-w-[1360px] mx-auto px-8 pb-28" },
-            _h("div", { className: `relative w-full overflow-hidden rounded-3xl bg-black ring-1 ring-white/10 shadow-[0_30px_80px_-24px_rgba(0,0,0,.9)] ${playingUrl ? '' : 'h-[56vh] min-h-[340px]'}` }, playingUrl ? playerNode : idleStageInner),
-            _h("div", { className: "mt-7 flex items-start gap-10" }, desktopPoster, desktopInfo),
-            isSeries ? _h("section", { className: "mt-14" },
-                _h("div", { className: "flex items-center gap-4 flex-wrap mb-5" }, _h("h2", { className: "dp-h" }, "الحلقات"), seasonChips),
-                episodesBody(false), seasonYearLine) : null,
-            castRail ? _h("div", { className: "mt-14" }, castRail) : null,
-            similarRail ? _h("div", { className: "mt-14" }, similarRail) : null,
-            _h("div", { className: "mt-16 grid lg:grid-cols-2 gap-x-14 gap-y-12 items-start" }, ratingsNode, commentsNode)));
-
-    // ---------- موبايل / شاشات صغيرة
-    const mobileStage = playingUrl
-        ? _h("div", { className: "sticky top-0 z-30 bg-black", style: { paddingTop: 'env(safe-area-inset-top, 0px)' } },
-            _h("div", { className: "h-12 flex items-center gap-2 px-3 bg-glass-950 border-b border-white/5" },
-                backBtn(true),
-                _h("p", { className: "flex-1 min-w-0 truncate text-[13px] font-bold text-center" }, _h("bdi", null, playingLabel || title.name)),
-                shareBtn(true)),
-            _h("div", { className: "relative w-full bg-black" }, playerNode))
-        : _h("div", { className: "relative w-full aspect-[16/11] bg-glass-900 overflow-hidden" },
-            idleStageInner,
-            _h("div", { className: "absolute top-0 inset-x-0 z-10 px-3 pb-6 flex items-center justify-between bg-gradient-to-b from-black/75 to-transparent", style: { paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)' } },
-                backBtn(true), shareBtn(true)));
-    const mobileInfo = _h("div", { className: "px-4 pt-4 space-y-4" },
-        _h("div", { className: "flex gap-3.5 items-end" },
-            posterBox(`w-[100px] shrink-0 shadow-xl ${playingUrl ? '' : '-mt-16 relative z-10'}`),
-            _h("div", { className: "min-w-0 flex-1 space-y-2 pb-1" }, factsRow, _h("h1", { className: "dp-title text-[1.55rem]" }, _h("bdi", null, title.name)))),
-        nowPlayingLine,
-        scoreChips,
-        (title.genres && title.genres.length) ? _h("div", { className: "flex gap-2 overflow-x-auto scrollbar-hide -mx-4 px-4" }, title.genres.map(g => _h("span", { key: g, className: "dp-tag shrink-0" }, g))) : null,
-        primaryBtn(true),
-        _h("div", { className: "grid grid-cols-4 gap-2" },
-            mAct('heart', title.likes || 0, onLike, liked),
-            mAct('list', 'قائمتي', openList),
-            hasTrailer ? mAct('film', 'العرض', () => setTrailerOpen(true)) : mAct(copied ? 'check' : 'link', copied ? 'تم النسخ' : 'مشاركة', shareLink),
-            mAct('flag', 'بلاغ', reportProblem)));
-    const tabDefs = [].concat(isSeries ? [['episodes', 'الحلقات']] : [], [['about', 'التفاصيل'], ['reviews', ratingList.length ? `التقييمات (${ratingList.length})` : 'التقييمات'], ['comments', comments.length ? `التعليقات (${comments.length})` : 'التعليقات']]);
-    const activeTab = tabDefs.some(t => t[0] === tab) ? tab : tabDefs[0][0];
-    const mobileTabBar = _h("div", { className: `mt-5 border-b border-white/10 ${playingUrl ? '' : 'sticky top-0 z-20 bg-glass-950/95 backdrop-blur-xl'}`, style: playingUrl ? undefined : { paddingTop: 'env(safe-area-inset-top, 0px)' } },
-        _h("div", { className: "flex px-2" }, tabDefs.map(([k, label]) => _h("button", { key: k, type: "button", onClick: () => setTab(k), className: `dp-tab ${activeTab === k ? 'on' : ''}` }, label))));
-    const mobileTabBody = activeTab === 'episodes'
-        ? _h("div", { className: "px-4 pt-4 pb-12 space-y-4" }, seasonChips, seasonYearLine, episodesBody(true))
-        : activeTab === 'about'
-            ? _h("div", { className: "px-4 pt-5 pb-12 space-y-8" }, synopsis, crewRow, castRail, similarRail)
-            : activeTab === 'reviews'
-                ? _h("div", { className: "px-4 pt-5 pb-12" }, ratingsNode)
-                : _h("div", { className: "px-4 pt-5 pb-12" }, commentsNode);
-    const mobileLayout = _h("div", { className: "relative", style: { paddingBottom: 'env(safe-area-inset-bottom, 0px)' } }, mobileStage, mobileInfo, mobileTabBar, mobileTabBody);
-
-    // ---------- العرض التشويقي
-    const trailerOverlay = (trailerOpen && hasTrailer) ? _h("div", { className: "fixed inset-0 z-[80] bg-black/90 flex items-center justify-center p-3 md:p-10", onClick: () => setTrailerOpen(false) },
-        _h("div", { className: "relative w-full max-w-5xl aspect-video rounded-2xl overflow-hidden bg-black ring-1 ring-white/10", onClick: e => e.stopPropagation() },
-            _h("iframe", { src: `https://www.youtube-nocookie.com/embed/${extras.trailerKey}?autoplay=1&rel=0`, allow: "autoplay; encrypted-media; picture-in-picture; fullscreen", allowFullScreen: true, className: "absolute inset-0 w-full h-full" })),
-        _h("button", { type: "button", onClick: () => setTrailerOpen(false), className: "dp-roundbtn absolute top-4 right-4", "aria-label": "إغلاق" }, _h(Icon, { name: "x", className: "w-5 h-5" }))) : null;
-
-    return (_h("div", { ref: titleModalScrollRef, onScroll: e => { const s = e.currentTarget.scrollTop > 100; if (s !== scrolled) setScrolled(s); }, className: `${closing ? 'dp-out' : 'dp-in'} fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-glass-950 text-white` },
-        backdropLayer,
-        isMobile ? mobileLayout : desktopLayout,
-        trailerOverlay,
-        showCastAll && extras && extras.castAll && _h(CastAllModal, { title: title, cast: extras.castAll, onClose: () => setShowCastAll(false) }),
-        showReport && _h(ReportProblemModal, { title: title, currentUser: currentUser, onClose: () => setShowReport(false), context: {
-            label: playingLabel || '', season: playingUrl ? playingSeasonNumber : null, episode: playingUrl && playingMeta ? playingMeta.number : null,
-            url: playingUrl || '', subtitleUrl: (playingMeta && playingMeta.subtitleUrl) || '', quality: (playingMeta && (playingMeta.quality || playingMeta.resolution)) || '' } }),
-        showAddToList && _h(AddToListModal, { currentUser: currentUser, title: title, onClose: () => setShowAddToList(false) }),
+                    })))),
+                similarTitles.length > 0 && onOpen && (React.createElement("div", { className: "mt-8 border-t border-white/10 pt-6" },
+                    React.createElement("h3", { className: "font-black text-lg text-white flex items-center gap-2 mb-4" },
+                        React.createElement(Icon, { name: "sparkles", className: "w-5 h-5 text-accent-cyan" }),
+                        "\u0623\u0639\u0645\u0627\u0644 \u0645\u0634\u0627\u0628\u0647\u0629 \u0642\u062F \u062A\u0639\u062C\u0628\u0643"),
+                    React.createElement("div", { className: "flex gap-4 overflow-x-auto pb-1 snap-x scrollbar-hide md:grid md:grid-cols-4 md:overflow-visible" }, similarTitles.map(({ t, why }, i) => (React.createElement("div", { key: t.id, className: `shrink-0 w-32 sm:w-38 snap-start md:w-full ${i >= 4 && !showAllSim ? 'md:hidden' : ''}` },
+                        React.createElement(PosterCard, { title: t, onOpen: onOpen }),
+                        why && React.createElement("p", { className: "text-[10px] text-accent-cyan/80 mt-0.5 leading-tight text-right" }, why))))),
+                    similarTitles.length > 4 && (React.createElement("button", { type: "button", onClick: () => setShowAllSim(v => !v), className: "hidden md:block mt-4 w-full px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white text-sm font-bold" }, showAllSim ? 'عرض أقل' : `عرض المزيد (${similarTitles.length - 4})`)))))),
         deleteCommentTarget && (React.createElement(ConfirmDialog, { title: "\u062D\u0630\u0641 \u0647\u0630\u0627 \u0627\u0644\u0639\u0646\u0635\u0631\u061F", body: "\u0644\u0627 \u064A\u0645\u0643\u0646 \u0627\u0644\u062A\u0631\u0627\u062C\u0639 \u0639\u0646 \u0647\u0630\u0627 \u0627\u0644\u0625\u062C\u0631\u0627\u0621.", confirmLabel: "\u0646\u0639\u0645\u060C \u0627\u062D\u0630\u0641", cancelLabel: "\u0625\u0644\u063A\u0627\u0621", onCancel: () => setDeleteCommentTarget(null), onConfirm: () => {
                 if (deleteCommentTarget.replyId)
                     deleteReply(deleteCommentTarget.id, deleteCommentTarget.replyId);
@@ -5908,9 +5557,7 @@ function TitleModal({ title, allTitles, currentUser, liked, onLike, onClose, onO
                     deleteComment(deleteCommentTarget.id);
                 setDeleteCommentTarget(null);
             } })),
-        deleteMyRating && (React.createElement(ConfirmDialog, { title: "\u062D\u0630\u0641 \u062A\u0642\u064A\u064A\u0645\u0643\u061F", body: "\u0633\u064A\u062A\u0645 \u062D\u0630\u0641 \u0646\u062C\u0648\u0645\u0643 \u0648\u0645\u0631\u0627\u062C\u0639\u062A\u0643 \u0644\u0647\u0630\u0627 \u0627\u0644\u0639\u0645\u0644 \u0646\u0647\u0627\u0626\u064A\u064B\u0627.", confirmLabel: "\u0646\u0639\u0645\u060C \u0627\u062D\u0630\u0641", cancelLabel: "\u0625\u0644\u063A\u0627\u0621", onCancel: () => setDeleteMyRating(false), onConfirm: removeMyRating }))
-    ));
-
+        deleteMyRating && (React.createElement(ConfirmDialog, { title: "\u062D\u0630\u0641 \u062A\u0642\u064A\u064A\u0645\u0643\u061F", body: "\u0633\u064A\u062A\u0645 \u062D\u0630\u0641 \u0646\u062C\u0648\u0645\u0643 \u0648\u0645\u0631\u0627\u062C\u0639\u062A\u0643 \u0644\u0647\u0630\u0627 \u0627\u0644\u0639\u0645\u0644 \u0646\u0647\u0627\u0626\u064A\u064B\u0627.", confirmLabel: "\u0646\u0639\u0645\u060C \u0627\u062D\u0630\u0641", cancelLabel: "\u0625\u0644\u063A\u0627\u0621", onCancel: () => setDeleteMyRating(false), onConfirm: removeMyRating }))));
 }
 function RequestsView({ currentUser, onOpenAuth }) {
     const [type, setType] = useState('add');
@@ -5959,9 +5606,9 @@ function RequestsView({ currentUser, onOpenAuth }) {
             React.createElement("div", { className: "flex items-start justify-between gap-4" },
                 React.createElement("div", { className: "min-w-0" },
                     React.createElement("p", { className: "text-xs text-accent-cyan font-bold mb-1.5" },
-                        COMPLAINT_LABELS[c.type] || c.type,
+                        COMPLAINT_TYPES[c.type] || c.type,
                         c.titleName ? ` · ${c.titleName}` : ''),
-                    React.createElement("p", { className: "text-sm text-slate-200 leading-relaxed whitespace-pre-line" }, c.message),
+                    React.createElement("p", { className: "text-sm text-slate-200 leading-relaxed" }, c.message),
                     React.createElement("p", { className: "text-[10px] text-slate-500 font-mono mt-2" }, fmtDateTime(c.date))),
                 React.createElement("span", { className: `text-[11px] px-3 py-1 rounded-full font-bold shrink-0 ${c.status === 'resolved' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}` }, c.status === 'resolved' ? 'تم الحل' : 'قيد المراجعة')),
             c.reply && (React.createElement("div", { className: "mt-3 pt-3 border-t border-white/10 flex gap-2.5" },
@@ -7127,7 +6774,7 @@ function VideoDisplaySettings({ value, onChange }) {
         showCropStudio && (React.createElement(CropStudioModal, { videoUrl: normalizeVideoUrl(v.videoUrl), initial: crop, onCancel: () => setShowCropStudio(false), onSave: (newCrop) => { set('crop', newCrop); setShowCropStudio(false); } }))));
 }
 function emptyForm(type) {
-    return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', runtimeMinutes: 0, rtRating: '', metadataSources: { tmdb: {}, fanart: {}, omdb: {} }, videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
+    return { name: '', type: type || 'movie', year: new Date().getFullYear(), genresText: '', poster: '', backdrop: '', description: '', director: '', writer: '', imdbRating: '', runtimeMinutes: 0, rtRating: '', featured: false, status: 'draft', videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, seasons: [] };
 }
 function emptyEpisode(num) {
     return { number: num, title: '', runtimeMinutes: 0, videoUrl: '', videoSources: [], subtitleUrl: '', subtitlePublicUrl: '', subtitleOffset: 0, imdb: '', tmdbRating: '', rt: '', trimStart: 0, trimEnd: 0, introStart: 0, introEnd: 0, fitMobile: 'contain', fitDesktop: 'contain', crop: {}, finality: 'none' };
@@ -7461,7 +7108,6 @@ function AdminContentForm({ initial, defaultType, onDone }) {
         if (bannerSource === 'fanart') {
             ((bannerData.seasons || {})[String(seasonNumber)] || []).forEach(u => add(u, 'season'));
             (bannerData.tv || []).forEach(u => add(u, 'tv'));
-            (bannerData.fanartBackgrounds || []).forEach(u => add(u, 'fanart-background')); 
         }
         else if (bannerSource === 'stills') {
             (seasonStills[String(seasonNumber)] || []).forEach(u => add(u, 'still'));
@@ -7583,7 +7229,6 @@ function AdminContentForm({ initial, defaultType, onDone }) {
             writer: form.writer.trim(),
             imdbRating: form.imdbRating.trim(),
             rtRating: form.rtRating.trim(),
-            metadataSources: form.metadataSources || { tmdb: {}, fanart: {}, omdb: {} },
             featured: form.featured === true,
             status: form.status === 'published' ? 'published' : 'draft',
             sourceId: sourceId || '',
@@ -7868,7 +7513,6 @@ function AdminComplaints({ currentUser }) {
     const [deleteTarget, setDeleteTarget] = useState(null);
     const [replyDrafts, setReplyDrafts] = useState({});
     const [savingReplyId, setSavingReplyId] = useState(null);
-    const [filter, setFilter] = useState('open');
     useEffect(() => {
         const ref = db.ref('complaints');
         const cb = snap => {
@@ -7897,19 +7541,14 @@ function AdminComplaints({ currentUser }) {
     };
     if (!list.length)
         return React.createElement("p", { className: "text-sm text-slate-500 font-medium" }, "\u0644\u0627 \u062A\u0648\u062C\u062F \u0634\u0643\u0627\u0648\u0649 \u0623\u0648 \u0637\u0644\u0628\u0627\u062A \u062D\u0627\u0644\u064A\u064B\u0627.");
-    const FILTERS = [['open', 'مفتوحة'], ['report', 'بلاغات'], ['request', 'طلبات واقتراحات'], ['resolved', 'تم الحل'], ['all', 'الكل']];
-    const shown = list.filter(c => filter === 'all' ? true : filter === 'open' ? c.status !== 'resolved' : filter === 'resolved' ? c.status === 'resolved' : filter === 'report' ? c.type === 'report' : c.type !== 'report');
-    const cnt = f => list.filter(c => f === 'all' ? true : f === 'open' ? c.status !== 'resolved' : f === 'resolved' ? c.status === 'resolved' : f === 'report' ? c.type === 'report' : c.type !== 'report').length;
     return (React.createElement("div", { className: "space-y-3" },
-        React.createElement("div", { className: "flex gap-2 flex-wrap" }, FILTERS.map(([k, l]) => React.createElement("button", { key: k, type: "button", onClick: () => setFilter(k), "aria-pressed": filter === k, className: `px-3.5 py-2 rounded-xl text-xs font-bold border transition ${filter === k ? 'bg-accent-cyan text-glass-950 border-accent-cyan' : 'bg-white/5 border-white/10 text-slate-300 hover:border-white/30'}` }, l, React.createElement("span", { className: "ms-1.5 opacity-70" }, cnt(k))))),
-        shown.length === 0 ? React.createElement("p", { className: "text-sm text-slate-500 font-medium py-6 text-center" }, "لا يوجد شيء هنا.") : null,
-        shown.map(c => (React.createElement("div", { key: c.id, className: "glass-card rounded-2xl p-4 border border-white/10" },
+        list.map(c => (React.createElement("div", { key: c.id, className: "glass-card rounded-2xl p-4 border border-white/10" },
             React.createElement("div", { className: "flex items-start justify-between gap-4" },
                 React.createElement("div", { className: "min-w-0" },
                     React.createElement("p", { className: "text-xs text-accent-cyan font-bold mb-1.5" },
-                        COMPLAINT_LABELS[c.type] || c.type,
+                        COMPLAINT_TYPES[c.type] || c.type,
                         c.titleName ? ` · ${c.titleName}` : ''),
-                    React.createElement("p", { className: "text-sm text-slate-200 leading-relaxed whitespace-pre-line" }, c.message),
+                    React.createElement("p", { className: "text-sm text-slate-200 leading-relaxed" }, c.message),
                     React.createElement("p", { className: "text-[10px] text-slate-500 font-mono mt-2" },
                         "\u0645\u0646 ",
                         c.name,
@@ -7918,12 +7557,6 @@ function AdminComplaints({ currentUser }) {
                         ") \u00B7 ",
                         fmtDateTime(c.date))),
                 React.createElement("span", { className: `text-[11px] px-3 py-1 rounded-full font-bold shrink-0 ${c.status === 'resolved' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}` }, c.status === 'resolved' ? 'تم الحل' : 'قيد المراجعة')),
-            c.report && (React.createElement("div", { className: "mt-3 rounded-xl bg-glass-900/70 border border-white/10 p-3 text-[12px] text-slate-300 space-y-1" },
-                c.report.where ? React.createElement("p", null, React.createElement("span", { className: "text-slate-500 font-bold" }, "الموضع: "), React.createElement("bdi", null, c.report.where)) : null,
-                c.report.quality ? React.createElement("p", null, React.createElement("span", { className: "text-slate-500 font-bold" }, "الجودة: "), React.createElement("bdi", null, c.report.quality)) : null,
-                c.report.url ? React.createElement("p", { className: "break-all", dir: "ltr" }, React.createElement("span", { className: "text-slate-500 font-bold" }, "Video: "), c.report.url) : null,
-                c.report.subtitleUrl ? React.createElement("p", { className: "break-all", dir: "ltr" }, React.createElement("span", { className: "text-slate-500 font-bold" }, "Subtitle: "), c.report.subtitleUrl) : null,
-                c.report.device ? React.createElement("p", { className: "text-[10px] text-slate-500 break-all", dir: "ltr" }, c.report.device) : null)),
             c.reply && (React.createElement("div", { className: "mt-3 pt-3 border-t border-white/10" },
                 React.createElement("p", { className: "text-[11px] font-bold text-emerald-400 mb-1" }, "\u0631\u062F\u0643 \u0627\u0644\u0633\u0627\u0628\u0642:"),
                 React.createElement("p", { className: "text-sm text-slate-300" }, c.reply))),
@@ -8916,75 +8549,5 @@ class AppErrorBoundary extends React.Component {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(React.createElement(AppErrorBoundary, null, React.createElement(App, null)));
   </script>
-<script>
-/* السحب بالماوس لتصفح الصفوف الأفقية (القوائم، الممثلين، المواسم، المسلسلات...) — اللمس يعمل أصلًا بالتمرير الأصلي */
-(function () {
-    var THRESH = 5, st = null, suppress = false, raf = 0, glideEl = null;
-    function stopGlide() { if (raf) { cancelAnimationFrame(raf); raf = 0; } if (glideEl) { glideEl.classList.remove('drag-scroll-active'); glideEl = null; } }
-    function scroller(el) {
-        while (el && el !== document.body && el.nodeType === 1) {
-            if (el.scrollWidth > el.clientWidth + 2) {
-                var ox = getComputedStyle(el).overflowX;
-                if (ox === 'auto' || ox === 'scroll') return el;
-            }
-            el = el.parentElement;
-        }
-        return null;
-    }
-    document.addEventListener('pointerover', function (e) {
-        if (e.pointerType !== 'mouse') return;
-        var sc = scroller(e.target);
-        if (sc && !sc.classList.contains('drag-scroll-ready')) sc.classList.add('drag-scroll-ready');
-    }, true);
-    document.addEventListener('pointerdown', function (e) {
-        if (e.pointerType !== 'mouse' || e.button !== 0) return;
-        if (e.target.closest && e.target.closest('input,textarea,select,video,[data-nodrag]')) return;
-        stopGlide();
-        var sc = scroller(e.target);
-        if (!sc) return;
-        st = { sc: sc, x: e.clientX, left: sc.scrollLeft, moved: false, id: e.pointerId, lastX: e.clientX, lastT: performance.now(), v: 0 };
-    }, true);
-    document.addEventListener('pointermove', function (e) {
-        if (!st || e.pointerId !== st.id) return;
-        var dx = e.clientX - st.x;
-        if (!st.moved) {
-            if (Math.abs(dx) < THRESH) return;
-            st.moved = true;
-            st.sc.classList.add('drag-scroll-active');
-        }
-        st.sc.scrollLeft = st.left - dx;
-        var now = performance.now(), dt = now - st.lastT;
-        if (dt > 0) st.v = (e.clientX - st.lastX) / dt;
-        st.lastX = e.clientX; st.lastT = now;
-        e.preventDefault();
-    }, true);
-    function end() {
-        if (!st) return;
-        var s = st; st = null;
-        if (!s.moved) return;
-        suppress = true;
-        setTimeout(function () { suppress = false; }, 0);
-        // زخم بسيط بعد الإفلات
-        var v = Math.max(-40, Math.min(40, s.v * 16)), sc = s.sc, frames = 0;
-        if (performance.now() - s.lastT > 80) v = 0;
-        glideEl = sc;
-        (function glide() {
-            if (Math.abs(v) < 0.5 || ++frames > 120) { stopGlide(); return; }
-            var before = sc.scrollLeft;
-            sc.scrollLeft -= v; v *= 0.93;
-            if (sc.scrollLeft === before) { stopGlide(); return; }
-            raf = requestAnimationFrame(glide);
-        })();
-    }
-    document.addEventListener('pointerup', end, true);
-    document.addEventListener('pointercancel', end, true);
-    document.addEventListener('click', function (e) {
-        if (suppress) { e.preventDefault(); e.stopPropagation(); }
-    }, true);
-    document.addEventListener('dragstart', function (e) {
-        if (st && st.moved) e.preventDefault();
-    }, true);
-})();
-</script>
 </body>
 </html>
